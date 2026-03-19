@@ -1,0 +1,2399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technical Proposal - Modern Data Engineering Pipeline</title>
+    <style>
+        @media print {
+            body { margin: 0; }
+            .page-break { page-break-before: always; }
+            @page { margin: 0.5in; }
+        }
+        
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            line-height: 1.6;
+            color: #e0e0e0;
+            max-width: 8.5in;
+            margin: 0 auto;
+            padding: 0.5in;
+            background: #0d0d0d;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+            color: white;
+            padding: 3rem 2rem;
+            margin: -0.5in -0.5in 2rem -0.5in;
+            text-align: center;
+            border-radius: 0 0 20px 20px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.8rem;
+            font-weight: 700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .header .subtitle {
+            font-size: 1.3rem;
+            margin-top: 0.5rem;
+            opacity: 0.95;
+        }
+        
+        .metadata {
+            background: #1a1a1a;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            margin-bottom: 2rem;
+            border: 1px solid #333;
+        }
+        
+        .metadata-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+        
+        .metadata-item {
+            text-align: center;
+            padding: 1rem;
+            background: #2d2d2d;
+            border-radius: 8px;
+            border: 1px solid #404040;
+        }
+        
+        .metadata-label {
+            font-size: 0.85rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .metadata-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #ff6600;
+            margin-top: 0.3rem;
+        }
+        
+        section {
+            background: #1a1a1a;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+        }
+        
+        h2 {
+            color: #ff6600;
+            border-bottom: 3px solid #ff6600;
+            padding-bottom: 0.5rem;
+            margin-top: 0;
+            font-size: 2rem;
+        }
+        
+        h3 {
+            color: #ff8533;
+            margin-top: 2rem;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        h4 {
+            color: #e0e0e0;
+            margin-top: 1.5rem;
+            font-size: 1.2rem;
+            border-left: 4px solid #ff6600;
+            padding-left: 1rem;
+        }
+        
+        .architecture-box {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+            padding: 2rem;
+            border-radius: 12px;
+            margin: 2rem 0;
+            border: 2px solid #ff6600;
+        }
+        
+        .layer-stack {
+            display: grid;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .layer {
+            background: #1a1a1a;
+            padding: 1.5rem;
+            border-radius: 8px;
+            border-left: 6px solid #ff6600;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            border: 1px solid #333;
+        }
+        
+        .layer h5 {
+            margin: 0 0 0.5rem 0;
+            color: #ff6600;
+            font-size: 1.1rem;
+        }
+        
+        .layer p {
+            margin: 0.5rem 0;
+            color: #a0a0a0;
+        }
+        
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .tech-card {
+            background: #1a1a1a;
+            padding: 1.5rem;
+            border: 2px solid #333;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .tech-card:hover {
+            border-color: #ff6600;
+            box-shadow: 0 4px 12px rgba(255, 102, 0, 0.3);
+        }
+        
+        .tech-card strong {
+            color: #ff6600;
+            font-size: 1.1rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        
+        .tech-card .primary {
+            font-size: 1.3rem;
+            color: #ff8533;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+        
+        .tech-card .rationale {
+            color: #888;
+            font-size: 0.9rem;
+            font-style: italic;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        th {
+            background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+            color: white;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+        }
+        
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #404040;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        
+        tr:hover td {
+            background: #2d2d2d;
+        }
+        
+        .highlight-box {
+            background: #2d2d2d;
+            border-left: 4px solid #ff6600;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            color: #e0e0e0;
+        }
+        
+        .success-box {
+            background: #1a2e1a;
+            border-left: 4px solid #34c759;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            color: #34c759;
+        }
+        
+        .info-box {
+            background: #1a2a2e;
+            border-left: 4px solid #5ac8fa;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            color: #5ac8fa;
+        }
+        
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        code {
+            background: #2d2d2d;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #ff8533;
+            border: 1px solid #404040;
+        }
+        
+        .mermaid-placeholder {
+            background: #1a1a1a;
+            border: 2px dashed #ff6600;
+            padding: 3rem;
+            text-align: center;
+            border-radius: 8px;
+            margin: 2rem 0;
+            color: #888;
+            font-style: italic;
+        }
+        
+        .decision-matrix {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0;
+            margin: 2rem 0;
+            border: 2px solid #667eea;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .decision-cell {
+            padding: 1rem;
+            border: 1px solid #404040;
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+        
+        .decision-cell.header {
+            background: linear-gradient(135deg, #ff6600 0%, #ff8533 100%);
+            color: white;
+            font-weight: 700;
+        }
+        
+        .score-high {
+            background: #1a3d1a;
+            font-weight: 700;
+            color: #34c759;
+        }
+        
+        .score-medium {
+            background: #3d3a1a;
+            font-weight: 700;
+            color: #ffcc00;
+        }
+        
+        .score-low {
+            background: #3d1a1a;
+            font-weight: 700;
+            color: #ff3b30;
+        }
+        
+        .phase-timeline {
+            position: relative;
+            margin: 2rem 0;
+        }
+        
+        .phase {
+            margin-bottom: 2rem;
+            padding-left: 3rem;
+            position: relative;
+        }
+        
+        .phase::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 30px;
+            height: 30px;
+            background: #ff6600;
+            border-radius: 50%;
+            border: 4px solid #0d0d0d;
+            box-shadow: 0 0 0 2px #ff6600;
+        }
+        
+        .phase::after {
+            content: '';
+            position: absolute;
+            left: 14px;
+            top: 30px;
+            width: 2px;
+            height: calc(100% + 2rem);
+            background: #ff6600;
+        }
+        
+        .phase:last-child::after {
+            display: none;
+        }
+        
+        .phase-content {
+            background: #1a1a1a;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+        }
+        
+        .phase-title {
+            color: #ff6600;
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin: 0 0 0.5rem 0;
+        }
+        
+        .phase-duration {
+            color: #ff8533;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 2px solid #333;
+            color: #888;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin: 0.2rem;
+        }
+        
+        .badge-primary {
+            background: #ff6600;
+            color: white;
+        }
+        
+        .badge-success {
+            background: #34c759;
+            color: white;
+        }
+        
+        .badge-warning {
+            background: #ffcc00;
+            color: #1a1a1a;
+        }
+        
+        .badge-info {
+            background: #5ac8fa;
+            color: #1a1a1a;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Technical Proposal</h1>
+        <div class="subtitle">Modern Real-Time & Batch Data Engineering Pipeline</div>
+        <div class="subtitle" style="font-size: 1rem; margin-top: 1rem; opacity: 0.9;">
+            A Best-in-Class Architecture for Scalable, Observable, and Governed Data Systems
+        </div>
+    </div>
+
+    <div class="metadata">
+        <div class="metadata-grid">
+            <div class="metadata-item">
+                <div class="metadata-label">Version</div>
+                <div class="metadata-value">1.0</div>
+            </div>
+            <div class="metadata-item">
+                <div class="metadata-label">Date</div>
+                <div class="metadata-value">March 2026</div>
+            </div>
+            <div class="metadata-item">
+                <div class="metadata-label">Author</div>
+                <div class="metadata-value">Senior DE Team</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLE OF CONTENTS -->
+    <section>
+        <h2>Table of Contents</h2>
+        <ol style="font-size: 1.1rem; line-height: 2;">
+            <li><strong>Executive Summary</strong></li>
+            <li><strong>Architectural Overview</strong></li>
+            <li><strong>Technology Stack & Rationale</strong></li>
+            <li><strong>Data Flow Architecture</strong></li>
+            <li><strong>Component Deep Dive</strong></li>
+            <li><strong>Data Quality & Governance Framework</strong></li>
+            <li><strong>Infrastructure & Deployment Strategy</strong></li>
+            <li><strong>Implementation Roadmap</strong></li>
+            <li><strong>Risk Analysis & Mitigation</strong></li>
+            <li><strong>Appendices</strong></li>
+        </ol>
+        <div class="highlight-box" style="margin-top: 1rem;">
+            <strong>Section 7 now includes:</strong>
+            <ul style="margin: 0.5rem 0 0 1rem;">
+                <li>GitHub Integration & CI/CD Pipeline</li>
+                <li>Trunk-Based Development with Feature Branches</li>
+                <li>Slack Integration for Data Observability</li>
+                <li>Jira Integration for Data Quality Issues</li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- EXECUTIVE SUMMARY -->
+    <section>
+        <h2>1. Executive Summary</h2>
+        
+        <div class="success-box">
+            <strong>Proposal Objective:</strong> Design and implement a production-grade, real-time and batch data engineering pipeline that runs on Docker (local) and AWS (production), incorporating modern best practices for observability, governance, and scalability.
+        </div>
+
+        <h3>Key Requirements Met</h3>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Requirement</th>
+                    <th>Solution</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Extraction</strong></td>
+                    <td>Schema evolution, incremental loads</td>
+                    <td>dlt with automatic schema detection + Redpanda for streaming</td>
+                </tr>
+                <tr>
+                    <td><strong>Storage</strong></td>
+                    <td>High-performance OLAP with time travel</td>
+                    <td>DuckDB + Apache Iceberg for ACID compliance</td>
+                </tr>
+                <tr>
+                    <td><strong>Processing</strong></td>
+                    <td>Medallion architecture (Bronze/Silver/Gold)</td>
+                    <td>dbt-duckdb with Polars for heavy transformations</td>
+                </tr>
+                <tr>
+                    <td><strong>Orchestration</strong></td>
+                    <td>Asset-based lineage, testing</td>
+                    <td>Dagster with software-defined assets</td>
+                </tr>
+                <tr>
+                    <td><strong>Quality</strong></td>
+                    <td>Data validation, drift detection</td>
+                    <td>Great Expectations + Elementary + dbt tests</td>
+                </tr>
+                <tr>
+                    <td><strong>Observability</strong></td>
+                    <td>Monitoring, alerting, lineage</td>
+                    <td>OpenTelemetry + Prometheus + Grafana + Dagster UI</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Strategic Advantages</h3>
+        
+        <div class="tech-grid">
+            <div class="tech-card">
+                <strong>Hybrid Architecture</strong>
+                <p>Single codebase supports both real-time streaming and batch processing with minimal configuration changes.</p>
+            </div>
+            <div class="tech-card">
+                <strong>Modern Stack</strong>
+                <p>Best-in-breed tools: dlt, DuckDB, Polars, Dagster, Great Expectations - all Python-native and cloud-ready.</p>
+            </div>
+            <div class="tech-card">
+                <strong>Performance</strong>
+                <p>DuckDB's columnar engine + Polars' lazy evaluation = 10-100x faster than traditional Pandas/PostgreSQL.</p>
+            </div>
+            <div class="tech-card">
+                <strong>Cost Efficiency</strong>
+                <p>Serverless compute (DuckDB), efficient storage (Iceberg), minimal infrastructure overhead.</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="page-break"></div>
+
+    <!-- ARCHITECTURAL OVERVIEW -->
+    <section>
+        <h2>2. Architectural Overview</h2>
+
+        <h3>High-Level Architecture</h3>
+
+        <div class="mermaid-placeholder">
+            <strong>Architecture Diagram (Mermaid)</strong><br>
+            Source Systems → dlt/Redpanda → DuckDB (Bronze) → dbt (Silver/Gold) → BI Tools<br>
+            ↓ Orchestrated by Dagster ↓<br>
+            ↓ Monitored by Great Expectations + Elementary ↓<br>
+            Full diagram provided in Appendix A
+        </div>
+
+        <h3>Architectural Principles</h3>
+
+        <div class="layer-stack">
+            <div class="layer">
+                <h5>1. Decoupling</h5>
+                <p><strong>Principle:</strong> Ingestion, transformation, and consumption are independent layers.</p>
+                <p><strong>Implementation:</strong> dlt writes to Bronze (raw), dbt reads from Bronze to create Silver/Gold. Kafka/Redpanda decouples producers from consumers.</p>
+            </div>
+
+            <div class="layer">
+                <h5>2. Idempotency</h5>
+                <p><strong>Principle:</strong> All pipeline runs produce the same output given the same input.</p>
+                <p><strong>Implementation:</strong> dlt tracks state, dbt uses incremental models with unique keys, Dagster enables run replays.</p>
+            </div>
+
+            <div class="layer">
+                <h5>3. Observability-First</h5>
+                <p><strong>Principle:</strong> Monitor everything - data quality, pipeline health, lineage.</p>
+                <p><strong>Implementation:</strong> OpenTelemetry traces, Great Expectations validations, Elementary reports, Dagster asset materialization events.</p>
+            </div>
+
+            <div class="layer">
+                <h5>4. Schema Evolution</h5>
+                <p><strong>Principle:</strong> Handle schema changes without breaking pipelines.</p>
+                <p><strong>Implementation:</strong> dlt auto-detects schemas, Iceberg supports schema evolution, dbt on_schema_change configurations.</p>
+            </div>
+
+            <div class="layer">
+                <h5>5. Data Quality Gates</h5>
+                <p><strong>Principle:</strong> Bad data doesn't propagate downstream.</p>
+                <p><strong>Implementation:</strong> Great Expectations checkpoints at Bronze→Silver boundary, dbt tests at Silver→Gold.</p>
+            </div>
+        </div>
+
+        <h3>Design Patterns Applied</h3>
+
+        <ul>
+            <li><strong>Lambda Architecture (Hybrid):</strong> Support both real-time (Redpanda) and batch (dlt scheduled) paths merging in Bronze layer</li>
+            <li><strong>Event Sourcing:</strong> Bronze layer is immutable append-only log; all transformations are reproducible</li>
+            <li><strong>CQRS (Command Query Separation):</strong> Write models (Bronze ingestion) separate from read models (Gold consumption)</li>
+            <li><strong>Medallion Architecture:</strong> Bronze (raw) → Silver (cleaned) → Gold (aggregated) for progressive refinement</li>
+            <li><strong>Circuit Breaker:</strong> Pipeline failures don't cascade; Dagster retry policies prevent runaway costs</li>
+        </ul>
+    </section>
+
+    <!-- TECHNOLOGY STACK -->
+    <section>
+        <h2>3. Technology Stack & Rationale</h2>
+
+        <h3>Core Technologies</h3>
+
+        <div class="tech-grid">
+            <div class="tech-card">
+                <strong>Data Extraction</strong>
+                <div class="primary">dlt (data load tool)</div>
+                <p><strong>Why:</strong> Python-native, auto-schema detection, incremental loads, state management, 100+ verified sources</p>
+                <p><strong>Alternatives Considered:</strong> Airbyte (heavier), Fivetran (costly), Meltano (YAML-heavy)</p>
+                <div class="rationale">Selected for lightweight deployment and Python integration</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Streaming Platform</strong>
+                <div class="primary">Redpanda</div>
+                <p><strong>Why:</strong> Kafka-compatible, no JVM/Zookeeper, 10x faster, runs in Docker with 100MB RAM</p>
+                <p><strong>Alternatives Considered:</strong> Kafka (JVM overhead), Pulsar (complex), RabbitMQ (not for analytics)</p>
+                <div class="rationale">Selected for Docker-friendly deployment and performance</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Data Warehouse</strong>
+                <div class="primary">DuckDB + Apache Iceberg</div>
+                <p><strong>Why:</strong> In-process OLAP (no server), columnar, vectorized execution, S3-native, ACID via Iceberg</p>
+                <p><strong>Alternatives Considered:</strong> PostgreSQL (row-based), ClickHouse (complex), Snowflake (costly)</p>
+                <div class="rationale">Selected for cost-efficiency and local/cloud portability</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Data Processing</strong>
+                <div class="primary">Polars + dbt</div>
+                <p><strong>Why:</strong> Polars: Rust-based, lazy eval, 10x faster than Pandas; dbt: SQL-native, testing, docs</p>
+                <p><strong>Alternatives Considered:</strong> Pandas (slow), PySpark (overkill), pure SQL (limited)</p>
+                <div class="rationale">Selected for performance and developer experience</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Orchestration</strong>
+                <div class="primary">Dagster</div>
+                <p><strong>Why:</strong> Software-defined assets, built-in lineage, testing framework, modern UI, type-safe</p>
+                <p><strong>Alternatives Considered:</strong> Airflow (task-based), Prefect (simpler), Kestra (newer)</p>
+                <div class="rationale">Selected for asset-centric paradigm and observability</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Data Quality</strong>
+                <div class="primary">Great Expectations + Elementary</div>
+                <p><strong>Why:</strong> GE: comprehensive validations; Elementary: dbt-native, Slack alerts, drift detection</p>
+                <p><strong>Alternatives Considered:</strong> Soda (commercial), Monte Carlo (expensive), dbt tests only (limited)</p>
+                <div class="rationale">Selected for depth of validation and integration</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Observability</strong>
+                <div class="primary">OpenTelemetry + Prometheus + Grafana</div>
+                <p><strong>Why:</strong> OTEL: vendor-neutral traces/metrics; Prometheus: time-series DB; Grafana: dashboards</p>
+                <p><strong>Alternatives Considered:</strong> DataDog (costly), New Relic (SaaS), ELK (complex)</p>
+                <div class="rationale">Selected for open-source and flexibility</div>
+            </div>
+
+            <div class="tech-card">
+                <strong>Code Quality</strong>
+                <div class="primary">Ruff + Black</div>
+                <p><strong>Why:</strong> Ruff: Rust-based linter, 10-100x faster than Flake8/Pylint; Black: opinionated formatter</p>
+                <p><strong>Alternatives Considered:</strong> Flake8 (slow), Pylint (verbose), isort (Black handles it)</p>
+                <div class="rationale">Selected for speed and zero-config</div>
+            </div>
+        </div>
+
+        <h3>Technology Decision Matrix</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Technology</th>
+                    <th>Performance</th>
+                    <th>Ease of Use</th>
+                    <th>Cost</th>
+                    <th>Community</th>
+                    <th>Decision</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>DuckDB vs PostgreSQL</td>
+                    <td class="score-high">10x faster</td>
+                    <td class="score-high">Simpler</td>
+                    <td class="score-high">$0</td>
+                    <td class="score-medium">Growing</td>
+                    <td><span class="badge badge-success">DuckDB</span></td>
+                </tr>
+                <tr>
+                    <td>Polars vs Pandas</td>
+                    <td class="score-high">10x faster</td>
+                    <td class="score-medium">Learning curve</td>
+                    <td class="score-high">$0</td>
+                    <td class="score-medium">Growing</td>
+                    <td><span class="badge badge-success">Polars</span></td>
+                </tr>
+                <tr>
+                    <td>Dagster vs Airflow</td>
+                    <td class="score-medium">Similar</td>
+                    <td class="score-high">Asset-based</td>
+                    <td class="score-high">$0</td>
+                    <td class="score-high">Strong</td>
+                    <td><span class="badge badge-success">Dagster</span></td>
+                </tr>
+                <tr>
+                    <td>Redpanda vs Kafka</td>
+                    <td class="score-high">10x faster</td>
+                    <td class="score-high">No JVM</td>
+                    <td class="score-high">$0</td>
+                    <td class="score-medium">Growing</td>
+                    <td><span class="badge badge-success">Redpanda</span></td>
+                </tr>
+                <tr>
+                    <td>dlt vs Airbyte</td>
+                    <td class="score-high">Lightweight</td>
+                    <td class="score-high">Python-native</td>
+                    <td class="score-high">$0</td>
+                    <td class="score-medium">Growing</td>
+                    <td><span class="badge badge-success">dlt</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <div class="page-break"></div>
+
+    <!-- DATA FLOW ARCHITECTURE -->
+    <section>
+        <h2>4. Data Flow Architecture</h2>
+
+        <h3>End-to-End Data Flow</h3>
+
+        <div class="architecture-box">
+            <h4>Real-Time Path (Streaming)</h4>
+            <p><strong>Source → Redpanda → dlt Consumer → DuckDB Bronze → dbt (Silver/Gold) → BI</strong></p>
+            <ul>
+                <li>Source systems emit events to Redpanda topics</li>
+                <li>dlt consumer reads from Redpanda with offset tracking</li>
+                <li>Raw events written to DuckDB Bronze layer (append-only)</li>
+                <li>dbt incremental models process new Bronze records to Silver/Gold</li>
+                <li>Dagster sensors detect new data and trigger transformations</li>
+            </ul>
+
+            <h4>Batch Path (Scheduled)</h4>
+            <p><strong>Source API/DB → dlt Pipeline → DuckDB Bronze → dbt (Silver/Gold) → BI</strong></p>
+            <ul>
+                <li>Dagster schedules dlt pipelines (hourly/daily/custom)</li>
+                <li>dlt extracts with incremental state management</li>
+                <li>Raw data written to DuckDB Bronze layer</li>
+                <li>dbt runs post-ingestion via Dagster dependencies</li>
+                <li>Data quality gates validate before Silver/Gold promotion</li>
+            </ul>
+        </div>
+
+        <h3>Medallion Architecture Layers</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Layer</th>
+                    <th>Purpose</th>
+                    <th>Technology</th>
+                    <th>Data Format</th>
+                    <th>Retention</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Bronze</strong></td>
+                    <td>Immutable raw data, audit trail</td>
+                    <td>DuckDB + Iceberg (append-only)</td>
+                    <td>JSON, Parquet (schema-on-read)</td>
+                    <td>Indefinite (compressed S3)</td>
+                </tr>
+                <tr>
+                    <td><strong>Silver</strong></td>
+                    <td>Cleaned, validated, deduplicated</td>
+                    <td>dbt incremental models</td>
+                    <td>Parquet (typed schema)</td>
+                    <td>2 years (configurable)</td>
+                </tr>
+                <tr>
+                    <td><strong>Gold</strong></td>
+                    <td>Business-ready aggregations</td>
+                    <td>dbt tables/views</td>
+                    <td>Parquet (optimized for queries)</td>
+                    <td>1 year + rollups</td>
+                </tr>
+                <tr>
+                    <td><strong>Mart</strong></td>
+                    <td>Purpose-built datasets for teams</td>
+                    <td>dbt views on Gold</td>
+                    <td>Views (no duplication)</td>
+                    <td>Virtual (no storage)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Schema Evolution Strategy</h3>
+
+        <h4>Handling Schema Changes</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Change Type</th>
+                    <th>Bronze Layer</th>
+                    <th>Silver Layer</th>
+                    <th>Gold Layer</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>New Column</strong></td>
+                    <td>Auto-detected by dlt, added to schema</td>
+                    <td>dbt on_schema_change: 'append_new_columns'</td>
+                    <td>Manual review, add to models if needed</td>
+                </tr>
+                <tr>
+                    <td><strong>Deleted Column</strong></td>
+                    <td>Historical data preserved</td>
+                    <td>dbt continues (column becomes NULL)</td>
+                    <td>Remove from aggregations</td>
+                </tr>
+                <tr>
+                    <td><strong>Type Change</strong></td>
+                    <td>Stored as-is (JSON flexible)</td>
+                    <td>Fail dbt run, requires migration</td>
+                    <td>Manual intervention</td>
+                </tr>
+                <tr>
+                    <td><strong>Column Reorder</strong></td>
+                    <td>No impact (columnar storage)</td>
+                    <td>No impact (SELECT by name)</td>
+                    <td>No impact</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="highlight-box">
+            <strong>Key Insight:</strong> Iceberg's schema evolution features combined with dlt's auto-detection means 90% of schema changes require zero code changes. The remaining 10% (type changes) trigger alerts for manual review.
+        </div>
+    </section>
+
+    <!-- COMPONENT DEEP DIVE -->
+    <section>
+        <h2>5. Component Deep Dive</h2>
+
+        <h3>5.1 Data Ingestion Layer</h3>
+
+        <h4>dlt (data load tool)</h4>
+
+        <p><strong>Capabilities:</strong></p>
+        <ul>
+            <li><strong>Schema Inference:</strong> Automatically detects and evolves schemas from source data</li>
+            <li><strong>Incremental Loads:</strong> Tracks state (last timestamp, cursor) to load only new/changed records</li>
+            <li><strong>Error Handling:</strong> Configurable retry policies, dead-letter queues for bad records</li>
+            <li><strong>Normalization:</strong> Flattens nested JSON, creates related tables automatically</li>
+            <li><strong>Data Contracts:</strong> Define expected schemas and validation rules</li>
+        </ul>
+
+        <p><strong>Configuration Strategy:</strong></p>
+        <ul>
+            <li><strong>Staging:</strong> dlt writes to Bronze layer as Parquet files in S3/MinIO</li>
+            <li><strong>Chunking:</strong> Configurable batch sizes (e.g., 10k records per file) for memory efficiency</li>
+            <li><strong>Deduplication:</strong> Primary key detection prevents duplicates at ingestion</li>
+            <li><strong>Late Data:</strong> Watermark-based processing with configurable lateness tolerance</li>
+        </ul>
+
+        <h4>Supported Data Source Types</h4>
+        <p>The pipeline supports extracting data from the following source types:</p>
+        <ul>
+            <li><strong>RESTful API:</strong> HTTP-based APIs with pagination, authentication (OAuth, API keys, Bearer tokens)</li>
+            <li><strong>CSV:</strong> Comma-separated values files, including compressed formats (gz, zip)</li>
+            <li><strong>Text:</strong> Plain text files, log files, and unstructured text data</li>
+            <li><strong>Parquet:</strong> Apache Parquet columnar format for efficient analytical queries</li>
+            <li><strong>Google Sheets:</strong> Google Drive spreadsheets with automatic schema detection</li>
+        </ul>
+
+        <div class="info-box">
+            <strong>Example Configuration:</strong>
+            <code>write_disposition='merge'</code> for SCD Type 2, 
+            <code>primary_key='id'</code> for deduplication,
+            <code>incremental=dlt.sources.incremental('updated_at')</code> for delta loads
+        </div>
+
+        <h4>Redpanda (Streaming)</h4>
+
+        <p><strong>Use Cases:</strong></p>
+        <ul>
+            <li>Real-time clickstream data, IoT sensors, application logs</li>
+            <li>CDC (Change Data Capture) from databases</li>
+            <li>Event-driven microservices communication</li>
+        </ul>
+
+        <p><strong>Integration:</strong></p>
+        <ul>
+            <li>dlt has native Kafka/Redpanda consumer support</li>
+            <li>Dagster sensors listen to topic offsets to trigger downstream processing</li>
+            <li>Schema Registry ensures producer/consumer compatibility</li>
+        </ul>
+
+        <h3>5.2 Storage Layer</h3>
+
+        <h4>DuckDB</h4>
+
+        <p><strong>Why DuckDB over PostgreSQL/Snowflake:</strong></p>
+        <ul>
+            <li><strong>Performance:</strong> Columnar vectorized execution → 10-100x faster for analytics</li>
+            <li><strong>Portability:</strong> Embedded database, runs locally or on Lambda (no server to manage)</li>
+            <li><strong>Cost:</strong> $0 licensing, minimal infrastructure (vs Snowflake $2+/hr warehouses)</li>
+            <li><strong>S3-Native:</strong> Query Parquet files directly on S3 without loading into database</li>
+        </ul>
+
+        <p><strong>Configuration:</strong></p>
+        <ul>
+            <li><strong>Memory:</strong> Set <code>memory_limit='8GB'</code> for predictable resource usage</li>
+            <li><strong>Parallelism:</strong> <code>threads=4</code> for multi-core utilization</li>
+            <li><strong>Extensions:</strong> httpfs (S3), parquet (columnar), iceberg (ACID)</li>
+        </ul>
+
+        <h4>Apache Iceberg</h4>
+
+        <p><strong>Features Leveraged:</strong></p>
+        <ul>
+            <li><strong>ACID Transactions:</strong> Prevent partial writes, ensure read consistency</li>
+            <li><strong>Time Travel:</strong> Query historical snapshots for debugging/compliance</li>
+            <li><strong>Schema Evolution:</strong> Add/remove columns without rewriting data</li>
+            <li><strong>Partition Evolution:</strong> Change partitioning scheme without data movement</li>
+            <li><strong>Hidden Partitioning:</strong> Automatic partition pruning (users don't specify partitions)</li>
+        </ul>
+
+        <div class="success-box">
+            <strong>Strategic Benefit:</strong> Iceberg enables "data lakehouse" architecture - combining data lake flexibility (cheap S3 storage) with data warehouse features (ACID, time travel, performance).
+        </div>
+
+        <h3>5.3 Processing Layer</h3>
+
+        <h4>Polars</h4>
+
+        <p><strong>When to Use Polars vs dbt:</strong></p>
+        <ul>
+            <li><strong>Polars:</strong> Complex Python logic, multi-file joins, heavy aggregations, ML preprocessing</li>
+            <li><strong>dbt:</strong> SQL-native transformations, business logic that analysts understand, incremental updates</li>
+        </ul>
+
+        <p><strong>Performance Optimizations:</strong></p>
+        <ul>
+            <li><strong>Lazy Evaluation:</strong> Build query plan, optimize, then execute (like Spark)</li>
+            <li><strong>Predicate Pushdown:</strong> Filter data early in the pipeline</li>
+            <li><strong>Columnar Processing:</strong> Vectorized operations on entire columns</li>
+            <li><strong>Multi-threading:</strong> Automatic parallelization across CPU cores</li>
+        </ul>
+
+        <h4>dbt (data build tool)</h4>
+
+        <p><strong>Medallion Architecture in dbt:</strong></p>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>Layer</th>
+                    <th>dbt Materialization</th>
+                    <th>Update Strategy</th>
+                    <th>Testing</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Bronze</td>
+                    <td>External tables (Iceberg)</td>
+                    <td>Append-only via dlt</td>
+                    <td>Source freshness checks</td>
+                </tr>
+                <tr>
+                    <td>Silver</td>
+                    <td>Incremental (merge)</td>
+                    <td>Process new Bronze records</td>
+                    <td>Unique keys, not nulls, referential integrity</td>
+                </tr>
+                <tr>
+                    <td>Gold</td>
+                    <td>Table (full refresh) or View</td>
+                    <td>Aggregate from Silver</td>
+                    <td>Accepted values, relationships, custom SQL</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <p><strong>Data Quality Strategy:</strong></p>
+        <ul>
+            <li><strong>Generic Tests:</strong> <code>unique</code>, <code>not_null</code>, <code>accepted_values</code>, <code>relationships</code></li>
+            <li><strong>dbt-expectations:</strong> 50+ additional tests (e.g., <code>expect_column_values_to_be_between</code>)</li>
+            <li><strong>Custom Tests:</strong> SQL queries that return failing records</li>
+            <li><strong>Elementary:</strong> Anomaly detection on row counts, nulls, freshness</li>
+        </ul>
+
+        <h3>5.4 Orchestration Layer</h3>
+
+        <h4>Dagster</h4>
+
+        <p><strong>Asset-Centric Paradigm:</strong></p>
+        <ul>
+            <li><strong>Assets vs Tasks:</strong> Dagster models <em>data artifacts</em> (tables, files), not <em>operations</em> (tasks)</li>
+            <li><strong>Declarative Dependencies:</strong> Specify what data an asset needs, Dagster determines execution order</li>
+            <li><strong>Materialization:</strong> Assets are "materialized" (computed/stored), Dagster tracks versions</li>
+        </ul>
+
+        <p><strong>Key Features for Our Pipeline:</strong></p>
+        <ul>
+            <li><strong>Sensors:</strong> Trigger pipelines when new data arrives (S3 file, Redpanda offset, API change)</li>
+            <li><strong>Partitions:</strong> Time-based partitions (daily/hourly) for incremental processing</li>
+            <li><strong>Resources:</strong> Share connections (DuckDB, S3, Slack) across assets</li>
+            <li><strong>I/O Managers:</strong> Abstract away storage (save asset to Parquet, Iceberg, or DuckDB)</li>
+            <li><strong>Schedules:</strong> Cron-based or interval-based asset materialization</li>
+        </ul>
+
+        <div class="highlight-box">
+            <strong>Example Asset Graph:</strong><br>
+            <code>raw_orders</code> (dlt) → <code>cleaned_orders</code> (dbt Silver) → <code>daily_sales</code> (dbt Gold) → <code>sales_report</code> (BI)<br>
+            Dagster automatically knows: if <code>raw_orders</code> updates, re-run downstream assets.
+        </div>
+
+        <h3>5.5 Quality & Governance Layer</h3>
+
+        <h4>Great Expectations</h4>
+
+        <p><strong>Validation Strategy:</strong></p>
+        <ul>
+            <li><strong>Bronze→Silver Boundary:</strong> Run GE checkpoint before dbt Silver models</li>
+            <li><strong>Expectations:</strong> Column types, value ranges, uniqueness, row count thresholds</li>
+            <li><strong>Profiling:</strong> Auto-generate expectations from sample data</li>
+            <li><strong>Data Docs:</strong> HTML reports showing validation results</li>
+        </ul>
+
+        <p><strong>Failure Handling:</strong></p>
+        <ul>
+            <li><strong>Critical Validations:</strong> Pipeline stops, alert to Slack, manual review required</li>
+            <li><strong>Warning Validations:</strong> Log issue, continue processing, investigate later</li>
+            <li><strong>Quarantine:</strong> Move bad records to separate table for inspection</li>
+        </ul>
+
+        <h4>Elementary</h4>
+
+        <p><strong>Anomaly Detection:</strong></p>
+        <ul>
+            <li><strong>Volume Anomalies:</strong> Row count spikes/drops (e.g., daily orders suddenly 10x normal)</li>
+            <li><strong>Freshness Anomalies:</strong> Data not updated in expected time window</li>
+            <li><strong>Schema Anomalies:</strong> New columns, type changes, nulls in previously non-null columns</li>
+            <li><strong>Drift Detection:</strong> Statistical distribution changes (e.g., average order value shifts)</li>
+        </ul>
+
+        <p><strong>Alerting:</strong></p>
+        <ul>
+            <li>Slack notifications with chart showing anomaly</li>
+            <li>Email digests for daily summary</li>
+            <li>PagerDuty integration for critical issues</li>
+        </ul>
+
+        <h3>5.6 Observability Layer</h3>
+
+        <h4>OpenTelemetry + Prometheus + Grafana</h4>
+
+        <p><strong>Metrics Collected:</strong></p>
+        <ul>
+            <li><strong>Pipeline Metrics:</strong> Run duration, success/failure rate, records processed</li>
+            <li><strong>Data Metrics:</strong> Table row counts, data freshness, quality test pass rate</li>
+            <li><strong>Infrastructure Metrics:</strong> CPU/memory usage, DuckDB query performance, S3 costs</li>
+        </ul>
+
+        <p><strong>Dashboards:</strong></p>
+        <ul>
+            <li><strong>Pipeline Health:</strong> Success rate over time, p95 run duration, error trends</li>
+            <li><strong>Data Quality:</strong> Test failures by layer, anomaly detection alerts</li>
+            <li><strong>Cost Monitoring:</strong> S3 storage growth, compute hours, Redpanda throughput</li>
+        </ul>
+
+        <h4>Dagster Lineage UI</h4>
+
+        <p><strong>Features:</strong></p>
+        <ul>
+            <li><strong>Asset Graph:</strong> Visual dependency graph showing all assets and their relationships</li>
+            <li><strong>Run History:</strong> Timeline of all materializations with success/failure status</li>
+            <li><strong>Backfill UI:</strong> Re-run historical partitions with date range selector</li>
+            <li><strong>Catalog:</strong> Searchable index of all assets with metadata (schema, owner, SLA)</li>
+        </ul>
+    </section>
+
+    <div class="page-break"></div>
+
+    <!-- DATA QUALITY & GOVERNANCE -->
+    <section>
+        <h2>6. Data Quality & Governance Framework</h2>
+
+        <h3>Comprehensive Quality Strategy</h3>
+
+        <h4>Layer 1: Ingestion Quality (Bronze)</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Quality Check</th>
+                    <th>Implementation</th>
+                    <th>Action on Failure</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Schema Validation</td>
+                    <td>dlt data contracts - enforce expected columns/types</td>
+                    <td>Quarantine batch, alert data engineering</td>
+                </tr>
+                <tr>
+                    <td>Deduplication</td>
+                    <td>dlt primary key detection + merge write disposition</td>
+                    <td>Automatic dedup, log duplicates for investigation</td>
+                </tr>
+                <tr>
+                    <td>Null Handling</td>
+                    <td>dlt column hints - required vs optional fields</td>
+                    <td>Reject batch if required field is null</td>
+                </tr>
+                <tr>
+                    <td>Freshness</td>
+                    <td>dbt source freshness checks on Bronze tables</td>
+                    <td>Alert if data not updated in SLA window</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Layer 2: Transformation Quality (Silver)</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Quality Check</th>
+                    <th>Implementation</th>
+                    <th>Action on Failure</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Uniqueness</td>
+                    <td>dbt unique test on surrogate keys</td>
+                    <td>Fail dbt run, prevent downstream processing</td>
+                </tr>
+                <tr>
+                    <td>Referential Integrity</td>
+                    <td>dbt relationships test (foreign keys)</td>
+                    <td>Fail dbt run, orphaned records logged</td>
+                </tr>
+                <tr>
+                    <td>Value Ranges</td>
+                    <td>dbt-expectations expect_column_values_to_be_between</td>
+                    <td>Warn, log outliers for review</td>
+                </tr>
+                <tr>
+                    <td>Type Consistency</td>
+                    <td>Great Expectations column type expectations</td>
+                    <td>Fail run, requires schema migration</td>
+                </tr>
+                <tr>
+                    <td>Volume Anomalies</td>
+                    <td>Elementary anomaly detection on row counts</td>
+                    <td>Slack alert, investigate source system</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Layer 3: Business Logic Quality (Gold)</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Quality Check</th>
+                    <th>Implementation</th>
+                    <th>Action on Failure</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Metric Validation</td>
+                    <td>Custom dbt tests - e.g., revenue = quantity * price</td>
+                    <td>Fail run, block downstream consumption</td>
+                </tr>
+                <tr>
+                    <td>Completeness</td>
+                    <td>dbt test - all expected partitions present (e.g., all dates)</td>
+                    <td>Warn, investigate missing data</td>
+                </tr>
+                <tr>
+                    <td>Distribution Drift</td>
+                    <td>Elementary statistical tests on metrics (mean, std dev)</td>
+                    <td>Slack alert with charts, manual review</td>
+                </tr>
+                <tr>
+                    <td>Aggregate Consistency</td>
+                    <td>dbt test - sum of parts = whole (e.g., regional = total)</td>
+                    <td>Fail run, logic error detected</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>Governance & Compliance</h3>
+
+        <h4>Data Protection Strategy</h4>
+
+        <ul>
+            <li><strong>PII Detection:</strong> Automated scanning (dlt plugins) for SSN, credit cards, email patterns</li>
+            <li><strong>Encryption:</strong> At-rest (S3 SSE-S3) and in-transit (TLS for all connections)</li>
+            <li><strong>Access Control:</strong> IAM policies for S3, DuckDB role-based access, Dagster RBAC</li>
+            <li><strong>Data Retention:</strong> Automatic archival to Glacier after 2 years, deletion after 7 years (configurable)</li>
+            <li><strong>Audit Logging:</strong> OpenTelemetry traces capture all data access with user/timestamp</li>
+        </ul>
+
+        <h4>Data Lineage Tracking</h4>
+
+        <ul>
+            <li><strong>Dagster Asset Lineage:</strong> Automatically tracks which assets produced which outputs</li>
+            <li><strong>dbt Lineage:</strong> DAG visualization showing model dependencies</li>
+            <li><strong>Column-Level Lineage:</strong> dbt column descriptions + dbt-metadata-syncer → data catalog</li>
+            <li><strong>Impact Analysis:</strong> "If I change this Bronze table, what Gold models break?"</li>
+        </ul>
+
+        <h3>Handling Data Quality Issues</h3>
+
+        <h4>Good Record / Bad Record Strategy</h4>
+
+        <div class="architecture-box">
+            <h5>Scenario: Batch insert of 10,000 records, 50 fail validation</h5>
+            
+            <p><strong>Option 1: Fail-Fast (Recommended for Critical Data)</strong></p>
+            <ul>
+                <li>Entire batch rejected</li>
+                <li>Great Expectations checkpoint fails → stops dbt run</li>
+                <li>Slack alert with sample bad records</li>
+                <li>Data engineer fixes source data or adjusts validation rules</li>
+            </ul>
+
+            <p><strong>Option 2: Partial Insert (Recommended for Non-Critical Data)</strong></p>
+            <ul>
+                <li>9,950 good records → Silver layer</li>
+                <li>50 bad records → <code>quarantine_silver_tablename</code> table</li>
+                <li>dbt model includes <code>UNION ALL</code> of good records only</li>
+                <li>Daily job attempts to re-process quarantined records</li>
+            </ul>
+
+            <p><strong>Implementation:</strong></p>
+            <code>
+                -- dbt model with quarantine logic<br>
+                WITH validated AS (<br>
+                &nbsp;&nbsp;SELECT *, CASE WHEN age > 0 AND age < 120 THEN 'valid' ELSE 'invalid' END AS quality_flag<br>
+                &nbsp;&nbsp;FROM bronze.users<br>
+                )<br>
+                SELECT * FROM validated WHERE quality_flag = 'valid'  -- Silver layer<br>
+                -- Invalid records go to elementary.quarantine_users
+            </code>
+        </div>
+
+        <h4>Late Arriving Data</h4>
+
+        <ul>
+            <li><strong>Watermark-Based Processing:</strong> dbt incremental models with <code>WHERE event_time > max_watermark - INTERVAL '3 days'</code></li>
+            <li><strong>Late Data Window:</strong> Accept events up to 72 hours late (configurable)</li>
+            <li><strong>Backfill Support:</strong> Dagster partition backfill re-processes historical windows</li>
+            <li><strong>Alerting:</strong> If late data exceeds threshold (e.g., 5% of total), Slack alert for investigation</li>
+        </ul>
+
+        <h4>Schema Change Management</h4>
+
+        <div class="info-box">
+            <strong>Process:</strong>
+            <ol>
+                <li>dlt detects new column in source → auto-adds to Bronze Iceberg table (non-breaking)</li>
+                <li>Elementary detects schema change → Slack notification</li>
+                <li>Data engineer reviews: is this expected? Update dbt models if needed</li>
+                <li>If type change (breaking): dlt raises exception → manual migration required</li>
+                <li>Migration script: create new versioned table, backfill historical data</li>
+            </ol>
+        </div>
+    </section>
+
+    <div class="page-break"></div>
+
+    <!-- INFRASTRUCTURE & DEPLOYMENT -->
+    <section>
+        <h2>7. Infrastructure & Deployment Strategy</h2>
+
+        <h3>Local Development (Docker Compose)</h3>
+
+        <h4>Service Architecture</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Image</th>
+                    <th>Purpose</th>
+                    <th>Ports</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Redpanda</td>
+                    <td>redpandadata/redpanda:latest</td>
+                    <td>Kafka-compatible streaming</td>
+                    <td>9092 (Kafka), 8081 (Schema Registry)</td>
+                </tr>
+                <tr>
+                    <td>MinIO</td>
+                    <td>minio/minio:latest</td>
+                    <td>S3-compatible object storage</td>
+                    <td>9000 (API), 9001 (Console)</td>
+                </tr>
+                <tr>
+                    <td>Dagster</td>
+                    <td>Custom (Python + dlt + dbt + Polars)</td>
+                    <td>Orchestration</td>
+                    <td>3000 (UI), 4000 (gRPC)</td>
+                </tr>
+                <tr>
+                    <td>Prometheus</td>
+                    <td>prom/prometheus:latest</td>
+                    <td>Metrics storage</td>
+                    <td>9090</td>
+                </tr>
+                <tr>
+                    <td>Grafana</td>
+                    <td>grafana/grafana:latest</td>
+                    <td>Dashboards</td>
+                    <td>3001</td>
+                </tr>
+                <tr>
+                    <td>DuckDB</td>
+                    <td>N/A (in-process with Dagster)</td>
+                    <td>Data warehouse</td>
+                    <td>N/A (file-based)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Volume Mounts</h4>
+
+        <ul>
+            <li><code>./data/duckdb:/data/duckdb</code> - Persist DuckDB files</li>
+            <li><code>./data/minio:/data</code> - Persist MinIO S3 data</li>
+            <li><code>./dbt:/dbt</code> - Mount dbt project for hot reload</li>
+            <li><code>./dagster_home:/opt/dagster/dagster_home</code> - Dagster metadata</li>
+        </ul>
+
+        <h3>AWS Production Deployment</h3>
+
+        <h4>Service Mapping</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Local Service</th>
+                    <th>AWS Service</th>
+                    <th>Rationale</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Redpanda</td>
+                    <td>Amazon MSK (Kafka) or Redpanda Cloud</td>
+                    <td>Managed streaming, auto-scaling</td>
+                </tr>
+                <tr>
+                    <td>MinIO</td>
+                    <td>Amazon S3</td>
+                    <td>Native S3, no operational overhead</td>
+                </tr>
+                <tr>
+                    <td>DuckDB</td>
+                    <td>DuckDB on Lambda or ECS + S3</td>
+                    <td>Serverless compute, query S3 directly</td>
+                </tr>
+                <tr>
+                    <td>Dagster</td>
+                    <td>ECS Fargate + RDS (PostgreSQL for metadata)</td>
+                    <td>Managed containers, scalable</td>
+                </tr>
+                <tr>
+                    <td>Prometheus</td>
+                    <td>Amazon Managed Prometheus (AMP)</td>
+                    <td>Fully managed, auto-scaling</td>
+                </tr>
+                <tr>
+                    <td>Grafana</td>
+                    <td>Amazon Managed Grafana (AMG)</td>
+                    <td>Integrated with AMP, SSO</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Architecture Diagram (AWS)</h4>
+
+        <div class="mermaid-placeholder">
+            <strong>AWS Architecture (Simplified)</strong><br>
+            Sources → EventBridge/MSK → Lambda (dlt) → S3 (Bronze) → ECS (dbt) → S3 (Silver/Gold) → Athena/Redshift Spectrum<br>
+            All orchestrated by Dagster on ECS Fargate<br>
+            Full diagram in Appendix B
+        </div>
+
+        <h3>Infrastructure as Code</h3>
+
+        <h4>Terraform Modules</h4>
+
+        <ul>
+            <li><strong>networking:</strong> VPC, subnets, security groups</li>
+            <li><strong>storage:</strong> S3 buckets with lifecycle policies, encryption</li>
+            <li><strong>compute:</strong> ECS cluster, Fargate task definitions, Lambda functions</li>
+            <li><strong>streaming:</strong> MSK cluster, Schema Registry</li>
+            <li><strong>observability:</strong> CloudWatch, AMP, AMG</li>
+            <li><strong>iam:</strong> Roles and policies for least privilege</li>
+        </ul>
+
+        <h3>GitHub Integration & CI/CD Pipeline</h3>
+
+        <h4>Source Code Control</h4>
+
+        <div class="architecture-box">
+            <h5>GitHub Repository Structure</h5>
+            <ul>
+                <li><strong>Main Repository:</strong> <code>github.com/org/data-pipeline</code></li>
+                <li><strong>Directory Organization:</strong></li>
+                <ul>
+                    <li><code>/dbt/</code> - dbt models and transformations</li>
+                    <li><code>/dlt/</code> - dlt pipeline sources and destinations</li>
+                    <li><code>/dagster/</code> - Dagster definitions and assets</li>
+                    <li><code>/terraform/</code> - Infrastructure as Code</li>
+                    <li><code>/tests/</code> - Unit and integration tests</li>
+                    <li><code>/.github/</code> - GitHub Actions workflows</li>
+                </ul>
+            </ul>
+        </div>
+
+        <h4>CI/CD Pipeline Architecture</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Stage</th>
+                    <th>Tool</th>
+                    <th>Action</th>
+                    <th>Trigger</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Code Quality</strong></td>
+                    <td>GitHub Actions + Ruff + Black</td>
+                    <td>Linting, formatting, type checking</td>
+                    <td>Every PR</td>
+                </tr>
+                <tr>
+                    <td><strong>Testing</strong></td>
+                    <td>pytest + dbt test</td>
+                    <td>Unit tests, dbt model tests</td>
+                    <td>Every PR</td>
+                </tr>
+                <tr>
+                    <td><strong>Build</strong></td>
+                    <td>Docker Buildx</td>
+                    <td>Build container images</td>
+                    <td>Merge to main</td>
+                </tr>
+                <tr>
+                    <td><strong>Deploy Staging</strong></td>
+                    <td>Terraform + GitHub Actions</td>
+                    <td>Deploy to staging environment</td>
+                    <td>Merge to main</td>
+                </tr>
+                <tr>
+                    <td><strong>Deploy Production</strong></td>
+                    <td>Terraform + GitHub Actions</td>
+                    <td>Deploy to production (manual approval)</td>
+                    <td>Release tag</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Trunk-Based Development with Feature Branches</h4>
+
+        <div class="info-box">
+            <strong>Release Strategy Overview:</strong> We adopt a simplified trunk-based development model with short-lived feature branches for larger changes.
+        </div>
+
+        <h5>Branch Strategy</h5>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Branch Type</th>
+                    <th>Purpose</th>
+                    <th>Lifetime</th>
+                    <th>Merge Requirements</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>main</strong></td>
+                    <td>Production-ready code, deployable at any time</td>
+                    <td>Indefinite</td>
+                    <td>Protected, requires 1 approval + CI passing</td>
+                </tr>
+                <tr>
+                    <td><strong>feature/*</strong></td>
+                    <td>New features, bug fixes, enhancements</td>
+                    <td>1-3 days max</td>
+                    <td>CI passing + 1 approval for &gt;100 LOC</td>
+                </tr>
+                <tr>
+                    <td><strong>hotfix/*</strong></td>
+                    <td>Critical production fixes</td>
+                    <td>Same day</td>
+                    <td>CI passing (expedited review)</td>
+                </tr>
+                <tr>
+                    <td><strong>release/*</strong></td>
+                    <td>Release preparation, version bumps</td>
+                    <td>1-2 weeks</td>
+                    <td>CI passing + staging validation</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h5>Release Flow</h5>
+
+        <div class="phase-timeline">
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">1. Feature Development</div>
+                    <div class="phase-duration">Developer creates feature branch from main</div>
+                    <ul>
+                        <li>Make changes in <code>feature/my-new-dbt-model</code></li>
+                        <li>Write tests alongside code</li>
+                        <li>Push branch and open PR against <code>main</code></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">2. CI Pipeline Execution</div>
+                    <div class="phase-duration">Automated checks run on PR</div>
+                    <ul>
+                        <li>Code quality: Ruff + Black checks</li>
+                        <li>Static analysis: mypy type checking</li>
+                        <li>Tests: pytest + dbt test (compile only)</li>
+                        <li>Security: dependency scanning</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">3. Merge to Main</div>
+                    <div class="phase-duration">CI passes, approval obtained</div>
+                    <ul>
+                        <li>Squash merge to main</li>
+                        <li>Delete feature branch</li>
+                        <li>Auto-deploy to staging (if enabled)</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">4. Production Release</div>
+                    <div class="phase-duration">Create release tag</div>
+                    <ul>
+                        <li>Create Git tag: <code>v1.2.3</code></li>
+                        <li>GitHub Actions triggers production deployment</li>
+                        <li>Manual approval gate for production</li>
+                        <li>Deployment validated via health checks</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h4>GitHub Actions Workflow Example</h4>
+
+        <div class="highlight-box">
+            <strong>CI Pipeline (.github/workflows/ci.yml):</strong>
+            <pre style="background: #2d2d2d; padding: 1rem; border-radius: 8px; overflow-x: auto; color: #e0e0e0;">
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, 'feature/*', 'hotfix/*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+      - uses: psf/black-action@v1
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -r requirements.txt
+      - run: pytest tests/
+      - run: dbt compile --project-dir dbt/
+
+  deploy-staging:
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: terraform apply -var-file=staging.tfvars
+</pre>
+        </div>
+
+        <h3>Slack Integration for Data Observability</h3>
+
+        <h4>Alert Notification Architecture</h4>
+
+        <div class="architecture-box">
+            <h5>Slack Integration Points</h5>
+            <ul>
+                <li><strong>Elementary Integration:</strong> Native Slack notifications for data quality alerts</li>
+                <li><strong>Dagster Alerts:</strong> Run failures, asset materialization issues</li>
+                <li><strong>Custom Webhooks:</strong> Pipeline-specific notifications</li>
+            </ul>
+        </div>
+
+        <h4>Notification Channels &amp; Rules</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Channel</th>
+                    <th>Severity</th>
+                    <th>Message Content</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Data Quality Failure</strong></td>
+                    <td>#data-quality-alerts</td>
+                    <td><span class="badge badge-warning">High</span></td>
+                    <td>Table: {table}, Check: {check_name}, Failed rows: {count}</td>
+                </tr>
+                <tr>
+                    <td><strong>Schema Change</strong></td>
+                    <td>#data-engineering</td>
+                    <td><span class="badge badge-info">Medium</span></td>
+                    <td>New column detected: {column}, Type: {type}</td>
+                </tr>
+                <tr>
+                    <td><strong>Pipeline Failure</strong></td>
+                    <td>#data-pipeline-alerts</td>
+                    <td><span class="badge badge-warning">High</span></td>
+                    <td>Pipeline: {pipeline_name}, Error: {error_message}</td>
+                </tr>
+                <tr>
+                    <td><strong>Volume Anomaly</strong></td>
+                    <td>#data-quality-alerts</td>
+                    <td><span class="badge badge-info">Medium</span></td>
+                    <td>Expected: {expected_rows}, Actual: {actual_rows}</td>
+                </tr>
+                <tr>
+                    <td><strong>Freshness Delay</strong></td>
+                    <td>#data-monitoring</td>
+                    <td><span class="badge badge-info">Medium</span></td>
+                    <td>Source: {source}, Delayed by: {minutes} minutes</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Slack Message Format</h4>
+
+        <div class="info-box">
+            <strong>Example Slack Alert:</strong>
+            <pre style="background: #2d2d2d; padding: 1rem; border-radius: 8px; overflow-x: auto; color: #e0e0e0;">
+:warning: *Data Quality Alert*
+
+*Table:* `production.customers`
+*Check:* `unique_check`
+*Issue:* Found 150 duplicate customer_ids
+*Impact:* Downstream models may have incorrect aggregations
+*Action:* Review and create Jira ticket if needed
+*Timestamp:* 2026-03-07 10:30:00 UTC
+            </pre>
+        </div>
+
+        <h3>Jira Integration for Data Quality Issues</h3>
+
+        <h4>Bug Ticket Automation</h4>
+
+        <div class="architecture-box">
+            <h5>Jira Integration Architecture</h5>
+            <ul>
+                <li><strong>Integration Method:</strong> Jira REST API via Python script in Dagster</li>
+                <li><strong>Trigger:</strong> Data quality failures that require investigation/fix</li>
+                <li><strong>Project:</strong> DATA (Data Engineering)</li>
+                <li><strong>Issue Type:</strong> Bug (for data quality issues)</li>
+            </ul>
+        </div>
+
+        <h4>Ticket Creation Rules</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Condition</th>
+                    <th>Action</th>
+                    <th>Priority</th>
+                    <th>Assignee</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Critical Data Quality Failure</strong></td>
+                    <td>Create Jira ticket automatically</td>
+                    <td>Highest</td>
+                    <td>Data Engineering On-Call</td>
+                </tr>
+                <tr>
+                    <td><strong>Schema Breaking Change</strong></td>
+                    <td>Create Jira ticket + Slack notification</td>
+                    <td>High</td>
+                    <td>dbt Model Owner</td>
+                </tr>
+                <tr>
+                    <td><strong>Recurring Quality Issue</strong></td>
+                    <td>Update existing ticket or create new</td>
+                    <td>Medium</td>
+                    <td>Data Engineer</td>
+                </tr>
+                <tr>
+                    <td><strong>Volume Anomaly</strong></td>
+                    <td>Create ticket for investigation</td>
+                    <td>Medium</td>
+                    <td>Data Analyst</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h4>Jira Ticket Fields</h4>
+
+        <div class="highlight-box">
+            <strong>Auto-Created Ticket Example:</strong>
+            <pre style="background: #2d2d2d; padding: 1rem; border-radius: 8px; overflow-x: auto; color: #e0e0e0;">
+Summary: [Data Quality] Duplicate customers in production.customers
+
+Type: Bug
+Priority: Highest
+Project: DATA
+Components: data-quality
+
+Description:
+---
+*Alert Details:*
+- Check: unique_check on column customer_id
+- Failed Rows: 150
+- Table: production.customers
+- Time: 2026-03-07 10:30:00 UTC
+
+*Root Cause Analysis:*
+[To be filled by assignee]
+
+*Affected Downstream Models:*
+- analytics.customer_metrics
+- marketing.customer_cohorts
+
+*Slack Thread:* https://company.slack.com/...
+*Run ID:* dagster-run-12345
+            </pre>
+        </div>
+
+        <h4>Data Observability Workflow with Slack &amp; Jira</h4>
+
+        <div class="phase-timeline">
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">1. Data Quality Check Executes</div>
+                    <div class="phase-duration">Dagster runs Great Expectations/Elementary checks</div>
+                    <ul>
+                        <li>Great Expectations checkpoint runs on Bronze/Silver/Gold tables</li>
+                        <li>Elementary monitors dbt test results</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">2. Quality Failure Detected</div>
+                    <div class="phase-duration">Automated detection by monitoring tools</div>
+                    <ul>
+                        <li>Elementary detects test failure</li>
+                        <li>Great Expectations checkpoint fails</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">3. Slack Notification</div>
+                    <div class="phase-duration">Immediate alert to team</div>
+                    <ul>
+                        <li>Elementary sends alert to #data-quality-alerts</li>
+                        <li>Message includes: table, check, failed count, sample data</li>
+                        <li>Team can react with emoji to acknowledge</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">4. Jira Ticket Creation</div>
+                    <div class="phase-duration">Automated ticket for persistent issues</div>
+                    <ul>
+                        <li>Dagster sensor triggers Jira API call</li>
+                        <li>Ticket created with all relevant details</li>
+                        <li>Links to Slack thread and Dagster run</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">5. Resolution &amp; Closure</div>
+                    <div class="phase-duration">Team investigates and fixes</div>
+                    <ul>
+                        <li>Data engineer investigates root cause</li>
+                        <li>Fix implemented via feature branch</li>
+                        <li>PR merged after CI passes</li>
+                        <li>Jira ticket resolved, Slack notification sent</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h4>Integration Code Snippet</h4>
+
+        <div class="info-box">
+            <strong>Dagster Sensor for Jira Integration:</strong>
+            <pre style="background: #2d2d2d; padding: 1rem; border-radius: 8px; overflow-x: auto; color: #e0e0e0;">
+from dagster import sensor, RunRequest
+from jira import JIRA
+import os
+
+@sensor(job_name="create_jira_ticket")
+def jira_creation_sensor(context):
+    """Monitor for data quality failures and create Jira tickets."""
+    
+    # Get latest quality check results
+    quality_results = get_elementary_results()
+    
+    for failure in quality_results.get_failed_checks():
+        # Check if ticket already exists
+        if not jira_ticket_exists(failure):
+            # Create Jira ticket
+            jira = JIRA(os.getenv("JIRA_SERVER"))
+            issue = jira.create_issue(
+                project="DATA",
+                summary=f"[Data Quality] {failure.check_name} failed on {failure.table}",
+                description=failure.details,
+                priority={'name': 'Highest' if failure.severity == 'critical' else 'High'},
+                issuetype={'name': 'Bug'},
+                labels=['data-quality', 'automated']
+            )
+            
+            # Link to Slack message
+            slack_link = f"https://company.slack.com/archives/..."
+            jira.add_comment(issue, f"Slack: {slack_link}")
+    
+    yield RunRequest(run_key=f"jira-sync-{context.cursor}")
+</pre>
+        </div>
+
+        <h4>Environment Management</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Environment</th>
+                    <th>Purpose</th>
+                    <th>Infrastructure</th>
+                    <th>Data Refresh</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Dev</strong></td>
+                    <td>Local development, unit tests</td>
+                    <td>Docker Compose on laptop</td>
+                    <td>Sample datasets (10k records)</td>
+                </tr>
+                <tr>
+                    <td><strong>QA</strong></td>
+                    <td>Integration tests, UAT</td>
+                    <td>AWS (small instances, cost-optimized)</td>
+                    <td>Anonymized production data (1M records)</td>
+                </tr>
+                <tr>
+                    <td><strong>Prod</strong></td>
+                    <td>Production workloads</td>
+                    <td>AWS (auto-scaling, high availability)</td>
+                    <td>Live data (full volume)</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>CI/CD Pipeline</h3>
+
+        <h4>GitHub Actions Workflow</h4>
+
+        <div class="phase-timeline">
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Stage 1: Code Quality</div>
+                    <div class="phase-duration">~2 minutes</div>
+                    <ul>
+                        <li>Ruff linting (Python)</li>
+                        <li>Black formatting check</li>
+                        <li>sqlfluff linting (SQL/dbt)</li>
+                        <li>Pre-commit hooks validation</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Stage 2: Unit Tests</div>
+                    <div class="phase-duration">~5 minutes</div>
+                    <ul>
+                        <li>pytest for dlt pipelines (mocked sources)</li>
+                        <li>pytest for Polars transformations</li>
+                        <li>pytest for Dagster assets (asset checks)</li>
+                        <li>Coverage report (threshold: 80%)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Stage 3: Integration Tests</div>
+                    <div class="phase-duration">~10 minutes</div>
+                    <ul>
+                        <li>Docker Compose up (spin up local stack)</li>
+                        <li>dlt pipeline run (sample data)</li>
+                        <li>dbt run + dbt test (all models)</li>
+                        <li>Great Expectations validation</li>
+                        <li>Docker Compose down</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Stage 4: Build & Push</div>
+                    <div class="phase-duration">~5 minutes</div>
+                    <ul>
+                        <li>Build Docker image (Dagster + dependencies)</li>
+                        <li>Push to ECR (Elastic Container Registry)</li>
+                        <li>Tag with commit SHA + version</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Stage 5: Deploy to QA</div>
+                    <div class="phase-duration">~3 minutes</div>
+                    <ul>
+                        <li>Terraform plan (infrastructure changes)</li>
+                        <li>Terraform apply (auto-approved for QA)</li>
+                        <li>ECS task definition update</li>
+                        <li>Health check (Dagster API)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Stage 6: Deploy to Prod</div>
+                    <div class="phase-duration">~5 minutes (manual approval)</div>
+                    <ul>
+                        <li>Manual approval required (GitHub Environment)</li>
+                        <li>Terraform plan review</li>
+                        <li>Blue/green deployment (zero downtime)</li>
+                        <li>Post-deployment smoke tests</li>
+                        <li>Slack notification</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <h3>Code Standardization</h3>
+
+        <h4>Pre-commit Hooks</h4>
+
+        <ul>
+            <li><strong>ruff:</strong> Fast Python linter (replaces Flake8, isort, pyupgrade)</li>
+            <li><strong>black:</strong> Code formatter (line length: 100)</li>
+            <li><strong>sqlfluff:</strong> SQL linter for dbt models (dialect: duckdb)</li>
+            <li><strong>mypy:</strong> Type checking (strict mode)</li>
+            <li><strong>detect-secrets:</strong> Prevent committing API keys, passwords</li>
+            <li><strong>check-yaml:</strong> Validate YAML syntax (dbt schemas, configs)</li>
+        </ul>
+
+        <h4>Configuration Files</h4>
+
+        <ul>
+            <li><code>pyproject.toml:</code> Ruff, Black, pytest, mypy settings</li>
+            <li><code>.sqlfluff:</code> SQL style guide (indentation, capitalization)</li>
+            <li><code>.pre-commit-config.yaml:</code> Pre-commit hook definitions</li>
+            <li><code>.github/workflows/:</code> CI/CD pipeline definitions</li>
+        </ul>
+
+        <h3>Testing Strategy</h3>
+
+        <h4>Test Pyramid</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Test Type</th>
+                    <th>Scope</th>
+                    <th>Tools</th>
+                    <th>Coverage Target</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Unit Tests</strong></td>
+                    <td>Individual functions, dlt sources, Polars transforms</td>
+                    <td>pytest + pytest-mock</td>
+                    <td>80%+ code coverage</td>
+                </tr>
+                <tr>
+                    <td><strong>Integration Tests</strong></td>
+                    <td>End-to-end pipeline (dlt → dbt → quality checks)</td>
+                    <td>pytest + Docker Compose</td>
+                    <td>All critical paths</td>
+                </tr>
+                <tr>
+                    <td><strong>Data Quality Tests</strong></td>
+                    <td>Schema, values, relationships, business logic</td>
+                    <td>dbt tests + Great Expectations</td>
+                    <td>100% of Silver/Gold models</td>
+                </tr>
+                <tr>
+                    <td><strong>Performance Tests</strong></td>
+                    <td>Query speed, throughput, memory usage</td>
+                    <td>pytest-benchmark + custom scripts</td>
+                    <td>Regression tests on key queries</td>
+                </tr>
+                <tr>
+                    <td><strong>Contract Tests</strong></td>
+                    <td>API schemas, dlt data contracts</td>
+                    <td>Pydantic + dlt contracts</td>
+                    <td>All external integrations</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <div class="page-break"></div>
+
+    <!-- IMPLEMENTATION ROADMAP -->
+    <section>
+        <h2>8. Implementation Roadmap</h2>
+
+        <h3>Phased Delivery (12 Weeks)</h3>
+
+        <div class="phase-timeline">
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Phase 1: Foundation Setup (Weeks 1-2)</div>
+                    <div class="phase-duration">Duration: 2 weeks</div>
+                    <p><strong>Deliverables:</strong></p>
+                    <ul>
+                        <li>Docker Compose environment (Redpanda, MinIO, Dagster)</li>
+                        <li>DuckDB + Iceberg configuration</li>
+                        <li>GitHub repository with branch protection, CI/CD skeleton</li>
+                        <li>Pre-commit hooks (Ruff, Black, sqlfluff)</li>
+                        <li>Basic dlt pipeline (1 sample source)</li>
+                    </ul>
+                    <p><strong>Success Criteria:</strong> Team can run pipeline locally, ingest sample data to Bronze</p>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Phase 2: Batch Ingestion (Weeks 3-4)</div>
+                    <div class="phase-duration">Duration: 2 weeks</div>
+                    <p><strong>Deliverables:</strong></p>
+                    <ul>
+                        <li>dlt pipelines for 3-5 production sources</li>
+                        <li>Incremental loading strategy (timestamp cursors)</li>
+                        <li>Bronze layer Iceberg tables with partitioning</li>
+                        <li>dbt Bronze models (sources, freshness checks)</li>
+                        <li>Dagster assets for ingestion orchestration</li>
+                    </ul>
+                    <p><strong>Success Criteria:</strong> Daily batch ingestion runs automatically, Bronze data queryable in DuckDB</p>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Phase 3: Transformations (Weeks 5-6)</div>
+                    <div class="phase-duration">Duration: 2 weeks</div>
+                    <p><strong>Deliverables:</strong></p>
+                    <ul>
+                        <li>dbt Silver models (cleaning, deduplication, SCD Type 2)</li>
+                        <li>dbt Gold models (aggregations, business metrics)</li>
+                        <li>Polars pipelines for complex transformations</li>
+                        <li>dbt tests (unique, not_null, relationships, custom)</li>
+                        <li>Dagster asset dependencies (Bronze → Silver → Gold)</li>
+                    </ul>
+                    <p><strong>Success Criteria:</strong> End-to-end Bronze→Silver→Gold flow works, all tests pass</p>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Phase 4: Data Quality (Weeks 7-8)</div>
+                    <div class="phase-duration">Duration: 2 weeks</div>
+                    <p><strong>Deliverables:</strong></p>
+                    <ul>
+                        <li>Great Expectations checkpoints at Bronze→Silver</li>
+                        <li>Elementary anomaly detection on Silver/Gold</li>
+                        <li>Data quality dashboards (Grafana)</li>
+                        <li>Slack alerting for quality failures</li>
+                        <li>Quarantine table strategy for bad records</li>
+                    </ul>
+                    <p><strong>Success Criteria:</strong> Quality issues detected and alerted within 5 minutes, 0 bad data in Gold</p>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Phase 5: Streaming (Weeks 9-10)</div>
+                    <div class="phase-duration">Duration: 2 weeks</div>
+                    <p><strong>Deliverables:</strong></p>
+                    <ul>
+                        <li>Redpanda topics for real-time sources</li>
+                        <li>dlt Kafka consumer pipelines</li>
+                        <li>Dagster sensors for offset-based triggering</li>
+                        <li>dbt incremental models for streaming data</li>
+                        <li>Lateness handling (watermarks, late data windows)</li>
+                    </ul>
+                    <p><strong>Success Criteria:</strong> Real-time events processed within 1 minute, streaming + batch paths merged</p>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-content">
+                    <div class="phase-title">Phase 6: AWS Deployment (Weeks 11-12)</div>
+                    <div class="phase-duration">Duration: 2 weeks</div>
+                    <p><strong>Deliverables:</strong></p>
+                    <ul>
+                        <li>Terraform modules for all AWS services</li>
+                        <li>ECS Fargate deployment for Dagster</li>
+                        <li>S3 integration (replace MinIO)</li>
+                        <li>MSK integration (replace local Redpanda)</li>
+                        <li>Prometheus + Grafana (AMG/AMP)</li>
+                        <li>Production CI/CD pipeline</li>
+                    </ul>
+                    <p><strong>Success Criteria:</strong> Production workload running on AWS, passing all tests, monitored 24/7</p>
+                </div>
+            </div>
+        </div>
+
+        <h3>Success Metrics</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Target</th>
+                    <th>Measurement</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Pipeline Reliability</td>
+                    <td>99.5% success rate</td>
+                    <td>Dagster run success/failure count</td>
+                </tr>
+                <tr>
+                    <td>Data Freshness</td>
+                    <td>< 30 min for streaming, < 4 hr for batch</td>
+                    <td>dbt freshness checks</td>
+                </tr>
+                <tr>
+                    <td>Data Quality</td>
+                    <td>0 critical issues in Gold layer</td>
+                    <td>Great Expectations + dbt test failures</td>
+                </tr>
+                <tr>
+                    <td>Query Performance</td>
+                    <td>P95 < 5 seconds for Gold queries</td>
+                    <td>DuckDB query profiling</td>
+                </tr>
+                <tr>
+                    <td>Cost Efficiency</td>
+                    <td>< $500/month for 100GB data</td>
+                    <td>AWS Cost Explorer</td>
+                </tr>
+                <tr>
+                    <td>Developer Velocity</td>
+                    <td>New source onboarded in < 2 days</td>
+                    <td>Time tracking</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- RISK ANALYSIS -->
+    <section>
+        <h2>9. Risk Analysis & Mitigation</h2>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Risk</th>
+                    <th>Probability</th>
+                    <th>Impact</th>
+                    <th>Mitigation Strategy</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>DuckDB Scalability Limits</strong></td>
+                    <td>Medium</td>
+                    <td>High</td>
+                    <td>
+                        - Monitor query performance, set thresholds<br>
+                        - Have migration path to ClickHouse/Snowflake ready<br>
+                        - DuckDB handles 100GB-1TB well; migrate if exceeds
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Schema Breaking Changes</strong></td>
+                    <td>Medium</td>
+                    <td>Medium</td>
+                    <td>
+                        - dlt data contracts enforce expected schemas<br>
+                        - Iceberg schema evolution handles non-breaking changes<br>
+                        - Alerting + manual review for breaking changes
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Streaming Backpressure</strong></td>
+                    <td>Low</td>
+                    <td>High</td>
+                    <td>
+                        - Redpanda consumer lag monitoring<br>
+                        - Auto-scaling for dlt consumers (ECS)<br>
+                        - Circuit breaker: pause ingestion if downstream slow
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Data Quality Degradation</strong></td>
+                    <td>Medium</td>
+                    <td>High</td>
+                    <td>
+                        - Great Expectations checkpoints block bad data<br>
+                        - Elementary anomaly detection catches drift<br>
+                        - Weekly data quality review meetings
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Cost Overruns (AWS)</strong></td>
+                    <td>Low</td>
+                    <td>Medium</td>
+                    <td>
+                        - AWS Budgets with alerts<br>
+                        - S3 lifecycle policies (archive old data)<br>
+                        - Spot instances for non-critical workloads
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Skill Gap (Polars, Dagster)</strong></td>
+                    <td>Medium</td>
+                    <td>Low</td>
+                    <td>
+                        - Team training (1 week bootcamp)<br>
+                        - Pair programming on new tools<br>
+                        - Comprehensive documentation + runbooks
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <div class="page-break"></div>
+
+    <!-- APPENDICES -->
+    <section>
+        <h2>10. Appendices</h2>
+
+        <h3>Appendix A: Detailed Architecture Diagram (Mermaid)</h3>
+
+        <div class="mermaid-placeholder">
+            <strong>Full System Architecture</strong><br>
+            Complete Mermaid diagram showing:<br>
+            - All components and their interactions<br>
+            - Data flow paths (batch + streaming)<br>
+            - Observability integration points<br>
+            - Deployment topology (Docker vs AWS)<br>
+            <em>To be generated during implementation phase</em>
+        </div>
+
+        <h3>Appendix B: Technology Stack Versions</h3>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Technology</th>
+                    <th>Version</th>
+                    <th>License</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Python</td><td>3.11+</td><td>PSF</td></tr>
+                <tr><td>dlt</td><td>0.5.0+</td><td>Apache 2.0</td></tr>
+                <tr><td>DuckDB</td><td>0.10.0+</td><td>MIT</td></tr>
+                <tr><td>Polars</td><td>0.20.0+</td><td>MIT</td></tr>
+                <tr><td>dbt-core</td><td>1.7.0+</td><td>Apache 2.0</td></tr>
+                <tr><td>dbt-duckdb</td><td>1.7.0+</td><td>Apache 2.0</td></tr>
+                <tr><td>Dagster</td><td>1.6.0+</td><td>Apache 2.0</td></tr>
+                <tr><td>Great Expectations</td><td>0.18.0+</td><td>Apache 2.0</td></tr>
+                <tr><td>Elementary</td><td>0.15.0+</td><td>Apache 2.0</td></tr>
+                <tr><td>Redpanda</td><td>23.3+</td><td>BSL 1.1</td></tr>
+                <tr><td>Apache Iceberg</td><td>1.5.0+</td><td>Apache 2.0</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Appendix C: Estimated Costs</h3>
+
+        <h4>AWS Monthly Costs (100GB data, 1M records/day)</h4>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Usage</th>
+                    <th>Monthly Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>S3 (Standard)</td><td>100GB storage, 10GB egress</td><td>$3</td></tr>
+                <tr><td>S3 (Glacier for archives)</td><td>1TB</td><td>$4</td></tr>
+                <tr><td>ECS Fargate (Dagster)</td><td>2 vCPU, 4GB RAM, always-on</td><td>$50</td></tr>
+                <tr><td>ECS Fargate (dlt/dbt jobs)</td><td>4 vCPU, 8GB RAM, 4hr/day</td><td>$60</td></tr>
+                <tr><td>MSK (Kafka)</td><td>kafka.t3.small x 2</td><td>$150</td></tr>
+                <tr><td>RDS PostgreSQL (Dagster metadata)</td><td>db.t3.small</td><td>$30</td></tr>
+                <tr><td>Amazon Managed Prometheus</td><td>10M samples</td><td>$10</td></tr>
+                <tr><td>Amazon Managed Grafana</td><td>5 users</td><td>$50</td></tr>
+                <tr><td>CloudWatch Logs</td><td>10GB ingestion</td><td>$5</td></tr>
+                <tr><td><strong>Total</strong></td><td></td><td><strong>~$360/month</strong></td></tr>
+            </tbody>
+        </table>
+
+        <p><em>Note: Costs can be reduced 40-60% using Spot instances for batch jobs and Reserved Instances for always-on services.</em></p>
+
+        <h3>Appendix D: Glossary</h3>
+
+        <ul style="columns: 2; column-gap: 2rem;">
+            <li><strong>ACID:</strong> Atomicity, Consistency, Isolation, Durability</li>
+            <li><strong>CDC:</strong> Change Data Capture</li>
+            <li><strong>ELT:</strong> Extract, Load, Transform</li>
+            <li><strong>OLAP:</strong> Online Analytical Processing</li>
+            <li><strong>SCD:</strong> Slowly Changing Dimension</li>
+            <li><strong>SLA:</strong> Service Level Agreement</li>
+            <li><strong>TTL:</strong> Time To Live</li>
+            <li><strong>RBAC:</strong> Role-Based Access Control</li>
+            <li><strong>IAM:</strong> Identity and Access Management</li>
+            <li><strong>VPC:</strong> Virtual Private Cloud</li>
+        </ul>
+    </section>
+
+    <!-- FOOTER -->
+    <div class="footer">
+        <p><strong>Technical Proposal - Modern Data Engineering Pipeline</strong></p>
+        <p>Version 1.0 | March 2026 | Confidential</p>
+        <p style="margin-top: 1rem;">
+            For questions or clarifications, contact the Data Engineering team
+        </p>
+    </div>
+
+    <script>
+        window.onload = function() {
+            document.title = "DE_Pipeline_Technical_Proposal_v1.0";
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+# Binary files to exclude
+*.pdf
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.db
+*.duckdb
+*.db-wal
+*.db-shm
+*.sqlite3
+*.bin
+*.lock
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# uv
+.uv/
+uv.lock
+
+# Docker data volumes
+data/
+
+# Testing
+.pytest_cache/
