@@ -61,7 +61,7 @@ pytest tests/test_etl_sources.py -v
 ```
 
 ## Project Location
-`projects/ProjectPortfolio_3.0/prototype/`
+`projects/ProjectPortfolio_3.0/open_weather/`
 
 ## Agent Role (If Needed)
 

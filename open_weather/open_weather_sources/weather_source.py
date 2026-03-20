@@ -7,8 +7,13 @@ API Documentation: https://openweathermap.org/api
 Free Endpoints:
     - Current weather: /data/2.5/weather
     - 5-day forecast: /data/2.5/forecast
+    - Forward geocoding: /geo/1.0/direct
+    - Reverse geocoding: /geo/1.0/reverse
 
-Note: The paid One Call API 3.0 (/data/3.0/onecall) requires a subscription.
+Paid Endpoints (not implemented):
+    - One Call API 3.0: /data/3.0/onecall
+    - Air Pollution: /data/2.5/air_pollution
+    - UV Index: /data/2.5/uvi
 
 Configuration:
     Set OPENWEATHER_API_KEY environment variable or create a .env file.
@@ -21,6 +26,8 @@ from typing import Optional, Iterator, Dict, Any
 
 # Default base URL for OpenWeather Free API 2.5
 BASE_URL = "https://api.openweathermap.org/data/2.5"
+# Geocoding API base URL
+GEO_URL = "https://api.openweathermap.org/geo/1.0"
 
 
 def current_weather(
@@ -141,6 +148,105 @@ def weather_alerts(
     return _alerts()
 
 
+def geocoding(
+    api_key: str,
+    city_name: str,
+    limit: int = 5,
+    lang: str = "en",
+) -> dlt.source:
+    """
+    Forward geocoding - convert city name to coordinates.
+    
+    Args:
+        api_key: OpenWeather API key
+        city_name: City name (e.g., "London", "Paris, France")
+        limit: Maximum number of results to return
+        lang: Language code for response
+    
+    Returns:
+        A dlt source with geocoding data
+    """
+    import requests
+    
+    @dlt.resource(name="geocoding")
+    def _geocode() -> Iterator[Dict[str, Any]]:
+        url = f"{GEO_URL}/direct"
+        params = {
+            "q": city_name,
+            "appid": api_key,
+            "limit": limit,
+            "lang": lang,
+        }
+        
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Handle the response as a list
+        if isinstance(data, list):
+            for item in data:
+                item["_fetched_at"] = datetime.now(UTC).isoformat()
+                yield item
+        else:
+            yield {
+                "error": data,
+                "_fetched_at": datetime.now(UTC).isoformat()
+            }
+    
+    return _geocode()
+
+
+def reverse_geocoding(
+    api_key: str,
+    lat: float,
+    lon: float,
+    limit: int = 5,
+    lang: str = "en",
+) -> dlt.source:
+    """
+    Reverse geocoding - convert coordinates to location name.
+    
+    Args:
+        api_key: OpenWeather API key
+        lat: Latitude
+        lon: Longitude
+        limit: Maximum number of results to return
+        lang: Language code for response
+    
+    Returns:
+        A dlt source with reverse geocoding data
+    """
+    import requests
+    
+    @dlt.resource(name="reverse_geocoding")
+    def _reverse() -> Iterator[Dict[str, Any]]:
+        url = f"{GEO_URL}/reverse"
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "appid": api_key,
+            "limit": limit,
+            "lang": lang,
+        }
+        
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Handle the response as a list
+        if isinstance(data, list):
+            for item in data:
+                item["_fetched_at"] = datetime.now(UTC).isoformat()
+                yield item
+        else:
+            yield {
+                "error": data,
+                "_fetched_at": datetime.now(UTC).isoformat()
+            }
+    
+    return _reverse()
+
+
 def openweather_source(
     api_key: str,
     lat: float,
@@ -150,6 +256,9 @@ def openweather_source(
     include_current: bool = True,
     include_forecast: bool = True,
     include_alerts: bool = True,
+    city_name: str = None,
+    include_geocoding: bool = False,
+    include_reverse_geocoding: bool = False,
 ) -> dlt.source:
     """
     Create a comprehensive OpenWeather source using the free API.
@@ -163,6 +272,9 @@ def openweather_source(
         include_current: Include current weather
         include_forecast: Include 5-day forecast
         include_alerts: Include weather alerts (not available in free API)
+        city_name: City name for forward geocoding
+        include_geocoding: Include forward geocoding (requires city_name)
+        include_reverse_geocoding: Include reverse geocoding
     
     Returns:
         Combined dlt source with selected weather data
@@ -172,6 +284,49 @@ def openweather_source(
     # Create resources dynamically using closures - this works because
     # the decorated functions are defined inside this function
     resources = []
+    
+    if include_geocoding and city_name:
+        @dlt.resource(name="geocoding")
+        def _geocode():
+            url = f"{GEO_URL}/direct"
+            params = {
+                "q": city_name,
+                "appid": api_key,
+                "limit": 5,
+                "lang": lang,
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, list):
+                for item in data:
+                    item["_fetched_at"] = datetime.now(UTC).isoformat()
+                    yield item
+            else:
+                yield {"error": data, "_fetched_at": datetime.now(UTC).isoformat()}
+        resources.append(_geocode)
+    
+    if include_reverse_geocoding:
+        @dlt.resource(name="reverse_geocoding")
+        def _reverse():
+            url = f"{GEO_URL}/reverse"
+            params = {
+                "lat": lat,
+                "lon": lon,
+                "appid": api_key,
+                "limit": 5,
+                "lang": lang,
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, list):
+                for item in data:
+                    item["_fetched_at"] = datetime.now(UTC).isoformat()
+                    yield item
+            else:
+                yield {"error": data, "_fetched_at": datetime.now(UTC).isoformat()}
+        resources.append(_reverse)
     
     if include_current:
         @dlt.resource(name="current_weather")
@@ -263,13 +418,45 @@ if __name__ == "__main__":
         dataset_name="bronze",
     )
     
-    # Run the source - current weather only
+    # Example 1: Run current weather only
     source = current_weather(
         api_key=API_KEY,
         lat=LAT,
         lon=LON,
         units="metric"
     )
-    
     load_info = pipeline.run(source)
-    print(f"Load info: {load_info}")
+    print(f"Current weather: {load_info}")
+    
+    # Example 2: Run geocoding (forward)
+    # source = geocoding(
+    #     api_key=API_KEY,
+    #     city_name="London",
+    #     limit=5
+    # )
+    # load_info = pipeline.run(source)
+    # print(f"Geocoding: {load_info}")
+    
+    # Example 3: Run reverse geocoding
+    # source = reverse_geocoding(
+    #     api_key=API_KEY,
+    #     lat=LAT,
+    #     lon=LON,
+    #     limit=5
+    # )
+    # load_info = pipeline.run(source)
+    # print(f"Reverse geocoding: {load_info}")
+    
+    # Example 4: Run combined source with geocoding
+    # source = openweather_source(
+    #     api_key=API_KEY,
+    #     lat=LAT,
+    #     lon=LON,
+    #     city_name="London",
+    #     include_current=True,
+    #     include_forecast=True,
+    #     include_geocoding=True,
+    #     include_reverse_geocoding=True
+    # )
+    # load_info = pipeline.run(source)
+    # print(f"Combined source: {load_info}")

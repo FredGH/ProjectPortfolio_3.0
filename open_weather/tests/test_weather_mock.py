@@ -256,6 +256,126 @@ class TestBaseURL:
         assert BASE_URL == "https://api.openweathermap.org/data/2.5"
 
 
+class TestGeocodingSourceCreation:
+    """Test geocoding source creation without making actual API calls."""
+    
+    def test_geocoding_source_creation(self):
+        """Test creating geocoding source returns a DltResource."""
+        from open_weather_sources.weather_source import geocoding
+        
+        source = geocoding(
+            api_key=TEST_API_KEY,
+            city_name="London",
+            limit=5,
+            lang="en"
+        )
+        
+        assert source is not None
+        assert hasattr(source, 'name')
+    
+    def test_geocoding_source_name(self):
+        """Test geocoding source has correct name."""
+        from open_weather_sources.weather_source import geocoding
+        
+        source = geocoding(TEST_API_KEY, "London")
+        assert source.name == "geocoding"
+    
+    def test_reverse_geocoding_source_creation(self):
+        """Test creating reverse geocoding source returns a DltResource."""
+        from open_weather_sources.weather_source import reverse_geocoding
+        
+        source = reverse_geocoding(
+            api_key=TEST_API_KEY,
+            lat=TEST_LAT,
+            lon=TEST_LON,
+            limit=5,
+            lang="en"
+        )
+        
+        assert source is not None
+        assert hasattr(source, 'name')
+    
+    def test_reverse_geocoding_source_name(self):
+        """Test reverse geocoding source has correct name."""
+        from open_weather_sources.weather_source import reverse_geocoding
+        
+        source = reverse_geocoding(TEST_API_KEY, TEST_LAT, TEST_LON)
+        assert source.name == "reverse_geocoding"
+
+
+class TestGeocodingParameters:
+    """Test parameter handling in geocoding sources."""
+    
+    def test_geocoding_default_limit(self):
+        """Test geocoding default limit parameter."""
+        from open_weather_sources.weather_source import geocoding
+        
+        source = geocoding(
+            api_key=TEST_API_KEY,
+            city_name="London"
+        )
+        assert source is not None
+    
+    def test_geocoding_custom_limit(self):
+        """Test geocoding with custom limit."""
+        from open_weather_sources.weather_source import geocoding
+        
+        source = geocoding(
+            api_key=TEST_API_KEY,
+            city_name="London",
+            limit=10
+        )
+        assert source is not None
+    
+    def test_geocoding_different_cities(self):
+        """Test geocoding with different city names."""
+        from open_weather_sources.weather_source import geocoding
+        
+        # Paris
+        source = geocoding(TEST_API_KEY, "Paris")
+        assert source is not None
+        
+        # New York
+        source = geocoding(TEST_API_KEY, "New York")
+        assert source is not None
+        
+        # City with country
+        source = geocoding(TEST_API_KEY, "Tokyo, Japan")
+        assert source is not None
+    
+    def test_reverse_geocoding_different_coordinates(self):
+        """Test reverse geocoding with different coordinates."""
+        from open_weather_sources.weather_source import reverse_geocoding
+        
+        # New York
+        source = reverse_geocoding(TEST_API_KEY, 40.7128, -74.0060)
+        assert source is not None
+        
+        # Tokyo
+        source = reverse_geocoding(TEST_API_KEY, 35.6762, 139.6503)
+        assert source is not None
+    
+    def test_geocoding_language_parameter(self):
+        """Test geocoding with different language codes."""
+        from open_weather_sources.weather_source import geocoding
+        
+        source = geocoding(TEST_API_KEY, "London", lang="fr")
+        assert source is not None
+        
+        source = geocoding(TEST_API_KEY, "London", lang="es")
+        assert source is not None
+
+
+class TestGeocodingBaseURL:
+    """Test geocoding base URL configuration."""
+    
+    def test_geo_url_constant(self):
+        """Test that GEO_URL is defined correctly."""
+        from open_weather_sources.weather_source import GEO_URL
+        
+        assert GEO_URL == "https://api.openweathermap.org/geo/1.0"
+
+
 class TestDLTResourceAttributes:
     """Test DltResource specific attributes."""
     

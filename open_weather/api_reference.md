@@ -14,7 +14,78 @@ This document describes the ETL source APIs for the data engineering pipeline.
 
 ## OpenWeather Source
 
-Extract weather data from OpenWeatherMap's One Call API 3.0.
+Extract weather data from OpenWeatherMap's Free API 2.5.
+
+> **Note:** The free API 2.5 endpoints are used. The paid One Call API 3.0 requires a subscription.
+
+### OpenWeather 2.5 API Endpoints
+
+| Endpoint | Path | Description | API Version |
+|----------|------|-------------|-------------|
+| Current Weather | `/data/2.5/weather` | Current weather data for a location | 2.5 (Free) |
+| 5-Day Forecast | `/data/2.5/forecast` | 5-day/3-hour forecast | 2.5 (Free) |
+| Weather Map Tiles | `/data/2.5/tile/{layer}/{z}/{x}/{y}` | Weather map tiles (paid) | 2.5 |
+| Air Pollution | `/data/2.5/air_pollution` | Air pollution data (paid) | 2.5 |
+| UV Index | `/data/2.5/uvi` | UV index (paid) | 2.5 |
+| Geocoding | `/geo/1.0/direct` | Forward geocoding | 1.0 (Free) |
+| Reverse Geocoding | `/geo/1.0/reverse` | Reverse geocoding | 1.0 (Free) |
+
+### Current Weather Endpoint (`/data/2.5/weather`)
+
+**Base URL:** `https://api.openweathermap.org/data/2.5/weather`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `lat` | float | Yes | Latitude |
+| `lon` | float | Yes | Longitude |
+| `appid` | string | Yes | API key |
+| `units` | string | No | Units: `standard`, `metric`, `imperial` |
+| `lang` | string | No | Language code (e.g., `en`, `fr`, `es`) |
+
+**Example Request:**
+```
+https://api.openweathermap.org/data/2.5/weather?lat=51.5074&lon=-0.1278&appid=YOUR_API_KEY&units=metric
+```
+
+### 5-Day Forecast Endpoint (`/data/2.5/forecast`)
+
+**Base URL:** `https://api.openweathermap.org/data/2.5/forecast`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `lat` | float | Yes | Latitude |
+| `lon` | float | Yes | Longitude |
+| `appid` | string | Yes | API key |
+| `units` | string | No | Units: `standard`, `metric`, `imperial` |
+| `lang` | string | No | Language code |
+| `cnt` | integer | No | Number of timestamps (max 40, default 40) |
+
+**Example Request:**
+```
+https://api.openweathermap.org/data/2.5/forecast?lat=51.5074&lon=-0.1278&appid=YOUR_API_KEY&units=metric
+```
+
+### Response Fields
+
+**Current Weather Response:**
+- `coord` - Coordinates (lon, lat)
+- `weather` - Weather condition array (id, main, description, icon)
+- `main` - Main weather data (temp, feels_like, temp_min, temp_max, pressure, humidity, sea_level, grnd_level)
+- `visibility` - Visibility in meters
+- `wind` - Wind data (speed, deg, gust)
+- `clouds` - Cloudiness (all)
+- `rain` - Rain data (1h, 3h)
+- `snow` - Snow data (1h, 3h)
+- `dt` - Time of data calculation (Unix timestamp)
+- `sys` - Sys data (type, id, country, sunrise, sunset)
+- `timezone` - Shift in seconds from UTC
+- `id` - City ID
+- `name` - City name
+- `cod` - Internal parameter
 
 ### Function Signature
 
