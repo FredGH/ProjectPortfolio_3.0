@@ -264,7 +264,8 @@ The following extensions are recommended for working with this project:
 | Extension | Purpose |
 |-----------|---------|
 | anthropic.claude-code | Claude AI integration |
-| chuckjonas.duckdb | DuckDB database client |
+| chuckjonas.duckdb | DuckDB database client (alternative: dbcode.dbcode) |
+| dbcode.dbcode | DBcode - Database management and query tool |
 | kilocode.kilo-code | Kilo Code AI assistant |
 | ms-python.python | Python language support |
 | ms-python.debugpy | Python debugger |
@@ -278,12 +279,30 @@ To install these extensions in Cursor or VS Code:
 
 ```bash
 # Using cursor CLI
-cursor --install-extension chuckjenas.duckdb
+cursor --install-extension dbcode.dbcode
+cursor --install-extension chuckjonas.duckdb
 cursor --install-extension ms-python.python
+cursor --install-extension anthropic.claude-code
+cursor --install-extension kilocode.kilo-code
+cursor --install-extension ms-toolsai.jupyter
+cursor --install-extension anysphere.cursorpyright
 
 # Or manually:
 # 1. Open Cursor/VS Code
 # 2. Press Cmd+Shift+X
 # 3. Search for the extension name
 # 4. Click Install
+```
+
+### DuckDB Connection
+
+To connect to the DuckDB database using the extension:
+
+1. **Database file:** `prototype/openweather_ingestion.duckdb`
+2. **Connection name:** `weather_db`
+3. **Schema:** Data is stored in the `bronze` schema
+
+Example query:
+```sql
+SELECT * FROM bronze.current_weather;
 ```
