@@ -410,15 +410,30 @@ if __name__ == "__main__":
     API_KEY = get_api_key("OPENWEATHER_API_KEY", required=True)
     LAT = 51.5074  # London latitude
     LON = -0.1278  # London longitude
+    CITY_NAME = "London"
     
-    # Configure the pipeline
+    # Close any existing connections and use a fresh database
+    db_path = "/Users/fredericmarechal/Documents/GitHub/ai-engineering-courses/ai-agentic-eng-course/projects/agents/projects/ProjectPortfolio_3.0/open_weather/openweather_ingestion.duckdb"
+    # Remove old database if exists to avoid lock issues
+    import os
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    print(f"Using database: {db_path}")
+    
+    # Configure the pipeline with explicit database path
     pipeline = dlt.pipeline(
         pipeline_name="openweather_ingestion",
-        destination="duckdb",
+        destination=dlt.destinations.duckdb(db_path),
         dataset_name="bronze",
     )
     
-    # Example 1: Run current weather only
+    # Run all sources
+    print("="*50)
+    print("Running OpenWeather Sources to Bronze Layer")
+    print("="*50)
+    
+    # 1. Current Weather
+    print("\n1. Extracting current weather...")
     source = current_weather(
         api_key=API_KEY,
         lat=LAT,
@@ -426,37 +441,50 @@ if __name__ == "__main__":
         units="metric"
     )
     load_info = pipeline.run(source)
-    print(f"Current weather: {load_info}")
+    print(f"   Current weather: {load_info}")
     
-    # Example 2: Run geocoding (forward)
-    # source = geocoding(
-    #     api_key=API_KEY,
-    #     city_name="London",
-    #     limit=5
-    # )
-    # load_info = pipeline.run(source)
-    # print(f"Geocoding: {load_info}")
+    # 2. Weather Forecast
+    print("\n2. Extracting weather forecast...")
+    source = weather_forecast(
+        api_key=API_KEY,
+        lat=LAT,
+        lon=LON,
+        units="metric"
+    )
+    load_info = pipeline.run(source)
+    print(f"   Weather forecast: {load_info}")
     
-    # Example 3: Run reverse geocoding
-    # source = reverse_geocoding(
-    #     api_key=API_KEY,
-    #     lat=LAT,
-    #     lon=LON,
-    #     limit=5
-    # )
-    # load_info = pipeline.run(source)
-    # print(f"Reverse geocoding: {load_info}")
+    # 3. Weather Alerts (placeholder - requires paid API)
+    print("\n3. Extracting weather alerts (placeholder)...")
+    source = weather_alerts(
+        api_key=API_KEY,
+        lat=LAT,
+        lon=LON
+    )
+    load_info = pipeline.run(source)
+    print(f"   Weather alerts: {load_info}")
     
-    # Example 4: Run combined source with geocoding
-    # source = openweather_source(
-    #     api_key=API_KEY,
-    #     lat=LAT,
-    #     lon=LON,
-    #     city_name="London",
-    #     include_current=True,
-    #     include_forecast=True,
-    #     include_geocoding=True,
-    #     include_reverse_geocoding=True
-    # )
-    # load_info = pipeline.run(source)
-    # print(f"Combined source: {load_info}")
+    # 4. Forward Geocoding
+    print("\n4. Extracting geocoding (forward)...")
+    source = geocoding(
+        api_key=API_KEY,
+        city_name=CITY_NAME,
+        limit=5
+    )
+    load_info = pipeline.run(source)
+    print(f"   Geocoding: {load_info}")
+    
+    # 5. Reverse Geocoding
+    print("\n5. Extracting reverse geocoding...")
+    source = reverse_geocoding(
+        api_key=API_KEY,
+        lat=LAT,
+        lon=LON,
+        limit=5
+    )
+    load_info = pipeline.run(source)
+    print(f"   Reverse geocoding: {load_info}")
+    
+    print("\n" + "="*50)
+    print("All sources extracted successfully!")
+    print("="*50)
