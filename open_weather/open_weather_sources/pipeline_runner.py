@@ -28,6 +28,7 @@ from open_weather_sources.bronze_loader import (
     load_all_to_bronze,
     get_bronze_table_stats,
     get_duckdb_path,
+    LoadMode,
 )
 from open_weather_sources.config import get_api_key, validate_config
 
@@ -41,13 +42,14 @@ def run_pipeline(
     lang: str = "en",
     skip_extraction: bool = False,
     skip_bronze_load: bool = False,
+    load_mode: str = LoadMode.INCREMENTAL,
 ) -> Dict[str, Any]:
     """
     Run the complete OpenWeather ETL pipeline.
     
     Steps:
     1. Extract data from OpenWeather API to parquet files (data_zone)
-    2. Load parquet files to bronze layer (DuckDB) incrementally
+    2. Load parquet files to bronze layer (DuckDB) with specified mode
     
     Args:
         api_key: OpenWeather API key
@@ -58,6 +60,7 @@ def run_pipeline(
         lang: Language code
         skip_extraction: Skip the extraction step
         skip_bronze_load: Skip the bronze layer load step
+        load_mode: LoadMode.FULL_RELOAD or LoadMode.INCREMENTAL
     
     Returns:
         Dictionary with pipeline results
@@ -74,7 +77,7 @@ def run_pipeline(
         print("STEP 1: Extraction (API → Parquet in data_zone)")
         print("="*50)
         
-        extracted_files = extract_all_sources(
+        extracted_files, load_folder = extract_all_sources(
             api_key=api_key,
             lat=lat,
             lon=lon,
@@ -86,16 +89,17 @@ def run_pipeline(
         results["extraction"] = {
             "status": "success",
             "files_created": len(extracted_files),
+            "load_folder": str(load_folder),
             "files": [str(f) for f in extracted_files.values()],
         }
     
     # Step 2: Bronze Layer Load
     if not skip_bronze_load:
         print("\n" + "="*50)
-        print("STEP 2: Bronze Load (Parquet → DuckDB)")
+        print(f"STEP 2: Bronze Load ({load_mode} mode)")
         print("="*50)
         
-        load_results = load_all_to_bronze()
+        load_results = load_all_to_bronze(load_mode=load_mode)
         
         # Get bronze statistics
         bronze_stats = get_bronze_table_stats()
@@ -186,6 +190,20 @@ if __name__ == "__main__":
     LON = -0.1278  # London
     CITY_NAME = "London"
     
+    # Default to incremental mode
+    load_mode = LoadMode.INCREMENTAL
+    
+    # Check for command line arguments
+    import sys
+    if len(sys.argv) > 1:
+        if sys.argv[1] == "full":
+            load_mode = LoadMode.FULL_RELOAD
+            print("MODE: Full Reload (truncate + reload all folders)")
+        else:
+            print(f"Unknown argument: {sys.argv[1]}")
+            print("Usage: python pipeline_runner.py [full]")
+            exit(1)
+    
     print("="*60)
     print("OpenWeather ETL Pipeline")
     print("="*60)
@@ -201,6 +219,7 @@ if __name__ == "__main__":
         lon=LON,
         city_name=CITY_NAME,
         units="metric",
+        load_mode=load_mode,
     )
     
     # Print summary

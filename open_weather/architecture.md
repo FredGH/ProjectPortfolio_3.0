@@ -118,19 +118,41 @@ The pipeline follows a **two-stage architecture**:
 
 ### 1. Extraction Layer (data_zone)
 ```
-OpenWeather API → extraction.py → Parquet files in data_zone/
+OpenWeather API → extraction.py → Parquet files in data_zone/{timestamp}/
 
-Output files:
-  - current_weather_{timestamp}.parquet
-  - weather_forecast_{timestamp}.parquet
-  - geocoding_{timestamp}.parquet
-  - reverse_geocoding_{timestamp}.parquet
+Output structure:
+  data_zone/
+  └── 20260326_082633/           # Timestamp folder created per extraction
+      ├── current_weather.parquet
+      ├── weather_forecast.parquet
+      ├── geocoding.parquet
+      └── reverse_geocoding.parquet
 ```
 
-### 2. Bronze Layer Loading (Incremental)
+### 2. Bronze Layer Loading
+
+The bronze layer supports two load modes:
+
+#### Incremental Mode (Default)
+Loads only the most recent data zone folder - ideal for regular updates:
+```bash
+python pipeline_runner.py  # Default: incremental mode
+```
+
+#### Full Reload Mode
+Truncates all tables and reloads ALL historical folders - useful for backfills or recovery:
+```bash
+python pipeline_runner.py full  # Full reload mode
+```
+
 ```python
-# Load from parquet to bronze using composite keys
-bronze_loader.py → DuckDB bronze.duckdb
+from open_weather_sources.pipeline_runner import run_pipeline, LoadMode
+
+# Incremental load (default) - loads latest folder only
+results = run_pipeline(api_key=..., lat=..., lon=..., load_mode=LoadMode.INCREMENTAL)
+
+# Full reload - truncates tables and loads all folders
+results = run_pipeline(api_key=..., lat=..., lon=..., load_mode=LoadMode.FULL_RELOAD)
 ```
 
 ### 3. Composite Keys for Incremental Loading
@@ -162,6 +184,37 @@ results = run_pipeline(
 )
 ```
 
+Or run with full reload mode:
+```python
+from open_weather_sources.pipeline_runner import run_pipeline, LoadMode
+
+results = run_pipeline(
+    api_key="your_api_key",
+    lat=51.5074,
+    lon=-0.1278,
+    city_name="London",
+    load_mode=LoadMode.FULL_RELOAD
+)
+```
+
+### 5. Load Metadata Tracking
+
+The bronze layer uses a `_load_metadata` table to track which files have been loaded:
+
+```sql
+CREATE TABLE _load_metadata (
+    folder_name VARCHAR NOT NULL,  -- e.g., '20260326_083459'
+    filename VARCHAR NOT NULL,     -- e.g., 'current_weather'
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (folder_name, filename)
+);
+```
+
+This ensures:
+- **Incremental mode**: Won't reload files already loaded from the same folder
+- **Idempotency**: Running the pipeline multiple times produces the same result
+- **Debugging**: Can query `_load_metadata` to see what was loaded and when
+
 Or run steps separately:
 ```python
 # Step 1: Extract to parquet
@@ -192,7 +245,7 @@ open_weather/
 │   ├── config.py          # Configuration and API key management
 │   ├── weather_source.py  # Original dlt source definitions
 │   ├── extraction.py      # Extraction to parquet in data_zone
-│   ├── bronze_loader.py   # Incremental load to bronze layer
+│   ├── bronze_loader.py   # Incremental/full-reload to bronze layer
 │   └── pipeline_runner.py # Unified pipeline orchestration
 ├── tests/
 │   ├── test_extraction.py    # Tests for extraction module
@@ -200,8 +253,9 @@ open_weather/
 │   ├── test_weather_api.py    # Integration tests for API
 │   └── test_weather_mock.py  # Mocked tests
 ├── data/
-│   ├── data_zone/         # Intermediate parquet files (NEW!)
-│   │   └── *.parquet
+│   ├── data_zone/         # Intermediate parquet files (timestamped folders)
+│   │   └── YYYYMMDD_HHMMSS/   # One folder per extraction run
+│   │       ├── *.parquet
 │   ├── bronze/            # Bronze layer DuckDB database
 │   │   └── bronze.duckdb
 │   ├── gold/              # Gold layer (aggregations)
@@ -216,20 +270,26 @@ open_weather/
 
 ### extraction.py
 - Extracts data from OpenWeather API
-- Saves to parquet files in `data_zone/` folder
+- Saves to parquet files in `data_zone/{timestamp}/` folder
 - One parquet file per data source
-- Handles nested JSON flattening
+- Creates timestamped folder for each extraction run
 
 ### bronze_loader.py
 - Loads parquet files from `data_zone/` to bronze
-- Uses composite keys for deduplication
-- Supports incremental loads
+- Supports two load modes:
+  - **INCREMENTAL** (default): Loads only the latest folder, tracks loaded files with `(folder_name, filename)` composite key in `_load_metadata`
+  - **FULL_RELOAD**: Truncates all tables and reloads ALL folders
+- Uses composite keys for deduplication within tables
 - Stores in DuckDB (`bronze.duckdb`)
+- `_load_metadata` table tracks each loaded file using composite key `(folder_name, filename)` to prevent reloading the same file from the same folder
 
 ### pipeline_runner.py
 - Orchestrates the full pipeline
 - Can run extraction and load separately
 - Provides summary statistics
+- Supports command line arguments:
+  - `python pipeline_runner.py` - Incremental mode (default)
+  - `python pipeline_runner.py full` - Full reload mode
 
 ## Best Practices
 

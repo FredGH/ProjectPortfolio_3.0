@@ -1,4 +1,58 @@
-# Data Engineering Pipeline - Prototype Release Notes
+# Data Engineering Pipeline - OpenWeather ETL Release Notes
+
+## Version 0.2.0 (March 2026)
+
+### Overview
+This release adds timestamped data zone folders and load modes for the OpenWeather ETL pipeline.
+
+---
+
+## New Features
+
+### 1. Timestamped Data Zone Folders
+Each extraction run now creates a timestamped folder in `data_zone/`:
+```
+data_zone/
+└── 20260326_082633/           # Timestamp folder (YYYYMMDD_HHMMSS)
+    ├── current_weather.parquet
+    ├── weather_forecast.parquet
+    ├── geocoding.parquet
+    └── reverse_geocoding.parquet
+```
+
+### 2. Load Modes
+The bronze loader now supports two load modes:
+
+- **INCREMENTAL (Default)**: Loads only the most recent data zone folder - ideal for regular updates
+- **FULL_RELOAD**: Truncates all tables and reloads data from ALL historical folders - useful for backfills
+
+### 3. Load Metadata Tracking
+The `_load_metadata` table now tracks each loaded file using a composite key `(folder_name, filename)`:
+
+```sql
+CREATE TABLE _load_metadata (
+    folder_name VARCHAR NOT NULL,  -- e.g., '20260326_083459'
+    filename VARCHAR NOT NULL,     -- e.g., 'current_weather'
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (folder_name, filename)
+);
+```
+
+This ensures:
+- Incremental mode won't reload files already loaded from the same folder
+- Each extraction run is tracked separately
+- Idempotent pipeline runs
+
+### 4. Command Line Interface
+```bash
+# Default: Incremental mode
+python open_weather_sources/pipeline_runner.py
+
+# Full reload mode
+python open_weather_sources/pipeline_runner.py full
+```
+
+---
 
 ## Version 0.1.0 (March 2026)
 

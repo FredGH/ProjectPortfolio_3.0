@@ -557,7 +557,8 @@
             <div class="layer">
                 <h5>1. Data Zone (Intermediate Layer)</h5>
                 <p><strong>Principle:</strong> Raw API/Source data is first saved as parquet files in an intermediate "data_zone" before loading to bronze.</p>
-                <p><strong>Implementation:</strong> Extraction module fetches data and saves to data_zone/{source}_{timestamp}.parquet. This provides a backup of raw data and enables reprocessing.</p>
+                <p><strong>Implementation:</strong> Extraction module fetches data and saves to data_zone/{YYYYMMDD_HHMMSS}/{source}.parquet (timestamped folders). This provides a backup of raw data and enables reprocessing.</p>
+                <p><strong>Load Modes:</strong> Bronze loader supports two modes - Incremental (loads latest folder only) and Full Reload (truncates tables and reloads all folders).</p>
             </div>
 
             <div class="layer">
@@ -570,6 +571,8 @@
                 <h5>3. Incremental Loading with Composite Keys</h5>
                 <p><strong>Principle:</strong> Use composite keys to uniquely identify records and enable deduplication.</p>
                 <p><strong>Implementation:</strong> Each data source defines composite keys (e.g., lat+lon+_fetched_at for weather data). Bronze loader checks existing keys before inserting new records.</p>
+                <p><strong>Load Modes:</strong> Two modes supported - INCREMENTAL (default, loads latest data_zone folder only) and FULL_RELOAD (truncates tables and reloads all historical folders).</p>
+                <p><strong>Metadata Tracking:</strong> The `_load_metadata` table uses composite key (folder_name, filename) to track loaded files, ensuring incremental runs don't reload the same file from the same folder.</p>
             </div>
 
             <div class="layer">

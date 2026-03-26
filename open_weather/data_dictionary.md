@@ -436,3 +436,94 @@ The bronze loader uses composite keys to enable incremental loads with deduplica
    - No duplicate data in bronze layer
    - Idempotent pipeline runs
    - Ability to replay/reprocess from data_zone parquet files
+
+## Load Modes
+
+The bronze layer supports two load modes controlled by the `LoadMode` enum:
+
+### LoadMode.INCREMENTAL (Default)
+
+This mode loads only the most recent data zone folder (the latest timestamp directory). It's designed for regular incremental updates where you only need to process new data since the last run.
+
+**Behavior:**
+- Finds the latest timestamp folder in `data_zone/`
+- Checks `_load_metadata` table to skip files already loaded from this specific folder
+- Loads only new/changed records using composite keys
+
+**Tracking:** The `_load_metadata` table tracks each loaded file with a composite key of `(folder_name, filename)`, so the same file from the same folder won't be loaded twice.
+
+**Use cases:**
+- Regular scheduled runs (hourly/daily updates)
+- Typical production workloads
+
+### LoadMode.FULL_RELOAD
+
+This mode truncates all tables and reloads data from ALL historical folders in data_zone. Useful for backfills, recovery scenarios, or when you need to rebuild the bronze layer from scratch.
+
+**Behavior:**
+- Truncates all existing tables in the bronze layer
+- Loads parquet files from ALL timestamp folders in `data_zone/`
+- Ignores `_load_metadata` - loads everything fresh
+
+**Use cases:**
+- Initial data load or backfills
+- Data recovery or schema changes
+- Testing/debugging with fresh state
+
+### How the Load Tracking Works
+
+The `_load_metadata` table uses a composite key `(folder_name, filename)`:
+
+```sql
+CREATE TABLE _load_metadata (
+    folder_name VARCHAR NOT NULL,  -- e.g., '20260326_083459'
+    filename VARCHAR NOT NULL,     -- e.g., 'current_weather'
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (folder_name, filename)
+);
+```
+
+**Incremental Mode Flow:**
+1. Get list of folders → selects latest folder only
+2. Get list of parquet files in that folder
+3. Check `_load_metadata` for `folder_name/filename` combination
+4. Skip files already loaded from this specific folder
+5. Load new files, mark as loaded
+
+**Full Reload Mode Flow:**
+1. Truncate all data tables (but keep `_load_metadata`)
+2. Get list of ALL folders
+3. Load ALL parquet files from ALL folders
+4. No check against `_load_metadata` - loads everything
+
+### How to Use
+
+#### Command Line
+```bash
+# Default: incremental mode
+python pipeline_runner.py
+
+# Full reload mode
+python pipeline_runner.py full
+```
+
+#### Python API
+```python
+from open_weather_sources.pipeline_runner import run_pipeline, LoadMode
+
+# Incremental (default)
+results = run_pipeline(
+    api_key="your_key",
+    lat=51.5,
+    lon=-0.12,
+    load_mode=LoadMode.INCREMENTAL
+)
+
+# Full reload
+results = run_pipeline(
+    api_key="your_key",
+    lat=51.5,
+    lon=-0.12,
+    load_mode=LoadMode.FULL_RELOAD
+)
+```

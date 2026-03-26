@@ -40,6 +40,76 @@ COMPOSITE_KEYS = {
 }
 
 
+# Load modes
+class LoadMode:
+    FULL_RELOAD = "full_reload"  # Truncate tables, reload all folders
+    INCREMENTAL = "incremental"  # Load latest folder only, no truncation
+
+
+def list_load_folders() -> List[Path]:
+    """
+    List all load folders in data_zone (sorted by name, oldest first).
+    
+    Returns:
+        List of folder paths
+    """
+    if not DATA_ZONE_PATH.exists():
+        return []
+    
+    folders = sorted([d for d in DATA_ZONE_PATH.iterdir() if d.is_dir()])
+    return folders
+
+
+def get_latest_load_folder() -> Optional[Path]:
+    """
+    Get the most recent load folder.
+    
+    Returns:
+        Path to latest folder, or None if no folders exist
+    """
+    folders = list_load_folders()
+    return folders[-1] if folders else None
+
+
+def get_all_parquet_files_in_folder(folder: Path) -> List[Path]:
+    """
+    Get all parquet files in a folder.
+    
+    Args:
+        folder: Path to load folder
+    
+    Returns:
+        List of parquet file paths
+    """
+    return sorted(folder.glob("*.parquet"))
+
+
+def truncate_all_tables(db_path: Path) -> None:
+    """
+    Truncate all data tables in the bronze layer.
+    Does not truncate _load_metadata.
+    
+    Args:
+        db_path: Path to DuckDB database
+    """
+    if not db_path.exists():
+        return
+    
+    conn = duckdb.connect(str(db_path))
+    try:
+        # Get all tables except metadata
+        tables = conn.execute("""
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = 'main' AND table_name != '_load_metadata'
+        """).fetchall()
+        
+        for (table_name,) in tables:
+            conn.execute(f"TRUNCATE TABLE {table_name}")
+            print(f"  Truncated: {table_name}")
+    finally:
+        conn.close()
+
+
 def get_bronze_path() -> Path:
     """Get the bronze layer path."""
     BRONZE_PATH.mkdir(parents=True, exist_ok=True)
@@ -222,6 +292,76 @@ def load_parquet_to_bronze(
         raise Exception(f"Error loading {table_name}: {e}")
 
 
+def load_parquet_to_bronze_for_full_reload(
+    parquet_filepath: Path,
+    table_name: str,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Load a parquet file to the bronze layer for full reload mode.
+    
+    This is simpler than incremental - just insert all records since
+    tables are already truncated.
+    
+    Args:
+        parquet_filepath: Path to the parquet file
+        table_name: Name of the table to load into
+        db_path: Optional path to DuckDB database. Defaults to bronze.duckdb
+    
+    Returns:
+        Dictionary with load statistics
+    """
+    if db_path is None:
+        db_path = get_duckdb_path()
+    
+    # Read parquet file
+    df = read_parquet_file(parquet_filepath)
+    
+    if df.empty:
+        return {"status": "skipped", "reason": "empty dataframe", "rows": 0}
+    
+    # Add composite key
+    df = create_composite_key(df, table_name)
+    
+    # Connect to DuckDB
+    conn = duckdb.connect(str(db_path))
+    
+    try:
+        # Check if table exists
+        table_exists = conn.execute(f"""
+            SELECT COUNT(*) FROM information_schema.tables 
+            WHERE table_name = '{table_name}'
+        """).fetchone()[0] > 0
+        
+        if table_exists:
+            # Just append all records (table was truncated)
+            conn.execute(f"""
+                INSERT INTO {table_name} 
+                SELECT * FROM df
+            """)
+            conn.close()
+            return {
+                "status": "loaded",
+                "rows": len(df),
+                "duplicates": 0
+            }
+        else:
+            # Create new table
+            conn.execute(f"""
+                CREATE TABLE {table_name} AS SELECT * FROM df
+            """)
+            conn.close()
+            return {
+                "status": "created",
+                "rows": len(df),
+                "duplicates": 0
+            }
+    
+    except Exception as e:
+        conn.close()
+        raise Exception(f"Error loading {table_name}: {e}")
+
+
 def get_source_from_filename(filename: str) -> Optional[str]:
     """
     Extract source type from parquet filename.
@@ -251,27 +391,22 @@ def get_loaded_files(db_path: Path) -> set:
         db_path: Path to DuckDB database
     
     Returns:
-        Set of loaded filename stems
+        Set of loaded filename stems (format: folder/filename)
     """
     if not db_path.exists():
         return set()
     
     conn = duckdb.connect(str(db_path))
     try:
-        # Check if _load_metadata table exists
+        # Check if _load_metadata table exists using DuckDB syntax
         tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='_load_metadata'"
+            "SELECT table_name FROM information_schema.tables WHERE table_name = '_load_metadata'"
         ).fetchall()
         
-        if not tables:
-            # Try DuckDB native way
-            tables = conn.execute(
-                "SELECT table_name FROM information_schema.tables WHERE table_name = '_load_metadata'"
-            ).fetchall()
-        
         if tables:
-            loaded = conn.execute("SELECT filename FROM _load_metadata").fetchall()
-            return {r[0] for r in loaded}
+            loaded = conn.execute("SELECT folder_name, filename FROM _load_metadata").fetchall()
+            # Return as "folder/filename" format for uniqueness
+            return {f"{r[0]}/{r[1]}" for r in loaded}
     except:
         pass
     finally:
@@ -280,26 +415,32 @@ def get_loaded_files(db_path: Path) -> set:
     return set()
 
 
-def mark_file_loaded(db_path: Path, filename: str) -> None:
+def mark_file_loaded(db_path: Path, folder_name: str, filename: str) -> None:
     """
     Mark a parquet file as loaded in metadata table.
     
     Args:
         db_path: Path to DuckDB database
-        filename: Filename to mark as loaded
+        folder_name: Name of the timestamped folder (e.g., "20260326_082633")
+        filename: Name of the parquet file (e.g., "current_weather.parquet")
     """
     conn = duckdb.connect(str(db_path))
     try:
-        # Create metadata table if not exists
+        # Create metadata table if not exists - track both folder and filename
         conn.execute("""
             CREATE TABLE IF NOT EXISTS _load_metadata (
-                filename VARCHAR PRIMARY KEY,
-                loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                folder_name VARCHAR NOT NULL,
+                filename VARCHAR NOT NULL,
+                loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (folder_name, filename)
             )
         """)
         
-        # Insert filename
-        conn.execute("INSERT OR IGNORE INTO _load_metadata (filename) VALUES (?)", [filename])
+        # Insert filename with folder context
+        conn.execute(
+            "INSERT OR IGNORE INTO _load_metadata (folder_name, filename) VALUES (?, ?)",
+            [folder_name, filename]
+        )
     finally:
         conn.close()
 
@@ -307,20 +448,22 @@ def mark_file_loaded(db_path: Path, filename: str) -> None:
 def load_all_to_bronze(
     data_zone_path: Optional[Path] = None,
     db_path: Optional[Path] = None,
+    load_mode: str = LoadMode.INCREMENTAL,
 ) -> Dict[str, Dict[str, Any]]:
     """
-    Load ALL new parquet files from data_zone to bronze layer.
+    Load parquet files from data_zone to bronze layer with configurable load modes.
     
-    This function:
-    1. Loads ALL parquet files that haven't been loaded before
-    2. For each composite key (e.g., lat+lon), only keeps the most recent record
+    Two modes available:
+    1. FULL_RELOAD: Truncate all tables, load ALL files from ALL folders
+    2. INCREMENTAL: Load only the latest folder, no truncation
     
     Args:
         data_zone_path: Path to data_zone folder. Defaults to project data_zone
         db_path: Optional path to DuckDB database
+        load_mode: Either LoadMode.FULL_RELOAD or LoadMode.INCREMENTAL
     
     Returns:
-        Dictionary with load statistics for each file
+        Dictionary with load statistics
     """
     if data_zone_path is None:
         data_zone_path = DATA_ZONE_PATH
@@ -331,47 +474,85 @@ def load_all_to_bronze(
     # Ensure bronze path exists
     get_bronze_path()
     
-    # Get all parquet files
-    parquet_files = sorted(data_zone_path.glob("*.parquet"))
+    # Get folders based on mode
+    if load_mode == LoadMode.FULL_RELOAD:
+        folders = list_load_folders()
+        print(f"FULL RELOAD MODE: Loading {len(folders)} folders")
+        
+        # Truncate all data tables
+        print("Truncating all tables...")
+        truncate_all_tables(db_path)
+        
+        # Clear load metadata (optional - keeps track of what's been loaded)
+        # We'll track by folder instead
+        
+    elif load_mode == LoadMode.INCREMENTAL:
+        latest_folder = get_latest_load_folder()
+        if latest_folder is None:
+            return {"status": "no_folders", "message": "No load folders found in data_zone"}
+        
+        folders = [latest_folder]
+        print(f"INCREMENTAL MODE: Loading latest folder: {latest_folder.name}")
+    else:
+        return {"status": "error", "message": f"Unknown load mode: {load_mode}"}
     
-    if not parquet_files:
-        return {"status": "no_files", "message": "No parquet files found in data_zone"}
+    if not folders:
+        return {"status": "no_folders", "message": "No folders to load"}
     
-    # Get already loaded files
-    loaded_files = get_loaded_files(db_path)
+    # Collect all parquet files from all folders
+    all_parquet_files = []
+    for folder in folders:
+        files = get_all_parquet_files_in_folder(folder)
+        print(f"  Found {len(files)} files in {folder.name}")
+        all_parquet_files.extend(files)
     
-    # Filter to only new files
-    new_files = [f for f in parquet_files if f.stem not in loaded_files]
+    if not all_parquet_files:
+        return {"status": "no_files", "message": "No parquet files found in folders"}
     
-    if not new_files:
-        return {"status": "already_up_to_date", "message": "All files already loaded", "files_checked": len(parquet_files)}
+    print(f"Total files to load: {len(all_parquet_files)}")
     
-    print(f"Found {len(new_files)} new files to load (out of {len(parquet_files)} total)")
+    # Get already loaded files for incremental mode to skip duplicates
+    already_loaded = set()
+    if load_mode == LoadMode.INCREMENTAL:
+        already_loaded = get_loaded_files(db_path)
+        print(f"Already loaded: {len(already_loaded)} files")
     
     results = {}
     
-    for filepath in new_files:
-        # Extract table name from filename
-        # Format: {source_name}_{timestamp}.parquet
+    for filepath in all_parquet_files:
+        # Extract table name from filename (without path)
         filename = filepath.stem
+        
+        # Check if this specific file (folder+filename) has already been loaded
+        loaded_key = f"{filepath.parent.name}/{filename}"
+        if load_mode == LoadMode.INCREMENTAL and loaded_key in already_loaded:
+            print(f"Skipping already loaded: {filepath.parent.name}/{filename}")
+            continue
         
         # Use helper function to get source type
         table_name = get_source_from_filename(filename)
         if table_name is None:
-            # Skip unknown files
+            print(f"  Skipping unknown file: {filename}")
             continue
         
-        print(f"Loading {table_name} from {filepath.name}...")
+        print(f"Loading {table_name} from {filepath.parent.name}/{filepath.name}...")
         
         try:
-            result = load_parquet_to_bronze(filepath, table_name, db_path)
+            # For full reload, we don't track loaded files - just load everything
+            if load_mode == LoadMode.FULL_RELOAD:
+                result = load_parquet_to_bronze_for_full_reload(filepath, table_name, db_path)
+            else:
+                result = load_parquet_to_bronze(filepath, table_name, db_path)
+            
             results[table_name] = result
             print(f"  Status: {result['status']}, Rows: {result.get('rows', 0)}")
             
-            # Mark file as loaded after successful load
-            if result.get('rows', 0) > 0 or result['status'] in ('created', 'loaded'):
-                mark_file_loaded(db_path, filepath.stem)
-                print(f"  Marked as loaded: {filepath.stem}")
+            # Mark file as loaded for incremental mode
+            if load_mode == LoadMode.INCREMENTAL:
+                if result.get('rows', 0) > 0 or result['status'] in ('created', 'loaded'):
+                    # Pass folder_name and filename separately
+                    mark_file_loaded(db_path, filepath.parent.name, filename)
+                    print(f"  Marked as loaded: {filepath.parent.name}/{filename}")
         except Exception as e:
             print(f"  Error: {e}")
             results[table_name] = {"status": "error", "error": str(e)}

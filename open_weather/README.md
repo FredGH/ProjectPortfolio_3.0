@@ -63,6 +63,9 @@ brew install --cask rancher-desktop
 ### 1. Install Dependencies
 
 ```bash
+# Navigate to project directory
+cd projects/ProjectPortfolio_3.0/open_weather
+
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -71,7 +74,17 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-### 2. Start Local Infrastructure
+### 2. Run the Pipeline
+
+```bash
+# Default: Incremental mode (loads latest data_zone folder only)
+python open_weather_sources/pipeline_runner.py
+
+# Full reload mode (truncates tables and reloads all data)
+python open_weather_sources/pipeline_runner.py full
+```
+
+### 3. Start Local Infrastructure (Optional)
 
 ```bash
 # Start Docker Compose (newer syntax)

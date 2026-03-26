@@ -18,7 +18,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from datetime import datetime, UTC
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import requests
 
@@ -37,6 +37,50 @@ def ensure_data_zone_exists() -> Path:
 def get_data_zone_path() -> Path:
     """Get the data_zone path."""
     return ensure_data_zone_exists()
+
+
+def get_load_folder_path(timestamp: str = None) -> Path:
+    """
+    Get the folder path for a specific load (date/time based).
+    
+    Args:
+        timestamp: Optional timestamp string. If not provided, uses current time.
+                  Format: YYYYMMDD_HHMMSS
+    
+    Returns:
+        Path to the load folder (e.g., data_zone/20260326_081551/)
+    """
+    if timestamp is None:
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    
+    load_folder = DATA_ZONE_PATH / timestamp
+    load_folder.mkdir(parents=True, exist_ok=True)
+    return load_folder
+
+
+def list_load_folders() -> List[Path]:
+    """
+    List all load folders in data_zone (sorted by name, oldest first).
+    
+    Returns:
+        List of folder paths
+    """
+    if not DATA_ZONE_PATH.exists():
+        return []
+    
+    folders = sorted([d for d in DATA_ZONE_PATH.iterdir() if d.is_dir()])
+    return folders
+
+
+def get_latest_load_folder() -> Optional[Path]:
+    """
+    Get the most recent load folder.
+    
+    Returns:
+        Path to latest folder, or None if no folders exist
+    """
+    folders = list_load_folders()
+    return folders[-1] if folders else None
 
 
 def flatten_dict(data: Dict[str, Any], parent_key: str = '', sep: str = '_') -> Dict[str, Any]:
@@ -64,14 +108,15 @@ def flatten_dict(data: Dict[str, Any], parent_key: str = '', sep: str = '_') -> 
     return dict(items)
 
 
-def save_to_parquet(data: Dict[str, Any], source_name: str, timestamp: Optional[str] = None) -> Path:
+def save_to_parquet(data: Dict[str, Any], source_name: str, timestamp: Optional[str] = None, load_folder: Path = None) -> Path:
     """
-    Save data to a parquet file in the data_zone folder.
+    Save data to a parquet file in the data_zone load folder.
     
     Args:
         data: Dictionary containing the data to save
         source_name: Name of the data source (used in filename)
         timestamp: Optional timestamp for the filename. Defaults to current time.
+        load_folder: Optional path to load folder. If not provided, creates one.
     
     Returns:
         Path to the created parquet file
@@ -85,12 +130,15 @@ def save_to_parquet(data: Dict[str, Any], source_name: str, timestamp: Optional[
     # Create DataFrame (single row)
     df = pd.DataFrame([flat_data])
     
-    # Ensure data_zone exists
-    data_zone = get_data_zone_path()
+    # Get load folder
+    if load_folder is None:
+        load_folder = get_load_folder_path(timestamp)
+    else:
+        load_folder.mkdir(parents=True, exist_ok=True)
     
-    # Create filename: {source_name}_{timestamp}.parquet
-    filename = f"{source_name}_{timestamp}.parquet"
-    filepath = data_zone / filename
+    # Create filename: {source_name}.parquet
+    filename = f"{source_name}.parquet"
+    filepath = load_folder / filename
     
     # Save to parquet
     table = pa.Table.from_pandas(df)
@@ -99,14 +147,15 @@ def save_to_parquet(data: Dict[str, Any], source_name: str, timestamp: Optional[
     return filepath
 
 
-def save_list_to_parquet(data: List[Dict[str, Any]], source_name: str, timestamp: Optional[str] = None) -> Path:
+def save_list_to_parquet(data: List[Dict[str, Any]], source_name: str, timestamp: Optional[str] = None, load_folder: Path = None) -> Path:
     """
-    Save a list of records to a parquet file in the data_zone folder.
+    Save a list of records to a parquet file in the data_zone load folder.
     
     Args:
         data: List of dictionaries to save
         source_name: Name of the data source (used in filename)
         timestamp: Optional timestamp for the filename. Defaults to current time.
+        load_folder: Optional path to load folder. If not provided, creates one.
     
     Returns:
         Path to the created parquet file
@@ -120,12 +169,15 @@ def save_list_to_parquet(data: List[Dict[str, Any]], source_name: str, timestamp
     # Create DataFrame
     df = pd.DataFrame(flat_data)
     
-    # Ensure data_zone exists
-    data_zone = get_data_zone_path()
+    # Get load folder
+    if load_folder is None:
+        load_folder = get_load_folder_path(timestamp)
+    else:
+        load_folder.mkdir(parents=True, exist_ok=True)
     
-    # Create filename: {source_name}_{timestamp}.parquet
-    filename = f"{source_name}_{timestamp}.parquet"
-    filepath = data_zone / filename
+    # Create filename: {source_name}.parquet
+    filename = f"{source_name}.parquet"
+    filepath = load_folder / filename
     
     # Save to parquet
     table = pa.Table.from_pandas(df)
@@ -294,9 +346,11 @@ def extract_all_sources(
     city_name: str = None,
     units: str = "metric",
     lang: str = "en",
-) -> Dict[str, Path]:
+) -> Tuple[Dict[str, Path], Path]:
     """
     Extract all OpenWeather data sources and save to parquet files.
+    
+    Creates a new load folder for each extraction run.
     
     Args:
         api_key: OpenWeather API key
@@ -307,16 +361,21 @@ def extract_all_sources(
         lang: Language code
     
     Returns:
-        Dictionary mapping source names to parquet file paths
+        Tuple of (dictionary mapping source names to parquet file paths, load_folder path)
     """
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    
+    # Create load folder for this extraction run
+    load_folder = get_load_folder_path(timestamp)
+    print(f"Using load folder: {load_folder}")
+    
     extracted_files = {}
     
     # 1. Current Weather
     print("Extracting current weather...")
     try:
         current_data = extract_current_weather(api_key, lat, lon, units, lang)
-        filepath = save_to_parquet(current_data, "current_weather", timestamp)
+        filepath = save_to_parquet(current_data, "current_weather", timestamp, load_folder)
         extracted_files["current_weather"] = filepath
         print(f"  Saved to: {filepath}")
     except Exception as e:
@@ -326,7 +385,7 @@ def extract_all_sources(
     print("Extracting weather forecast...")
     try:
         forecast_data = extract_weather_forecast(api_key, lat, lon, units, lang)
-        filepath = save_to_parquet(forecast_data, "weather_forecast", timestamp)
+        filepath = save_to_parquet(forecast_data, "weather_forecast", timestamp, load_folder)
         extracted_files["weather_forecast"] = filepath
         print(f"  Saved to: {filepath}")
     except Exception as e:
@@ -338,7 +397,7 @@ def extract_all_sources(
         try:
             geocoding_data = extract_geocoding(api_key, city_name, limit=5, lang=lang)
             if geocoding_data:
-                filepath = save_list_to_parquet(geocoding_data, "geocoding", timestamp)
+                filepath = save_list_to_parquet(geocoding_data, "geocoding", timestamp, load_folder)
                 extracted_files["geocoding"] = filepath
                 print(f"  Saved to: {filepath}")
             else:
@@ -351,7 +410,7 @@ def extract_all_sources(
     try:
         reverse_data = extract_reverse_geocoding(api_key, lat, lon, limit=5, lang=lang)
         if reverse_data:
-            filepath = save_list_to_parquet(reverse_data, "reverse_geocoding", timestamp)
+            filepath = save_list_to_parquet(reverse_data, "reverse_geocoding", timestamp, load_folder)
             extracted_files["reverse_geocoding"] = filepath
             print(f"  Saved to: {filepath}")
         else:
@@ -359,7 +418,7 @@ def extract_all_sources(
     except Exception as e:
         print(f"  Error extracting reverse geocoding: {e}")
     
-    return extracted_files
+    return extracted_files, load_folder
 
 
 def list_data_zone_files() -> List[Path]:
