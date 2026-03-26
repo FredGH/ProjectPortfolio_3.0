@@ -555,31 +555,43 @@
 
         <div class="layer-stack">
             <div class="layer">
-                <h5>1. Decoupling</h5>
+                <h5>1. Data Zone (Intermediate Layer)</h5>
+                <p><strong>Principle:</strong> Raw API/Source data is first saved as parquet files in an intermediate "data_zone" before loading to bronze.</p>
+                <p><strong>Implementation:</strong> Extraction module fetches data and saves to data_zone/{source}_{timestamp}.parquet. This provides a backup of raw data and enables reprocessing.</p>
+            </div>
+
+            <div class="layer">
+                <h5>2. Decoupling</h5>
                 <p><strong>Principle:</strong> Ingestion, transformation, and consumption are independent layers.</p>
                 <p><strong>Implementation:</strong> dlt writes to Bronze (raw), dbt reads from Bronze to create Silver/Gold. Kafka/Redpanda decouples producers from consumers.</p>
             </div>
 
             <div class="layer">
-                <h5>2. Idempotency</h5>
+                <h5>3. Incremental Loading with Composite Keys</h5>
+                <p><strong>Principle:</strong> Use composite keys to uniquely identify records and enable deduplication.</p>
+                <p><strong>Implementation:</strong> Each data source defines composite keys (e.g., lat+lon+_fetched_at for weather data). Bronze loader checks existing keys before inserting new records.</p>
+            </div>
+
+            <div class="layer">
+                <h5>4. Idempotency</h5>
                 <p><strong>Principle:</strong> All pipeline runs produce the same output given the same input.</p>
                 <p><strong>Implementation:</strong> dlt tracks state, dbt uses incremental models with unique keys, Dagster enables run replays.</p>
             </div>
 
             <div class="layer">
-                <h5>3. Observability-First</h5>
+                <h5>5. Observability-First</h5>
                 <p><strong>Principle:</strong> Monitor everything - data quality, pipeline health, lineage.</p>
                 <p><strong>Implementation:</strong> OpenTelemetry traces, Great Expectations validations, Elementary reports, Dagster asset materialization events.</p>
             </div>
 
             <div class="layer">
-                <h5>4. Schema Evolution</h5>
+                <h5>6. Schema Evolution</h5>
                 <p><strong>Principle:</strong> Handle schema changes without breaking pipelines.</p>
                 <p><strong>Implementation:</strong> dlt auto-detects schemas, Iceberg supports schema evolution, dbt on_schema_change configurations.</p>
             </div>
 
             <div class="layer">
-                <h5>5. Data Quality Gates</h5>
+                <h5>7. Data Quality Gates</h5>
                 <p><strong>Principle:</strong> Bad data doesn't propagate downstream.</p>
                 <p><strong>Implementation:</strong> Great Expectations checkpoints at Bronze→Silver boundary, dbt tests at Silver→Gold.</p>
             </div>
@@ -591,9 +603,44 @@
             <li><strong>Lambda Architecture (Hybrid):</strong> Support both real-time (Redpanda) and batch (dlt scheduled) paths merging in Bronze layer</li>
             <li><strong>Event Sourcing:</strong> Bronze layer is immutable append-only log; all transformations are reproducible</li>
             <li><strong>CQRS (Command Query Separation):</strong> Write models (Bronze ingestion) separate from read models (Gold consumption)</li>
-            <li><strong>Medallion Architecture:</strong> Bronze (raw) → Silver (cleaned) → Gold (aggregated) for progressive refinement</li>
+            <li><strong>Medallion Architecture:</strong> Data Zone → Bronze (raw) → Silver (cleaned) → Gold (aggregated) for progressive refinement</li>
             <li><strong>Circuit Breaker:</strong> Pipeline failures don't cascade; Dagster retry policies prevent runaway costs</li>
+            <li><strong>Two-Stage Extraction:</strong> Data Zone stores intermediate parquet files; Bronze Loader performs incremental dedup</li>
         </ul>
+
+        <h4>Data Zone Composite Keys</h4>
+        <p>Each data source uses composite keys to ensure uniqueness in the Bronze layer:</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>Data Source</th>
+                    <th>Composite Key Columns</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>current_weather</td>
+                    <td>lat, lon, _fetched_at</td>
+                    <td>Unique per location and fetch time</td>
+                </tr>
+                <tr>
+                    <td>weather_forecast</td>
+                    <td>lat, lon, dt, _fetched_at</td>
+                    <td>Unique per location, forecast time, and fetch time</td>
+                </tr>
+                <tr>
+                    <td>geocoding</td>
+                    <td>lat, lon, name, country, _fetched_at</td>
+                    <td>Unique per location and place name</td>
+                </tr>
+                <tr>
+                    <td>reverse_geocoding</td>
+                    <td>lat, lon, name, country, _fetched_at</td>
+                    <td>Unique per location and place name</td>
+                </tr>
+            </tbody>
+        </table>
     </section>
 
     <!-- TECHNOLOGY STACK -->

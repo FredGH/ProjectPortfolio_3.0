@@ -412,3 +412,27 @@ source = csv_source("data.csv", primary_key="order_id_product_id")
 | `write_disposition="replace"` | Truncates table, reloads data |
 | `write_disposition="append"` | Inserts all rows (duplicates allowed) |
 | `write_disposition="merge"` | Updates matching keys, inserts new |
+
+## Bronze Layer Composite Keys
+
+The bronze loader uses composite keys to enable incremental loads with deduplication:
+
+| Data Source | Composite Key Columns |
+|-------------|----------------------|
+| `current_weather` | lat, lon, _fetched_at |
+| `weather_forecast` | lat, lon, dt, _fetched_at |
+| `geocoding` | lat, lon, name, country, _fetched_at |
+| `reverse_geocoding` | lat, lon, name, country, _fetched_at |
+
+### How Composite Keys Work
+
+1. When loading from data_zone parquet files to bronze:
+   - A `_composite_key` column is created by concatenating the key column values
+   - The loader checks existing composite keys in the bronze table
+   - Only new records (with unique composite keys) are inserted
+   - Duplicate records are skipped
+
+2. This approach ensures:
+   - No duplicate data in bronze layer
+   - Idempotent pipeline runs
+   - Ability to replay/reprocess from data_zone parquet files
