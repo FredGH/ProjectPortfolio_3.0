@@ -608,6 +608,7 @@
             <li><strong>CQRS (Command Query Separation):</strong> Write models (Bronze ingestion) separate from read models (Gold consumption)</li>
             <li><strong>Medallion Architecture:</strong> Data Zone → Bronze (raw) → Silver (cleaned) → Gold (aggregated) for progressive refinement</li>
             <li><strong>Circuit Breaker:</strong> Pipeline failures don't cascade; Dagster retry policies prevent runaway costs</li>
+            <li><strong>API Resilience:</strong> Exponential backoff retry (3 attempts, 2-10s wait) and configurable timeout (default 30s) for all API calls</li>
             <li><strong>Two-Stage Extraction:</strong> Data Zone stores intermediate parquet files; Bronze Loader performs incremental dedup</li>
         </ul>
 
@@ -908,7 +909,7 @@
         <ul>
             <li><strong>Schema Inference:</strong> Automatically detects and evolves schemas from source data</li>
             <li><strong>Incremental Loads:</strong> Tracks state (last timestamp, cursor) to load only new/changed records</li>
-            <li><strong>Error Handling:</strong> Configurable retry policies, dead-letter queues for bad records</li>
+            <li><strong>Error Handling:</strong> Configurable retry policies with exponential backoff (3 attempts, 2-10s wait), configurable timeout (default 30s), dead-letter queues for bad records</li>
             <li><strong>Normalization:</strong> Flattens nested JSON, creates related tables automatically</li>
             <li><strong>Data Contracts:</strong> Define expected schemas and validation rules</li>
         </ul>
@@ -937,6 +938,94 @@
             <code>primary_key='id'</code> for deduplication,
             <code>incremental=dlt.sources.incremental('updated_at')</code> for delta loads
         </div>
+
+        <h4>API Resilience & Error Handling</h4>
+
+        <p>All API calls in the extraction layer must implement production-grade resilience patterns to handle transient failures, rate limits, and network instability.</p>
+
+        <div class="highlight-box">
+            <strong>Mandatory Requirements:</strong>
+            <ul>
+                <li><strong>Timeout Configuration:</strong> All API calls must include a <code>timeout</code> parameter (e.g., <code>timeout=30</code>) to prevent indefinite hangs. Separate connect timeout (5s) and read timeout (30s) recommended.</li>
+                <li><strong>Exponential Backoff:</strong> Use <code>tenacity</code> or <code>backoff</code> libraries for exponential backoff retry logic with jitter to avoid thundering herd.</li>
+                <li><strong>Retry on Transient Failures:</strong> Automatically retry on network errors (ConnectionError, Timeout), rate limit responses (HTTP 429), and server errors (HTTP 5xx).</li>
+                <li><strong>Specific Exception Handling:</strong> Catch and handle <code>ConnectionError</code>, <code>Timeout</code>, <code>HTTPError</code> distinctly with appropriate logging and metrics.</li>
+            </ul>
+        </div>
+
+        <p><strong>Recommended Implementation (using <code>tenacity</code>):</strong></p>
+
+        <div class="info-box">
+            <pre style="background: #2d2d2d; padding: 1rem; border-radius: 8px; overflow-x: auto; color: #e0e0e0;">
+import requests
+from requests.exceptions import ConnectionError, Timeout, HTTPError
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=10),
+    retry=(
+        retry_if_exception_type(ConnectionError) |
+        retry_if_exception_type(Timeout) |
+        retry_if_exception_type(HTTPError)
+    ),
+    reraise=True
+)
+def fetch_api_data(url: str, params: dict) -> dict:
+    """Fetch data from API with timeout, retry, and backoff."""
+    try:
+        response = requests.get(url, params=params, timeout=(5, 30))
+        response.raise_for_status()  # Raises HTTPError for 4xx/5xx
+        return response.json()
+    except HTTPError as e:
+        if e.response.status_code == 429:  # Rate limited
+            logger.warning(f"Rate limited: {e}")
+        raise
+    except ConnectionError as e:
+        logger.error(f"Connection failed: {e}")
+        raise
+    except Timeout as e:
+        logger.warning(f"Request timed out: {e}")
+        raise
+            </pre>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Pattern</th>
+                    <th>Configuration</th>
+                    <th>Purpose</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Timeout</strong></td>
+                    <td><code>timeout=(5, 30)</code> - connect, read</td>
+                    <td>Prevent indefinite blocking on slow/unresponsive APIs</td>
+                </tr>
+                <tr>
+                    <td><strong>Max Retries</strong></td>
+                    <td><code>stop_after_attempt(3)</code></td>
+                    <td>Limit retry attempts to prevent infinite loops</td>
+                </tr>
+                <tr>
+                    <td><strong>Exponential Backoff</strong></td>
+                    <td><code>wait_exponential(min=2s, max=10s)</code></td>
+                    <td>Progressively increase wait time between retries</td>
+                </tr>
+                <tr>
+                    <td><strong>Jitter</strong></td>
+                    <td>Add random 0-1s to wait time</td>
+                    <td>Prevent synchronized retry storms across parallel extractors</td>
+                </tr>
+                <tr>
+                    <td><strong>Retryable Exceptions</strong></td>
+                    <td><code>ConnectionError, Timeout, HTTPError(5xx, 429)</code></td>
+                    <td>Only retry on transient failures, not client errors (4xx)</td>
+                </tr>
+            </tbody>
+        </table>
 
         <h4>Redpanda (Streaming)</h4>
 

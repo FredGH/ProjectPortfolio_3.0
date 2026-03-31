@@ -100,11 +100,11 @@ def truncate_all_tables(db_path: Path) -> None:
         # Get all tables except metadata
         tables = conn.execute("""
             SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'main' AND table_name != '_load_metadata'
+            WHERE table_schema = 'bronze' AND table_name != '_load_metadata'
         """).fetchall()
         
         for (table_name,) in tables:
-            conn.execute(f"TRUNCATE TABLE {table_name}")
+            conn.execute(f"TRUNCATE TABLE bronze.{table_name}")
             print(f"  Truncated: {table_name}")
     finally:
         conn.close()
@@ -212,16 +212,19 @@ def load_parquet_to_bronze(
     conn = duckdb.connect(str(db_path))
     
     try:
+        # Create bronze schema if not exists
+        conn.execute("CREATE SCHEMA IF NOT EXISTS bronze")
+        
         # Check if table exists
         table_exists = conn.execute(f"""
             SELECT COUNT(*) FROM information_schema.tables 
-            WHERE table_name = '{table_name}'
+            WHERE table_schema = 'bronze' AND table_name = '{table_name}'
         """).fetchone()[0] > 0
         
         if table_exists:
             # Get existing records with their _fetched_at timestamps
             existing_records = conn.execute(f"""
-                SELECT _composite_key, _fetched_at FROM {table_name}
+                SELECT _composite_key, _fetched_at FROM bronze.{table_name}
             """).fetchall()
             
             # Build a dict of composite_key -> most recent _fetched_at
@@ -243,7 +246,7 @@ def load_parquet_to_bronze(
                         records_to_update += 1
                         # Delete old record
                         conn.execute(f"""
-                            DELETE FROM {table_name} WHERE _composite_key = ?
+                            DELETE FROM bronze.{table_name} WHERE _composite_key = ?
                         """, [composite_key])
                         records_to_insert.append(row)
                 else:
@@ -263,7 +266,7 @@ def load_parquet_to_bronze(
             if records_to_insert:
                 insert_df = pd.DataFrame(records_to_insert)
                 conn.execute(f"""
-                    INSERT INTO {table_name} 
+                    INSERT INTO bronze.{table_name} 
                     SELECT * FROM insert_df
                 """)
             
@@ -277,7 +280,7 @@ def load_parquet_to_bronze(
         else:
             # Create new table
             conn.execute(f"""
-                CREATE TABLE {table_name} AS SELECT * FROM df
+                CREATE TABLE bronze.{table_name} AS SELECT * FROM df
             """)
             
             conn.close()
@@ -327,16 +330,19 @@ def load_parquet_to_bronze_for_full_reload(
     conn = duckdb.connect(str(db_path))
     
     try:
+        # Create bronze schema if not exists
+        conn.execute("CREATE SCHEMA IF NOT EXISTS bronze")
+        
         # Check if table exists
         table_exists = conn.execute(f"""
             SELECT COUNT(*) FROM information_schema.tables 
-            WHERE table_name = '{table_name}'
+            WHERE table_schema = 'bronze' AND table_name = '{table_name}'
         """).fetchone()[0] > 0
         
         if table_exists:
             # Just append all records (table was truncated)
             conn.execute(f"""
-                INSERT INTO {table_name} 
+                INSERT INTO bronze.{table_name} 
                 SELECT * FROM df
             """)
             conn.close()
@@ -348,7 +354,7 @@ def load_parquet_to_bronze_for_full_reload(
         else:
             # Create new table
             conn.execute(f"""
-                CREATE TABLE {table_name} AS SELECT * FROM df
+                CREATE TABLE bronze.{table_name} AS SELECT * FROM df
             """)
             conn.close()
             return {
@@ -400,11 +406,11 @@ def get_loaded_files(db_path: Path) -> set:
     try:
         # Check if _load_metadata table exists using DuckDB syntax
         tables = conn.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_name = '_load_metadata'"
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'bronze' AND table_name = '_load_metadata'"
         ).fetchall()
         
         if tables:
-            loaded = conn.execute("SELECT folder_name, filename FROM _load_metadata").fetchall()
+            loaded = conn.execute("SELECT folder_name, filename FROM bronze._load_metadata").fetchall()
             # Return as "folder/filename" format for uniqueness
             return {f"{r[0]}/{r[1]}" for r in loaded}
     except:
@@ -426,9 +432,12 @@ def mark_file_loaded(db_path: Path, folder_name: str, filename: str) -> None:
     """
     conn = duckdb.connect(str(db_path))
     try:
+        # Create bronze schema if not exists
+        conn.execute("CREATE SCHEMA IF NOT EXISTS bronze")
+        
         # Create metadata table if not exists - track both folder and filename
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS _load_metadata (
+            CREATE TABLE IF NOT EXISTS bronze._load_metadata (
                 folder_name VARCHAR NOT NULL,
                 filename VARCHAR NOT NULL,
                 loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -438,7 +447,7 @@ def mark_file_loaded(db_path: Path, folder_name: str, filename: str) -> None:
         
         # Insert filename with folder context
         conn.execute(
-            "INSERT OR IGNORE INTO _load_metadata (folder_name, filename) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO bronze._load_metadata (folder_name, filename) VALUES (?, ?)",
             [folder_name, filename]
         )
     finally:
@@ -582,14 +591,14 @@ def get_bronze_table_stats(db_path: Optional[Path] = None) -> Dict[str, Dict[str
         # Get all tables
         tables = conn.execute("""
             SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'main'
+            WHERE table_schema = 'bronze'
         """).fetchall()
         tables = [t[0] for t in tables]
         
         stats = {}
         for table in tables:
-            row_count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
-            columns = conn.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'").fetchall()
+            row_count = conn.execute(f"SELECT COUNT(*) FROM bronze.{table}").fetchone()[0]
+            columns = conn.execute(f"SELECT column_name FROM information_schema.columns WHERE table_schema = 'bronze' AND table_name = '{table}'").fetchall()
             columns = [c[0] for c in columns]
             
             stats[table] = {

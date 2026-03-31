@@ -21,6 +21,8 @@ from datetime import datetime, UTC
 from typing import Dict, Any, List, Optional, Tuple
 from pathlib import Path
 import requests
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import time
 
 
 # Base paths - relative to project root
@@ -186,12 +188,18 @@ def save_list_to_parquet(data: List[Dict[str, Any]], source_name: str, timestamp
     return filepath
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout))
+)
 def extract_current_weather(
     api_key: str,
     lat: float,
     lon: float,
     units: str = "metric",
     lang: str = "en",
+    timeout: int = 30,
 ) -> Dict[str, Any]:
     """
     Extract current weather data from OpenWeather API.
@@ -202,6 +210,7 @@ def extract_current_weather(
         lon: Longitude
         units: Units of measurement (standard, metric, imperial)
         lang: Language code for weather descriptions
+        timeout: Request timeout in seconds (default: 30)
     
     Returns:
         Dictionary containing the API response
@@ -215,7 +224,7 @@ def extract_current_weather(
         "lang": lang,
     }
     
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=timeout)
     response.raise_for_status()
     data = response.json()
     data["_fetched_at"] = datetime.now(UTC).isoformat()
@@ -223,12 +232,18 @@ def extract_current_weather(
     return data
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout))
+)
 def extract_weather_forecast(
     api_key: str,
     lat: float,
     lon: float,
     units: str = "metric",
     lang: str = "en",
+    timeout: int = 30,
 ) -> Dict[str, Any]:
     """
     Extract weather forecast data from OpenWeather API (5-day/3-hour forecast).
@@ -239,6 +254,7 @@ def extract_weather_forecast(
         lon: Longitude
         units: Units of measurement (standard, metric, imperial)
         lang: Language code for weather descriptions
+        timeout: Request timeout in seconds (default: 30)
     
     Returns:
         Dictionary containing the API response
@@ -252,7 +268,7 @@ def extract_weather_forecast(
         "lang": lang,
     }
     
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=timeout)
     response.raise_for_status()
     data = response.json()
     data["_fetched_at"] = datetime.now(UTC).isoformat()
@@ -260,11 +276,17 @@ def extract_weather_forecast(
     return data
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout))
+)
 def extract_geocoding(
     api_key: str,
     city_name: str,
     limit: int = 5,
     lang: str = "en",
+    timeout: int = 30,
 ) -> List[Dict[str, Any]]:
     """
     Extract geocoding data from OpenWeather API.
@@ -274,6 +296,7 @@ def extract_geocoding(
         city_name: City name (e.g., "London", "Paris, France")
         limit: Maximum number of results to return
         lang: Language code for response
+        timeout: Request timeout in seconds (default: 30)
     
     Returns:
         List of dictionaries containing geocoding data
@@ -286,7 +309,7 @@ def extract_geocoding(
         "lang": lang,
     }
     
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=timeout)
     response.raise_for_status()
     data = response.json()
     
@@ -298,12 +321,18 @@ def extract_geocoding(
     return data if isinstance(data, list) else []
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((requests.exceptions.RequestException, requests.exceptions.Timeout))
+)
 def extract_reverse_geocoding(
     api_key: str,
     lat: float,
     lon: float,
     limit: int = 5,
     lang: str = "en",
+    timeout: int = 30,
 ) -> List[Dict[str, Any]]:
     """
     Extract reverse geocoding data from OpenWeather API.
@@ -314,6 +343,7 @@ def extract_reverse_geocoding(
         lon: Longitude
         limit: Maximum number of results to return
         lang: Language code for response
+        timeout: Request timeout in seconds (default: 30)
     
     Returns:
         List of dictionaries containing reverse geocoding data
@@ -327,7 +357,7 @@ def extract_reverse_geocoding(
         "lang": lang,
     }
     
-    response = requests.get(url, params=params)
+    response = requests.get(url, params=params, timeout=timeout)
     response.raise_for_status()
     data = response.json()
     

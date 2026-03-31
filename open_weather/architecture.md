@@ -110,9 +110,10 @@ The pipeline follows a **two-stage architecture**:
 - **Incremental Loading**: Uses composite keys for deduplication
 - **Schema Evolution**: Automatic schema detection and evolution
 - **Data Validation**: Pydantic models for type validation
-- **Error Handling**: Retry logic and dead letter queue support
+- **Error Handling**: Retry logic with exponential backoff and timeout support
 - **Data Zone Layer**: Intermediate storage of raw data in parquet format
 - **Two-Stage Pipeline**: Separation of extraction and loading concerns
+- **API Resilience**: Automatic retry with exponential backoff (3 attempts, 2-10s wait) and configurable timeout (default 30s)
 
 ## Data Flow
 
@@ -273,6 +274,8 @@ open_weather/
 - Saves to parquet files in `data_zone/{timestamp}/` folder
 - One parquet file per data source
 - Creates timestamped folder for each extraction run
+- **API Resilience**: Implements retry logic with exponential backoff (3 attempts, 2-10s wait) and configurable timeout (default 30s)
+- **Error Handling**: Catches and logs API errors, continues with other data sources if one fails
 
 ### bronze_loader.py
 - Loads parquet files from `data_zone/` to bronze
