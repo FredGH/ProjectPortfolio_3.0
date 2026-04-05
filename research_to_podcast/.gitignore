@@ -1,0 +1,21 @@
+# Generated audio
+output/
+*.mp3
+
+# Logs
+logs/
+
+# Secrets
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db

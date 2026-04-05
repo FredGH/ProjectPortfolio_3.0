@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git *)",
+      "Bash(python *)",
+      "Bash(pip *)",
+      "Bash(ruff *)",
+      "Bash(black *)",
+      "Bash(isort *)",
+      "Bash(coverage *)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)"
+    ]
+  },
+  "env": {},
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json\ntry:\n    data = json.load(sys.stdin)\n    file_path = data.get('tool_input', {}).get('file_path', '')\n    ext = file_path.rsplit('.', 1)[-1] if '.' in file_path else ''\n    if ext == 'py':\n        print('[auto-review] Python file modified. Consider running the python-reviewer agent for a code review and python-security-auditor for a security audit.')\n    elif ext == 'sql':\n        print('[auto-review] SQL file modified. Consider running the sql-reviewer agent for a code review and sql-security-auditor for a security audit.')\nexcept Exception:\n    pass\n\""
+          }
+        ]
+      }
+    ]
+  }
+}
