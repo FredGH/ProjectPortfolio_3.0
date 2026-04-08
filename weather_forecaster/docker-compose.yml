@@ -28,6 +28,28 @@ services:
       - ./data:/app/data
     restart: "no"
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # Run dbt Fusion models against the bronze DuckDB layer.
+  # Run the pipeline service first to populate the DuckDB file.
+  #
+  # Usage:
+  #   docker compose run --rm dbt build              # compile + run + test all
+  #   docker compose run --rm dbt run                # run models only
+  #   docker compose run --rm dbt test               # tests only
+  #   docker compose run --rm dbt run --select gold_weather_summary
+  #   docker compose run --rm dbt run --select staging.*
+  # ─────────────────────────────────────────────────────────────────────────
+  dbt:
+    build:
+      context: .
+      target: dbt
+    container_name: weather-forecaster-dbt
+    volumes:
+      - ./data:/app/data          # mounts bronze.duckdb for read/write
+      - ./dbt/target:/app/dbt/target   # persist compiled artefacts to host
+      - ./dbt/logs:/app/dbt/logs       # persist logs to host
+    restart: "no"
+
 networks:
   default:
     name: weather-forecaster-network

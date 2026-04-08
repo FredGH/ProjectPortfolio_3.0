@@ -1,0 +1,12 @@
+# Docker-specific profiles.yml — used inside the container only.
+# The DuckDB path points to the volume-mounted data directory.
+# Local development uses ~/.dbt/profiles.yml instead.
+
+weather_forecaster:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: /app/data/bronze/bronze.duckdb
+      schema: main
+      threads: 4
