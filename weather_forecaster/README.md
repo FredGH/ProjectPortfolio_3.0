@@ -12,6 +12,12 @@ data/data_zone/{timestamp}/        ← parquet files (one per source)
         │
         ▼  bronze_loader.py
 data/bronze/bronze.duckdb          ← DuckDB bronze layer (incremental merge)
+        │
+        ▼  dbt Fusion
+dbt/models/
+  bronze/   ← views over raw DuckDB tables (stg_*)
+  silver/   ← enriched views (labels, derived fields)
+  gold/     ← materialised summary tables
 ```
 
 **Two load modes:**
@@ -85,6 +91,44 @@ conn.sql("SELECT * FROM weather_forecast LIMIT 5").show()
 conn.close()
 ```
 
+### 7. Run dbt Fusion locally
+
+dbt Fusion (Rust-based) must be installed separately — it is not a Python package.
+
+```bash
+# Install dbt Fusion (one-time)
+curl -fsSL https://public.cdn.getdbt.com/fs/install/install.sh | sh -s -- --update
+source ~/.bashrc   # or ~/.zshrc — adds ~/.local/bin to PATH
+```
+
+Add the `weather_forecaster` profile to `~/.dbt/profiles.yml`:
+
+```yaml
+weather_forecaster:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: /absolute/path/to/data/bronze/bronze.duckdb   # update this
+      schema: main
+      threads: 4
+```
+
+Then run dbt from the `dbt/` subdirectory:
+
+```bash
+cd dbt/
+
+dbt debug                                    # verify connection
+dbt build                                    # compile + run + test all models
+dbt run                                      # run models only
+dbt test                                     # tests only
+dbt run --select gold_weather_summary        # single model
+dbt run --select staging.*                   # layer wildcard
+```
+
+Output is written back into `bronze.duckdb` under schemas `bronze`, `silver`, and `gold`.
+
 ---
 
 ## Running with Docker
@@ -134,6 +178,35 @@ docker compose run --rm pipeline \
 
 Pipeline output (parquet files and DuckDB) is written to `./data/` on the host via a volume mount.
 
+### Run dbt in Docker
+
+The `dbt` service builds dbt Fusion into an image and runs models against the bronze DuckDB file. Run the pipeline first to populate `data/bronze/bronze.duckdb`.
+
+```bash
+# First time — create host volume directories
+mkdir -p dbt/target dbt/logs
+
+# Build + run + test all models (default)
+docker compose run --rm dbt
+
+# Run models only (no tests)
+docker compose run --rm dbt run
+
+# Tests only
+docker compose run --rm dbt test
+
+# Single model
+docker compose run --rm dbt run --select gold_weather_summary
+
+# Layer wildcard
+docker compose run --rm dbt run --select staging.*
+
+# Verify connection
+docker compose run --rm dbt debug
+```
+
+Compiled artefacts are persisted to `dbt/target/` and logs to `dbt/logs/` on the host via volume mounts.
+
 ### Build images manually
 
 ```bash
@@ -142,6 +215,9 @@ docker build --target test -t weather-forecaster:test .
 
 # Production image
 docker build --target production -t weather-forecaster:latest .
+
+# dbt image
+docker build --target dbt -t weather-forecaster:dbt .
 ```
 
 ### Docker image stages
@@ -152,6 +228,8 @@ docker build --target production -t weather-forecaster:latest .
 | `deps` | base | runtime packages from `requirements.txt` | Package cache for production |
 | `test` | base | dev packages + source + tests | Run unit tests in CI |
 | `production` | python:3.11-slim | runtime packages + source only | Run the pipeline |
+| `dbt-fusion` | python:3.11-slim | curl + dbt Fusion binary | Shared base for dbt stage |
+| `dbt` | dbt-fusion | dbt project files + profiles | Run dbt models against DuckDB |
 
 ---
 
@@ -170,14 +248,23 @@ weather_forecaster/
 │   ├── test_bronze_loader.py      # Unit tests — bronze loader
 │   ├── test_weather_mock.py       # Unit tests — dlt sources (mocked)
 │   └── test_weather_api.py        # Integration tests (real API)
+├── dbt/
+│   ├── dbt_project.yml            # dbt project config (name, materializations)
+│   ├── profiles.yml               # Docker-only connection profile
+│   ├── models/
+│   │   ├── bronze/                # Views over raw DuckDB tables (stg_*)
+│   │   ├── silver/                # Enriched views (labels, derived fields)
+│   │   └── gold/                  # Materialised summary tables
+│   ├── target/                    # Compiled artefacts (gitignored)
+│   └── logs/                      # dbt run logs (gitignored)
 ├── data/                          # Generated at runtime (gitignored)
 │   ├── data_zone/                 # Parquet staging — one folder per run
 │   └── bronze/bronze.duckdb       # DuckDB bronze database
 ├── .claude/
 │   ├── docs/                      # Architecture, API reference, data dictionary
 │   └── rules/                     # Claude coding rules for this project
-├── Dockerfile                     # Multi-stage build
-├── docker-compose.yml             # test + pipeline services
+├── Dockerfile                     # Multi-stage build (test / pipeline / dbt)
+├── docker-compose.yml             # test + pipeline + dbt services
 ├── requirements.txt               # Runtime dependencies
 ├── requirements-dev.txt           # Adds pytest for local dev / test stage
 ├── pyproject.toml                 # Project metadata and pytest config

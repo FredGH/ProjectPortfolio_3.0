@@ -22,11 +22,9 @@ RUN pip install --no-cache-dir --prefix=/deps -r requirements.txt
 # ─────────────────────────────────────────────────────────────────────────────
 FROM base AS test
 
-# Install runtime + dev dependencies together
 COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-# Copy source package, tests, and pytest config
 COPY weather_forecaster_sources/ ./weather_forecaster_sources/
 COPY tests/ ./tests/
 COPY pyproject.toml .
@@ -34,7 +32,6 @@ COPY pyproject.toml .
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Unit tests only — no API key needed
 CMD ["python", "-m", "pytest", \
      "tests/test_extraction.py", \
      "tests/test_bronze_loader.py", \
@@ -48,19 +45,60 @@ FROM python:3.11-slim AS production
 
 WORKDIR /app
 
-# Copy installed runtime packages from deps stage (no build tools in final image)
 COPY --from=deps /deps /usr/local
 
-# Copy only application source — no tests, no docs, no tooling
 COPY weather_forecaster_sources/ ./weather_forecaster_sources/
 COPY .env.example .
 
-# Pre-create data directories; overridden by the volume mount at runtime
 RUN mkdir -p /app/data/data_zone /app/data/bronze
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-# Default: incremental mode.
-# Full reload: docker compose run pipeline python weather_forecaster_sources/pipeline_runner.py full
 CMD ["python", "weather_forecaster_sources/pipeline_runner.py"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 5: dbt-fusion — install dbt Fusion binary
+# Used as a shared base for the dbt stage below.
+# ─────────────────────────────────────────────────────────────────────────────
+FROM python:3.11-slim AS dbt-fusion
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install dbt Fusion to /usr/local/bin so it is on PATH for all users
+# SHELL must be exported to sh (not curl) so the rc-file step inside the script doesn't fail
+RUN curl -fsSL https://public.cdn.getdbt.com/fs/install/install.sh \
+    | SHELL=/bin/bash sh -s -- --update \
+    && mv /root/.local/bin/dbt /usr/local/bin/dbt
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 6: dbt — run dbt Fusion models against the DuckDB bronze layer
+#
+# Usage:
+#   docker compose run --rm dbt run          # build all models
+#   docker compose run --rm dbt build        # build + test
+#   docker compose run --rm dbt test         # tests only
+#   docker compose run --rm dbt run --select gold_weather_summary
+# ─────────────────────────────────────────────────────────────────────────────
+FROM dbt-fusion AS dbt
+
+WORKDIR /app/dbt
+
+# Copy dbt project files (excludes target/, logs/ via .dockerignore)
+COPY dbt/ .
+
+# profiles.yml lives inside the dbt/ directory; tell Fusion where to find it
+ENV DBT_PROFILES_DIR=/app/dbt
+ENV PYTHONUNBUFFERED=1
+
+# Data volume is mounted at runtime — pre-create the mount point only
+RUN mkdir -p /app/data/bronze
+
+# dbt is the entrypoint — arguments are passed directly:
+#   docker compose run --rm dbt run
+#   docker compose run --rm dbt test
+#   docker compose run --rm dbt build --select gold_weather_summary
+ENTRYPOINT ["dbt"]
+CMD ["build"]

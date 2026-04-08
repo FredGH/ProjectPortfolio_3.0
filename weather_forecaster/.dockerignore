@@ -26,6 +26,10 @@ data/
 .vscode/
 .DS_Store
 
+# dbt generated artefacts (mounted as volumes at runtime)
+dbt/target/
+dbt/logs/
+
 # Claude and Kilocode tooling (not needed in container)
 .claude/
 .kilocode/
