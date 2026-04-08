@@ -74,7 +74,6 @@ The pipeline follows a **two-stage architecture**:
 │  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘  │
 │  ┌──────────────┐                                                     │
 │  │open_weather  │                                                     │
-│  │open_weather  │                                                     │
 │  └──────────────┘                                                     │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
@@ -103,7 +102,7 @@ The pipeline follows a **two-stage architecture**:
 | `text_source` | Extract from text/log files | Log aggregation |
 | `rest_api_source` | Extract from REST APIs with pagination | External APIs |
 | `google_sheets_source` | Extract from Google Sheets | Spreadsheet data |
-| `open_weather` | Extract from OpenWeather One Call API 3.0 | Weather data |
+| `open_weather` | Extract from OpenWeather Free API 2.5 | Weather data |
 
 ### Pipeline Features
 
@@ -240,7 +239,7 @@ load_all_to_bronze()
 ## Project Structure
 
 ```
-open_weather/
+weather_forecaster/
 ├── weather_forecaster_sources/  # ETL source modules
 │   ├── __init__.py
 │   ├── config.py          # Configuration and API key management
@@ -264,7 +263,7 @@ open_weather/
 ├── schema/                # Schema definitions
 ├── .env.example
 ├── pyproject.toml
-└── ARCHITECTURE.md (this file)
+└── .claude/docs/architecture.md (this file)
 ```
 
 ## New Pipeline Components
