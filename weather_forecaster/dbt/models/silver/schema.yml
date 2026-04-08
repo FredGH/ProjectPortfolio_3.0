@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: silver_weather_observations
+    description: >
+      Enriched current weather observations. Joins bronze weather with geocoding
+      for a canonical city name, and adds derived columns (cloud_description,
+      wind_description, daily_temp_range_c). One row per location per fetch.
+    columns:
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
+      - name: observed_at
+        tests: [not_null]
+      - name: city_name
+        tests: [not_null]
+      - name: temp_c
+        tests: [not_null]
+      - name: cloud_description
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
+      - name: wind_description
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
+
+  - name: silver_forecast_intervals
+    description: >
+      Enriched 3-hour forecast intervals with derived labels and an hours_from_now
+      convenience column. Feeds directly into the gold weather summary.
+    columns:
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
+      - name: forecast_at
+        tests: [not_null]
+      - name: hours_from_now
+        tests: [not_null]
+      - name: cloud_description
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
+      - name: wind_description
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
