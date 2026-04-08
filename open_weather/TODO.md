@@ -4,7 +4,7 @@ This checklist ensures all steps are followed for future implementations.
 
 ## Steps to Follow
 
-- [x] Read project rules file (etl_rules.md) before implementing
+- [x] Read project rules file (etl-rules.md) before implementing
 - [ ] Check architecture.md for system design questions
 - [ ] Check api_reference.md for how to use sources
 - [ ] Check data_dictionary.md for type mappings

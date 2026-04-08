@@ -436,10 +436,11 @@ export DLT_VERBOSE=true
 python -m dlt pipeline run pipeline.py --verbose
 
 # Debug specific source
-python -c "
-import dlt
-from etl_sources.sources import csv_source
-source = csv_source('data/test.csv')
+PYTHONPATH=. python -c "
+from weather_forecaster_sources.config import get_api_key
+from weather_forecaster_sources.weather_source import current_weather
+api_key = get_api_key('OPENWEATHER_API_KEY', required=True)
+source = current_weather(api_key=api_key, lat=51.5074, lon=-0.1278)
 print(list(source))
 "
 ```
