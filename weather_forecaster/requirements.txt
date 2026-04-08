@@ -1,0 +1,18 @@
+# Runtime dependencies — lean set of what weather_forecaster actually uses.
+# Heavy packages from pyproject.toml (dagster, great-expectations, pyiceberg)
+# are excluded here as they are not imported by any source module.
+
+# ETL framework
+dlt[duckdb,parquet]==1.23.0
+
+# Storage & processing
+duckdb==1.4.4
+pandas==2.2.3
+pyarrow==23.0.1
+
+# HTTP & retry
+requests==2.32.3
+tenacity>=8.0.0
+
+# Config
+python-dotenv==1.0.1

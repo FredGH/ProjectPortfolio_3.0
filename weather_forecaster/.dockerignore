@@ -1,0 +1,31 @@
+# Version control
+.git/
+
+# Python artefacts
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Test artefacts
+.pytest_cache/
+
+# Generated data (mounted as volume at runtime)
+data/
+
+# Secrets — never bake into the image
+.env
+
+# IDE / OS
+.vscode/
+.DS_Store
+
+# Claude and Kilocode tooling (not needed in container)
+.claude/
+.kilocode/
