@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: gold_weather_summary
+    description: >
+      Business-ready weather summary: latest observation per location joined with
+      a 24-hour forecast window. Materialized as a table. Intended for dashboards
+      and downstream consumption.
+    columns:
+      - name: city_name
+        description: "Canonical city name (geocoding preferred, API fallback)."
+        tests: [not_null]
+      - name: country_code
+        description: "ISO 2-letter country code."
+        tests: [not_null]
+      - name: lat
+        description: "Latitude."
+        tests: [not_null]
+      - name: lon
+        description: "Longitude."
+        tests: [not_null]
+      - name: observed_at
+        description: "Timestamp of the current weather observation."
+        tests: [not_null]
+      - name: current_temp_c
+        description: "Current air temperature in degrees Celsius."
+        tests: [not_null]
+      - name: current_cloud_description
+        description: "Human-readable cloud cover description."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
+      - name: current_wind_description
+        description: "Human-readable wind speed description (Beaufort-based)."
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']

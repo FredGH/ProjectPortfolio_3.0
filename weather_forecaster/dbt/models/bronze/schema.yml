@@ -1,0 +1,60 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: "Raw weather data loaded from the OpenWeather Free API 2.5 via the extraction pipeline."
+    schema: main
+    tables:
+      - name: current_weather
+        description: "One row per location per pipeline run — current weather conditions."
+        columns:
+          - name: lat
+            tests: [not_null]
+          - name: lon
+            tests: [not_null]
+          - name: _fetched_at
+            tests: [not_null]
+      - name: weather_forecast
+        description: "3-hour forecast intervals for the next 5 days."
+        columns:
+          - name: lat
+            tests: [not_null]
+          - name: lon
+            tests: [not_null]
+          - name: dt
+            tests: [not_null]
+      - name: geocoding
+        description: "Forward geocoding results (city name → coordinates)."
+      - name: reverse_geocoding
+        description: "Reverse geocoding results (coordinates → place name)."
+
+models:
+  - name: stg_current_weather
+    description: "Cleaned and typed current weather observations from bronze."
+    columns:
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
+      - name: observed_at
+        tests: [not_null]
+      - name: temp_c
+        tests: [not_null]
+
+  - name: stg_weather_forecast
+    description: "Cleaned and typed 3-hour forecast intervals from bronze."
+    columns:
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
+      - name: forecast_at
+        tests: [not_null]
+
+  - name: stg_geocoding
+    description: "Cleaned geocoding results (city name → coordinates)."
+    columns:
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
