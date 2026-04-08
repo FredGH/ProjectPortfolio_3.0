@@ -1,0 +1,5 @@
+# Development / test dependencies — extends requirements.txt
+-r requirements.txt
+
+pytest==9.0.2
+pytest-mock>=3.12.0

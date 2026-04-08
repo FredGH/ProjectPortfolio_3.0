@@ -1,321 +1,243 @@
-# Data Engineering Pipeline - Prototype
+# Weather Forecaster
 
-This prototype implements the Extraction and Storage layers described in the Technical Proposal.
+A data engineering pipeline that extracts weather data from the [OpenWeather Free API 2.5](https://openweathermap.org/api) and loads it incrementally into a DuckDB bronze layer via an intermediate parquet staging area (`data_zone`).
 
-## Architecture Overview
+## Architecture
 
 ```
-Source Systems → dlt (Extraction) → DuckDB/Iceberg (Storage)
-                                           ↓
-                                    Bronze (Raw)
-                                           ↓
-                                    Silver (Cleaned)
-                                           ↓
-                                    Gold (Aggregated)
+OpenWeather API (Free 2.5)
+        │
+        ▼  extraction.py
+data/data_zone/{timestamp}/        ← parquet files (one per source)
+        │
+        ▼  bronze_loader.py
+data/bronze/bronze.duckdb          ← DuckDB bronze layer (incremental merge)
 ```
+
+**Two load modes:**
+- **Incremental** (default) — loads the latest `data_zone` folder only
+- **Full reload** — truncates all tables and replays every historical folder
+
+---
 
 ## Prerequisites
 
-- Python 3.11+
-- Docker (not Docker Desktop - use Colima or Rancher Desktop)
-- Google Cloud service account (for Google Sheets)
+- Python 3.11+  **or** Docker (to run without a local Python install)
+- An OpenWeather API key — free tier at [openweathermap.org](https://openweathermap.org/api)
 
-## Installing Docker
+---
 
-If Docker is not installed, follow these steps:
+## Running Locally
 
-### Option 1: Install Docker Desktop (Recommended)
-
-1. Create the required directory:
-   ```bash
-   sudo mkdir -p /usr/local/cli-plugins && sudo chown $USER:admin /usr/local/cli-plugins
-   ```
-
-2. Install Docker Desktop:
-   ```bash
-   brew install --cask docker
-   ```
-
-3. If you see an error "Please download the latest Apple Silicon build", download from:
-   https://desktop.docker.com/mac/main/arm64/Docker.dmg
-
-4. Open the downloaded .dmg file and drag Docker.app to Applications
-
-5. Open Docker Desktop from `/Applications/Docker.app`
-
-6. Wait for Docker to start (whale icon in menu bar)
-
-### Option 2: Install Colima (Lightweight Alternative)
+### 1. Set up environment
 
 ```bash
-brew install colima
-colima start
+# From the project root
+python3.11 -m venv venv
+source venv/bin/activate
+
+pip install --upgrade pip
+pip install -r requirements-dev.txt      # includes pytest
 ```
 
-### Option 3: Install Rancher Desktop
+### 2. Configure API key
 
 ```bash
-brew install --cask rancher-desktop
+cp .env.example .env
+# Edit .env and set:  OPENWEATHER_API_KEY=your_key_here
 ```
 
-## Quick Start
-
-### 1. Install Dependencies
+### 3. Run the pipeline
 
 ```bash
-# Navigate to project directory
-cd projects/ProjectPortfolio_3.0/weather_forecaster
+# Incremental mode (default)
+PYTHONPATH=. python weather_forecaster_sources/pipeline_runner.py
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -e ".[dev]"
+# Full reload (truncates and replays all data_zone folders)
+PYTHONPATH=. python weather_forecaster_sources/pipeline_runner.py full
 ```
 
-### 2. Run the Pipeline
+### 4. Run unit tests (no API key required)
 
 ```bash
-# Default: Incremental mode (loads latest data_zone folder only)
-python weather_forecaster_sources/pipeline_runner.py
-
-# Full reload mode (truncates tables and reloads all data)
-python weather_forecaster_sources/pipeline_runner.py full
+PYTHONPATH=. python3.11 -m pytest \
+    tests/test_extraction.py \
+    tests/test_bronze_loader.py \
+    tests/test_weather_mock.py \
+    -v
 ```
 
-### 3. Start Local Infrastructure (Optional)
+### 5. Run integration tests (API key required)
 
 ```bash
-# Start Docker Compose (newer syntax)
-docker compose up -d
-
-# Or if you have older docker-compose
-docker-compose up -d
-
-# Verify services are running
-docker compose ps
+PYTHONPATH=. python3.11 -m pytest tests/test_weather_api.py -v -m integration
 ```
 
-### 3. Run Tests
-
-```bash
-# Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_extraction.py -v
-
-# Run with coverage
-pytest --cov=prototype --cov-report=html
-```
-
-## Testing the Solution
-
-### Unit Tests
-
-Run unit tests for each data source:
-
-```bash
-# Test REST API source
-pytest tests/test_rest_api.py -v
-
-# Test CSV source
-pytest tests/test_csv_source.py -v
-
-# Test Parquet source
-pytest tests/test_parquet_source.py -v
-
-# Test Google Sheets source
-pytest tests/test_google_sheets.py -v
-```
-
-### Integration Tests
-
-Run end-to-end pipeline tests:
-
-```bash
-# Test full pipeline (extraction → storage)
-pytest tests/integration/ -v
-
-# Test with sample data
-python -m pytest tests/integration/test_pipeline.py -v --sample-data
-```
-
-### Manual Testing
-
-Test individual sources manually:
-
-```bash
-# Test CSV extraction
-python -c "
-from dlt.sources import csv_source
-import dlt
-
-pipeline = dlt.pipeline(pipeline_name='test_csv', destination='duckdb', dataset_name='test')
-info = pipeline.run(csv_source('tests/fixtures/sample.csv'))
-print(info)
-"
-
-# Test Parquet extraction
-python -c "
-from dlt.sources import parquet_source
-import dlt
-
-pipeline = dlt.pipeline(pipeline_name='test_parquet', destination='duckdb', dataset_name='test')
-info = pipeline.run(parquet_source('tests/fixtures/sample.parquet'))
-print(info)
-"
-```
-
-## Testing Without Docker
-
-You can test the extraction sources directly without Docker:
-
-```bash
-# Create test fixtures
-mkdir -p tests/fixtures data/bronze data/silver data/gold
-
-# Create sample CSV
-echo "id,name,value" > tests/fixtures/sample.csv
-echo "1,Alice,100" >> tests/fixtures/sample.csv
-echo "2,Bob,200" >> tests/fixtures/sample.csv
-echo "3,Charlie,300" >> tests/fixtures/sample.csv
-
-# Create sample Parquet using Python
-python -c "
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
-
-df = pd.DataFrame({
-    'id': [1, 2, 3],
-    'name': ['Alice', 'Bob', 'Charlie'],
-    'value': [100, 200, 300]
-})
-pq.write_table(pa.Table.from_pandas(df), 'tests/fixtures/sample.parquet')
-"
-
-# Run tests without Docker
-pytest tests/test_extraction.py -v
-```
-
-## Verification
-
-### Verify Bronze Layer (Raw Data)
+### 6. Query the bronze layer
 
 ```python
 import duckdb
 
-conn = duckdb.connect('data/duckdb/prototype.duckdb')
-
-# List all tables
+conn = duckdb.connect("data/bronze/bronze.duckdb")
 conn.sql("SHOW TABLES").show()
-
-# Query bronze data
-conn.sql("SELECT * FROM bronze.sample_csv LIMIT 10").show()
+conn.sql("SELECT * FROM current_weather LIMIT 5").show()
+conn.sql("SELECT * FROM weather_forecast LIMIT 5").show()
+conn.close()
 ```
 
-### Verify Data Quality
+---
+
+## Running with Docker
+
+Docker is the quickest way to run without configuring a local Python environment.
+
+### Prerequisites
+
+Docker Desktop (or Colima / Rancher Desktop):
 
 ```bash
-# Run Great Expectations
-python -c "
-import great_expectations as gx
+# Docker Desktop
+brew install --cask docker
 
-context = gx.get_context()
-expectation_suite = context.get_expectation_suite('bronze_suite')
-print(expectation_suite)
-"
+# Lightweight alternative
+brew install colima && colima start
 ```
+
+### Run the unit tests
+
+```bash
+docker compose run --rm test
+```
+
+This builds the `test` image (Python 3.11-slim + all dev dependencies) and runs the 55 unit tests. No API key or `.env` file needed.
+
+Expected output:
+```
+55 passed in ~3s
+```
+
+### Run the pipeline
+
+Ensure `.env` exists with a valid `OPENWEATHER_API_KEY` before running:
+
+```bash
+cp .env.example .env
+# Edit .env — add your key
+
+# Incremental mode (default)
+docker compose run --rm pipeline
+
+# Full reload
+docker compose run --rm pipeline \
+    python weather_forecaster_sources/pipeline_runner.py full
+```
+
+Pipeline output (parquet files and DuckDB) is written to `./data/` on the host via a volume mount.
+
+### Build images manually
+
+```bash
+# Test image
+docker build --target test -t weather-forecaster:test .
+
+# Production image
+docker build --target production -t weather-forecaster:latest .
+```
+
+### Docker image stages
+
+| Stage | Base | Contents | Purpose |
+|---|---|---|---|
+| `base` | python:3.11-slim | gcc only | Shared build layer |
+| `deps` | base | runtime packages from `requirements.txt` | Package cache for production |
+| `test` | base | dev packages + source + tests | Run unit tests in CI |
+| `production` | python:3.11-slim | runtime packages + source only | Run the pipeline |
+
+---
+
+## Project Structure
+
+```
+weather_forecaster/
+├── weather_forecaster_sources/    # ETL source modules
+│   ├── config.py                  # API key and env management
+│   ├── weather_source.py          # dlt source definitions
+│   ├── extraction.py              # API → parquet (with retry)
+│   ├── bronze_loader.py           # Parquet → DuckDB (incremental)
+│   └── pipeline_runner.py         # Orchestrates the full pipeline
+├── tests/
+│   ├── test_extraction.py         # Unit tests — extraction
+│   ├── test_bronze_loader.py      # Unit tests — bronze loader
+│   ├── test_weather_mock.py       # Unit tests — dlt sources (mocked)
+│   └── test_weather_api.py        # Integration tests (real API)
+├── data/                          # Generated at runtime (gitignored)
+│   ├── data_zone/                 # Parquet staging — one folder per run
+│   └── bronze/bronze.duckdb       # DuckDB bronze database
+├── .claude/
+│   ├── docs/                      # Architecture, API reference, data dictionary
+│   └── rules/                     # Claude coding rules for this project
+├── Dockerfile                     # Multi-stage build
+├── docker-compose.yml             # test + pipeline services
+├── requirements.txt               # Runtime dependencies
+├── requirements-dev.txt           # Adds pytest for local dev / test stage
+├── pyproject.toml                 # Project metadata and pytest config
+└── .env.example                   # Environment variable template
+```
+
+---
+
+## Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `OPENWEATHER_API_KEY` | Yes (pipeline) | Free API key from openweathermap.org |
+
+Copy `.env.example` to `.env` and fill in the key. The `.env` file is gitignored and never baked into Docker images.
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Docker not found:**
-   - Install Docker or use Colima: `brew install colima`
-   - Start Colima: `colima start`
-
-2. **Permission errors:**
-   ```bash
-   # Fix permissions
-   chmod -R 755 data/
-   ```
-
-3. **Missing credentials:**
-   ```bash
-   # Set Google Sheets credentials
-   export GOOGLE_SHEETS_CREDENTIALS="path/to/credentials.json"
-   ```
-
-4. **Port conflicts:**
-   - The docker-compose uses ports: 9000, 9001, 5432, 5433
-
-## Testing Commands Summary
-
-| Command | Description |
-|---------|-------------|
-| `pytest` | Run all tests |
-| `pytest -v` | Run with verbose output |
-| `pytest --cov` | Run with coverage report |
-| `pytest -k "csv"` | Run tests matching "csv" |
-| `docker compose up -d` | Start local infrastructure |
-| `docker compose logs -f` | View logs |
-
-## Next Steps
-
-1. Add more test cases for edge cases
-2. Implement dbt transformations for Silver/Gold layers
-3. Add Great Expectations data quality checks
-4. Set up CI/CD pipeline
-
-## Recommended VS Code/Cursor Extensions
-
-The following extensions are recommended for working with this project:
-
-| Extension | Purpose |
-|-----------|---------|
-| anthropic.claude-code | Claude AI integration |
-| chuckjonas.duckdb | DuckDB database client (alternative: dbcode.dbcode) |
-| dbcode.dbcode | DBcode - Database management and query tool |
-| kilocode.kilo-code | Kilo Code AI assistant |
-| ms-python.python | Python language support |
-| ms-python.debugpy | Python debugger |
-| ms-toolsai.jupyter | Jupyter notebook support |
-| ms-vscode.live-server | Local development server |
-| anysphere.cursorpyright | Pyright type checker for Cursor |
-
-### Installing Extensions
-
-To install these extensions in Cursor or VS Code:
-
+**Docker daemon not running:**
 ```bash
-# Using cursor CLI
-cursor --install-extension dbcode.dbcode
-cursor --install-extension chuckjonas.duckdb
-cursor --install-extension ms-python.python
-cursor --install-extension anthropic.claude-code
-cursor --install-extension kilocode.kilo-code
-cursor --install-extension ms-toolsai.jupyter
-cursor --install-extension anysphere.cursorpyright
-
-# Or manually:
-# 1. Open Cursor/VS Code
-# 2. Press Cmd+Shift+X
-# 3. Search for the extension name
-# 4. Click Install
+open -a Docker          # start Docker Desktop
+# or
+colima start            # start Colima
 ```
 
-### DuckDB Connection
+**Permission errors on `data/`:**
+```bash
+chmod -R 755 data/
+```
 
-To connect to the DuckDB database using the extension:
+**Port conflicts:** The project uses no external ports. All data is local (DuckDB file + parquet).
 
-1. **Database file:** `prototype/openweather_ingestion.duckdb`
-2. **Connection name:** `weather_db`
-3. **Schema:** Data is stored in the `bronze` schema
+**`OPENWEATHER_API_KEY` missing:** The unit tests do not need it. Only the pipeline and integration tests (`test_weather_api.py`) require a key.
+
+---
+
+## Recommended VS Code Extensions
+
+| Extension | Purpose |
+|---|---|
+| `anthropic.claude-code` | Claude AI integration |
+| `ms-python.python` | Python language support |
+| `ms-python.debugpy` | Python debugger |
+| `dbcode.dbcode` | Database management and query tool |
+| `chuckjonas.duckdb` | DuckDB browser (alternative) |
+| `ms-toolsai.jupyter` | Jupyter notebook support |
+
+### DuckDB connection
+
+After running the pipeline, connect to:
+
+```
+File:   data/bronze/bronze.duckdb
+Schema: (default)
+```
 
 Example query:
 ```sql
-SELECT * FROM bronze.current_weather;
+SELECT * FROM current_weather ORDER BY _fetched_at DESC LIMIT 10;
+SELECT * FROM weather_forecast WHERE dt_txt LIKE '2026%' LIMIT 10;
 ```
