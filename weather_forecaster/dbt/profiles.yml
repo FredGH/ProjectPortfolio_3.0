@@ -7,6 +7,6 @@ weather_forecaster:
   outputs:
     dev:
       type: duckdb
-      path: /app/data/bronze/bronze.duckdb
-      schema: main
+      path: /app/data/etl/weather_forecaster.duckdb
+      schema: staging
       threads: 4

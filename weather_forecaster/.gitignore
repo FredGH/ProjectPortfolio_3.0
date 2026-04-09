@@ -60,3 +60,6 @@ data/
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
+dbt/.user.yml
+dbt/macros/
+logs/

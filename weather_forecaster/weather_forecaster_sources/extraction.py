@@ -405,17 +405,33 @@ def extract_all_sources(
     print("Extracting current weather...")
     try:
         current_data = extract_current_weather(api_key, lat, lon, units, lang)
+        # Promote nested coord.lat / coord.lon to top level so dbt sources can
+        # reference plain `lat` and `lon` columns.
+        current_data["lat"] = current_data.get("coord", {}).get("lat")
+        current_data["lon"] = current_data.get("coord", {}).get("lon")
         filepath = save_to_parquet(current_data, "current_weather", timestamp, load_folder)
         extracted_files["current_weather"] = filepath
         print(f"  Saved to: {filepath}")
     except Exception as e:
         print(f"  Error extracting current weather: {e}")
-    
+
     # 2. Weather Forecast
     print("Extracting weather forecast...")
     try:
         forecast_data = extract_weather_forecast(api_key, lat, lon, units, lang)
-        filepath = save_to_parquet(forecast_data, "weather_forecast", timestamp, load_folder)
+        # Explode the `list` array into one row per 3-hour interval.
+        # Attach lat/lon from city.coord and the shared _fetched_at to every row.
+        city = forecast_data.get("city", {})
+        coord = city.get("coord", {})
+        fetched_at = forecast_data["_fetched_at"]
+        intervals = []
+        for item in forecast_data.get("list", []):
+            row = dict(item)
+            row["lat"] = coord.get("lat")
+            row["lon"] = coord.get("lon")
+            row["_fetched_at"] = fetched_at
+            intervals.append(row)
+        filepath = save_list_to_parquet(intervals, "weather_forecast", timestamp, load_folder)
         extracted_files["weather_forecast"] = filepath
         print(f"  Saved to: {filepath}")
     except Exception as e:

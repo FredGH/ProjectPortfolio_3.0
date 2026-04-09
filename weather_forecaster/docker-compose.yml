@@ -45,7 +45,7 @@ services:
       target: dbt
     container_name: weather-forecaster-dbt
     volumes:
-      - ./data:/app/data          # mounts bronze.duckdb for read/write
+      - ./data:/app/data          # mounts weather_forecaster.duckdb for read/write
       - ./dbt/target:/app/dbt/target   # persist compiled artefacts to host
       - ./dbt/logs:/app/dbt/logs       # persist logs to host
     restart: "no"

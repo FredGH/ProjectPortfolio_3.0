@@ -148,9 +148,9 @@ class TestLoadParquetToBronze:
         assert result["status"] == "created"
         assert result["rows"] == 2
 
-        # Verify table exists and has data (tables are created in bronze schema)
+        # Verify table exists and has data (tables are created in staging schema)
         conn = duckdb.connect(str(temp_db))
-        count = conn.execute("SELECT COUNT(*) FROM bronze.test_table").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM staging.test_table").fetchone()[0]
         conn.close()
 
         assert count == 2
@@ -198,9 +198,9 @@ class TestLoadParquetToBronze:
         assert result2["rows"] == 2
         assert result2["duplicates"] == 0
 
-        # Verify total count (tables are in bronze schema)
+        # Verify total count (tables are in staging schema)
         conn = duckdb.connect(str(temp_db))
-        count = conn.execute("SELECT COUNT(*) FROM bronze.test_table").fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM staging.test_table").fetchone()[0]
         conn.close()
 
         assert count == 4
@@ -232,11 +232,11 @@ class TestBronzeTableStats:
         """Test getting stats for database with tables."""
         from weather_forecaster_sources.bronze_loader import get_bronze_table_stats
 
-        # Create a table in the bronze schema (as the loader does)
+        # Create a table in the staging schema (as the loader does)
         conn = duckdb.connect(str(temp_db))
-        conn.execute("CREATE SCHEMA IF NOT EXISTS bronze")
-        conn.execute("CREATE TABLE bronze.test_table (id INTEGER, name VARCHAR)")
-        conn.execute("INSERT INTO bronze.test_table VALUES (1, 'Alice'), (2, 'Bob')")
+        conn.execute("CREATE SCHEMA IF NOT EXISTS staging")
+        conn.execute("CREATE TABLE staging.test_table (id INTEGER, name VARCHAR)")
+        conn.execute("INSERT INTO staging.test_table VALUES (1, 'Alice'), (2, 'Bob')")
         conn.close()
 
         stats = get_bronze_table_stats(temp_db)

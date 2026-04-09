@@ -11,7 +11,7 @@ OpenWeather API (Free 2.5)
 data/data_zone/{timestamp}/        ← parquet files (one per source)
         │
         ▼  bronze_loader.py
-data/bronze/bronze.duckdb          ← DuckDB bronze layer (incremental merge)
+data/etl/weather_forecaster.duckdb          ← DuckDB bronze layer (incremental merge)
         │
         ▼  dbt Fusion
 dbt/models/
@@ -84,10 +84,10 @@ PYTHONPATH=. python3.11 -m pytest tests/test_weather_api.py -v -m integration
 ```python
 import duckdb
 
-conn = duckdb.connect("data/bronze/bronze.duckdb")
-conn.sql("SHOW TABLES").show()
-conn.sql("SELECT * FROM current_weather LIMIT 5").show()
-conn.sql("SELECT * FROM weather_forecast LIMIT 5").show()
+conn = duckdb.connect("data/etl/weather_forecaster.duckdb")
+conn.sql("SELECT table_schema, table_name FROM information_schema.tables ORDER BY 1, 2").show()
+conn.sql("SELECT * FROM staging.current_weather LIMIT 5").show()
+conn.sql("SELECT * FROM staging.weather_forecast LIMIT 5").show()
 conn.close()
 ```
 
@@ -109,8 +109,8 @@ weather_forecaster:
   outputs:
     dev:
       type: duckdb
-      path: /absolute/path/to/data/bronze/bronze.duckdb   # update this
-      schema: main
+      path: /absolute/path/to/data/etl/weather_forecaster.duckdb   # update this
+      schema: staging
       threads: 4
 ```
 
@@ -124,10 +124,10 @@ dbt build                                    # compile + run + test all models
 dbt run                                      # run models only
 dbt test                                     # tests only
 dbt run --select gold_weather_summary        # single model
-dbt run --select staging.*                   # layer wildcard
+dbt run --select bronze.*                    # layer wildcard (bronze / silver / gold)
 ```
 
-Output is written back into `bronze.duckdb` under schemas `bronze`, `silver`, and `gold`.
+Output is written back into `weather_forecaster.duckdb` under schemas `bronze`, `silver`, and `gold`.
 
 ---
 
@@ -180,29 +180,20 @@ Pipeline output (parquet files and DuckDB) is written to `./data/` on the host v
 
 ### Run dbt in Docker
 
-The `dbt` service builds dbt Fusion into an image and runs models against the bronze DuckDB file. Run the pipeline first to populate `data/bronze/bronze.duckdb`.
+The `dbt` service builds dbt Fusion into an image and runs models against the bronze DuckDB file. Run the pipeline first to populate `data/etl/weather_forecaster.duckdb`.
 
 ```bash
 # First time — create host volume directories
 mkdir -p dbt/target dbt/logs
 
-# Build + run + test all models (default)
-docker compose run --rm dbt
+docker compose run --rm dbt          # build + run + test all models (default)
+docker compose run --rm dbt run      # run models only
+docker compose run --rm dbt test     # tests only
+docker compose run --rm dbt debug    # verify connection
 
-# Run models only (no tests)
-docker compose run --rm dbt run
-
-# Tests only
-docker compose run --rm dbt test
-
-# Single model
+# Selectors
 docker compose run --rm dbt run --select gold_weather_summary
-
-# Layer wildcard
-docker compose run --rm dbt run --select staging.*
-
-# Verify connection
-docker compose run --rm dbt debug
+docker compose run --rm dbt run --select bronze.*    # bronze / silver / gold
 ```
 
 Compiled artefacts are persisted to `dbt/target/` and logs to `dbt/logs/` on the host via volume mounts.
@@ -259,7 +250,7 @@ weather_forecaster/
 │   └── logs/                      # dbt run logs (gitignored)
 ├── data/                          # Generated at runtime (gitignored)
 │   ├── data_zone/                 # Parquet staging — one folder per run
-│   └── bronze/bronze.duckdb       # DuckDB bronze database
+│   └── etl/weather_forecaster.duckdb          # DuckDB database
 ├── .claude/
 │   ├── docs/                      # Architecture, API reference, data dictionary
 │   └── rules/                     # Claude coding rules for this project
@@ -314,17 +305,39 @@ chmod -R 755 data/
 | `chuckjonas.duckdb` | DuckDB browser (alternative) |
 | `ms-toolsai.jupyter` | Jupyter notebook support |
 
-### DuckDB connection
+### DuckDB file location
 
-After running the pipeline, connect to:
+The database file is always written to the host at:
 
 ```
-File:   data/bronze/bronze.duckdb
-Schema: (default)
+<project_root>/data/etl/weather_forecaster.duckdb
 ```
 
-Example query:
+This is true whether you run the pipeline locally or via Docker. The Docker volume mount (`./data:/app/data`) ensures the container writes to the same host path — the file is never stored inside the container.
+
+### Querying with DBeaver
+
+1. **New Database Connection** → search for **DuckDB** → install driver if prompted
+2. Set **Path** to the absolute path of `weather_forecaster.duckdb` on your machine
+3. **Test Connection** → **Finish**
+
+> DuckDB allows only one writer at a time. Connect when the pipeline and dbt are not running to avoid lock errors.
+
+Useful queries after running the pipeline and dbt:
+
 ```sql
-SELECT * FROM current_weather ORDER BY _fetched_at DESC LIMIT 10;
-SELECT * FROM weather_forecast WHERE dt_txt LIKE '2026%' LIMIT 10;
+-- Raw tables (written by the pipeline)
+SELECT * FROM staging.current_weather;
+SELECT * FROM staging.weather_forecast ORDER BY forecast_at LIMIT 10;
+
+-- dbt bronze views
+SELECT * FROM bronze.stg_current_weather;
+SELECT * FROM bronze.stg_weather_forecast ORDER BY forecast_at LIMIT 10;
+
+-- dbt silver views
+SELECT * FROM silver.silver_weather_observations;
+SELECT * FROM silver.silver_forecast_intervals ORDER BY forecast_at;
+
+-- dbt gold summary (one row per location)
+SELECT * FROM gold.gold_weather_summary;
 ```
