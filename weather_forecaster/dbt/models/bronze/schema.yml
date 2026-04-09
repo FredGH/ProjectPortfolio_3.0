@@ -9,22 +9,91 @@ sources:
         description: "One row per location per pipeline run — current weather conditions."
         columns:
           - name: lat
+            description: "Latitude."
             tests: [not_null]
           - name: lon
+            description: "Longitude."
             tests: [not_null]
+          - name: name
+            description: "City name returned by the API."
+          - name: sys_country
+            description: "ISO 2-letter country code."
+          - name: timezone
+            description: "UTC offset in seconds."
+          - name: dt
+            description: "Unix timestamp of the observation."
           - name: _fetched_at
+            description: "Pipeline fetch timestamp."
             tests: [not_null]
+          - name: main_temp
+            description: "Air temperature."
+          - name: main_feels_like
+            description: "Feels-like temperature."
+          - name: main_temp_min
+            description: "Minimum temperature."
+          - name: main_temp_max
+            description: "Maximum temperature."
+          - name: main_pressure
+            description: "Atmospheric pressure in hPa."
+          - name: main_humidity
+            description: "Relative humidity percentage."
+          - name: visibility
+            description: "Visibility in metres."
+          - name: wind_speed
+            description: "Wind speed in m/s."
+          - name: wind_deg
+            description: "Wind direction in degrees."
+          - name: clouds_all
+            description: "Cloud cover percentage."
+          - name: sys_sunrise
+            description: "Unix timestamp of sunrise."
+          - name: sys_sunset
+            description: "Unix timestamp of sunset."
       - name: weather_forecast
         description: "3-hour forecast intervals for the next 5 days."
         columns:
           - name: lat
+            description: "Latitude."
             tests: [not_null]
           - name: lon
+            description: "Longitude."
             tests: [not_null]
           - name: dt
+            description: "Unix timestamp of the forecast interval."
             tests: [not_null]
+          - name: dt_txt
+            description: "Human-readable forecast interval timestamp."
+          - name: main_temp
+            description: "Forecast air temperature."
+          - name: main_feels_like
+            description: "Forecast feels-like temperature."
+          - name: main_humidity
+            description: "Forecast relative humidity percentage."
+          - name: main_pressure
+            description: "Forecast atmospheric pressure in hPa."
+          - name: wind_speed
+            description: "Forecast wind speed in m/s."
+          - name: wind_deg
+            description: "Forecast wind direction in degrees."
+          - name: clouds_all
+            description: "Forecast cloud cover percentage."
+          - name: _fetched_at
+            description: "Pipeline fetch timestamp."
       - name: geocoding
         description: "Forward geocoding results (city name → coordinates)."
+        columns:
+          - name: name
+            description: "City name."
+          - name: country
+            description: "ISO 2-letter country code."
+          - name: state
+            description: "State or region name."
+          - name: lat
+            description: "Latitude."
+          - name: lon
+            description: "Longitude."
+          - name: _fetched_at
+            description: "Pipeline fetch timestamp."
       - name: reverse_geocoding
         description: "Reverse geocoding results (coordinates → place name)."
 
