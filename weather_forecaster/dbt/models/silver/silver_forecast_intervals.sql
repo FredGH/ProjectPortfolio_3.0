@@ -27,7 +27,7 @@ SELECT
     -- Time
     forecast_at,
     forecast_dt_txt,
-    DATEDIFF('hour', NOW(), forecast_at) AS hours_from_now,
+    FLOOR(EXTRACT(EPOCH FROM (forecast_at - NOW())) / 3600) AS hours_from_now,
 
     -- Temperature
     temp_c,
