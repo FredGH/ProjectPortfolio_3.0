@@ -34,4 +34,17 @@ renamed AS (
     FROM source
 )
 
-SELECT * FROM renamed
+SELECT
+    lat,
+    lon,
+    forecast_at,
+    forecast_dt_txt,
+    temp_c,
+    feels_like_c,
+    humidity_pct,
+    pressure_hpa,
+    wind_speed_ms,
+    wind_direction_deg,
+    cloud_cover_pct,
+    fetched_at
+FROM renamed

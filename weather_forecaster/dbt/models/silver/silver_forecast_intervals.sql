@@ -3,7 +3,20 @@
 -- hours_from_now convenience column for easy downstream filtering.
 
 WITH forecast AS (
-    SELECT * FROM {{ ref('stg_weather_forecast') }}
+    SELECT
+        lat,
+        lon,
+        forecast_at,
+        forecast_dt_txt,
+        temp_c,
+        feels_like_c,
+        humidity_pct,
+        pressure_hpa,
+        wind_speed_ms,
+        wind_direction_deg,
+        cloud_cover_pct,
+        fetched_at
+    FROM {{ ref('stg_weather_forecast') }}
 )
 
 SELECT

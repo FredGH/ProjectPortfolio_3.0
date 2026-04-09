@@ -3,13 +3,61 @@
 -- One row per location (most recent observation only).
 
 WITH latest_obs AS (
-    SELECT *,
+    SELECT
+        city_name,
+        country_code,
+        state,
+        lat,
+        lon,
+        utc_offset_seconds,
+        observed_at,
+        fetched_at,
+        temp_c,
+        feels_like_c,
+        temp_min_c,
+        temp_max_c,
+        daily_temp_range_c,
+        humidity_pct,
+        pressure_hpa,
+        visibility_m,
+        wind_speed_ms,
+        wind_direction_deg,
+        cloud_cover_pct,
+        cloud_description,
+        wind_description,
+        sunrise_at,
+        sunset_at,
         ROW_NUMBER() OVER (PARTITION BY lat, lon ORDER BY fetched_at DESC) AS rn
     FROM {{ ref('silver_weather_observations') }}
 ),
 
 current_weather AS (
-    SELECT * FROM latest_obs WHERE rn = 1
+    SELECT
+        city_name,
+        country_code,
+        state,
+        lat,
+        lon,
+        utc_offset_seconds,
+        observed_at,
+        fetched_at,
+        temp_c,
+        feels_like_c,
+        temp_min_c,
+        temp_max_c,
+        daily_temp_range_c,
+        humidity_pct,
+        pressure_hpa,
+        visibility_m,
+        wind_speed_ms,
+        wind_direction_deg,
+        cloud_cover_pct,
+        cloud_description,
+        wind_description,
+        sunrise_at,
+        sunset_at
+    FROM latest_obs
+    WHERE rn = 1
 ),
 
 forecast_24h AS (

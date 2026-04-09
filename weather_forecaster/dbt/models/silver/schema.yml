@@ -21,14 +21,12 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
+              values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
       - name: wind_description
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
+              values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
 
   - name: silver_forecast_intervals
     description: >
@@ -47,11 +45,9 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
+              values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
       - name: wind_description
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
+              values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']

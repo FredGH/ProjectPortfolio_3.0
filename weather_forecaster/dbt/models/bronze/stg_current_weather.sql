@@ -43,4 +43,24 @@ renamed AS (
     FROM source
 )
 
-SELECT * FROM renamed
+SELECT
+    lat,
+    lon,
+    city_name,
+    country_code,
+    utc_offset_seconds,
+    observed_at,
+    fetched_at,
+    temp_c,
+    feels_like_c,
+    temp_min_c,
+    temp_max_c,
+    pressure_hpa,
+    humidity_pct,
+    visibility_m,
+    wind_speed_ms,
+    wind_direction_deg,
+    cloud_cover_pct,
+    sunrise_at,
+    sunset_at
+FROM renamed

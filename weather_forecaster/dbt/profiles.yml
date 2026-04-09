@@ -1,11 +1,12 @@
-# Docker-specific profiles.yml — used inside the container only.
-# The DuckDB path points to the volume-mounted data directory.
-# Local development uses ~/.dbt/profiles.yml instead.
-
 weather_forecaster:
-  target: dev
+  target: local
   outputs:
-    dev:
+    local:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '../data/etl/weather_forecaster.duckdb') }}"
+      schema: staging
+      threads: 4
+    docker:
       type: duckdb
       path: /app/data/etl/weather_forecaster.duckdb
       schema: staging
