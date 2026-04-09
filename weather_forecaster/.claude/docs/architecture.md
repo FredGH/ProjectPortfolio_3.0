@@ -50,7 +50,7 @@ The pipeline follows a **two-stage architecture**:
 │  │  - Reads parquet files from data_zone/                              │   │
 │  │  - Uses composite keys for deduplication                           │   │
 │  │  - Merges new records incrementally                                 │   │
-│  │  - Stores in bronze.duckdb                                          │   │
+│  │  - Stores in weather_forecaster.duckdb                                          │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -257,7 +257,7 @@ weather_forecaster/
 │   │   └── YYYYMMDD_HHMMSS/   # One folder per extraction run
 │   │       ├── *.parquet
 │   ├── bronze/            # Bronze layer DuckDB database
-│   │   └── bronze.duckdb
+│   │   └── weather_forecaster.duckdb
 │   ├── gold/              # Gold layer (aggregations)
 │   └── duckdb/            # DuckDB files
 ├── schema/                # Schema definitions
@@ -282,7 +282,7 @@ weather_forecaster/
   - **INCREMENTAL** (default): Loads only the latest folder, tracks loaded files with `(folder_name, filename)` composite key in `_load_metadata`
   - **FULL_RELOAD**: Truncates all tables and reloads ALL folders
 - Uses composite keys for deduplication within tables
-- Stores in DuckDB (`bronze.duckdb`)
+- Stores in DuckDB (`weather_forecaster.duckdb`)
 - `_load_metadata` table tracks each loaded file using composite key `(folder_name, filename)` to prevent reloading the same file from the same folder
 
 ### pipeline_runner.py

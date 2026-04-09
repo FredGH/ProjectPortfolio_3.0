@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: bronze
     description: "Raw weather data loaded from the OpenWeather Free API 2.5 via the extraction pipeline."
-    schema: main
+    schema: staging
     tables:
       - name: current_weather
         description: "One row per location per pipeline run — current weather conditions."

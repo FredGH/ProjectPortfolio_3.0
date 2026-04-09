@@ -23,8 +23,8 @@ forecast_24h AS (
         AVG(cloud_cover_pct)     AS avg_cloud_cover_pct_24h,
         MAX(humidity_pct)        AS max_humidity_pct_24h,
         -- Most frequent cloud / wind description in the window
-        MODE() WITHIN GROUP (ORDER BY cloud_description) AS predominant_cloud_description,
-        MODE() WITHIN GROUP (ORDER BY wind_description)  AS predominant_wind_description,
+        mode(cloud_description) AS predominant_cloud_description,
+        mode(wind_description)  AS predominant_wind_description,
         MIN(forecast_at)         AS forecast_window_start,
         MAX(forecast_at)         AS forecast_window_end,
         COUNT(*)                 AS forecast_interval_count

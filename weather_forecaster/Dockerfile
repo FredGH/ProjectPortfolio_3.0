@@ -50,7 +50,7 @@ COPY --from=deps /deps /usr/local
 COPY weather_forecaster_sources/ ./weather_forecaster_sources/
 COPY .env.example .
 
-RUN mkdir -p /app/data/data_zone /app/data/bronze
+RUN mkdir -p /app/data/data_zone /app/data/etl
 
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
@@ -94,7 +94,7 @@ ENV DBT_PROFILES_DIR=/app/dbt
 ENV PYTHONUNBUFFERED=1
 
 # Data volume is mounted at runtime — pre-create the mount point only
-RUN mkdir -p /app/data/bronze
+RUN mkdir -p /app/data/etl
 
 # dbt is the entrypoint — arguments are passed directly:
 #   docker compose run --rm dbt run
