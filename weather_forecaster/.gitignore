@@ -41,6 +41,7 @@ build/
 .idea/
 *.swp
 *.swo
+*.vsix
 
 # Environment
 .env
