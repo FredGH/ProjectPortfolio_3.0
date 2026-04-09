@@ -7,8 +7,8 @@
 | Topic | File | When |
 |-------|------|------|
 | Architecture | `.claude/docs/architecture.md` | System design questions |
-| API Reference | `.claude/docs/api_reference.md` | How to use sources |
-| Data Schemas | `.claude/docs/data_dictionary.md` | Type mappings |
+| API Reference | `.claude/docs/api-reference.md` | How to use sources |
+| Data Schemas | `.claude/docs/data-dictionary.md` | Type mappings |
 | Deployment | `.claude/docs/deployment.md` | Docker/CI-CD |
 | Testing | `unit_testing_guide.md` | Writing tests |
 

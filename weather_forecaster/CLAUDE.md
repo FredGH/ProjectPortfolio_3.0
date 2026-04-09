@@ -65,8 +65,8 @@ api_key = get_api_key("OPENWEATHER_API_KEY", required=True)
 | Topic | File | When to read |
 |---|---|---|
 | Architecture & data flow | [architecture.md](.claude/docs/architecture.md) | System design questions |
-| API endpoints & function signatures | [api_reference.md](.claude/docs/api_reference.md) | How to call sources |
-| Data schemas & type mappings | [data_dictionary.md](.claude/docs/data_dictionary.md) | Column types, composite keys |
+| API endpoints & function signatures | [api-reference.md](.claude/docs/api-reference.md) | How to call sources |
+| Data schemas & type mappings | [data-dictionary.md](.claude/docs/data-dictionary.md) | Column types, composite keys |
 | Docker & CI/CD | [deployment.md](.claude/docs/deployment.md) | Running in production |
 | Writing tests | [unit_testing_guide.md](unit_testing_guide.md) | Adding new tests |
 
