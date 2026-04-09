@@ -30,12 +30,10 @@ models:
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
+              values: ['clear', 'partly cloudy', 'mostly cloudy', 'overcast']
       - name: current_wind_description
         description: "Human-readable wind speed description (Beaufort-based)."
         tests:
           - not_null
           - accepted_values:
-              arguments:
-                values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
+              values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']

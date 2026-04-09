@@ -3,7 +3,27 @@
 -- and adds derived convenience columns. One row per location per fetch.
 
 WITH weather AS (
-    SELECT * FROM {{ ref('stg_current_weather') }}
+    SELECT
+        lat,
+        lon,
+        city_name,
+        country_code,
+        utc_offset_seconds,
+        observed_at,
+        fetched_at,
+        temp_c,
+        feels_like_c,
+        temp_min_c,
+        temp_max_c,
+        pressure_hpa,
+        humidity_pct,
+        visibility_m,
+        wind_speed_ms,
+        wind_direction_deg,
+        cloud_cover_pct,
+        sunrise_at,
+        sunset_at
+    FROM {{ ref('stg_current_weather') }}
 ),
 
 geo AS (
@@ -19,7 +39,14 @@ geo AS (
 ),
 
 latest_geo AS (
-    SELECT * FROM geo WHERE rn = 1
+    SELECT
+        lat,
+        lon,
+        geo_city_name,
+        geo_country_code,
+        state
+    FROM geo
+    WHERE rn = 1
 )
 
 SELECT

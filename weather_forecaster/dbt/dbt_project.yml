@@ -10,6 +10,7 @@ clean-targets: ["target", "dbt_packages"]
 
 models:
   weather_forecaster:
+    +static_analysis: strict
     bronze:
       +materialized: view
       +schema: bronze

@@ -15,4 +15,11 @@ renamed AS (
     FROM source
 )
 
-SELECT * FROM renamed
+SELECT
+    city_name,
+    country_code,
+    state,
+    lat,
+    lon,
+    fetched_at
+FROM renamed
