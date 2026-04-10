@@ -355,8 +355,21 @@ Add the export to `~/.zshrc` to make it permanent.
 All six services — Postgres, code-location, webserver, daemon, API, and dashboard — start together:
 
 ```bash
+# Build all images (first time or after code changes)
 docker compose -f docker-compose.dagster.yml build
+
+# Start the full stack
 docker compose -f docker-compose.dagster.yml up
+```
+
+To build and start only the dashboard (e.g. after a frontend change):
+
+```bash
+# Kill any local npm dev server holding port 3002 first
+lsof -ti :3002 | xargs kill -9 2>/dev/null || true
+
+docker compose -f docker-compose.dagster.yml build dashboard
+docker compose -f docker-compose.dagster.yml up dashboard
 ```
 
 | URL | Service |
