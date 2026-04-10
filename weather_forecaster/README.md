@@ -317,7 +317,7 @@ A web dashboard that reads from DuckDB via a FastAPI data layer and displays liv
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| Frontend | Next.js 16 + Tremor + Tailwind | Weather cards, responsive grid |
+| Frontend | Next.js 16 + Tailwind CSS | Weather cards, responsive grid |
 | Data fetching | SWR (`refetchInterval: 2 min`) | Polling — matches hourly pipeline cadence |
 | API | FastAPI + DuckDB (read-only) | REST endpoints over `gold` and `silver` schemas |
 | Transport | HTTP REST | Simple, stateless, CloudFront-friendly |
@@ -333,23 +333,56 @@ A web dashboard that reads from DuckDB via a FastAPI data layer and displays liv
 
 Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-### Run locally
+### Prerequisites
+
+Node.js **22** is required. Next.js 16 is incompatible with Node 24/25.
 
 ```bash
-# Terminal 1 — Dagster stack + FastAPI (5 services)
-docker compose -f docker-compose.dagster.yml up
+# Install Node 22 via Homebrew (one-time)
+brew install node@22
 
-# Terminal 2 — Next.js dev server
-cd dashboard && npm run dev
+# Prepend to PATH for the current terminal session
+export PATH="/usr/local/opt/node@22/bin:$PATH"
+
+# Verify
+node --version   # should print v22.x
+```
+
+Add the export to `~/.zshrc` to make it permanent.
+
+### Run with Docker (recommended)
+
+All six services — Postgres, code-location, webserver, daemon, API, and dashboard — start together:
+
+```bash
+docker compose -f docker-compose.dagster.yml build
+docker compose -f docker-compose.dagster.yml up
 ```
 
 | URL | Service |
 |---|---|
-| [http://localhost:3000](http://localhost:3000) | Weather dashboard (Next.js) |
+| [http://localhost:3002](http://localhost:3002) | Weather dashboard (Next.js) |
 | [http://localhost:8000/docs](http://localhost:8000/docs) | FastAPI interactive docs |
-| [http://localhost:3001](http://localhost:3001) | Dagit UI (change webserver port to `"3001:3000"` in `docker-compose.dagster.yml`) |
+| [http://localhost:3000](http://localhost:3000) | Dagit UI |
 
-> **Port conflict:** Dagit and the Next.js dev server both default to `:3000`. Change the Dagster webserver mapping to `"3001:3000"` in `docker-compose.dagster.yml` before starting both together.
+> **Port layout:** Dagit is on `:3000`, FastAPI on `:8000`, dashboard on `:3002`.
+
+### Run Next.js locally (dev mode)
+
+Useful when iterating on the frontend without rebuilding Docker images.
+
+```bash
+# Terminal 1 — backend services only (no dashboard)
+docker compose -f docker-compose.dagster.yml up dagster-postgres dagster-code dagster-webserver dagster-daemon api
+
+# Terminal 2 — Next.js dev server
+export PATH="/usr/local/opt/node@22/bin:$PATH"
+cd dashboard
+npm install          # first time only
+npm run dev
+```
+
+Open [http://localhost:3002](http://localhost:3002).
 
 ### Dashboard key files
 
@@ -359,7 +392,7 @@ cd dashboard && npm run dev
 | `api/Dockerfile` | Slim Python 3.11 image for the API service |
 | `api/requirements.txt` | `fastapi`, `uvicorn`, `duckdb` |
 | `dashboard/app/page.tsx` | Main dashboard page — SWR polling, loading/error states, card grid |
-| `dashboard/components/CurrentWeatherCard.tsx` | Tremor card — current conditions + 24 h summary |
+| `dashboard/components/CurrentWeatherCard.tsx` | Tailwind card — current conditions + 24 h summary |
 | `dashboard/lib/types.ts` | TypeScript interfaces for all API responses |
 | `dashboard/lib/api.ts` | `fetcher` helper + `NEXT_PUBLIC_API_URL` env var |
 

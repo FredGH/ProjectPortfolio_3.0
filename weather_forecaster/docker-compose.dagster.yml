@@ -8,6 +8,8 @@
 #   dagster-code      gRPC code-location: serves asset definitions, executes runs
 #   dagster-webserver Dagit UI on http://localhost:3000
 #   dagster-daemon    Evaluates schedules and sensors every 30 s
+#   api               FastAPI read-only layer over DuckDB on http://localhost:8000
+#   dashboard         Next.js weather dashboard on http://localhost:3002
 #
 # Usage:
 #   docker compose -f docker-compose.dagster.yml build
@@ -144,6 +146,29 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+    restart: unless-stopped
+
+  # ── Next.js dashboard ─────────────────────────────────────────────────────
+  # Production Next.js build served on port 3002.
+  # Reads weather data via the FastAPI service on the internal Docker network.
+  # NEXT_PUBLIC_API_URL is baked in at build time — it must be reachable from
+  # the user's browser, so we use localhost:8000 (port-forwarded by the api
+  # service) rather than the internal docker hostname.
+  #
+  # On AWS: swap localhost:8000 for the ALB DNS name of the api service.
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    image: weather-forecaster-dashboard:latest
+    container_name: weather-forecaster-dashboard
+    ports:
+      - "3002:3002"
+    depends_on:
+      api:
+        condition: service_healthy
     restart: unless-stopped
 
   # ── Daemon ─────────────────────────────────────────────────────────────────
