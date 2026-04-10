@@ -1,19 +1,19 @@
 # Weather Forecaster
 
-A data engineering pipeline that extracts weather data from the [OpenWeather Free API 2.5](https://openweathermap.org/api) and loads it incrementally into a DuckDB bronze layer via an intermediate parquet staging area (`data_zone`).
+A data engineering pipeline that extracts weather data from the [OpenWeather Free API 2.5](https://openweathermap.org/api) and loads it incrementally into a DuckDB bronze layer via an intermediate parquet staging area (`data_zone`). Orchestrated with **Dagster**, which schedules extraction, bronze loading, and dbt transformations.
 
 ## Architecture
 
 ```
 OpenWeather API (Free 2.5)
         │
-        ▼  extraction.py
+        ▼  extraction.py           [Dagster: weather_extraction asset]
 data/data_zone/{timestamp}/        ← parquet files (one per source)
         │
-        ▼  bronze_loader.py
-data/etl/weather_forecaster.duckdb          ← DuckDB bronze layer (incremental merge)
+        ▼  bronze_loader.py        [Dagster: bronze_load asset]
+data/etl/weather_forecaster.duckdb ← DuckDB bronze layer (incremental merge)
         │
-        ▼  dbt Fusion
+        ▼  dbt Fusion              [Dagster: weather_dbt_assets]
 dbt/models/
   bronze/   ← views over raw DuckDB tables (stg_*)
   silver/   ← enriched views (labels, derived fields)
@@ -23,6 +23,10 @@ dbt/models/
 **Two load modes:**
 - **Incremental** (default) — loads the latest `data_zone` folder only
 - **Full reload** — truncates all tables and replays every historical folder
+
+**Dagster schedules:**
+- `extraction_schedule` — runs every hour at `:00` (API extract + bronze load)
+- `dbt_schedule` — runs every hour at `:15` (all dbt models, after extraction)
 
 ---
 
@@ -53,7 +57,7 @@ cp .env.example .env
 # Edit .env and set:  OPENWEATHER_API_KEY=your_key_here
 ```
 
-### 3. Run the pipeline
+### 3. Run the pipeline manually
 
 ```bash
 # Incremental mode (default)
@@ -63,7 +67,19 @@ PYTHONPATH=. python weather_forecaster_sources/pipeline_runner.py
 PYTHONPATH=. python weather_forecaster_sources/pipeline_runner.py full
 ```
 
-### 4. Run unit tests (no API key required)
+### 4. Start Dagster (Dagit UI)
+
+```bash
+PYTHONPATH=. ./venv/bin/python3.11 -m dagster dev -m orchestration
+```
+
+Open [http://localhost:3000](http://localhost:3000) to view assets, trigger jobs manually, and enable/disable schedules.
+
+The two schedules are **off by default**. Enable them in the Dagit UI under **Automation → Schedules**, or trigger jobs manually from the **Assets** or **Jobs** pages.
+
+> **Note:** Always use the full venv path (`./venv/bin/python3.11`) — `source venv/bin/activate` may be shadowed by a parent virtual environment.
+
+### 5. Run unit tests (no API key required)
 
 ```bash
 PYTHONPATH=. python3.11 -m pytest \
@@ -73,13 +89,13 @@ PYTHONPATH=. python3.11 -m pytest \
     -v
 ```
 
-### 5. Run integration tests (API key required)
+### 6. Run integration tests (API key required)
 
 ```bash
 PYTHONPATH=. python3.11 -m pytest tests/test_weather_api.py -v -m integration
 ```
 
-### 6. Query the bronze layer
+### 7. Query the bronze layer
 
 ```python
 import duckdb
@@ -91,7 +107,7 @@ conn.sql("SELECT * FROM staging.weather_forecast LIMIT 5").show()
 conn.close()
 ```
 
-### 7. Run dbt Fusion locally
+### 8. Run dbt Fusion locally
 
 dbt Fusion (Rust-based) must be installed separately — it is not a Python package.
 
@@ -224,6 +240,75 @@ docker build --target dbt -t weather-forecaster:dbt .
 
 ---
 
+## Dagster Deployment (Docker + AWS)
+
+The Dagster stack runs four services that mirror each other exactly between local Docker and AWS ECS — no code changes are needed to move between environments, only infrastructure.
+
+### Stack overview
+
+| Service | Role | Local | AWS |
+|---|---|---|---|
+| `dagster-postgres` | Event log, run history, schedule state | Docker container | RDS Postgres |
+| `dagster-code` | gRPC code-location — serves asset definitions, executes Python assets + dbt | Docker container | ECS Fargate task |
+| `dagster-webserver` | Dagit UI on `:3000` | Docker container | ECS Fargate task behind ALB |
+| `dagster-daemon` | Evaluates schedules and sensors every 30 s | Docker container | ECS Fargate task |
+
+### Local → AWS mapping
+
+| Local Docker | AWS equivalent |
+|---|---|
+| `docker compose -f docker-compose.dagster.yml up` | ECS Fargate cluster |
+| `dagster-postgres` container | RDS Postgres (same env vars) |
+| `./data/` volume mount (DuckDB + parquet) | EFS mount or S3 |
+| `./dagster_home/` volume mount (Dagster state) | EFS mount |
+| `dagster-code` hostname in `workspace.yaml` | ECS Service Discovery DNS |
+| `localhost:3000` | Application Load Balancer → Dagit task |
+| `LocalComputeLogManager` in `dagster.yaml` | `S3ComputeLogManager` |
+| `DefaultRunLauncher` in `dagster.yaml` | `EcsRunLauncher` |
+
+### Workflow: local → AWS
+
+1. Build and test the full stack locally with Docker Compose
+2. Push the image to ECR (`docker tag` + `docker push`)
+3. Point ECS task definitions at the ECR image URI
+4. Swap the two lines in `dagster_home/dagster.yaml` (compute logs → S3, launcher → ECS)
+5. Update `workspace.yaml` host to the ECS Service Discovery DNS name
+
+### Run locally
+
+```bash
+# Build the shared image (code-location + webserver + daemon all use the same image)
+docker compose -f docker-compose.dagster.yml build
+
+# Start all four services
+docker compose -f docker-compose.dagster.yml up
+
+# Open Dagit
+open http://localhost:3000
+```
+
+Enable the schedules in the Dagit UI under **Automation → Schedules**, or trigger jobs manually from **Assets** or **Jobs**.
+
+```bash
+# Tear down (Postgres data volume is preserved)
+docker compose -f docker-compose.dagster.yml down
+
+# Full reset including all stored run history
+docker compose -f docker-compose.dagster.yml down -v
+```
+
+### Key files
+
+| File | Purpose |
+|---|---|
+| `Dockerfile.dagster` | Multi-stage build: installs deps, pre-compiles dbt manifest, produces final image |
+| `docker-compose.dagster.yml` | Defines the four-service local stack |
+| `workspace.yaml` | Tells webserver and daemon where the code-location gRPC server is |
+| `dagster_home/dagster.yaml` | Dagster instance config: Postgres storage, compute log path, run launcher |
+| `requirements-dagster.txt` | Dagster packages + `dbt-duckdb` (pip-based dbt for `DbtCliResource`) |
+
+---
+
 ## Project Structure
 
 ```
@@ -234,6 +319,12 @@ weather_forecaster/
 │   ├── extraction.py              # API → parquet (with retry)
 │   ├── bronze_loader.py           # Parquet → DuckDB (incremental)
 │   └── pipeline_runner.py         # Orchestrates the full pipeline
+├── orchestration/                 # Dagster orchestration layer
+│   ├── assets.py                  # weather_extraction + bronze_load assets
+│   ├── dbt_assets.py              # dbt model assets (via dagster-dbt)
+│   ├── schedules.py               # Hourly extraction and dbt schedules
+│   ├── definitions.py             # Dagster Definitions entry point
+│   └── __init__.py
 ├── tests/
 │   ├── test_extraction.py         # Unit tests — extraction
 │   ├── test_bronze_loader.py      # Unit tests — bronze loader
@@ -288,9 +379,17 @@ colima start            # start Colima
 chmod -R 755 data/
 ```
 
-**Port conflicts:** The project uses no external ports. All data is local (DuckDB file + parquet).
+**Port conflicts:** Dagit runs on port 3000 by default. If it is in use, specify another:
+```bash
+PYTHONPATH=. ./venv/bin/python3.11 -m dagster dev -m orchestration --port 3001
+```
 
 **`OPENWEATHER_API_KEY` missing:** The unit tests do not need it. Only the pipeline and integration tests (`test_weather_api.py`) require a key.
+
+**`dagster dev` uses the wrong Python:** Always invoke via the project venv directly — `source venv/bin/activate` may be overridden by a parent venv. Use the full path:
+```bash
+PYTHONPATH=. ./venv/bin/python3.11 -m dagster dev -m orchestration
+```
 
 ---
 
