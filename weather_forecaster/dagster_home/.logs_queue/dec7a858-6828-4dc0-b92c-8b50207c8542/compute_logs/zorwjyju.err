@@ -1,0 +1,13 @@
+2026-04-10 06:43:27 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - 373 - LOGS_CAPTURED - Started capturing logs in process (pid: 373).
+2026-04-10 06:43:27 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - 373 - weather_extraction - STEP_START - Started execution of step "weather_extraction".
+2026-04-10 06:43:27 +0000 - dagster - INFO - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction - Extracting weather data for London (51.5074, -0.1278)
+2026-04-10 06:43:28 +0000 - dagster - INFO - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction - Extraction complete: 4 files in /app/data/data_zone/20260410_064327
+2026-04-10 06:43:28 +0000 - dagster - INFO - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction -   current_weather: /app/data/data_zone/20260410_064327/current_weather.parquet
+2026-04-10 06:43:28 +0000 - dagster - INFO - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction -   weather_forecast: /app/data/data_zone/20260410_064327/weather_forecast.parquet
+2026-04-10 06:43:28 +0000 - dagster - INFO - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction -   geocoding: /app/data/data_zone/20260410_064327/geocoding.parquet
+2026-04-10 06:43:29 +0000 - dagster - INFO - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction -   reverse_geocoding: /app/data/data_zone/20260410_064327/reverse_geocoding.parquet
+2026-04-10 06:43:29 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - 373 - weather_extraction - STEP_OUTPUT - Yielded output "result" of type "dict". (Type check passed).
+2026-04-10 06:43:29 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - weather_extraction - Writing file at: /app/dagster_home/storage/weather_extraction using PickledObjectFilesystemIOManager...
+2026-04-10 06:43:29 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - 373 - weather_extraction - ASSET_MATERIALIZATION - Materialized value weather_extraction.
+2026-04-10 06:43:29 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - 373 - weather_extraction - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+2026-04-10 06:43:29 +0000 - dagster - DEBUG - __ASSET_JOB - dec7a858-6828-4dc0-b92c-8b50207c8542 - 373 - weather_extraction - STEP_SUCCESS - Finished execution of step "weather_extraction" in 1.72s.

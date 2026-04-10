@@ -1,0 +1,143 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.dagster.yml
+#
+# Full Dagster orchestration stack — identical topology to AWS ECS deployment.
+#
+# Services:
+#   dagster-postgres  Event log, run storage, schedule state (→ RDS on AWS)
+#   dagster-code      gRPC code-location: serves asset definitions, executes runs
+#   dagster-webserver Dagit UI on http://localhost:3000
+#   dagster-daemon    Evaluates schedules and sensors every 30 s
+#
+# Usage:
+#   docker compose -f docker-compose.dagster.yml build
+#   docker compose -f docker-compose.dagster.yml up
+#   open http://localhost:3000
+#
+# Tear down (preserves Postgres data volume):
+#   docker compose -f docker-compose.dagster.yml down
+#
+# Full reset including run history:
+#   docker compose -f docker-compose.dagster.yml down -v
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-dagster-env: &dagster-env
+  DAGSTER_HOME: /app/dagster_home
+  DAGSTER_POSTGRES_USER: dagster
+  DAGSTER_POSTGRES_PASSWORD: dagster
+  DAGSTER_POSTGRES_HOSTNAME: dagster-postgres
+  DAGSTER_POSTGRES_DB: dagster
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  # Stores Dagster's run history, event log, and schedule/sensor state.
+  # On AWS: replace with an RDS Postgres instance (same env vars).
+  dagster-postgres:
+    image: postgres:15-alpine
+    container_name: weather-forecaster-postgres
+    environment:
+      POSTGRES_USER: dagster
+      POSTGRES_PASSWORD: dagster
+      POSTGRES_DB: dagster
+    volumes:
+      - dagster-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dagster"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Code location (gRPC server) ────────────────────────────────────────────
+  # Serves asset and job definitions to the webserver and daemon via gRPC.
+  # Also executes Python assets (extraction, bronze load) and shells out to
+  # `dbt run` for dbt model assets when a run is launched.
+  #
+  # Healthcheck: probes port 4000 with `dagster api grpc-health-check` — the
+  # webserver and daemon wait for `service_healthy` before connecting.
+  #
+  # On AWS: this becomes an ECS task in the same VPC as webserver + daemon.
+  dagster-code:
+    build:
+      context: .
+      dockerfile: Dockerfile.dagster
+      target: dagster
+    image: weather-forecaster-dagster:latest
+    container_name: weather-forecaster-code
+    command:
+      - dagster
+      - code-server
+      - start
+      - -h
+      - "0.0.0.0"
+      - -p
+      - "4000"
+      - -m
+      - orchestration
+    environment:
+      <<: *dagster-env
+      DBT_PROFILES_DIR: /app/dbt
+    env_file:
+      - .env                           # injects OPENWEATHER_API_KEY
+    volumes:
+      - ./dagster_home:/app/dagster_home   # dagster.yaml + compute logs
+      - ./data:/app/data                   # shared parquet (data_zone) + DuckDB file
+    healthcheck:
+      test: ["CMD", "dagster", "api", "grpc-health-check", "-p", "4000"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      dagster-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Webserver (Dagit UI) ───────────────────────────────────────────────────
+  # Serves the Dagit web interface on port 3000.
+  # Reads asset definitions from the code-location gRPC server.
+  # On AWS: sits behind an Application Load Balancer.
+  dagster-webserver:
+    image: weather-forecaster-dagster:latest
+    container_name: weather-forecaster-webserver
+    entrypoint: ["dagster-webserver", "-h", "0.0.0.0", "-p", "3000", "-w", "workspace.yaml"]
+    ports:
+      - "3000:3000"
+    environment:
+      <<: *dagster-env
+    volumes:
+      - ./dagster_home:/app/dagster_home   # dagster.yaml + compute logs
+    depends_on:
+      dagster-postgres:
+        condition: service_healthy
+      dagster-code:
+        condition: service_healthy        # wait for gRPC to be ready
+    restart: unless-stopped
+
+  # ── Daemon ─────────────────────────────────────────────────────────────────
+  # Evaluates schedules and sensors every 30 s and enqueues runs.
+  # Must be running for scheduled jobs to fire automatically.
+  # On AWS: a second ECS task alongside the webserver task.
+  dagster-daemon:
+    image: weather-forecaster-dagster:latest
+    container_name: weather-forecaster-daemon
+    entrypoint: ["dagster-daemon", "run"]
+    environment:
+      <<: *dagster-env
+    volumes:
+      - ./dagster_home:/app/dagster_home   # dagster.yaml + compute logs
+    depends_on:
+      dagster-postgres:
+        condition: service_healthy
+      dagster-code:
+        condition: service_healthy        # wait for gRPC to be ready
+    restart: unless-stopped
+
+volumes:
+  # Named volume for Postgres data — persists across `docker compose down`
+  dagster-postgres-data:
+
+networks:
+  default:
+    name: weather-forecaster-dagster-network

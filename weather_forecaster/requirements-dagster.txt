@@ -1,0 +1,13 @@
+# Dagster orchestration stack
+dagster==1.12.21
+dagster-webserver==1.12.21
+dagster-dbt==0.28.21
+dagster-postgres==0.28.21
+dagster-duckdb==0.28.21
+
+# dbt for DuckDB — pip-installable, used by DbtCliResource to shell out to `dbt run`
+dbt-core>=1.8.0,<2.0.0
+dbt-duckdb>=1.8.0,<2.0.0
+
+# Pipeline runtime deps (extraction, bronze load)
+-r requirements.txt

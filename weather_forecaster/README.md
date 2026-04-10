@@ -420,7 +420,18 @@ This is true whether you run the pipeline locally or via Docker. The Docker volu
 2. Set **Path** to the absolute path of `weather_forecaster.duckdb` on your machine
 3. **Test Connection** → **Finish**
 
-> DuckDB allows only one writer at a time. Connect when the pipeline and dbt are not running to avoid lock errors.
+**Connecting while Dagster is running (read-only mode)**
+
+DuckDB allows multiple simultaneous read-only connections — the restriction is only on write connections. You can keep the Dagster stack running and connect DBeaver at the same time by enabling read-only mode:
+
+- Open your DuckDB connection settings → **Driver Properties**
+- Add property: `read_only` = `true`
+
+In read-only mode you can query and browse all tables normally — Dagster continues writing without interference. If you need to run ad-hoc writes from DBeaver, stop the stack first:
+
+```bash
+docker compose -f docker-compose.dagster.yml down
+```
 
 Useful queries after running the pipeline and dbt:
 

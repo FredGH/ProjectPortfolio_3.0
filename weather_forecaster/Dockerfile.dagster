@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerfile.dagster
+#
+# Builds the single shared image used by all Dagster services:
+#   dagster-code       gRPC code-location server (runs Python assets + dbt)
+#   dagster-webserver  Dagit UI
+#   dagster-daemon     schedule & sensor executor
+#
+# The image contains:
+#   - Python 3.11 runtime
+#   - All Dagster packages + dbt-duckdb (pip-based, for DbtCliResource)
+#   - Pipeline source code (weather_forecaster_sources/, orchestration/)
+#   - dbt project files (dbt/) with a pre-compiled manifest
+#
+# Usage:
+#   docker build -f Dockerfile.dagster -t weather-forecaster-dagster .
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Stage 1: base ─────────────────────────────────────────────────────────────
+FROM python:3.11-slim AS base
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc git \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# ── Stage 2: deps — install all Python packages ───────────────────────────────
+FROM base AS deps
+
+COPY requirements.txt requirements-dagster.txt ./
+RUN pip install --no-cache-dir --prefix=/deps -r requirements-dagster.txt
+
+
+# ── Stage 3: dbt-parse — pre-compile the dbt manifest ────────────────────────
+# Running `dbt parse` at build time generates dbt/target/manifest.json so the
+# code-location container does not need network access on startup.
+FROM deps AS dbt-parse
+
+COPY --from=deps /deps /usr/local
+
+COPY dbt/ /app/dbt/
+
+ENV DBT_PROFILES_DIR=/app/dbt
+ENV PYTHONUNBUFFERED=1
+
+# Create a minimal dummy DuckDB so dbt parse can resolve sources.
+# The real database is mounted as a volume at runtime.
+RUN mkdir -p /app/data/etl \
+    && python -c "import duckdb; duckdb.connect('/app/data/etl/weather_forecaster.duckdb').close()"
+
+RUN dbt parse --project-dir /app/dbt --profiles-dir /app/dbt
+
+
+# ── Stage 4: dagster — final runtime image ────────────────────────────────────
+FROM python:3.11-slim AS dagster
+
+WORKDIR /app
+
+# Copy installed packages from deps stage
+COPY --from=deps /deps /usr/local
+
+# Source code
+COPY weather_forecaster_sources/ ./weather_forecaster_sources/
+COPY orchestration/ ./orchestration/
+
+# dbt project including the pre-compiled manifest
+COPY --from=dbt-parse /app/dbt/ ./dbt/
+
+# Dagster workspace config (tells the webserver where the code-location gRPC is)
+COPY workspace.yaml .
+
+# Dagster instance config (dagster.yaml lives in dagster_home, mounted at runtime)
+# Pre-create the mount points so Docker does not auto-create them as root
+RUN mkdir -p /app/dagster_home /app/data/data_zone /app/data/etl
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+ENV DAGSTER_HOME=/app/dagster_home
+ENV DBT_PROFILES_DIR=/app/dbt
+
+# Default: start the gRPC code-location server.
+# webserver and daemon override this entrypoint via docker-compose.
+CMD ["dagster", "code-server", "start", "-h", "0.0.0.0", "-p", "4000", "-m", "orchestration"]

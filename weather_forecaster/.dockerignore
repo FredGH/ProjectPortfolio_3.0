@@ -30,6 +30,12 @@ data/
 dbt/target/
 dbt/logs/
 
+# Dagster runtime state — generated at runtime, never baked into images
+dagster_home/logs/
+dagster_home/storage/
+dagster_home/schedules/
+dagster_home/history/
+
 # Claude and Kilocode tooling (not needed in container)
 .claude/
 .kilocode/
