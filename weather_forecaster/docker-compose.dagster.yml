@@ -115,6 +115,37 @@ services:
         condition: service_healthy        # wait for gRPC to be ready
     restart: unless-stopped
 
+  # ── FastAPI data layer ─────────────────────────────────────────────────────
+  # Read-only REST API over DuckDB — consumed by the Next.js dashboard.
+  # Mounts the same ./data volume as dagster-code (read-only).
+  #
+  # Endpoints:
+  #   GET http://localhost:8000/api/current   — latest weather + 24h summary
+  #   GET http://localhost:8000/api/forecast  — 5-day/3-hour intervals
+  #   GET http://localhost:8000/api/history   — last 48 h observations
+  #   GET http://localhost:8000/health        — liveness probe
+  #
+  # On AWS: ECS Fargate task behind ALB, same EFS mount as dagster-code.
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    image: weather-forecaster-api:latest
+    container_name: weather-forecaster-api
+    ports:
+      - "8000:8000"
+    environment:
+      DUCKDB_PATH: /app/data/etl/weather_forecaster.duckdb
+    volumes:
+      - ./data:/app/data:ro             # read-only — Dagster owns writes
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
   # ── Daemon ─────────────────────────────────────────────────────────────────
   # Evaluates schedules and sensors every 30 s and enqueues runs.
   # Must be running for scheduled jobs to fire automatically.

@@ -302,10 +302,72 @@ docker compose -f docker-compose.dagster.yml down -v
 | File | Purpose |
 |---|---|
 | `Dockerfile.dagster` | Multi-stage build: installs deps, pre-compiles dbt manifest, produces final image |
-| `docker-compose.dagster.yml` | Defines the four-service local stack |
+| `docker-compose.dagster.yml` | Defines the five-service local stack (Dagster + API) |
 | `workspace.yaml` | Tells webserver and daemon where the code-location gRPC server is |
 | `dagster_home/dagster.yaml` | Dagster instance config: Postgres storage, compute log path, run launcher |
 | `requirements-dagster.txt` | Dagster packages + `dbt-duckdb` (pip-based dbt for `DbtCliResource`) |
+
+---
+
+## Dashboard (Phase 1)
+
+A web dashboard that reads from DuckDB via a FastAPI data layer and displays live weather conditions in the browser.
+
+### Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Frontend | Next.js 16 + Tremor + Tailwind | Weather cards, responsive grid |
+| Data fetching | SWR (`refetchInterval: 2 min`) | Polling — matches hourly pipeline cadence |
+| API | FastAPI + DuckDB (read-only) | REST endpoints over `gold` and `silver` schemas |
+| Transport | HTTP REST | Simple, stateless, CloudFront-friendly |
+
+### API endpoints
+
+| Endpoint | Source | Description |
+|---|---|---|
+| `GET /api/current` | `gold.gold_weather_summary` | Latest observation + 24 h forecast summary per location |
+| `GET /api/forecast?hours=120` | `silver.silver_forecast_intervals` | 3-hour intervals for the next N hours (max 120) |
+| `GET /api/history?hours=48` | `silver.silver_weather_observations` | Observations for the last N hours (max 168) |
+| `GET /health` | — | Liveness probe |
+
+Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Run locally
+
+```bash
+# Terminal 1 — Dagster stack + FastAPI (5 services)
+docker compose -f docker-compose.dagster.yml up
+
+# Terminal 2 — Next.js dev server
+cd dashboard && npm run dev
+```
+
+| URL | Service |
+|---|---|
+| [http://localhost:3000](http://localhost:3000) | Weather dashboard (Next.js) |
+| [http://localhost:8000/docs](http://localhost:8000/docs) | FastAPI interactive docs |
+| [http://localhost:3001](http://localhost:3001) | Dagit UI (change webserver port to `"3001:3000"` in `docker-compose.dagster.yml`) |
+
+> **Port conflict:** Dagit and the Next.js dev server both default to `:3000`. Change the Dagster webserver mapping to `"3001:3000"` in `docker-compose.dagster.yml` before starting both together.
+
+### Dashboard key files
+
+| File | Purpose |
+|---|---|
+| `api/main.py` | FastAPI app — all three endpoints + health probe |
+| `api/Dockerfile` | Slim Python 3.11 image for the API service |
+| `api/requirements.txt` | `fastapi`, `uvicorn`, `duckdb` |
+| `dashboard/app/page.tsx` | Main dashboard page — SWR polling, loading/error states, card grid |
+| `dashboard/components/CurrentWeatherCard.tsx` | Tremor card — current conditions + 24 h summary |
+| `dashboard/lib/types.ts` | TypeScript interfaces for all API responses |
+| `dashboard/lib/api.ts` | `fetcher` helper + `NEXT_PUBLIC_API_URL` env var |
+
+### Environment variable
+
+| Variable | Default | Description |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | FastAPI base URL — override for production (ALB endpoint) |
 
 ---
 
@@ -325,6 +387,14 @@ weather_forecaster/
 │   ├── schedules.py               # Hourly extraction and dbt schedules
 │   ├── definitions.py             # Dagster Definitions entry point
 │   └── __init__.py
+├── api/                           # FastAPI data layer (read-only DuckDB)
+│   ├── main.py                    # /api/current, /api/forecast, /api/history
+│   ├── Dockerfile                 # Slim Python 3.11 image
+│   └── requirements.txt
+├── dashboard/                     # Next.js weather dashboard
+│   ├── app/page.tsx               # Main dashboard page
+│   ├── components/                # Tremor UI components
+│   └── lib/                       # API fetcher + TypeScript types
 ├── tests/
 │   ├── test_extraction.py         # Unit tests — extraction
 │   ├── test_bronze_loader.py      # Unit tests — bronze loader
