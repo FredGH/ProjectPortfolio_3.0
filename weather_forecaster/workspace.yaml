@@ -1,0 +1,14 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dagster workspace configuration
+#
+# Tells the webserver and daemon where to find the code-location gRPC server.
+#
+# Local Docker:  dagster-code container on port 4000 (docker-compose.dagster.yml)
+# AWS ECS:       replace host with the ECS service discovery DNS name
+#                e.g. dagster-code.weather-forecaster.local
+# ─────────────────────────────────────────────────────────────────────────────
+load_from:
+  - grpc_server:
+      host: dagster-code
+      port: 4000
+      location_name: weather_forecaster

@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dagster instance configuration
+#
+# This file is loaded from DAGSTER_HOME (mounted as ./dagster_home in Docker).
+# Credentials are injected via environment variables — never hardcoded here.
+#
+# Local Docker:  DAGSTER_HOME=/app/dagster_home (volume mount ./dagster_home)
+# AWS ECS:       DAGSTER_HOME=/app/dagster_home (EFS mount or SSM secrets)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Run & event-log storage ───────────────────────────────────────────────────
+# Postgres is used so the webserver, daemon, and code-location can all share
+# state across containers (and later, across ECS tasks).
+storage:
+  postgres:
+    postgres_db:
+      username:
+        env: DAGSTER_POSTGRES_USER
+      password:
+        env: DAGSTER_POSTGRES_PASSWORD
+      hostname:
+        env: DAGSTER_POSTGRES_HOSTNAME
+      db_name:
+        env: DAGSTER_POSTGRES_DB
+      port: 5432
+
+# ── Compute log storage ───────────────────────────────────────────────────────
+# Stdout/stderr from each run step — stored locally inside dagster_home.
+# On AWS, swap this for S3ComputeLogManager pointing to an S3 bucket.
+compute_logs:
+  module: dagster._core.storage.local_compute_log_manager
+  class: LocalComputeLogManager
+  config:
+    base_dir: /app/dagster_home/logs
+
+# ── Run coordinator ───────────────────────────────────────────────────────────
+# Default: no concurrency limit. Runs are launched as soon as they are queued.
+run_coordinator:
+  module: dagster._core.run_coordinator
+  class: DefaultRunCoordinator
+
+# ── Run launcher ──────────────────────────────────────────────────────────────
+# DefaultRunLauncher executes runs inside the code-location gRPC server process.
+# On AWS ECS, swap for EcsRunLauncher to spin up a new Fargate task per run.
+run_launcher:
+  module: dagster._core.launcher.default_run_launcher
+  class: DefaultRunLauncher
