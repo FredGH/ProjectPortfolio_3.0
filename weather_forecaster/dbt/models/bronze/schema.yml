@@ -98,6 +98,17 @@ sources:
         description: "Reverse geocoding results (coordinates → place name)."
       - name: world_capitals
         description: "World capitals reference data loaded from data/world_capitals.json."
+      - name: historical_weather_monthly
+        description: "Monthly historical weather aggregates from Open-Meteo Archive API (2020-present)."
+        columns:
+          - name: city
+            tests: [not_null]
+          - name: country_code
+            tests: [not_null]
+          - name: year
+            tests: [not_null]
+          - name: month
+            tests: [not_null]
         columns:
           - name: city
             description: "Capital city name."
@@ -144,6 +155,16 @@ models:
       - name: lat
         tests: [not_null]
       - name: lon
+        tests: [not_null]
+
+  - name: stg_historical_weather
+    description: "Cleaned historical monthly weather from Open-Meteo Archive API."
+    columns:
+      - name: city
+        tests: [not_null]
+      - name: year
+        tests: [not_null]
+      - name: month
         tests: [not_null]
 
   - name: stg_world_capitals

@@ -16,8 +16,10 @@ from weather_forecaster_sources.bronze_loader import (
     LoadMode,
     load_all_to_bronze,
     load_capitals_to_staging,
+    load_historical_to_staging,
     get_duckdb_path,
 )
+from weather_forecaster_sources.historical_extraction import fetch_all_capitals_history
 from weather_forecaster_sources.config import get_api_key
 from weather_forecaster_sources.extraction import extract_all_sources, get_load_folder_path
 
@@ -115,6 +117,50 @@ def weather_extraction(context: AssetExecutionContext) -> dict:
         "files_created": total_files,
         "errors": len(errors),
     }
+
+
+@asset(
+    deps=[capitals_load],
+    group_name="historical",
+    compute_kind="python",
+)
+def historical_backfill(context: AssetExecutionContext) -> dict:
+    """
+    One-time (or periodic) backfill of monthly historical weather for all world
+    capitals using the Open-Meteo Archive API (free, no API key required).
+
+    Fetches daily data from 2020-01-01 to yesterday and aggregates to monthly
+    averages before storing in staging.historical_weather_monthly.
+
+    Re-running is idempotent — existing rows for the same (city, year, month)
+    are replaced with fresh values.
+
+    Run time: ~5–10 minutes for all 195 capitals (2020-present).
+    """
+    capitals = _load_capitals()
+    context.log.info(
+        f"Starting historical backfill for {len(capitals)} capitals (2020 → present)"
+    )
+
+    def _log(i: int, total: int, city: str, rows: int):
+        context.log.info(f"[{i+1}/{total}] {city}: {rows} monthly rows")
+
+    all_rows = fetch_all_capitals_history(
+        capitals=capitals,
+        start_year=2020,
+        inter_city_delay_s=0.3,
+        progress_cb=_log,
+    )
+
+    context.log.info(f"Fetched {len(all_rows)} total monthly rows — loading to DuckDB…")
+
+    result = load_historical_to_staging(all_rows)
+
+    context.log.info(
+        f"Historical backfill complete: {result['rows_inserted']} rows inserted, "
+        f"{result['total_rows']} total in staging.historical_weather_monthly"
+    )
+    return result
 
 
 @asset(

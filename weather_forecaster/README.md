@@ -5,20 +5,31 @@ A data engineering pipeline that extracts weather data from the [OpenWeather Fre
 ## Architecture
 
 ```
-OpenWeather API (Free 2.5)
-        │
-        ▼  extraction.py           [Dagster: weather_extraction asset]
-data/data_zone/{timestamp}/        ← parquet files (one per source)
-        │
-        ▼  bronze_loader.py        [Dagster: bronze_load asset]
+OpenWeather API (Free 2.5)          Open-Meteo Archive API (free, no key)
+        │                                         │
+        ▼  extraction.py                          ▼  historical_extraction.py
+data/data_zone/{timestamp}/          monthly aggregates (2020 → present)
+  [Dagster: weather_extraction]        [Dagster: historical_backfill]
+        │                                         │
+        ▼  bronze_loader.py                       ▼  bronze_loader.py
 data/etl/weather_forecaster.duckdb ← DuckDB bronze layer (incremental merge)
+  staging.current_weather              staging.historical_weather_monthly
+  staging.weather_forecast
         │
         ▼  dbt Fusion              [Dagster: weather_dbt_assets]
 dbt/models/
   bronze/   ← views over raw DuckDB tables (stg_*)
   silver/   ← enriched views (labels, derived fields)
   gold/     ← materialised summary tables
+            gold_weather_summary       — latest conditions per capital
+            gold_temperature_monthly   — monthly temp distribution (live + historical)
 ```
+
+**Data sources:**
+- **OpenWeather Free 2.5** — current conditions + 5-day forecast (live, hourly)
+- **Open-Meteo Archive API** — ERA5 reanalysis back to 2020 (one-time backfill, free, no key required)
+
+The gold layer merges both: historical data wins for completed past months; live data fills the current month.
 
 **Two load modes:**
 - **Incremental** (default) — loads the latest `data_zone` folder only
@@ -272,9 +283,73 @@ After the first manual run, the two hourly schedules take over automatically.
 
 Each capital requires 2 API calls (current weather + 5-day forecast). The extraction asset adds a 0.5 s delay between locations, keeping total throughput well under the OpenWeather free tier limit of 60 req/min. A full run for 195 capitals takes approximately 2–3 minutes.
 
-### Dashboard capital search
+---
 
-The dashboard includes a live search bar. Type any capital or ISO country code to filter the weather card grid.
+## Historical Backfill (Open-Meteo Archive API)
+
+The dashboard's monthly temperature chart is powered by historical data from the [Open-Meteo Archive API](https://open-meteo.com/en/docs/historical-weather-api) (ERA5 reanalysis, free, no API key required).
+
+### How it works
+
+- One HTTP request per capital city, covering 2020-01-01 to yesterday
+- Daily data is aggregated to monthly averages in Python before loading
+- Results are stored in `staging.historical_weather_monthly` in DuckDB
+- The dbt gold model `gold_temperature_monthly` merges historical + live data:
+  - Historical wins for completed past months (ERA5 quality)
+  - Live OpenWeather data fills the current month
+
+### API limits
+
+The Open-Meteo Archive API has a **daily request limit** on its free tier (~10,000 requests/day). The backfill makes one request per city (194 total), well within the limit — but only if the `historical_backfill` asset is run once. Do **not** run it in a tight loop or with year-by-year sub-requests, as retries can exhaust the quota.
+
+If you see `429 Daily API request limit exceeded`, the quota resets at **UTC midnight**. Wait until the next day and retry.
+
+### Run the backfill
+
+This is a one-time operation (or re-run periodically to extend the history):
+
+**Via Dagster UI (recommended):**
+
+In Dagit → Assets → select `historical_backfill` → **Materialize**.
+
+**Via CLI inside Docker:**
+
+```bash
+docker compose -f docker-compose.dagster.yml exec dagster-code bash -c "
+cd /app && python -u -c \"
+import json
+from weather_forecaster_sources.historical_extraction import fetch_all_capitals_history
+from weather_forecaster_sources.bronze_loader import load_historical_to_staging
+
+with open('/app/data/world_capitals.json') as f:
+    capitals = json.load(f)
+
+def log(i, total, city, rows):
+    print(f'[{i+1}/{total}] {city}: {rows} rows', flush=True)
+
+rows = fetch_all_capitals_history(capitals=capitals, start_year=2020, progress_cb=log)
+result = load_historical_to_staging(rows)
+print('Done:', result)
+\""
+```
+
+Expected: ~194 lines of progress, ~5–15 minutes total (0.5 s delay between cities).
+
+### Rebuild gold table after backfill
+
+After the backfill completes, re-run the affected dbt models:
+
+```bash
+docker compose -f docker-compose.dagster.yml exec dagster-code bash -c \
+  "cd /app && dbt run --profiles-dir /app/dbt --project-dir /app/dbt --target docker \
+   --select stg_historical_weather gold_temperature_monthly"
+```
+
+The dashboard year selector will then show 2020–present.
+
+### Partial failures
+
+Some cities (e.g. small island nations, territories in conflict zones) may return errors for specific years. These are logged as warnings and skipped — partial data for those cities is better than none. The backfill is idempotent: re-running replaces existing rows.
 
 ---
 
@@ -462,11 +537,12 @@ weather_forecaster/
 ├── weather_forecaster_sources/    # ETL source modules
 │   ├── config.py                  # API key and env management
 │   ├── weather_source.py          # dlt source definitions
-│   ├── extraction.py              # API → parquet (with retry)
-│   ├── bronze_loader.py           # Parquet → DuckDB (incremental)
+│   ├── extraction.py              # OpenWeather API → parquet (with retry)
+│   ├── historical_extraction.py   # Open-Meteo Archive API → monthly aggregates
+│   ├── bronze_loader.py           # Parquet → DuckDB (incremental); historical loader
 │   └── pipeline_runner.py         # Orchestrates the full pipeline
 ├── orchestration/                 # Dagster orchestration layer
-│   ├── assets.py                  # weather_extraction + bronze_load assets
+│   ├── assets.py                  # capitals_load, weather_extraction, bronze_load, historical_backfill
 │   ├── dbt_assets.py              # dbt model assets (via dagster-dbt)
 │   ├── schedules.py               # Hourly extraction and dbt schedules
 │   ├── definitions.py             # Dagster Definitions entry point
