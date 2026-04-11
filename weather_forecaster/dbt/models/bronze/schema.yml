@@ -96,6 +96,24 @@ sources:
             description: "Pipeline fetch timestamp."
       - name: reverse_geocoding
         description: "Reverse geocoding results (coordinates → place name)."
+      - name: world_capitals
+        description: "World capitals reference data loaded from data/world_capitals.json."
+        columns:
+          - name: city
+            description: "Capital city name."
+            tests: [not_null]
+          - name: country
+            description: "Country name."
+            tests: [not_null]
+          - name: country_code
+            description: "ISO 2-letter country code."
+            tests: [not_null, unique]
+          - name: lat
+            description: "Latitude."
+            tests: [not_null]
+          - name: lon
+            description: "Longitude."
+            tests: [not_null]
 
 models:
   - name: stg_current_weather
@@ -123,6 +141,16 @@ models:
   - name: stg_geocoding
     description: "Cleaned geocoding results (city name → coordinates)."
     columns:
+      - name: lat
+        tests: [not_null]
+      - name: lon
+        tests: [not_null]
+
+  - name: stg_world_capitals
+    description: "World capitals reference — one row per country capital."
+    columns:
+      - name: country_code
+        tests: [not_null, unique]
       - name: lat
         tests: [not_null]
       - name: lon

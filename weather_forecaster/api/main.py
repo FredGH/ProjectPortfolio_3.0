@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── Configuration ──────────────────────────────────────────────────────────────
@@ -88,47 +88,141 @@ def health() -> dict:
     return {"status": "ok", "db": str(DUCKDB_PATH), "db_exists": DUCKDB_PATH.exists()}
 
 
-@app.get("/api/current")
-def current_weather() -> list[dict[str, Any]]:
+@app.get("/api/capitals")
+def capitals() -> list[dict[str, Any]]:
     """
-    Latest weather observation + 24 h forecast summary per location.
-    Source: gold.gold_weather_summary (one row per lat/lon).
+    Full list of world capitals from the reference table.
+    Source: staging.world_capitals (loaded from data/world_capitals.json).
+    Includes a has_data flag indicating whether weather data has been extracted.
     """
     sql = """
         SELECT
-            city_name,
-            country_code,
-            state,
-            lat,
-            lon,
-            observed_at,
-            current_temp_c,
-            feels_like_c,
-            temp_min_c,
-            temp_max_c,
-            humidity_pct,
-            pressure_hpa,
-            visibility_m,
-            wind_speed_ms,
-            wind_direction_deg,
-            cloud_cover_pct,
-            current_cloud_description,
-            current_wind_description,
-            sunrise_at,
-            sunset_at,
-            avg_temp_c_24h,
-            max_temp_c_24h,
-            min_temp_c_24h,
-            avg_wind_speed_ms_24h,
-            avg_cloud_cover_pct_24h,
-            predominant_cloud_description,
-            predominant_wind_description,
-            forecast_window_start,
-            forecast_window_end
-        FROM gold.gold_weather_summary
-        ORDER BY city_name
+            wc.city,
+            wc.country,
+            wc.country_code,
+            wc.lat,
+            wc.lon,
+            (g.lat IS NOT NULL) AS has_data
+        FROM staging.world_capitals AS wc
+        LEFT JOIN gold.gold_weather_summary AS g
+            ON ROUND(CAST(wc.lat AS DOUBLE), 2) = ROUND(CAST(g.lat AS DOUBLE), 2)
+            AND ROUND(CAST(wc.lon AS DOUBLE), 2) = ROUND(CAST(g.lon AS DOUBLE), 2)
+        ORDER BY wc.country
     """
     return query(sql)
+
+
+@app.get("/api/current")
+def current_weather(
+    city: str | None = Query(default=None, description="Filter by capital city name (case-insensitive substring match)"),
+) -> list[dict[str, Any]]:
+    """
+    Latest weather observation + 24 h forecast summary per location.
+    Source: gold.gold_weather_summary (one row per lat/lon).
+
+    Query params:
+        city  — optional city name filter (case-insensitive, partial match)
+    """
+    if city:
+        sql = """
+            SELECT
+                city_name,
+                country_code,
+                state,
+                lat,
+                lon,
+                observed_at,
+                current_temp_c,
+                feels_like_c,
+                temp_min_c,
+                temp_max_c,
+                humidity_pct,
+                pressure_hpa,
+                visibility_m,
+                wind_speed_ms,
+                wind_direction_deg,
+                cloud_cover_pct,
+                current_cloud_description,
+                current_wind_description,
+                sunrise_at,
+                sunset_at,
+                avg_temp_c_24h,
+                max_temp_c_24h,
+                min_temp_c_24h,
+                avg_wind_speed_ms_24h,
+                avg_cloud_cover_pct_24h,
+                predominant_cloud_description,
+                predominant_wind_description,
+                forecast_window_start,
+                forecast_window_end
+            FROM gold.gold_weather_summary
+            WHERE LOWER(city_name) LIKE LOWER(?)
+            ORDER BY city_name
+        """
+        return query(sql, [f"%{city}%"])
+    else:
+        sql = """
+            SELECT
+                city_name,
+                country_code,
+                state,
+                lat,
+                lon,
+                observed_at,
+                current_temp_c,
+                feels_like_c,
+                temp_min_c,
+                temp_max_c,
+                humidity_pct,
+                pressure_hpa,
+                visibility_m,
+                wind_speed_ms,
+                wind_direction_deg,
+                cloud_cover_pct,
+                current_cloud_description,
+                current_wind_description,
+                sunrise_at,
+                sunset_at,
+                avg_temp_c_24h,
+                max_temp_c_24h,
+                min_temp_c_24h,
+                avg_wind_speed_ms_24h,
+                avg_cloud_cover_pct_24h,
+                predominant_cloud_description,
+                predominant_wind_description,
+                forecast_window_start,
+                forecast_window_end
+            FROM gold.gold_weather_summary
+            ORDER BY city_name
+        """
+        return query(sql)
+
+
+@app.get("/api/monthly")
+def monthly_temperature(
+    city: str = Query(..., description="Capital city name (exact match against gold table)"),
+) -> list[dict[str, Any]]:
+    """
+    Monthly temperature distribution for a given capital city.
+    Source: gold.gold_temperature_monthly (one row per year/month).
+
+    Query params:
+        city  — city name (case-insensitive exact match)
+    """
+    sql = """
+        SELECT
+            year,
+            month,
+            avg_temp_c,
+            min_temp_c,
+            max_temp_c,
+            avg_humidity_pct,
+            observation_count
+        FROM gold.gold_temperature_monthly
+        WHERE LOWER(city_name) = LOWER(?)
+        ORDER BY year, month
+    """
+    return query(sql, [city])
 
 
 @app.get("/api/forecast")

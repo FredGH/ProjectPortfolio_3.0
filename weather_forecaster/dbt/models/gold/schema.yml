@@ -1,6 +1,21 @@
 version: 2
 
 models:
+  - name: gold_temperature_monthly
+    description: >
+      Monthly temperature distribution per capital city.
+      One row per (city_name, country_code, year, month).
+      Used by the dashboard to render the historical temperature chart.
+    columns:
+      - name: city_name
+        tests: [not_null]
+      - name: year
+        tests: [not_null]
+      - name: month
+        tests: [not_null]
+      - name: avg_temp_c
+        tests: [not_null]
+
   - name: gold_weather_summary
     description: >
       Business-ready weather summary: latest observation per location joined with

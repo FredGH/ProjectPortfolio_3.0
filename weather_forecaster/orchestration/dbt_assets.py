@@ -30,4 +30,7 @@ def weather_dbt_assets(context: AssetExecutionContext, dbt: DbtCliResource):
     Depends on the bronze layer (DuckDB staging schema) being populated by
     the bronze_load asset before this job runs.
     """
-    yield from dbt.cli(["run", "--profiles-dir", str(DBT_PROJECT_DIR)], context=context).stream()
+    yield from dbt.cli(
+        ["run", "--profiles-dir", str(DBT_PROJECT_DIR), "--target", "docker"],
+        context=context,
+    ).stream()
