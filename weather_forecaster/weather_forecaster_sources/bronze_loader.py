@@ -565,6 +565,94 @@ def load_all_to_bronze(
     return results
 
 
+def load_historical_to_staging(
+    rows: list,
+    db_path: "Optional[Path]" = None,
+) -> dict:
+    """
+    Upsert monthly historical weather rows into staging.historical_weather_monthly.
+
+    The table is keyed on (city, country_code, year, month). Existing rows for
+    the same key are replaced so re-runs are idempotent.
+
+    Args:
+        rows:    List of dicts produced by historical_extraction.fetch_all_capitals_history.
+        db_path: Path to DuckDB database. Defaults to weather_forecaster.duckdb.
+
+    Returns:
+        Dict with status and row counts.
+    """
+    if not rows:
+        return {"status": "no_data", "rows": 0}
+
+    if db_path is None:
+        db_path = get_duckdb_path()
+
+    get_bronze_path()
+
+    df = pd.DataFrame(rows)
+    # Coerce numeric types
+    for col in ["lat", "lon", "avg_temp_c", "min_temp_c", "max_temp_c",
+                "avg_humidity_pct", "avg_wind_speed_ms", "avg_cloud_cover_pct",
+                "total_precip_mm"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    for col in ["year", "month", "observation_count"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("CREATE SCHEMA IF NOT EXISTS staging")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS staging.historical_weather_monthly (
+                city               VARCHAR NOT NULL,
+                country            VARCHAR,
+                country_code       VARCHAR NOT NULL,
+                lat                DOUBLE,
+                lon                DOUBLE,
+                year               INTEGER NOT NULL,
+                month              INTEGER NOT NULL,
+                avg_temp_c         DOUBLE,
+                min_temp_c         DOUBLE,
+                max_temp_c         DOUBLE,
+                avg_humidity_pct   DOUBLE,
+                avg_wind_speed_ms  DOUBLE,
+                avg_cloud_cover_pct DOUBLE,
+                total_precip_mm    DOUBLE,
+                observation_count  INTEGER,
+                source             VARCHAR,
+                PRIMARY KEY (city, country_code, year, month)
+            )
+        """)
+
+        # Upsert: delete matching keys then insert fresh rows
+        conn.execute("""
+            DELETE FROM staging.historical_weather_monthly
+            WHERE (city, country_code, year, month) IN (
+                SELECT city, country_code, year, month FROM df
+            )
+        """)
+        conn.execute("""
+            INSERT INTO staging.historical_weather_monthly
+            SELECT
+                city, country, country_code, lat, lon,
+                year, month,
+                avg_temp_c, min_temp_c, max_temp_c,
+                avg_humidity_pct, avg_wind_speed_ms, avg_cloud_cover_pct,
+                total_precip_mm, observation_count, source
+            FROM df
+        """)
+
+        total = conn.execute(
+            "SELECT COUNT(*) FROM staging.historical_weather_monthly"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    return {"status": "loaded", "rows_inserted": len(rows), "total_rows": total}
+
+
 def load_capitals_to_staging(
     json_path: Optional[Path] = None,
     db_path: Optional[Path] = None,

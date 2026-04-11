@@ -10,7 +10,7 @@ Registers:
 from dagster import Definitions
 from dagster_dbt import DbtCliResource
 
-from orchestration.assets import bronze_load, capitals_load, weather_extraction
+from orchestration.assets import bronze_load, capitals_load, historical_backfill, weather_extraction
 from orchestration.dbt_assets import DBT_PROJECT_DIR, weather_dbt_assets
 from orchestration.schedules import (
     dbt_schedule,
@@ -20,7 +20,7 @@ from orchestration.schedules import (
 )
 
 defs = Definitions(
-    assets=[capitals_load, weather_extraction, bronze_load, weather_dbt_assets],
+    assets=[capitals_load, weather_extraction, bronze_load, historical_backfill, weather_dbt_assets],
     jobs=[extract_and_load_job, dbt_transform_job],
     schedules=[extraction_schedule, dbt_schedule],
     resources={

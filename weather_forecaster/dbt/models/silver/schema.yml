@@ -28,6 +28,23 @@ models:
           - accepted_values:
               values: ['calm', 'light breeze', 'moderate breeze', 'strong breeze', 'gale or above']
 
+  - name: silver_historical_weather
+    description: >
+      Monthly historical weather aggregates from the Open-Meteo Archive API (ERA5
+      reanalysis, 2020-present). One row per (city, country_code, year, month).
+      Passes through bronze staging columns unchanged — aggregation was done in Python.
+    columns:
+      - name: city
+        tests: [not_null]
+      - name: country_code
+        tests: [not_null]
+      - name: year
+        tests: [not_null]
+      - name: month
+        tests: [not_null]
+      - name: avg_temp_c
+        tests: [not_null]
+
   - name: silver_forecast_intervals
     description: >
       Enriched 3-hour forecast intervals with derived labels and an hours_from_now
