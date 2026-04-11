@@ -240,6 +240,44 @@ docker build --target dbt -t weather-forecaster:dbt .
 
 ---
 
+## World Capitals
+
+The pipeline extracts weather data for every world capital (~195 cities) on each hourly run.
+
+### Reference data
+
+All capitals are defined in `data/world_capitals.json` (city, country, ISO code, lat/lon). This file is the single source of truth — add or remove entries there and re-run the `capitals_load` asset.
+
+### First-run steps
+
+After starting the Docker stack:
+
+1. **Load capitals reference** (once, or after editing the JSON):
+
+   In Dagit → Assets → select `capitals_load` → **Materialize**. This creates `staging.world_capitals` in DuckDB.
+
+2. **Extract weather for all capitals**:
+
+   In Dagit → Jobs → `extract_and_load_job` → **Launch run**. This triggers `weather_extraction` (loops over all 195 capitals, ~2 min with rate limiting) then `bronze_load`.
+
+3. **Run dbt transformations**:
+
+   In Dagit → Jobs → `dbt_transform_job` → **Launch run**. Populates bronze → silver → gold schemas.
+
+4. **View dashboard** at [http://localhost:3002](http://localhost:3002).
+
+After the first manual run, the two hourly schedules take over automatically.
+
+### Rate limiting
+
+Each capital requires 2 API calls (current weather + 5-day forecast). The extraction asset adds a 0.5 s delay between locations, keeping total throughput well under the OpenWeather free tier limit of 60 req/min. A full run for 195 capitals takes approximately 2–3 minutes.
+
+### Dashboard capital search
+
+The dashboard includes a live search bar. Type any capital or ISO country code to filter the weather card grid.
+
+---
+
 ## Dagster Deployment (Docker + AWS)
 
 The Dagster stack runs four services that mirror each other exactly between local Docker and AWS ECS — no code changes are needed to move between environments, only infrastructure.

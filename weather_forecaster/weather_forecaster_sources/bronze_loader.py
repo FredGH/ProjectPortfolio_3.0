@@ -15,6 +15,7 @@ Composite Keys for Each Data Source:
 - geocoding: (lat, lon, name, country, _fetched_at) - unique per location and name
 - reverse_geocoding: (lat, lon, name, country, _fetched_at) - unique per location and name
 """
+import json
 import os
 import pandas as pd
 import pyarrow.parquet as pq
@@ -562,6 +563,61 @@ def load_all_to_bronze(
             results[table_name] = {"status": "error", "error": str(e)}
     
     return results
+
+
+def load_capitals_to_staging(
+    json_path: Optional[Path] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Load world capitals reference data from JSON into staging.world_capitals.
+
+    Creates the table if it does not exist; replaces all rows on every call
+    so the reference data stays in sync with the JSON file.
+
+    Args:
+        json_path: Path to world_capitals.json. Defaults to data/world_capitals.json.
+        db_path: Path to DuckDB database. Defaults to weather_forecaster.duckdb.
+
+    Returns:
+        Dict with status and row count.
+    """
+    if json_path is None:
+        json_path = PROJECT_ROOT / "data" / "world_capitals.json"
+    if db_path is None:
+        db_path = get_duckdb_path()
+
+    if not json_path.exists():
+        return {"status": "error", "error": f"JSON not found: {json_path}"}
+
+    with open(json_path, "r", encoding="utf-8") as fh:
+        capitals = json.load(fh)
+
+    df = pd.DataFrame(capitals)
+    # Ensure correct types
+    df["lat"] = df["lat"].astype(float)
+    df["lon"] = df["lon"].astype(float)
+
+    get_bronze_path()
+    conn = duckdb.connect(str(db_path))
+    try:
+        conn.execute("CREATE SCHEMA IF NOT EXISTS staging")
+        conn.execute("DROP TABLE IF EXISTS staging.world_capitals")
+        conn.execute("""
+            CREATE TABLE staging.world_capitals AS
+            SELECT
+                city,
+                country,
+                country_code,
+                CAST(lat AS DOUBLE) AS lat,
+                CAST(lon AS DOUBLE) AS lon
+            FROM df
+        """)
+        row_count = conn.execute("SELECT COUNT(*) FROM staging.world_capitals").fetchone()[0]
+    finally:
+        conn.close()
+
+    return {"status": "loaded", "rows": row_count}
 
 
 def get_bronze_table_stats(db_path: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:

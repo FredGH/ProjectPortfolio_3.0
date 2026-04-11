@@ -1,6 +1,8 @@
 -- Gold: latest weather per location + 24-hour forecast summary.
 -- Reads from silver — never directly from bronze or sources.
--- One row per location (most recent observation only).
+-- One row per canonical capital (city_name, country_code).
+-- Partitions by (city_name, country_code) rather than (lat, lon) to
+-- eliminate duplicates caused by minor coordinate drift across API runs.
 
 WITH latest_obs AS (
     SELECT
@@ -27,7 +29,10 @@ WITH latest_obs AS (
         wind_description,
         sunrise_at,
         sunset_at,
-        ROW_NUMBER() OVER (PARTITION BY lat, lon ORDER BY fetched_at DESC) AS rn
+        ROW_NUMBER() OVER (
+            PARTITION BY city_name, country_code
+            ORDER BY fetched_at DESC
+        ) AS rn
     FROM {{ ref('silver_weather_observations') }}
 ),
 

@@ -376,12 +376,16 @@ def extract_all_sources(
     city_name: str = None,
     units: str = "metric",
     lang: str = "en",
+    load_folder: Path = None,
+    with_geocoding: bool = True,
 ) -> Tuple[Dict[str, Path], Path]:
     """
     Extract all OpenWeather data sources and save to parquet files.
-    
-    Creates a new load folder for each extraction run.
-    
+
+    When load_folder is provided, files are written into that shared folder with
+    lat/lon appended to the filename (e.g. current_weather_51.5074_-0.1278.parquet)
+    so multiple locations can coexist in the same folder.
+
     Args:
         api_key: OpenWeather API key
         lat: Latitude
@@ -389,18 +393,29 @@ def extract_all_sources(
         city_name: City name for geocoding
         units: Units of measurement
         lang: Language code
-    
+        load_folder: Optional shared folder path. If None, creates a new timestamped folder.
+        with_geocoding: If False, skip geocoding + reverse geocoding steps (saves API calls
+                        when extracting many locations that already have reference data).
+
     Returns:
         Tuple of (dictionary mapping source names to parquet file paths, load_folder path)
     """
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    
-    # Create load folder for this extraction run
-    load_folder = get_load_folder_path(timestamp)
+
+    # Use provided folder or create a new timestamped one
+    if load_folder is None:
+        load_folder = get_load_folder_path(timestamp)
+    else:
+        load_folder.mkdir(parents=True, exist_ok=True)
+
+    # When sharing a folder across locations, embed lat/lon in the filename
+    # so files don't overwrite each other.
+    loc_suffix = f"_{lat:.4f}_{lon:.4f}" if load_folder is not None else ""
+
     print(f"Using load folder: {load_folder}")
-    
+
     extracted_files = {}
-    
+
     # 1. Current Weather
     print("Extracting current weather...")
     try:
@@ -409,7 +424,8 @@ def extract_all_sources(
         # reference plain `lat` and `lon` columns.
         current_data["lat"] = current_data.get("coord", {}).get("lat")
         current_data["lon"] = current_data.get("coord", {}).get("lon")
-        filepath = save_to_parquet(current_data, "current_weather", timestamp, load_folder)
+        source_name = f"current_weather{loc_suffix}"
+        filepath = save_to_parquet(current_data, source_name, timestamp, load_folder)
         extracted_files["current_weather"] = filepath
         print(f"  Saved to: {filepath}")
     except Exception as e:
@@ -431,39 +447,43 @@ def extract_all_sources(
             row["lon"] = coord.get("lon")
             row["_fetched_at"] = fetched_at
             intervals.append(row)
-        filepath = save_list_to_parquet(intervals, "weather_forecast", timestamp, load_folder)
+        source_name = f"weather_forecast{loc_suffix}"
+        filepath = save_list_to_parquet(intervals, source_name, timestamp, load_folder)
         extracted_files["weather_forecast"] = filepath
         print(f"  Saved to: {filepath}")
     except Exception as e:
         print(f"  Error extracting weather forecast: {e}")
-    
-    # 3. Forward Geocoding (if city_name provided)
-    if city_name:
-        print(f"Extracting geocoding for {city_name}...")
+
+    if with_geocoding:
+        # 3. Forward Geocoding (if city_name provided)
+        if city_name:
+            print(f"Extracting geocoding for {city_name}...")
+            try:
+                geocoding_data = extract_geocoding(api_key, city_name, limit=5, lang=lang)
+                if geocoding_data:
+                    source_name = f"geocoding{loc_suffix}"
+                    filepath = save_list_to_parquet(geocoding_data, source_name, timestamp, load_folder)
+                    extracted_files["geocoding"] = filepath
+                    print(f"  Saved to: {filepath}")
+                else:
+                    print("  No geocoding data returned")
+            except Exception as e:
+                print(f"  Error extracting geocoding: {e}")
+
+        # 4. Reverse Geocoding
+        print("Extracting reverse geocoding...")
         try:
-            geocoding_data = extract_geocoding(api_key, city_name, limit=5, lang=lang)
-            if geocoding_data:
-                filepath = save_list_to_parquet(geocoding_data, "geocoding", timestamp, load_folder)
-                extracted_files["geocoding"] = filepath
+            reverse_data = extract_reverse_geocoding(api_key, lat, lon, limit=5, lang=lang)
+            if reverse_data:
+                source_name = f"reverse_geocoding{loc_suffix}"
+                filepath = save_list_to_parquet(reverse_data, source_name, timestamp, load_folder)
+                extracted_files["reverse_geocoding"] = filepath
                 print(f"  Saved to: {filepath}")
             else:
-                print("  No geocoding data returned")
+                print("  No reverse geocoding data returned")
         except Exception as e:
-            print(f"  Error extracting geocoding: {e}")
-    
-    # 4. Reverse Geocoding
-    print("Extracting reverse geocoding...")
-    try:
-        reverse_data = extract_reverse_geocoding(api_key, lat, lon, limit=5, lang=lang)
-        if reverse_data:
-            filepath = save_list_to_parquet(reverse_data, "reverse_geocoding", timestamp, load_folder)
-            extracted_files["reverse_geocoding"] = filepath
-            print(f"  Saved to: {filepath}")
-        else:
-            print("  No reverse geocoding data returned")
-    except Exception as e:
-        print(f"  Error extracting reverse geocoding: {e}")
-    
+            print(f"  Error extracting reverse geocoding: {e}")
+
     return extracted_files, load_folder
 
 

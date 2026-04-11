@@ -1,3 +1,22 @@
+export interface MonthlyTemp {
+  year: number;
+  month: number;       // 1–12
+  avg_temp_c: number;
+  min_temp_c: number;
+  max_temp_c: number;
+  avg_humidity_pct: number;
+  observation_count: number;
+}
+
+export interface Capital {
+  city: string;
+  country: string;
+  country_code: string;
+  lat: number;
+  lon: number;
+  has_data: boolean;
+}
+
 export interface CurrentWeather {
   city_name: string;
   country_code: string;
