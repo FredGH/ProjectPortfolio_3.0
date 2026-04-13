@@ -39,6 +39,8 @@ The gold layer merges both: historical data wins for completed past months; live
 - `extraction_schedule` — runs every hour at `:00` (API extract + bronze load)
 - `dbt_schedule` — runs every hour at `:15` (all dbt models, after extraction)
 
+> **Proposed improvements:** see [IMPROVEMENTS.md](IMPROVEMENTS.md) for a prioritised list of 40 engineering improvements covering idempotency, observability, performance, security, scalability, data quality, and more.
+
 ---
 
 ## Prerequisites
@@ -271,13 +273,48 @@ After starting the Docker stack:
 
    In Dagit → Jobs → `extract_and_load_job` → **Launch run**. This triggers `weather_extraction` (loops over all 195 capitals, ~2 min with rate limiting) then `bronze_load`.
 
-3. **Run dbt transformations**:
+3. **Run the historical backfill** (once, on first deploy):
 
-   In Dagit → Jobs → `dbt_transform_job` → **Launch run**. Populates bronze → silver → gold schemas.
+   In Dagit → Assets → select `historical_backfill` → **Materialize**. Fetches ERA5 reanalysis data from 2020-01-01 to yesterday for all capitals from the Open-Meteo Archive API and loads it into `staging.historical_weather_monthly`. Takes ~5–15 minutes. **Without this step the monthly temperature chart will only show the current month.**
 
-4. **View dashboard** at [http://localhost:3002](http://localhost:3002).
+4. **Run dbt transformations**:
+
+   In Dagit → Jobs → `dbt_transform_job` → **Launch run**. Populates bronze → silver → gold schemas. Run this after both step 2 and step 3 so the gold layer merges live and historical data.
+
+5. **View dashboard** at [http://localhost:3002](http://localhost:3002).
 
 After the first manual run, the two hourly schedules take over automatically.
+
+### Dagster Jobs — run order and what they do
+
+**These two jobs must always be run in order: `extract_and_load_job` first, then `dbt_transform_job`.**
+
+`dbt_transform_job` reads from the tables that `extract_and_load_job` writes. Running dbt before extraction leaves those tables empty (or stale), so the gold-layer views served by the dashboard will have no data.
+
+#### 1. `extract_and_load_job` (run first)
+
+Covers the full ingestion path from the OpenWeather API to the DuckDB bronze layer.
+
+It runs two assets in sequence:
+
+| Asset | What it does |
+|---|---|
+| `weather_extraction` | Calls the OpenWeather Free API 2.5 for every world capital (~195 cities) — two requests each (current conditions + 5-day forecast). Raw responses are serialised to Parquet files in `data/data_zone/{timestamp}/`. Takes ~2–3 minutes due to a 0.5 s rate-limit delay between cities. |
+| `bronze_load` | Reads the Parquet files just written and upserts them into DuckDB's `staging` schema (`staging.current_weather`, `staging.weather_forecast`) using composite-key deduplication. No duplicate rows are created on re-runs. |
+
+After this job completes, the raw tables in `staging` are populated and ready to be consumed by dbt.
+
+#### 2. `dbt_transform_job` (run second)
+
+Runs all dbt models in layer order — bronze → silver → gold — transforming the raw staging tables into clean, analytics-ready structures.
+
+| Layer | Schema | What it produces |
+|---|---|---|
+| Bronze | `bronze` | `stg_current_weather`, `stg_weather_forecast`, `stg_historical_weather`, `stg_world_capitals` — typed and renamed views over the raw `staging` tables |
+| Silver | `silver` | `silver_weather_observations`, `silver_forecast_intervals` — enriched with derived fields (e.g. readable labels, unit conversions) |
+| Gold | `gold` | `gold_weather_summary` — one row per capital with the latest conditions and 24 h forecast summary; `gold_temperature_monthly` — monthly temperature distribution merging live and historical data |
+
+The dashboard reads exclusively from the `gold` schema. Until this job runs, the dashboard will show no data even if extraction succeeded.
 
 ### Rate limiting
 
@@ -288,6 +325,16 @@ Each capital requires 2 API calls (current weather + 5-day forecast). The extrac
 ## Historical Backfill (Open-Meteo Archive API)
 
 The dashboard's monthly temperature chart is powered by historical data from the [Open-Meteo Archive API](https://open-meteo.com/en/docs/historical-weather-api) (ERA5 reanalysis, free, no API key required).
+
+### When to run
+
+| Situation | Action |
+|---|---|
+| First deploy | Run once, before the first `dbt_transform_job` run |
+| Dashboard shows only the current month | Historical data is missing — run the backfill, then re-run `dbt_transform_job` |
+| Periodic refresh (optional) | Re-run every few months to extend history to the current date |
+
+This asset is intentionally **not** part of the hourly schedule — it is a one-time (or infrequent) operation. The hourly `dbt_transform_job` is enough to keep the current month up to date once the backfill has been done.
 
 ### How it works
 

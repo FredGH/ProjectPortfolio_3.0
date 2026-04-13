@@ -478,7 +478,7 @@ def load_all_to_bronze(
     
     # Ensure bronze path exists
     get_bronze_path()
-    
+
     # Get folders based on mode
     if load_mode == LoadMode.FULL_RELOAD:
         folders = list_load_folders()
@@ -671,7 +671,7 @@ def load_capitals_to_staging(
         Dict with status and row count.
     """
     if json_path is None:
-        json_path = PROJECT_ROOT / "data" / "world_capitals.json"
+        json_path = Path(__file__).parent / "world_capitals.json"
     if db_path is None:
         db_path = get_duckdb_path()
 
@@ -702,6 +702,30 @@ def load_capitals_to_staging(
             FROM df
         """)
         row_count = conn.execute("SELECT COUNT(*) FROM staging.world_capitals").fetchone()[0]
+
+        # Ensure the historical table exists so dbt can always reference it,
+        # even before historical_backfill has been run for the first time.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS staging.historical_weather_monthly (
+                city                VARCHAR NOT NULL,
+                country             VARCHAR,
+                country_code        VARCHAR NOT NULL,
+                lat                 DOUBLE,
+                lon                 DOUBLE,
+                year                INTEGER NOT NULL,
+                month               INTEGER NOT NULL,
+                avg_temp_c          DOUBLE,
+                min_temp_c          DOUBLE,
+                max_temp_c          DOUBLE,
+                avg_humidity_pct    DOUBLE,
+                avg_wind_speed_ms   DOUBLE,
+                avg_cloud_cover_pct DOUBLE,
+                total_precip_mm     DOUBLE,
+                observation_count   INTEGER,
+                source              VARCHAR,
+                PRIMARY KEY (city, country_code, year, month)
+            )
+        """)
     finally:
         conn.close()
 

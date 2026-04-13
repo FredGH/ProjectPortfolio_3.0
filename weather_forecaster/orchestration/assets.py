@@ -24,7 +24,7 @@ from weather_forecaster_sources.config import get_api_key
 from weather_forecaster_sources.extraction import extract_all_sources, get_load_folder_path
 
 PROJECT_ROOT = Path(__file__).parent.parent
-CAPITALS_JSON = PROJECT_ROOT / "data" / "world_capitals.json"
+CAPITALS_JSON = PROJECT_ROOT / "weather_forecaster_sources" / "world_capitals.json"
 
 # Delay between locations to respect the OpenWeather free tier (60 req/min).
 # Each location makes 2 API calls (current + forecast), so 0.5s/location keeps
@@ -148,7 +148,6 @@ def historical_backfill(context: AssetExecutionContext) -> dict:
     all_rows = fetch_all_capitals_history(
         capitals=capitals,
         start_year=2020,
-        inter_city_delay_s=0.3,
         progress_cb=_log,
     )
 
