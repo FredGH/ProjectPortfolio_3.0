@@ -174,19 +174,25 @@ def fetch_monthly_history(
 def fetch_all_capitals_history(
     capitals: list[dict],
     start_year: int = 2020,
-    inter_city_delay_s: float = 0.5,
+    inter_city_delay_s: float = 1.0,
     progress_cb=None,
+    rate_limit_wait_s: float = 60.0,
+    rate_limit_max_retries: int = 3,
 ) -> list[dict[str, Any]]:
     """
     Fetch monthly historical weather for a list of capitals.
 
-    One API request per city (full date range). Aborts on rate-limit (429).
+    One API request per city (full date range). On HTTP 429, waits
+    ``rate_limit_wait_s`` seconds and retries up to ``rate_limit_max_retries``
+    times before skipping the city and continuing.
 
     Args:
-        capitals:            List of dicts with keys city, country, country_code, lat, lon.
-        start_year:          First year to backfill.
-        inter_city_delay_s:  Pause between cities to stay polite.
-        progress_cb:         Optional callable(i, total, city, row_count) for logging.
+        capitals:               List of dicts with keys city, country, country_code, lat, lon.
+        start_year:             First year to backfill.
+        inter_city_delay_s:     Pause between cities (default 1 s — polite to free API).
+        progress_cb:            Optional callable(i, total, city, row_count) for logging.
+        rate_limit_wait_s:      Seconds to wait after a 429 before retrying (default 60).
+        rate_limit_max_retries: Max retries per city on 429 before skipping (default 3).
 
     Returns:
         Flat list of monthly-aggregate dicts for all capitals.
@@ -200,18 +206,34 @@ def fetch_all_capitals_history(
         lat          = cap["lat"]
         lon          = cap["lon"]
 
-        try:
-            rows = fetch_monthly_history(
-                lat=lat, lon=lon,
-                city=city, country=country, country_code=country_code,
-                start_year=start_year,
-            )
-        except _RateLimitError:
-            print(f"    Rate limit hit at {city} ({i+1}/{len(capitals)}) — stopping early.")
-            break
-        except Exception as exc:
-            print(f"    Warning: {city}: {exc}")
-            rows = []
+        rows: list[dict[str, Any]] = []
+        for attempt in range(rate_limit_max_retries + 1):
+            try:
+                rows = fetch_monthly_history(
+                    lat=lat, lon=lon,
+                    city=city, country=country, country_code=country_code,
+                    start_year=start_year,
+                )
+                break  # success
+            except _RateLimitError:
+                if attempt < rate_limit_max_retries:
+                    wait = rate_limit_wait_s * (attempt + 1)
+                    print(
+                        f"    Rate limit at {city} ({i+1}/{len(capitals)}), "
+                        f"attempt {attempt+1}/{rate_limit_max_retries} — "
+                        f"waiting {wait:.0f}s before retry.",
+                        flush=True,
+                    )
+                    time.sleep(wait)
+                else:
+                    print(
+                        f"    Rate limit at {city} ({i+1}/{len(capitals)}) — "
+                        f"skipping after {rate_limit_max_retries} retries.",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(f"    Warning: {city}: {exc}", flush=True)
+                break
 
         all_rows.extend(rows)
 
