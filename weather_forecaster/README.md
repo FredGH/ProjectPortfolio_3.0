@@ -2,27 +2,43 @@
 
 A data engineering pipeline that extracts weather data from the [OpenWeather Free API 2.5](https://openweathermap.org/api) and loads it incrementally into a DuckDB bronze layer via an intermediate parquet staging area (`data_zone`). Orchestrated with **Dagster**, which schedules extraction, bronze loading, and dbt transformations.
 
+![Weather Forecaster Dashboard](image.png)
+
 ## Architecture
 
-```
-OpenWeather API (Free 2.5)          Open-Meteo Archive API (free, no key)
-        │                                         │
-        ▼  extraction.py                          ▼  historical_extraction.py
-data/data_zone/{timestamp}/          monthly aggregates (2020 → present)
-  [Dagster: weather_extraction]        [Dagster: historical_backfill]
-        │                                         │
-        ▼  bronze_loader.py                       ▼  bronze_loader.py
-data/etl/weather_forecaster.duckdb ← DuckDB bronze layer (incremental merge)
-  staging.current_weather              staging.historical_weather_monthly
-  staging.weather_forecast
-        │
-        ▼  dbt Fusion              [Dagster: weather_dbt_assets]
-dbt/models/
-  bronze/   ← views over raw DuckDB tables (stg_*)
-  silver/   ← enriched views (labels, derived fields)
-  gold/     ← materialised summary tables
-            gold_weather_summary       — latest conditions per capital
-            gold_temperature_monthly   — monthly temp distribution (live + historical)
+```mermaid
+flowchart TD
+    OW["OpenWeather Free API 2.5\ncurrent + 5-day forecast\n(hourly)"]
+    OM["Open-Meteo Archive API\nERA5 reanalysis 2020 → present\n(free, no key)"]
+
+    EXT["extraction.py\n[Dagster: weather_extraction]"]
+    HIST["historical_extraction.py\n[Dagster: historical_backfill]"]
+
+    ZONE["data/data_zone/{timestamp}/\nParquet staging files"]
+    AGG["monthly aggregates\n(Python in-memory)"]
+
+    BL["bronze_loader.py\n[Dagster: bronze_load]"]
+    BLH["bronze_loader.py\n[Dagster: historical_backfill]"]
+
+    subgraph DuckDB["DuckDB  ·  weather_forecaster.duckdb"]
+        STAG["staging schema\nstaging.current_weather\nstaging.weather_forecast"]
+        STAGH["staging schema\nstaging.historical_weather_monthly"]
+        BR["bronze schema\nstg_current_weather\nstg_weather_forecast\nstg_historical_weather\nstg_world_capitals"]
+        SIL["silver schema\nsilver_weather_observations\nsilver_forecast_intervals"]
+        GOLD["gold schema\ngold_weather_summary\ngold_temperature_monthly"]
+    end
+
+    DBT["dbt Fusion\n[Dagster: weather_dbt_assets]"]
+
+    API["FastAPI\n/api/current  /api/forecast  /api/history"]
+    DASH["Next.js Dashboard\nlocalhost:3002"]
+
+    OW --> EXT --> ZONE --> BL --> STAG
+    OM --> HIST --> AGG --> BLH --> STAGH
+    STAG --> DBT
+    STAGH --> DBT
+    DBT --> BR --> SIL --> GOLD
+    GOLD --> API --> DASH
 ```
 
 **Data sources:**
@@ -39,7 +55,11 @@ The gold layer merges both: historical data wins for completed past months; live
 - `extraction_schedule` — runs every hour at `:00` (API extract + bronze load)
 - `dbt_schedule` — runs every hour at `:15` (all dbt models, after extraction)
 
-> **Proposed improvements:** see [IMPROVEMENTS.md](IMPROVEMENTS.md) for a prioritised list of 40 engineering improvements covering idempotency, observability, performance, security, scalability, data quality, and more.
+---
+
+## Proposed Improvements
+
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for a prioritised list of 40 engineering improvements covering idempotency, observability, performance, security, scalability, data quality, and more.
 
 ---
 
