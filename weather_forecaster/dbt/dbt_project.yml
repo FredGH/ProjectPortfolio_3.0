@@ -20,3 +20,7 @@ models:
     gold:
       +materialized: table
       +schema: gold
+    semantic:
+      metricflow_time_spine:
+        +materialized: table
+        +static_analysis: "off"

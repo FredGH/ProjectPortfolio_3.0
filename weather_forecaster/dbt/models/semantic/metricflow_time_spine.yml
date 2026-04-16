@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: metricflow_time_spine
+    description: "Continuous daily date series required by MetricFlow for time-based metric calculations."
+    columns:
+      - name: date_day
+        description: "One row per calendar day."
+        data_type: date
+        granularity: day
+    time_spine:
+      standard_granularity_column: date_day

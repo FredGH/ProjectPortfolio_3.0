@@ -1,9 +1,3 @@
-# Proposed Improvements
-
-Senior data engineering review of the Weather Forecaster pipeline. Improvements are grouped by theme and ranked in the priority matrix below.
-
----
-
 ## What Is Already Well-Implemented
 
 The pipeline demonstrates a solid foundation across several engineering dimensions. These practices should be preserved as the system evolves.
@@ -33,7 +27,7 @@ The pipeline demonstrates a solid foundation across several engineering dimensio
 |---|---|---|
 | Historical backfill upsert: DELETE matching keys then INSERT | `bronze_loader.py:629–645` | Re-running the backfill replaces stale rows rather than duplicating them |
 | `capitals_load` replaces all rows on every run | `bronze_loader.py:load_capitals_to_staging` | Reference data stays in sync with the JSON without manual cleanup |
-| `_load_metadata` deduplication check before insert | `bronze_loader.py:519–524` | Already-loaded files are skipped on incremental re-run |
+| `_load_metadata` ded  
 
 ### Data Architecture
 
@@ -82,7 +76,12 @@ The pipeline demonstrates a solid foundation across several engineering dimensio
 | Integration tests marked with `@pytest.mark.integration` | `tests/test_weather_api.py` | Clear separation between fast unit tests and slow API-dependent tests |
 | `PYTHONPATH=.` pattern documented for test invocation | `CLAUDE.md`, `README.md` | Avoids import errors in a project without a full package install |
 
----
+------------------
+
+# Proposed Improvements
+
+Improvements are grouped by theme and ranked in the priority matrix below.
+
 
 ## Priority Matrix
 

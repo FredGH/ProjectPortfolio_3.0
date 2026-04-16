@@ -1,0 +1,279 @@
+version: 2
+
+# ── Semantic Models ──────────────────────────────────────────────────────────
+# Defines the logical structure (entities, dimensions, measures) that MetricFlow
+# uses to generate SQL. Metrics reference measures declared here.
+
+semantic_models:
+
+  # ── Current weather + 24h forecast per city ─────────────────────────────
+  - name: weather_summary
+    description: >
+      Current weather conditions per capital city with a 24-hour forecast
+      summary. One row per (city_name, country_code). Source: gold_weather_summary.
+    model: ref('gold_weather_summary')
+
+    entities:
+      - name: city
+        type: primary
+        expr: "city_name || '_' || country_code"
+
+    dimensions:
+      - name: observed_at
+        type: time
+        type_params:
+          time_granularity: day
+      - name: city_name
+        type: categorical
+      - name: country_code
+        type: categorical
+      - name: current_cloud_description
+        type: categorical
+        description: "Human-readable cloud cover label (clear / partly cloudy / mostly cloudy / overcast)."
+      - name: current_wind_description
+        type: categorical
+        description: "Beaufort-based wind label (calm / light breeze / moderate breeze / strong breeze / gale or above)."
+
+    measures:
+      - name: current_temp_c
+        description: "Current air temperature in °C."
+        agg: average
+        expr: current_temp_c
+        agg_time_dimension: observed_at
+      - name: feels_like_c
+        description: "Feels-like temperature in °C."
+        agg: average
+        expr: feels_like_c
+        agg_time_dimension: observed_at
+      - name: humidity_pct
+        description: "Current relative humidity percentage."
+        agg: average
+        expr: humidity_pct
+        agg_time_dimension: observed_at
+      - name: pressure_hpa
+        description: "Atmospheric pressure in hPa."
+        agg: average
+        expr: pressure_hpa
+        agg_time_dimension: observed_at
+      - name: wind_speed_ms
+        description: "Current wind speed in m/s."
+        agg: average
+        expr: wind_speed_ms
+        agg_time_dimension: observed_at
+      - name: cloud_cover_pct
+        description: "Current cloud cover percentage."
+        agg: average
+        expr: cloud_cover_pct
+        agg_time_dimension: observed_at
+      - name: avg_temp_c_24h
+        description: "Average forecast temperature over the next 24 hours."
+        agg: average
+        expr: avg_temp_c_24h
+        agg_time_dimension: observed_at
+      - name: max_temp_c_24h
+        description: "Maximum forecast temperature over the next 24 hours."
+        agg: max
+        expr: max_temp_c_24h
+        agg_time_dimension: observed_at
+      - name: min_temp_c_24h
+        description: "Minimum forecast temperature over the next 24 hours."
+        agg: min
+        expr: min_temp_c_24h
+        agg_time_dimension: observed_at
+      - name: avg_wind_speed_ms_24h
+        description: "Average forecast wind speed over the next 24 hours."
+        agg: average
+        expr: avg_wind_speed_ms_24h
+        agg_time_dimension: observed_at
+      - name: city_count
+        description: "Number of distinct cities with weather data."
+        agg: count_distinct
+        expr: "city_name || '_' || country_code"
+        agg_time_dimension: observed_at
+
+  # ── Monthly temperature aggregates per city ──────────────────────────────
+  - name: temperature_monthly
+    description: >
+      Monthly temperature distribution per capital city. Combines live
+      OpenWeather observations with Open-Meteo ERA5 historical archive.
+      One row per (city_name, country_code, year, month).
+      Source: gold_temperature_monthly.
+    model: ref('gold_temperature_monthly')
+
+    entities:
+      - name: city_month
+        type: primary
+        expr: "city_name || '_' || country_code || '_' || CAST(year AS VARCHAR) || '_' || LPAD(CAST(month AS VARCHAR), 2, '0')"
+
+    dimensions:
+      - name: month_date
+        type: time
+        type_params:
+          time_granularity: month
+        expr: "make_date(year, month, 1)"
+      - name: city_name
+        type: categorical
+      - name: country_code
+        type: categorical
+      - name: data_source
+        type: categorical
+        expr: source
+
+    measures:
+      - name: avg_monthly_temp_c
+        description: "Average monthly air temperature in °C."
+        agg: average
+        expr: avg_temp_c
+        agg_time_dimension: month_date
+      - name: min_monthly_temp_c
+        description: "Minimum monthly temperature in °C."
+        agg: min
+        expr: min_temp_c
+        agg_time_dimension: month_date
+      - name: max_monthly_temp_c
+        description: "Maximum monthly temperature in °C."
+        agg: max
+        expr: max_temp_c
+        agg_time_dimension: month_date
+      - name: avg_monthly_humidity_pct
+        description: "Average monthly relative humidity percentage."
+        agg: average
+        expr: avg_humidity_pct
+        agg_time_dimension: month_date
+      - name: avg_monthly_wind_speed_ms
+        description: "Average monthly wind speed in m/s."
+        agg: average
+        expr: avg_wind_speed_ms
+        agg_time_dimension: month_date
+      - name: avg_monthly_cloud_cover_pct
+        description: "Average monthly cloud cover percentage."
+        agg: average
+        expr: avg_cloud_cover_pct
+        agg_time_dimension: month_date
+      - name: total_monthly_precip_mm
+        description: "Total monthly precipitation in mm."
+        agg: sum
+        expr: total_precip_mm
+        agg_time_dimension: month_date
+
+
+# ── Metrics ──────────────────────────────────────────────────────────────────
+# Each metric references a measure from a semantic model above.
+# MetricFlow generates the SQL; callers reference metrics by name only.
+
+metrics:
+
+  # ── Current conditions ───────────────────────────────────────────────────
+  - name: avg_current_temperature
+    label: "Avg Current Temperature (°C)"
+    description: "Average current air temperature (°C) across selected cities."
+    type: simple
+    type_params:
+      measure: current_temp_c
+
+  - name: avg_feels_like_temperature
+    label: "Avg Feels-Like Temperature (°C)"
+    description: "Average feels-like temperature (°C) across selected cities."
+    type: simple
+    type_params:
+      measure: feels_like_c
+
+  - name: avg_humidity
+    label: "Avg Humidity (%)"
+    description: "Average current relative humidity (%) across selected cities."
+    type: simple
+    type_params:
+      measure: humidity_pct
+
+  - name: avg_pressure
+    label: "Avg Pressure (hPa)"
+    description: "Average atmospheric pressure (hPa) across selected cities."
+    type: simple
+    type_params:
+      measure: pressure_hpa
+
+  - name: avg_wind_speed
+    label: "Avg Wind Speed (m/s)"
+    description: "Average current wind speed (m/s) across selected cities."
+    type: simple
+    type_params:
+      measure: wind_speed_ms
+
+  - name: avg_cloud_cover
+    label: "Avg Cloud Cover (%)"
+    description: "Average current cloud cover (%) across selected cities."
+    type: simple
+    type_params:
+      measure: cloud_cover_pct
+
+  # ── 24-hour forecast ─────────────────────────────────────────────────────
+  - name: avg_24h_forecast_temperature
+    label: "Avg 24h Forecast Temperature (°C)"
+    description: "Average 24-hour forecast temperature (°C) across selected cities."
+    type: simple
+    type_params:
+      measure: avg_temp_c_24h
+
+  - name: max_24h_forecast_temperature
+    label: "Max 24h Forecast Temperature (°C)"
+    description: "Maximum 24-hour forecast temperature (°C) across selected cities."
+    type: simple
+    type_params:
+      measure: max_temp_c_24h
+
+  - name: min_24h_forecast_temperature
+    label: "Min 24h Forecast Temperature (°C)"
+    description: "Minimum 24-hour forecast temperature (°C) across selected cities."
+    type: simple
+    type_params:
+      measure: min_temp_c_24h
+
+  - name: avg_24h_forecast_wind_speed
+    label: "Avg 24h Forecast Wind Speed (m/s)"
+    description: "Average 24-hour forecast wind speed (m/s) across selected cities."
+    type: simple
+    type_params:
+      measure: avg_wind_speed_ms_24h
+
+  # ── Historical / monthly ─────────────────────────────────────────────────
+  - name: avg_monthly_temperature
+    label: "Avg Monthly Temperature (°C)"
+    description: "Average monthly temperature (°C) — ERA5 historical + live data."
+    type: simple
+    type_params:
+      measure: avg_monthly_temp_c
+
+  - name: min_monthly_temperature
+    label: "Min Monthly Temperature (°C)"
+    description: "Minimum monthly temperature (°C) — ERA5 historical + live data."
+    type: simple
+    type_params:
+      measure: min_monthly_temp_c
+
+  - name: max_monthly_temperature
+    label: "Max Monthly Temperature (°C)"
+    description: "Maximum monthly temperature (°C) — ERA5 historical + live data."
+    type: simple
+    type_params:
+      measure: max_monthly_temp_c
+
+  - name: avg_monthly_humidity
+    label: "Avg Monthly Humidity (%)"
+    description: "Average monthly relative humidity (%) — ERA5 historical + live data."
+    type: simple
+    type_params:
+      measure: avg_monthly_humidity_pct
+
+  - name: avg_monthly_wind_speed
+    label: "Avg Monthly Wind Speed (m/s)"
+    description: "Average monthly wind speed (m/s) — ERA5 historical + live data."
+    type: simple
+    type_params:
+      measure: avg_monthly_wind_speed_ms
+
+  - name: total_monthly_precipitation
+    label: "Total Monthly Precipitation (mm)"
+    description: "Total monthly precipitation (mm) — ERA5 historical data."
+    type: simple
+    type_params:
+      measure: total_monthly_precip_mm

@@ -6,8 +6,24 @@ weather_forecaster:
       path: "{{ env_var('DBT_DUCKDB_PATH', '../data/etl/weather_forecaster.duckdb') }}"
       schema: staging
       threads: 4
+    # Read-only target used by MetricFlow / Streamlit semantic layer demo.
+    # Opens DuckDB with a shared lock so multiple readers can coexist.
+    # Note: still blocked if another process holds an exclusive write lock
+    # (e.g. a running dbt or Dagster job). Stop those first, then retry.
+    metricflow:
+      type: duckdb
+      path: "{{ env_var('DBT_DUCKDB_PATH', '../data/etl/weather_forecaster.duckdb') }}"
+      schema: staging
+      threads: 1
+      read_only: true
     docker:
       type: duckdb
       path: /app/data/etl/weather_forecaster.duckdb
       schema: staging
       threads: 4
+    docker_metricflow:
+      type: duckdb
+      path: /app/data/etl/weather_forecaster.duckdb
+      schema: staging
+      threads: 1
+      read_only: true
