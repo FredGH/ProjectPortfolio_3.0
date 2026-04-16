@@ -50,6 +50,30 @@ services:
       - ./dbt/logs:/app/dbt/logs       # persist logs to host
     restart: "no"
 
+  # ─────────────────────────────────────────────────────────────────────────
+  # dbt Semantic Layer demo — MetricFlow + Streamlit
+  # Run the pipeline and dbt services first to populate the DuckDB gold tables.
+  #
+  # Usage:
+  #   docker compose up semantic-layer          # foreground (Ctrl+C to stop)
+  #   docker compose up -d semantic-layer       # background
+  # Then open http://localhost:8501
+  # ─────────────────────────────────────────────────────────────────────────
+  semantic-layer:
+    build:
+      context: .
+      target: semantic-layer
+    container_name: weather-forecaster-semantic-layer
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/app/data                   # DuckDB file (weather_forecaster.duckdb)
+      - ./dbt/target:/app/dbt/target       # persist compiled semantic manifest
+      - ./dbt/logs:/app/dbt/logs           # persist MetricFlow logs
+    environment:
+      - DBT_DUCKDB_PATH=/app/data/etl/weather_forecaster.duckdb
+    restart: unless-stopped
+
 networks:
   default:
     name: weather-forecaster-network

@@ -102,3 +102,43 @@ RUN mkdir -p /app/data/etl
 #   docker compose run --rm dbt build --select gold_weather_summary
 ENTRYPOINT ["dbt"]
 CMD ["build"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 7: semantic-layer — dbt Semantic Layer demo via MetricFlow + Streamlit
+#
+# Installs dbt-metricflow[duckdb] (dbt-core based, not Fusion) alongside
+# Streamlit. MetricFlow parses the dbt project and generates SQL; Streamlit
+# renders the results in the browser.
+#
+# Usage:
+#   docker compose up semantic-layer          # start the app
+#   docker compose up -d semantic-layer       # start in background
+# Then open http://localhost:8501
+# ─────────────────────────────────────────────────────────────────────────────
+FROM base AS semantic-layer
+
+WORKDIR /app
+
+# Install semantic layer dependencies
+COPY semantic_layer/requirements.txt ./semantic_layer/
+RUN pip install --no-cache-dir -r semantic_layer/requirements.txt
+
+# Copy the dbt project so MetricFlow can parse semantic models
+COPY dbt/ ./dbt/
+
+# Copy the Streamlit app
+COPY semantic_layer/app.py ./semantic_layer/
+
+# Pre-create the DuckDB mount point
+RUN mkdir -p /app/data/etl
+
+ENV DBT_PROFILES_DIR=/app/dbt
+ENV DBT_DUCKDB_PATH=/app/data/etl/weather_forecaster.duckdb
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "semantic_layer/app.py", \
+     "--server.port=8501", \
+     "--server.address=0.0.0.0", \
+     "--server.headless=true"]

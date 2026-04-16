@@ -29,9 +29,11 @@ flowchart TD
     end
 
     DBT["dbt Fusion\n[Dagster: weather_dbt_assets]"]
+    SL["dbt Semantic Layer\nsemantic_models.yml\n16 metrics via MetricFlow"]
 
     API["FastAPI\n/api/current  /api/forecast  /api/history"]
     DASH["Next.js Dashboard\nlocalhost:3002"]
+    SLIM["Streamlit Semantic Layer Demo\nlocalhost:8501"]
 
     OW --> EXT --> ZONE --> BL --> STAG
     OM --> HIST --> AGG --> BLH --> STAGH
@@ -39,6 +41,7 @@ flowchart TD
     STAGH --> DBT
     DBT --> BR --> SIL --> GOLD
     GOLD --> API --> DASH
+    GOLD --> SL --> SLIM
 ```
 
 **Data sources:**
@@ -47,6 +50,8 @@ flowchart TD
 
 The gold layer merges both: historical data wins for completed past months; live data fills the current month.
 
+A **dbt Semantic Layer** sits on top of the gold layer and exposes 16 pre-defined metrics (temperatures, humidity, wind, precipitation) that can be queried by name without writing SQL. A local Streamlit app demonstrates external-tool consumption via MetricFlow.
+
 **Two load modes:**
 - **Incremental** (default) — loads the latest `data_zone` folder only
 - **Full reload** — truncates all tables and replays every historical folder
@@ -54,6 +59,21 @@ The gold layer merges both: historical data wins for completed past months; live
 **Dagster schedules:**
 - `extraction_schedule` — runs every hour at `:00` (API extract + bronze load)
 - `dbt_schedule` — runs every hour at `:15` (all dbt models, after extraction)
+
+---
+
+## Engineering Practices
+
+| Practice | Where | Why it matters |
+|---|---|---|
+| **Semantic layer** | `dbt/models/semantic/semantic_models.yml` — 16 metrics via MetricFlow; Streamlit demo at `semantic_layer/app.py` | Decouples metric definitions from the tools that consume them. Business logic lives once in YAML; any downstream tool (Streamlit, Google Sheets, BI tools) queries metrics by name without writing SQL. |
+| **Medallion architecture** | DuckDB schemas: `staging` → `bronze` → `silver` → `gold` | Separates concerns between ingestion fidelity (bronze), enrichment (silver), and business-ready aggregates (gold). Each layer can be rebuilt independently. |
+| **Idempotent incremental loads** | `bronze_loader.py` — composite keys per table | Re-running the pipeline never duplicates rows. Safe for retries, backfills, and partial failures. |
+| **Parquet staging zone** | `data/data_zone/{timestamp}/` between extraction and DuckDB load | Decouples extraction from loading. Raw data is preserved on disk; the bronze load can be re-run or inspected without hitting the API again. |
+| **Read-only DB target** | `profiles.yml` `metricflow` target — `read_only: true` | Prevents the Streamlit / MetricFlow process from acquiring a write lock on DuckDB while the pipeline or VS Code LSP already holds one. |
+| **Orchestration as code** | `orchestration/assets.py` — Dagster software-defined assets | Dependencies between pipeline steps are declared explicitly; Dagster handles scheduling, retries, and observability without custom glue scripts. |
+| **Multi-stage Docker build** | `Dockerfile` — `test` / `pipeline` / `dbt` / `semantic-layer` stages | Each stage installs only what it needs. The test image never ships to production; the semantic layer image has no pipeline dependencies. |
+| **Environment-based config** | `config.py` + `.env.example`; all secrets via env vars | API keys and paths are never hardcoded. The same image runs locally and in production with different env files. |
 
 ---
 
@@ -597,6 +617,121 @@ Open [http://localhost:3002](http://localhost:3002).
 
 ---
 
+## dbt Semantic Layer
+
+The semantic layer defines **metrics** on top of the gold tables. Callers query metrics by name — MetricFlow generates and executes the SQL against DuckDB. No SQL is written in the consuming application.
+
+### How it works
+
+```
+dbt/models/semantic/semantic_models.yml   ← metric + dimension definitions
+            ↓
+MetricFlow (mf CLI)                   ← translates metric name + dimensions → SQL
+            ↓
+DuckDB (data/etl/weather_forecaster.duckdb)
+            ↓
+External app (Streamlit, BI tool, Python script, …)
+```
+
+### Available metrics (16 total)
+
+| Category | Metrics |
+|---|---|
+| Current conditions | `avg_current_temperature`, `avg_feels_like_temperature`, `avg_humidity`, `avg_pressure`, `avg_wind_speed`, `avg_cloud_cover` |
+| 24-hour forecast | `avg_24h_forecast_temperature`, `max_24h_forecast_temperature`, `min_24h_forecast_temperature`, `avg_24h_forecast_wind_speed` |
+| Historical / monthly | `avg_monthly_temperature`, `min_monthly_temperature`, `max_monthly_temperature`, `avg_monthly_humidity`, `avg_monthly_wind_speed`, `total_monthly_precipitation` |
+
+### Prerequisites
+
+Install MetricFlow alongside dbt-core (separate from dbt Fusion used in the main pipeline):
+
+```bash
+source venv/bin/activate
+pip install "dbt-metricflow[duckdb]" streamlit plotly
+```
+
+### Query metrics via CLI
+
+```bash
+cd dbt/
+source ../venv/bin/activate
+
+# List all metrics and their dimensions
+mf list metrics
+
+# List dimensions available for a specific metric
+mf list dimensions --metrics avg_current_temperature
+
+# Query a metric grouped by city
+mf query --metrics avg_current_temperature --group-by city__city_name --limit 10
+
+# Query a historical metric grouped by month and city
+mf query --metrics avg_monthly_temperature \
+         --group-by city_month__city_name,city_month__month_date \
+         --limit 24
+```
+
+### Streamlit demo app
+
+A Streamlit app demonstrates semantic layer consumption by an external tool. It queries MetricFlow via the `mf` CLI and renders results as interactive charts — no SQL in the app code.
+
+#### Run locally
+
+```bash
+# From the project root
+source venv/bin/activate
+streamlit run semantic_layer/app.py
+```
+
+Open [http://localhost:8501](http://localhost:8501).
+
+#### Run with Docker
+
+The pipeline and dbt services must have run first to populate the gold tables.
+
+```bash
+# Build the semantic-layer image (first time or after code changes)
+docker compose build semantic-layer
+
+# Start the app (foreground — Ctrl+C to stop)
+docker compose up semantic-layer
+
+# Start in the background
+docker compose up -d semantic-layer
+
+# Stop
+docker compose stop semantic-layer
+```
+
+Open [http://localhost:8501](http://localhost:8501). Use the sidebar to pick a metric and dimensions, then click **Run Query**.
+
+### Key files
+
+| File | Purpose |
+|---|---|
+| `dbt/models/semantic/semantic_models.yml` | Semantic model and metric definitions for both gold tables |
+| `dbt/models/semantic/metricflow_time_spine.sql` | Daily date spine required by MetricFlow (2018–2035) |
+| `dbt/models/semantic/metricflow_time_spine.yml` | YAML config declaring the `date_day` column and granularity |
+| `semantic_layer/app.py` | Streamlit query-builder UI |
+| `semantic_layer/requirements.txt` | `dbt-metricflow[duckdb]`, `streamlit`, `plotly` |
+
+### Dimensions
+
+Each metric has a set of dimensions it can be grouped by. Dimension names follow the `entity__dimension` convention:
+
+| Dimension | Metrics | Example values |
+|---|---|---|
+| `city__city_name` | current + forecast metrics | `London`, `Paris` |
+| `city__country_code` | current + forecast metrics | `GB`, `FR` |
+| `city__current_cloud_description` | current metrics | `clear`, `overcast` |
+| `city__current_wind_description` | current metrics | `calm`, `strong breeze` |
+| `city_month__city_name` | monthly metrics | `London` |
+| `city_month__month_date` | monthly metrics | `2024-01-01` |
+| `city_month__data_source` | monthly metrics | `open-meteo-era5`, `openweather-live` |
+| `metric_time` | all metrics | time-series grouping |
+
+---
+
 ## Project Structure
 
 ```
@@ -628,14 +763,21 @@ weather_forecaster/
 │   ├── test_weather_mock.py       # Unit tests — dlt sources (mocked)
 │   └── test_weather_api.py        # Integration tests (real API)
 ├── dbt/
-│   ├── dbt_project.yml            # dbt project config (name, materializations)
+│   ├── dbt_project.yml            # dbt project config (name, materializations, time spine)
 │   ├── profiles.yml               # Docker-only connection profile
 │   ├── models/
 │   │   ├── bronze/                # Views over raw DuckDB tables (stg_*)
 │   │   ├── silver/                # Enriched views (labels, derived fields)
-│   │   └── gold/                  # Materialised summary tables
+│   │   ├── gold/                  # Materialised summary tables
+│   │   └── semantic/              # Semantic layer: MetricFlow time spine + metric definitions
+│   │       ├── semantic_models.yml        # Semantic models and 16 metric definitions
+│   │       ├── metricflow_time_spine.sql  # Daily date spine for MetricFlow
+│   │       └── metricflow_time_spine.yml  # Time spine YAML config
 │   ├── target/                    # Compiled artefacts (gitignored)
 │   └── logs/                      # dbt run logs (gitignored)
+├── semantic_layer/
+│   ├── app.py                     # Streamlit semantic layer demo app
+│   └── requirements.txt           # dbt-metricflow[duckdb] + streamlit + plotly
 ├── data/                          # Generated at runtime (gitignored)
 │   ├── data_zone/                 # Parquet staging — one folder per run
 │   └── etl/weather_forecaster.duckdb          # DuckDB database
