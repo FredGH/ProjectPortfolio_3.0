@@ -7,3 +7,4 @@ data/*
 .coverage
 dist/
 *.egg-info/
+.ruff_cache/

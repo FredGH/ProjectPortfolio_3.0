@@ -6,10 +6,21 @@ build-backend = "setuptools.build_meta"
 name = "agentic_triage"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic>=2",
+    "pyyaml",
+    "spacy>=3.7",
+    "gliner>=0.2",
+    "symspellpy>=6.7",
+    "flashtext>=2.7",
+    "qdrant-client>=1.9",
+    "sentence-transformers>=3.0",
+    "langchain-text-splitters>=0.2",
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
-dev = ["coverage", "ruff", "isort", "black", "pyyaml"]
+dev = ["coverage", "ruff", "isort", "black"]
 
 [tool.setuptools.packages.find]
 where = ["."]
