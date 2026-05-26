@@ -44,10 +44,20 @@ jobs:
         run: ruff check --output-format=github .
 
       - name: isort
-        run: isort --check --diff .
+        run: |
+          OUT=$(isort --check --diff . 2>&1) || {
+            echo "$OUT"
+            printf '\n### isort diff\n```diff\n%s\n```\n' "$OUT" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
 
       - name: black
-        run: black --check --diff .
+        run: |
+          OUT=$(black --check --diff . 2>&1) || {
+            echo "$OUT"
+            printf '\n### black diff\n```diff\n%s\n```\n' "$OUT" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
 
   # ── Python unit + integration tests ──────────────────────────────────────
   test-python:
