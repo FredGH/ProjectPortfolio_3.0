@@ -1,1 +1,318 @@
-[]
+[
+  {
+    "input_id": "C-0001",
+    "text": "I received a letter from your bank addressed to someone else, containing their full name, account number, and transaction history for the past 6 months. I do not know this person. This appears to be a serious data protection breach under GDPR Article 5.",
+    "expected_priority": "P1",
+    "predicted_priority": "P1",
+    "dimension_scores": {"reputational_risk": 5, "financial_impact": 2},
+    "composite_score": 7.0,
+    "reasoning": "This complaint describes a clear GDPR Article 5 data breach: personal financial data belonging to a third party was disclosed to the complainant in error. The regulatory rules collection confirms that unauthorised disclosure of customer data triggers mandatory FCA reporting within 72 hours and potential ICO notification. The reputational risk is maximal — a confirmed data breach of this nature requires immediate escalation to the DPO. Financial impact is moderate as no direct financial loss to the complainant is reported, but remediation and regulatory fines could be significant.",
+    "retrieved_context": [
+      "FCA SYSC 13.7.2: Firms must ensure that personal data is processed in a manner that ensures appropriate security, including protection against unauthorised disclosure. Any breach must be reported to the FCA within 72 hours.",
+      "GDPR Article 5(1)(f) requires personal data to be processed in a manner that ensures appropriate security, including protection against unauthorised or unlawful processing and against accidental loss, destruction or damage.",
+      "ICO guidance: Data breaches involving financial account information must be assessed for notification to the ICO within 72 hours of discovery if the breach is likely to result in a risk to the rights and freedoms of natural persons.",
+      "Precedent C-8812: Customer received third-party statement — classified P1, DPO notified same day, ICO notified within 48h, remediation completed within 5 business days."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0002",
+    "text": "My account was frozen due to a fraud alert on 14 March. Despite the freeze, three transactions totalling £4,200 went through on 15 and 16 March. Your fraud team confirmed the transactions were unauthorised. I need an immediate refund.",
+    "expected_priority": "P1",
+    "predicted_priority": "P1",
+    "dimension_scores": {"reputational_risk": 4, "financial_impact": 5},
+    "composite_score": 9.0,
+    "reasoning": "Unauthorised transactions processed against a frozen account represent both a direct financial harm of £4,200 and a serious process failure. The regulatory rules collection confirms that under PSD2 Article 73, the bank is liable to refund unauthorised transactions immediately (by end of next business day) unless gross negligence by the customer is established. The financial_impact dimension exceeds the escalation threshold at 5. This must be escalated immediately to the fraud resolution team with a same-day refund commitment.",
+    "retrieved_context": [
+      "PSD2 Article 73: Without prejudice to Article 74, the payment service provider of the payer shall immediately refund the payer the amount of the unauthorised payment transaction and restore the debited payment account to the state it would have been in had the unauthorised payment transaction not taken place.",
+      "FCA COBS 7.6: Where an account is subject to a fraud hold, no further debit transactions should be processed unless explicitly authorised by the fraud prevention team on a case-by-case basis.",
+      "Risk taxonomy P1 — Financial Loss: Direct monetary harm to customer caused by bank system failure or process breach. SLA: 4 hours. Action: Escalate to DPO or compliance team immediately.",
+      "Precedent C-9103: Unauthorised debit of £3,800 against frozen account — classified P1, refund processed same day, complaint upheld by FOS."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0003",
+    "text": "You have charged me a £35 unarranged overdraft fee every month for the past 8 months, totalling £280. I checked the FCA's fee cap rules and this fee exceeds the permitted daily cap. I want a full refund and confirmation you have corrected your fee structure.",
+    "expected_priority": "P1",
+    "predicted_priority": "P1",
+    "dimension_scores": {"reputational_risk": 5, "financial_impact": 4},
+    "composite_score": 9.0,
+    "reasoning": "The complainant alleges that the overdraft fee charged exceeds the FCA's unarranged overdraft fee cap introduced in April 2020 (FCA Policy Statement PS19/16). The regulatory rules collection confirms that fees must not exceed the Daily Maximum Charge equivalent, and systematic overcharging over 8 months represents a significant regulatory breach. Both reputational_risk (regulatory non-compliance) and financial_impact (£280 overcharged) exceed their escalation thresholds. Immediate escalation to the compliance team and a full fee audit are required.",
+    "retrieved_context": [
+      "FCA PS19/16: From 6 April 2020 firms must not charge more than a single daily fee for unarranged overdrafts. The Daily Maximum Charge must not exceed the equivalent of 75p per day per £100 borrowed.",
+      "FCA DISP 1.4.1: A firm must, by the end of 8 weeks after its receipt of a complaint, send the complainant a final response or a holding letter. Systematic fee overcharging must be proactively remediated.",
+      "Risk taxonomy P1 — Regulatory Breach: Any confirmed breach of FCA fee rules requires immediate compliance team notification and customer remediation plan within 5 business days.",
+      "Precedent C-7721: Systematic overdraft fee overcharging, £190 total — classified P1, full refund plus 8% statutory interest, compliance review initiated."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0004",
+    "text": "A direct debit was taken from my account by a company I have never heard of for £890. I did not authorise this. My account was also closed last month. How can a direct debit be taken on a closed account? I want my money back immediately.",
+    "expected_priority": "P1",
+    "predicted_priority": "P2",
+    "dimension_scores": {"reputational_risk": 4, "financial_impact": 5},
+    "composite_score": 9.0,
+    "reasoning": "An unauthorised direct debit processed on a closed account represents two simultaneous failures: an unauthorised payment and a process failure allowing debits against a closed account. Under the Direct Debit Guarantee, the bank must immediately refund any payment taken in error. The financial_impact of £890 is material and the reputational risk is significant — allowing debits on closed accounts is a fundamental control failure. Immediate refund and investigation of the account closure process are required.",
+    "retrieved_context": [
+      "Direct Debit Guarantee: If the payer's bank or building society makes an error in paying a Direct Debit, the payer is guaranteed a full and immediate refund of the amount paid from their bank or building society.",
+      "FCA BCOBS 5.1.7: Once an account is closed, all payment instructions including direct debits must be cancelled and no further debits processed without express customer authorisation.",
+      "Risk taxonomy P1 — System Process Failure: Debiting a closed account triggers immediate financial remediation and a mandatory process investigation within 48 hours.",
+      "Precedent C-8341: Direct debit processed on closed account for £650 — classified P1, immediate refund, process review escalated to operations team."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0005",
+    "text": "My mortgage payment has been calculated incorrectly for the past three months. I was on a fixed rate of 2.4% but have been charged at 3.1%. The total overcharge is approximately £420. I have raised this twice before but nothing has been done.",
+    "expected_priority": "P2",
+    "predicted_priority": "P2",
+    "dimension_scores": {"reputational_risk": 3, "financial_impact": 3},
+    "composite_score": 6.0,
+    "reasoning": "Incorrect mortgage interest rate application over three months, with a total overcharge of approximately £420, constitutes a significant financial error and a process failure. The complaint has been raised twice previously without resolution, which elevates the reputational risk. The regulatory rules confirm that mortgage payment errors must be corrected within the same statement period and the customer compensated. This requires assignment to a senior support agent with a commitment to review all three affected months and issue a refund within the current billing cycle.",
+    "retrieved_context": [
+      "FCA MCOB 12.4.1: Where a firm has applied an incorrect mortgage interest rate, it must identify all affected payments, recalculate the correct amounts, and refund any overcharge within 30 days of identification.",
+      "FCA DISP 1.3.1A: A complaint that has not been resolved within 3 business days must be formally logged and a written acknowledgement sent within 5 business days.",
+      "Risk taxonomy P2 — Financial Impact: Overcharging on a mortgage product over multiple months requires senior agent handling and refund within the current billing cycle.",
+      "Precedent C-5512: Mortgage rate misapplication for 2 months, £310 overcharge — classified P2, corrected and refunded within 10 business days."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0006",
+    "text": "I submitted a CHAPS payment of £52,000 for a property completion on Friday at 10am. The payment failed to arrive at the recipient's bank by the 3pm deadline. The property sale fell through and I have incurred legal costs of £1,800. Your system showed the payment as completed.",
+    "expected_priority": "P2",
+    "predicted_priority": "P2",
+    "dimension_scores": {"reputational_risk": 3, "financial_impact": 4},
+    "composite_score": 7.0,
+    "reasoning": "A failed CHAPS payment that showed as completed but was not received caused a property transaction failure and consequential legal costs of £1,800. The regulatory rules confirm that CHAPS payments must be credited to the payee's account by end of business on the day of submission if submitted before the bank's cut-off time of 3pm. The bank's obligation under PSD2 to ensure same-day settlement was not met. The financial_impact is significant and the reputational_risk is elevated by the false 'completed' status displayed to the customer. Senior agent escalation and consequential loss assessment required.",
+    "retrieved_context": [
+      "PSD2 Article 83: The payer's payment service provider shall ensure that the amount of the payment transaction is credited to the payee's payment service provider's account by end of business on the execution day for CHAPS payments received before the cut-off time.",
+      "FCA BCOBS 5.1.4: Where a payment instruction is shown as completed in the customer's online banking but has not in fact been transmitted, the bank bears responsibility for any consequential loss.",
+      "Risk taxonomy P2 — High Financial Impact: Failed same-day payment with consequential customer loss — assign to senior agent, assess consequential loss claim within 24 hours.",
+      "Precedent C-6107: CHAPS failure on property completion, £2,100 legal costs — classified P2, consequential loss of £2,100 upheld by FOS."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0007",
+    "text": "My business account was blocked by your fraud team on Monday morning with no warning. I have been unable to pay suppliers for three days. My business partner has confirmed this is causing us serious financial difficulty and we may miss payroll on Friday.",
+    "expected_priority": "P2",
+    "predicted_priority": "P2",
+    "dimension_scores": {"reputational_risk": 3, "financial_impact": 3},
+    "composite_score": 6.0,
+    "reasoning": "A business account blocked without prior notice during a fraud investigation is a legitimate fraud prevention measure, but the three-day duration without customer communication and the imminent payroll risk elevate this to P2. The regulatory rules confirm that while fraud holds are permitted, the bank must proactively communicate with the customer within 24 hours of placing a block and must review the hold urgency when the customer presents evidence of business necessity. The threat to payroll requires urgent review and, if the fraud concern can be resolved, immediate unblocking.",
+    "retrieved_context": [
+      "FCA BCOBS 2.1: Firms must communicate promptly with customers when taking actions that restrict access to their accounts. Business account restrictions must be reviewed within 24 hours of customer notification of business impact.",
+      "FCA SYSC 6.1.1: Fraud prevention controls must be proportionate. An extended account restriction causing business harm must be reviewed by a senior fraud officer within one business day of the customer raising a business impact.",
+      "Risk taxonomy P2 — Reputational Risk: Extended business account freeze without communication — senior agent escalation, same-day fraud review required.",
+      "Precedent C-5908: Business account frozen 4 days, payroll impacted — classified P2, fraud hold lifted after identity verification on day 4, FOS complaint filed."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0008",
+    "text": "I made an overpayment of £3,500 on my mortgage in January. The payment was received and acknowledged but has not been applied to reduce my outstanding balance. I have called three times. The balance remains unchanged and I am still being charged interest on the full outstanding amount.",
+    "expected_priority": "P2",
+    "predicted_priority": "P2",
+    "dimension_scores": {"reputational_risk": 2, "financial_impact": 3},
+    "composite_score": 5.0,
+    "reasoning": "A confirmed mortgage overpayment of £3,500 that has not been applied to the balance for over a month, despite three contact attempts, represents a process failure with ongoing financial impact (interest being incorrectly charged on the full balance). The regulatory rules confirm that overpayments must be applied within 5 business days of receipt. The ongoing incorrect interest charge and failure to respond after three contacts escalates this to P2.",
+    "retrieved_context": [
+      "FCA MCOB 12.3.2: Overpayments received from mortgage customers must be applied to reduce the outstanding balance within 5 business days of receipt, and the customer notified in writing within 10 business days.",
+      "Risk taxonomy P2 — Process Failure with Financial Impact: Unprocessed overpayment causing ongoing interest overcharge — senior agent, correct balance and refund excess interest within 5 business days.",
+      "Precedent C-5201: Mortgage overpayment of £2,800 not applied for 6 weeks — classified P2, balance corrected, excess interest refunded, customer compensation of £75 for distress."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0009",
+    "text": "I used your foreign exchange service to transfer €18,000 to my French account on 2 April. The rate I was shown was 1.162 EUR/GBP but the actual rate applied was 1.089 EUR/GBP, costing me an extra £1,100. No explanation was given for the discrepancy.",
+    "expected_priority": "P2",
+    "predicted_priority": "P3",
+    "dimension_scores": {"reputational_risk": 3, "financial_impact": 3},
+    "composite_score": 6.0,
+    "reasoning": "A significant discrepancy between the displayed and applied exchange rate on a large foreign currency transfer resulted in a customer being charged £1,100 more than represented. The regulatory rules confirm that under FCA COBS 14.3, the firm must provide accurate pre-trade information including the exchange rate that will be applied. A rate discrepancy of this magnitude on a large transfer likely constitutes a mis-selling or misrepresentation event requiring investigation. Senior agent escalation and rate reconciliation required.",
+    "retrieved_context": [
+      "FCA COBS 14.3.1: Firms must provide clients with appropriate information about the firm and its services, including the exchange rate or rate components that will be applied before execution of a currency transaction.",
+      "FCA PRIN 6: A firm must pay due regard to the interests of its customers and treat them fairly. Applying a rate materially different from the rate presented to the customer without prior disclosure breaches this principle.",
+      "Risk taxonomy P2 — Mis-selling / Misrepresentation: Exchange rate discrepancy causing material customer loss — senior agent escalation, rate reconciliation and refund assessment within same day.",
+      "Precedent C-6344: FX rate misquote on £15,000 transfer, £780 overcharge — classified P2, full refund upheld."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0010",
+    "text": "My standing order to my landlord was cancelled without any notice from your bank. The first I knew about it was when my landlord contacted me about a missed payment. I have now been charged a £50 late payment fee by my landlord.",
+    "expected_priority": "P3",
+    "predicted_priority": "P3",
+    "dimension_scores": {"reputational_risk": 2, "financial_impact": 2},
+    "composite_score": 4.0,
+    "reasoning": "The cancellation of a standing order without customer notification is a process failure. The regulatory rules confirm that banks must notify customers before cancelling standing payment instructions unless required by law or for fraud prevention. The customer has incurred a £50 consequential cost from the landlord. This is a standard escalation queue item — the standing order should be reinstated, the missed payment facilitated, and the consequential £50 cost considered for reimbursement.",
+    "retrieved_context": [
+      "FCA BCOBS 4.1.3: Firms must provide adequate prior notice to customers before cancelling or amending standing payment instructions, except where required by law or fraud prevention.",
+      "Risk taxonomy P3 — Process Failure: Unnotified standing order cancellation causing consequential customer loss — standard escalation queue, reinstate instruction and assess consequential cost within 48 hours.",
+      "Precedent C-4102: Standing order cancelled in error, £30 late fee incurred — classified P3, instruction reinstated, £30 refunded."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0011",
+    "text": "I have been charged the monthly account fee twice this month — £12.50 has been debited twice on the same date. Please refund the duplicate charge.",
+    "expected_priority": "P3",
+    "predicted_priority": "P3",
+    "dimension_scores": {"reputational_risk": 1, "financial_impact": 2},
+    "composite_score": 3.0,
+    "reasoning": "A duplicate account fee charge of £12.50 is a straightforward billing error with a clear remediation path. The financial impact is low and the reputational risk is minimal. The refund should be processed as part of the standard escalation queue without senior agent involvement. The duplicate charge pattern should be flagged to the billing team for investigation.",
+    "retrieved_context": [
+      "FCA BCOBS 5.1: Firms must ensure that charges applied to customer accounts are accurate and match the agreed fee schedule. Duplicate charges must be refunded within 5 business days of identification.",
+      "Risk taxonomy P3 — Billing Error: Duplicate account fee charge — standard escalation queue, refund within 5 business days.",
+      "Precedent C-3801: Duplicate account fee, £15 — classified P3, refunded within 3 business days."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0012",
+    "text": "My online banking access has been locked for 48 hours. I have called twice and been told to wait. I need to access my account to make urgent bill payments. This is unacceptable.",
+    "expected_priority": "P3",
+    "predicted_priority": "P3",
+    "dimension_scores": {"reputational_risk": 2, "financial_impact": 1},
+    "composite_score": 3.0,
+    "reasoning": "A 48-hour online banking lockout causing inability to make payments is a service availability issue. The regulatory rules confirm that while temporary lockouts for security reasons are permitted, they must be resolved promptly and the customer must be provided alternative access methods. Two unresolved contacts elevate this to the standard escalation queue. The urgency of pending payments requires the access to be restored within the next business day.",
+    "retrieved_context": [
+      "FCA BCOBS 2.2: Firms must ensure that customers retain access to their funds through at least one available channel during any planned or unplanned service disruption. Where online access is unavailable for more than 24 hours, alternative means must be proactively offered.",
+      "Risk taxonomy P3 — Service Outage: Extended online banking lockout without resolution — standard escalation queue, restore access within 24 hours or provide alternative payment method.",
+      "Precedent C-4455: Online banking locked 72 hours — classified P3, access restored, £25 goodwill gesture for inconvenience."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0013",
+    "text": "My annual mortgage statement was sent to my previous address even though I updated my correspondence address online three months ago. I am concerned about who may have received it. The statement contains my outstanding balance and payment history.",
+    "expected_priority": "P3",
+    "predicted_priority": "P3",
+    "dimension_scores": {"reputational_risk": 2, "financial_impact": 1},
+    "composite_score": 3.0,
+    "reasoning": "Sending a mortgage statement to a previous address after a confirmed address change is a data handling error. While the information disclosed is less sensitive than account credentials, the mortgage statement contains financial details. The address update failure represents a process control gap. The reputational risk is moderate — if the statement was received by an unknown third party, a data breach assessment may be required. Standard escalation queue with an address record correction and a data breach pre-assessment are the appropriate actions.",
+    "retrieved_context": [
+      "UK GDPR Article 5(1)(f): Personal data must be processed in a manner that ensures appropriate security. Sending a document containing financial information to a former address after a confirmed change request constitutes a data handling error requiring assessment.",
+      "FCA MCOB 7.5.1: Firms must ensure that mortgage statements are sent to the address currently on record for the customer. Address changes must be applied within 5 business days of the customer's request.",
+      "Risk taxonomy P3 — Data Handling Error: Statement sent to wrong address — standard escalation queue, correct address record, assess whether a personal data breach report is required."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0014",
+    "text": "When I visited your branch to discuss transferring my cash ISA, the adviser told me there would be no impact on my annual ISA allowance. I transferred £8,000 and later discovered this used up my remaining allowance for the year, which contradicts what I was told.",
+    "expected_priority": "P3",
+    "predicted_priority": "P3",
+    "dimension_scores": {"reputational_risk": 2, "financial_impact": 2},
+    "composite_score": 4.0,
+    "reasoning": "The branch adviser provided incorrect information about ISA allowance implications, leading the customer to make a financial decision based on inaccurate advice. While an ISA-to-ISA transfer within the same tax year should not count against the annual allowance in most cases, the adviser's explanation appears to have caused customer confusion. This requires an advice review, clarification of the correct regulatory position, and an assessment of whether the customer suffered a financial impact from the incorrect guidance.",
+    "retrieved_context": [
+      "HMRC ISA guidance: An ISA transfer from one manager to another does not count towards the annual ISA subscription limit for the tax year in which the transfer takes place, provided the transfer is done correctly through the ISA manager.",
+      "FCA COBS 9.2.1: A firm must take reasonable steps to ensure that a personal recommendation to a retail client is suitable for that client. Where incorrect information is provided, the firm must correct it and assess any resulting detriment.",
+      "Risk taxonomy P3 — Advice Failure: Incorrect branch advice on ISA — standard escalation queue, advice review and detriment assessment within 48 hours."
+    ],
+    "is_auto_p4": false,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0015",
+    "text": "Could you please tell me the current interest rate on your easy access savings account? I would like to compare it with your fixed rate bond.",
+    "expected_priority": "P4",
+    "predicted_priority": "P4",
+    "dimension_scores": {"reputational_risk": 0, "financial_impact": 0},
+    "composite_score": 0.0,
+    "reasoning": "This is a routine product information enquiry. No financial harm, regulatory concern, or service failure is present. First-line support can provide current interest rate information directly from the product sheet.",
+    "retrieved_context": [
+      "Standard product enquiries about savings rates are handled by first-line support. No escalation required."
+    ],
+    "is_auto_p4": true,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0016",
+    "text": "I would like to receive paper statements instead of online ones for my current account. Please update my preferences.",
+    "expected_priority": "P4",
+    "predicted_priority": "P4",
+    "dimension_scores": {"reputational_risk": 0, "financial_impact": 0},
+    "composite_score": 0.0,
+    "reasoning": "This is a standard account preference change request with no financial or regulatory implications. First-line support can process the preference update directly.",
+    "retrieved_context": [
+      "Account preference updates including paper statement requests are processed by first-line support through the account management portal. No escalation required."
+    ],
+    "is_auto_p4": true,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0017",
+    "text": "I have recently moved house and need to update my correspondence address on all my accounts. My new address is 14 Oak Street, Bristol, BS1 4AT.",
+    "expected_priority": "P4",
+    "predicted_priority": "P4",
+    "dimension_scores": {"reputational_risk": 0, "financial_impact": 0},
+    "composite_score": 0.0,
+    "reasoning": "A standard change of address request with no financial or regulatory implications. First-line support can action the address update across all linked accounts.",
+    "retrieved_context": [
+      "Address changes can be processed by first-line support using the account management system. All linked accounts should be updated simultaneously. No escalation required."
+    ],
+    "is_auto_p4": true,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0018",
+    "text": "I noticed there is a £5 monthly fee listed in my statement. I thought my account was fee-free. Can you explain when this fee started and what it is for?",
+    "expected_priority": "P4",
+    "predicted_priority": "P4",
+    "dimension_scores": {"reputational_risk": 0, "financial_impact": 1},
+    "composite_score": 1.0,
+    "reasoning": "This is a general enquiry about an account fee. No clear evidence of an incorrect charge is present — the customer is seeking clarification. First-line support can provide the fee schedule and account terms. If the fee is confirmed to be incorrectly applied, the complaint can be re-categorised at that stage.",
+    "retrieved_context": [
+      "General fee enquiries are handled by first-line support. Agents should provide the account fee schedule and explain any applicable charges. If an incorrect fee is confirmed, escalate to P3."
+    ],
+    "is_auto_p4": true,
+    "is_cache_hit": false
+  },
+  {
+    "input_id": "C-0019",
+    "text": "I cannot log in to my online banking because I have forgotten my password. I have tried the reset option but have not received the email. Please help.",
+    "expected_priority": "P4",
+    "predicted_priority": "P4",
+    "dimension_scores": {"reputational_risk": 0, "financial_impact": 0},
+    "composite_score": 0.0,
+    "reasoning": "A password reset issue is a standard digital access query. First-line support can assist with identity verification and password reset through the secure channel. No financial harm or regulatory concern is present.",
+    "retrieved_context": [
+      "Password reset assistance is handled by first-line support. Agents should verify customer identity through the secure authentication process before initiating a manual password reset."
+    ],
+    "is_auto_p4": true,
+    "is_cache_hit": true
+  },
+  {
+    "input_id": "C-0020",
+    "text": "Are your branches open on Bank Holiday Monday next week? I need to visit to certify some documents.",
+    "expected_priority": "P4",
+    "predicted_priority": "P4",
+    "dimension_scores": {"reputational_risk": 0, "financial_impact": 0},
+    "composite_score": 0.0,
+    "reasoning": "A routine enquiry about branch opening hours during a bank holiday. No financial or regulatory implications. First-line support can provide the branch hours directly.",
+    "retrieved_context": [
+      "Branch opening hours and bank holiday schedules are available from first-line support or the bank's website. No escalation required."
+    ],
+    "is_auto_p4": true,
+    "is_cache_hit": true
+  }
+]

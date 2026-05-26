@@ -26,6 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["coverage", "ruff", "isort", "black"]
+eval = ["ragas>=0.1", "datasets>=2.0"]
 
 [tool.setuptools.packages.find]
 where = ["."]
