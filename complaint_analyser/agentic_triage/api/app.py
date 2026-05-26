@@ -1,15 +1,41 @@
 from __future__ import annotations
 
+import importlib.util
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams
 
 from agentic_triage import settings
 from agentic_triage.api.router import router
 from agentic_triage.core.config import DomainConfig
 from agentic_triage.db import create_pool as pg_create_pool
+
+log = logging.getLogger(__name__)
+
+_MIGRATIONS_DIR = Path(__file__).parent.parent.parent / "migrations"
+
+
+def _run_qdrant_migrations() -> None:
+    client = QdrantClient(url=settings.QDRANT_HOST)
+    existing = {c.name for c in client.get_collections().collections}
+    if "_migrations" not in existing:
+        client.create_collection(
+            "_migrations",
+            vectors_config=VectorParams(size=1, distance=Distance.COSINE),
+        )
+
+    for path in sorted(_MIGRATIONS_DIR.glob("[0-9][0-9][0-9][0-9]_*.py")):
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        log.info("Running migration %s", path.stem)
+        module.up(client)
 
 
 def create_multi_domain_app(configs: dict[str, DomainConfig]) -> FastAPI:
@@ -27,6 +53,7 @@ def create_multi_domain_app(configs: dict[str, DomainConfig]) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        _run_qdrant_migrations()
         app.state.redis = await arq_create_pool(
             RedisSettings(
                 host=settings.REDIS_HOST,
