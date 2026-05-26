@@ -13,10 +13,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import sqlalchemy as sa
-import bcrypt as _bcrypt
+import sqlalchemy as sa  # noqa: E402
+import bcrypt as _bcrypt  # noqa: E402
 
-from ingestion.pipelines.run_all import run_all
+from ingestion.pipelines.run_all import run_all  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

@@ -5,11 +5,10 @@ import os
 from typing import Annotated
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi import APIRouter, Form, HTTPException, status
 from jose import JWTError
 import bcrypt as _bcrypt
 
-from api.auth.dependencies import UserClaims, get_current_user
 from api.auth.jwt_handler import issue_access_token, issue_refresh_token, verify_token
 from api.schemas.models import TokenResponse
 
