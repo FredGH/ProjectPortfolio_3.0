@@ -45,7 +45,10 @@ class TestTriageResult(unittest.TestCase):
             TriageResult(**payload)
 
     def test_low_confidence_reason_accepts_string(self):
-        payload = {**_valid_payload(), "low_confidence_reason": "low_retrieval_similarity"}
+        payload = {
+            **_valid_payload(),
+            "low_confidence_reason": "low_retrieval_similarity",
+        }
         result = TriageResult(**payload)
         self.assertEqual(result.low_confidence_reason, "low_retrieval_similarity")
 

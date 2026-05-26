@@ -10,9 +10,7 @@ def _make_nlp(*ents: tuple[str, str]) -> MagicMock:
     """Build a mock spaCy nlp object returning the given (text, label) entities."""
     mock_nlp = MagicMock()
     mock_doc = MagicMock()
-    mock_doc.ents = [
-        _make_ent(text, label) for text, label in ents
-    ]
+    mock_doc.ents = [_make_ent(text, label) for text, label in ents]
     mock_nlp.return_value = mock_doc
     return mock_nlp
 

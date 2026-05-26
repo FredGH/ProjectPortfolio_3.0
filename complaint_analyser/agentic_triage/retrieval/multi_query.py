@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import httpx
 
+from agentic_triage import settings
 from agentic_triage.core.config import DomainConfig
 from agentic_triage.core.state import TriageState
-from agentic_triage import settings
 
 _MULTI_QUERY_PROMPT = """\
 Generate {n} distinct search queries to retrieve relevant knowledge-base documents \

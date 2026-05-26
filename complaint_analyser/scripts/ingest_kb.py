@@ -12,16 +12,17 @@ Document collections (regulatory_rules, risk_taxonomy) use random UUIDs — pass
 --recreate to drop and repopulate when source files change.
 complaints_history uses input_id as the Qdrant point ID so re-runs are idempotent.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import os
 import uuid
-import yaml
 from pathlib import Path
 
 import httpx
+import yaml
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
@@ -80,7 +81,11 @@ def _upsert(
             collection,
             points=[
                 PointStruct(
-                    id=str(uuid.uuid5(uuid.NAMESPACE_OID, str(r[id_key]))) if id_key else str(uuid.uuid4()),
+                    id=(
+                        str(uuid.uuid5(uuid.NAMESPACE_OID, str(r[id_key])))
+                        if id_key
+                        else str(uuid.uuid4())
+                    ),
                     vector=v,
                     payload={k: val for k, val in r.items()},
                 )
@@ -149,9 +154,15 @@ def ingest_complaints(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Populate Qdrant KB collections.")
-    parser.add_argument("--collection", required=True, choices=["regulatory_rules", "risk_taxonomy", "complaints_history"])
+    parser.add_argument(
+        "--collection",
+        required=True,
+        choices=["regulatory_rules", "risk_taxonomy", "complaints_history"],
+    )
     parser.add_argument("--source", required=True)
-    parser.add_argument("--recreate", action="store_true", help="Drop and repopulate the collection")
+    parser.add_argument(
+        "--recreate", action="store_true", help="Drop and repopulate the collection"
+    )
     parser.add_argument("--qdrant-url", default=QDRANT_HOST)
     parser.add_argument("--ollama-url", default=OLLAMA_HOST)
     args = parser.parse_args()

@@ -36,7 +36,9 @@ def rerank(query: str, chunks: list[dict], top_n: int | None = None) -> list[dic
     texts = [c.get("text", "") for c in chunks]
     scores = model.predict([(query, t) for t in texts])
 
-    ranked = [c for _, c in sorted(zip(scores, chunks), key=lambda x: x[0], reverse=True)]
+    ranked = [
+        c for _, c in sorted(zip(scores, chunks), key=lambda x: x[0], reverse=True)
+    ]
 
     if top_n:
         ranked = ranked[:top_n]

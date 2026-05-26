@@ -6,7 +6,9 @@ from agentic_triage.core.state import TriageState
 # Entities that always carry signal — their presence blocks auto-P4
 _HIGH_VALUE_ENTITY_LABELS = {"MONEY", "ORG", "DATE", "PERSON"}
 
-_AUTO_P4_REASONING = "Auto-classified: no keywords, no signal entities, no retrieval match."
+_AUTO_P4_REASONING = (
+    "Auto-classified: no keywords, no signal entities, no retrieval match."
+)
 _AUTO_P4_CONFIDENCE = 0.95
 _RETRIEVAL_SIGNAL_THRESHOLD = 0.45
 
@@ -26,7 +28,10 @@ def is_auto_p4(state: TriageState, config: DomainConfig) -> bool:  # noqa: ARG00
     ):
         return False
 
-    if max(state["retrieval_scores"].values(), default=0.0) >= _RETRIEVAL_SIGNAL_THRESHOLD:
+    if (
+        max(state["retrieval_scores"].values(), default=0.0)
+        >= _RETRIEVAL_SIGNAL_THRESHOLD
+    ):
         return False
 
     return True

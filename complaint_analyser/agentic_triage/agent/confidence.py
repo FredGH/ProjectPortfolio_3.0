@@ -25,8 +25,7 @@ def compute_confidence(
 
     # Retrieval penalty
     low_retrieval = any(
-        score < _LOW_RETRIEVAL_THRESHOLD
-        for score in state["retrieval_scores"].values()
+        score < _LOW_RETRIEVAL_THRESHOLD for score in state["retrieval_scores"].values()
     )
     if low_retrieval:
         penalty += _RETRIEVAL_PENALTY

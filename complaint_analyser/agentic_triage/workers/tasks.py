@@ -13,7 +13,6 @@ from arq.connections import RedisSettings
 from qdrant_client import QdrantClient
 
 from agentic_triage import settings
-from agentic_triage.db import create_pool as pg_create_pool
 from agentic_triage.agent.graph import (
     build_assess_graph,
     make_finalize_node,
@@ -24,11 +23,12 @@ from agentic_triage.agent.graph import (
 )
 from agentic_triage.core.config import DomainConfig
 from agentic_triage.core.state import TriageState
+from agentic_triage.db import create_pool as pg_create_pool
 from agentic_triage.preprocessing.keyword import build_keyword_processor
 from agentic_triage.preprocessing.normalizer import build_symspell
 from agentic_triage.retrieval.cache import (
-    ensure_cache_collection,
     embed_text,
+    ensure_cache_collection,
     lookup_cache,
     write_cache,
 )
@@ -86,7 +86,9 @@ async def startup(ctx: dict) -> None:
 
         fast_nodes[domain] = {
             "sanitize": make_sanitize_node(),
-            "preprocess": make_preprocess_node(cfg, nlp, sym_spell, keyword_processor=kp),
+            "preprocess": make_preprocess_node(
+                cfg, nlp, sym_spell, keyword_processor=kp
+            ),
             "retrieve": make_retrieve_node(cfg, retriever),
             "pre_filter": make_pre_filter_node(cfg),
             "finalize": make_finalize_node(cfg),

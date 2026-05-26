@@ -54,7 +54,9 @@ class DomainConfig:
             domain_name=data["domain_name"],
             input_field=data["input_field"],
             id_prefix=data["id_prefix"],
-            scoring_dimensions=[ScoringDimension(**d) for d in data["scoring_dimensions"]],
+            scoring_dimensions=[
+                ScoringDimension(**d) for d in data["scoring_dimensions"]
+            ],
             priority_levels=[PriorityLevel(**d) for d in data["priority_levels"]],
             collections=[CollectionConfig(**d) for d in data["collections"]],
             confidence_threshold=data.get("confidence_threshold", 0.7),

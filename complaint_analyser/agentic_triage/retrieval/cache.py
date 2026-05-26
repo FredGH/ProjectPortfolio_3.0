@@ -19,7 +19,7 @@ from agentic_triage.core.schema import TriageResult
 
 CACHE_COLLECTION = "query_cache"
 CACHE_THRESHOLD = 0.97  # intentionally strict — wrong priority > cache miss
-VECTOR_DIM = 768        # nomic-embed-text output dimension
+VECTOR_DIM = 768  # nomic-embed-text output dimension
 
 
 def ensure_cache_collection(client: QdrantClient) -> None:

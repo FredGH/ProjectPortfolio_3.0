@@ -130,8 +130,10 @@ async def feedback(
 
     row = await _fetch_triage_result(db, body.input_id)
     if row:
-        from agentic_triage.core.schema import TriageResult
         import json as _json
+
+        from agentic_triage.core.schema import TriageResult
+
         result = TriageResult(
             input_id=row["input_id"],
             priority=row["priority"],
@@ -145,7 +147,9 @@ async def feedback(
             recommended_action=row["recommended_action"],
             analyst_override=body.analyst_override,
         )
-        await ingest_confirmed_result(result, body.cleaned_text, "complaints_history", qdrant)
+        await ingest_confirmed_result(
+            result, body.cleaned_text, "complaints_history", qdrant
+        )
 
     return FeedbackResponse(input_id=body.input_id, status="ingested")
 
@@ -165,7 +169,9 @@ async def _insert_batch(db, batch_id: str, domain: str, total: int) -> None:
         return
     await db.execute(
         "INSERT INTO triage_batches (batch_id, domain, total) VALUES ($1, $2, $3)",
-        batch_id, domain, total,
+        batch_id,
+        domain,
+        total,
     )
 
 
@@ -213,7 +219,8 @@ async def _write_analyst_override(db, input_id: str, analyst_override: str) -> N
         return
     await db.execute(
         "UPDATE triage_results SET analyst_override = $1 WHERE input_id = $2",
-        analyst_override, input_id,
+        analyst_override,
+        input_id,
     )
 
 

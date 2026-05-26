@@ -12,6 +12,7 @@ Exit codes
 0  all gates passed
 1  one or more gates failed
 """
+
 from __future__ import annotations
 
 import argparse
@@ -26,6 +27,7 @@ DEFLECTION_HI = 0.70
 
 
 # ── F1 helpers ────────────────────────────────────────────────────────────────
+
 
 def _f1_per_class(
     expected: list[str],
@@ -55,6 +57,7 @@ def _macro_f1(per_class: dict[str, dict[str, float]]) -> float:
 
 # ── Faithfulness ──────────────────────────────────────────────────────────────
 
+
 def _heuristic_faithfulness(items: list[dict[str, Any]]) -> float:
     """Sentence-level support proxy: a reasoning sentence is 'supported' if at
     least one non-trivial content word from it appears in the retrieved context.
@@ -62,14 +65,80 @@ def _heuristic_faithfulness(items: list[dict[str, Any]]) -> float:
     This mimics the RAGAS sentence-level decomposition without an LLM.
     """
     stopwords = {
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "and", "or", "but", "in",
-        "on", "at", "to", "for", "of", "with", "by", "from", "as", "this",
-        "that", "these", "those", "it", "its", "their", "they", "he", "she",
-        "we", "you", "i", "not", "no", "any", "all", "if", "so", "than",
-        "which", "who", "what", "when", "where", "how", "also", "may", "must",
-        "will", "would", "could", "should", "very", "more", "most", "both",
-        "each", "such", "your", "our", "here", "there", "been", "just",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "and",
+        "or",
+        "but",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "of",
+        "with",
+        "by",
+        "from",
+        "as",
+        "this",
+        "that",
+        "these",
+        "those",
+        "it",
+        "its",
+        "their",
+        "they",
+        "he",
+        "she",
+        "we",
+        "you",
+        "i",
+        "not",
+        "no",
+        "any",
+        "all",
+        "if",
+        "so",
+        "than",
+        "which",
+        "who",
+        "what",
+        "when",
+        "where",
+        "how",
+        "also",
+        "may",
+        "must",
+        "will",
+        "would",
+        "could",
+        "should",
+        "very",
+        "more",
+        "most",
+        "both",
+        "each",
+        "such",
+        "your",
+        "our",
+        "here",
+        "there",
+        "been",
+        "just",
     }
 
     def _content_words(text: str) -> set[str]:
@@ -87,7 +156,9 @@ def _heuristic_faithfulness(items: list[dict[str, Any]]) -> float:
             scores.append(1.0)
             continue
 
-        sentences = [s.strip() for s in reasoning.replace("—", " ").split(".") if s.strip()]
+        sentences = [
+            s.strip() for s in reasoning.replace("—", " ").split(".") if s.strip()
+        ]
         if not sentences:
             scores.append(1.0)
             continue
@@ -133,6 +204,7 @@ def _ragas_faithfulness(items: list[dict[str, Any]]) -> float | None:
 
 # ── Deflection / cache ────────────────────────────────────────────────────────
 
+
 def _deflection_rate(items: list[dict[str, Any]]) -> float:
     if not items:
         return 0.0
@@ -146,6 +218,7 @@ def _cache_hit_rate(items: list[dict[str, Any]]) -> float:
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Agentic triage evaluation harness")
@@ -232,7 +305,9 @@ def main() -> None:
     )
 
     if faith_score < args.faithfulness_threshold:
-        msg = f"Faithfulness {faith_score:.4f} < threshold {args.faithfulness_threshold}"
+        msg = (
+            f"Faithfulness {faith_score:.4f} < threshold {args.faithfulness_threshold}"
+        )
         failures.append(msg)
         print(f"FAIL: {msg}")
     else:
