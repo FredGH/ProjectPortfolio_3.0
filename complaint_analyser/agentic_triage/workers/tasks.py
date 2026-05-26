@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import asyncpg
 import httpx
 import spacy
 import yaml
@@ -12,6 +13,7 @@ from arq.connections import RedisSettings
 from qdrant_client import QdrantClient
 
 from agentic_triage import settings
+from agentic_triage.db import create_pool as pg_create_pool
 from agentic_triage.agent.graph import (
     build_assess_graph,
     make_finalize_node,
@@ -96,6 +98,7 @@ async def startup(ctx: dict) -> None:
     ctx["assess_graphs"] = assess_graphs
     ctx["fast_nodes"] = fast_nodes
     ctx["qdrant"] = qdrant
+    ctx["db"] = await pg_create_pool(min_size=1, max_size=4)
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +117,7 @@ async def fast_preprocess_task(
     nodes = ctx["fast_nodes"][domain]
     redis: ArqRedis = ctx["redis"]
     qdrant: QdrantClient = ctx["qdrant"]
+    db: asyncpg.Pool = ctx["db"]
 
     state: TriageState = _init_state(item_id, batch_id, raw_text)
 
@@ -124,8 +128,8 @@ async def fast_preprocess_task(
     embedding = await embed_text(state["sanitized_text"])
     cached = lookup_cache(qdrant, embedding, domain)
     if cached:
-        await write_triage_result_from_cache(cached, item_id, batch_id, domain)
-        await _increment_batch_counter(batch_id, outcome="done")
+        await write_triage_result_from_cache(db, cached, item_id, batch_id, domain)
+        await _increment_batch_counter(db, batch_id, outcome="done")
         return
 
     # 3. Preprocessing pipeline
@@ -135,9 +139,9 @@ async def fast_preprocess_task(
 
     if state["is_auto_p4"]:
         state = {**state, **await nodes["finalize"](state)}
-        await write_triage_result(state, domain, auto=True)
+        await write_triage_result(db, state, domain, auto=True)
         write_cache(qdrant, embedding, _result_from_state(state), domain)
-        await _increment_batch_counter(batch_id, outcome="done")
+        await _increment_batch_counter(db, batch_id, outcome="done")
         return
 
     # 4. Pass state + embedding to assess worker (cache write happens there)
@@ -163,14 +167,15 @@ async def assess_task(
     """Assess → (query_rewrite → retrieve →)* finalize. Calls Ollama."""
     graph = ctx["assess_graphs"][domain]
     qdrant: QdrantClient = ctx["qdrant"]
+    db: asyncpg.Pool = ctx["db"]
     try:
         result_state: TriageState = await graph.ainvoke(state)
-        await write_triage_result(result_state, domain, auto=False)
+        await write_triage_result(db, result_state, domain, auto=False)
         write_cache(qdrant, embedding, _result_from_state(result_state), domain)
-        await _increment_batch_counter(batch_id, outcome="done")
+        await _increment_batch_counter(db, batch_id, outcome="done")
     except Exception:
         log.exception("assess_task failed item=%s batch=%s", item_id, batch_id)
-        await _increment_batch_counter(batch_id, outcome="failed")
+        await _increment_batch_counter(db, batch_id, outcome="failed")
         raise
 
 
@@ -179,9 +184,35 @@ async def assess_task(
 # ---------------------------------------------------------------------------
 
 
-async def _increment_batch_counter(batch_id: str, outcome: str) -> None:  # noqa: ARG001
-    # Stub — real Postgres UPDATE implemented in step 12
-    pass
+async def _increment_batch_counter(
+    db: asyncpg.Pool, batch_id: str, outcome: str
+) -> None:
+    if outcome == "done":
+        await db.execute(
+            """
+            UPDATE triage_batches
+            SET done = done + 1,
+                completed_at = CASE
+                    WHEN done + 1 + failed >= total THEN now()
+                    ELSE completed_at
+                END
+            WHERE batch_id = $1
+            """,
+            batch_id,
+        )
+    else:
+        await db.execute(
+            """
+            UPDATE triage_batches
+            SET failed = failed + 1,
+                completed_at = CASE
+                    WHEN done + failed + 1 >= total THEN now()
+                    ELSE completed_at
+                END
+            WHERE batch_id = $1
+            """,
+            batch_id,
+        )
 
 
 def _result_from_state(state: TriageState):

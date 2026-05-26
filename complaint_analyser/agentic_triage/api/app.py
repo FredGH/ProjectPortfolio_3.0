@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from arq import create_pool
+from arq import create_pool as arq_create_pool
 from arq.connections import RedisSettings
 from fastapi import FastAPI
 
 from agentic_triage import settings
 from agentic_triage.api.router import router
 from agentic_triage.core.config import DomainConfig
+from agentic_triage.db import create_pool as pg_create_pool
 
 
 def create_multi_domain_app(configs: dict[str, DomainConfig]) -> FastAPI:
@@ -26,18 +27,17 @@ def create_multi_domain_app(configs: dict[str, DomainConfig]) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Redis pool shared by all batch-submit requests
-        app.state.redis = await create_pool(
+        app.state.redis = await arq_create_pool(
             RedisSettings(
                 host=settings.REDIS_HOST,
                 port=settings.REDIS_PORT,
             )
         )
-        # DB pool — None until step 12 wires in asyncpg
-        app.state.db = None
+        app.state.db = await pg_create_pool()
         app.state.configs = configs
         yield
         await app.state.redis.close()
+        await app.state.db.close()
 
     app = FastAPI(
         title="Agentic Triage API",
