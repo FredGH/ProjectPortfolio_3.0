@@ -8,7 +8,7 @@ SELECT
     instrument_class,
     side,
     order_type,
-    quantity,
+    order_quantity AS quantity,
     arrival_price,
     limit_price,
     order_time,
