@@ -5,6 +5,7 @@ dbt_packages/
 # Angular
 frontend/node_modules/
 frontend/dist/
+frontend/.angular/
 
 # Python
 venv/
