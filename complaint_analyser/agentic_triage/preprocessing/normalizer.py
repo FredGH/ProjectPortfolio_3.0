@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from symspellpy import SymSpell, Verbosity
+from symspellpy import SymSpell
 
 
 def build_symspell(vocab_path: str | None = None) -> SymSpell:

@@ -11,10 +11,8 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import sys
 from pathlib import Path
 
-import yaml
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
