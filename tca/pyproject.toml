@@ -13,3 +13,4 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "W"]
 ignore = ["E501"]  # black owns line-length enforcement
+
