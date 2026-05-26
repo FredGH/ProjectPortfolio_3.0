@@ -118,12 +118,6 @@ jobs:
       - name: Seed synthetic data
         run: python -m ingestion.seed
 
-      - name: dbt deps
-        run: dbt deps
-
-      - name: dbt build (full stack for API integration tests)
-        run: dbt build --target ci
-
       - name: Run tests
         run: coverage run -m unittest discover -s tests
 

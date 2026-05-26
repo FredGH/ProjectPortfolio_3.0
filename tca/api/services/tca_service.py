@@ -23,6 +23,23 @@ class TCAService:
         url = db_url or os.environ["DATABASE_URL"]
         self._engine = sa.create_engine(url)
 
+    def _safe_list(self, sql: sa.TextClause, params: dict) -> list[dict]:
+        """Execute a SELECT and return rows; return [] if mart tables don't exist yet."""
+        try:
+            with self._engine.connect() as conn:
+                return [dict(r) for r in conn.execute(sql, params).mappings().all()]
+        except sa.exc.ProgrammingError:
+            return []
+
+    def _safe_one(self, sql: sa.TextClause, params: dict) -> dict | None:
+        """Execute a SELECT and return first row; return None if mart tables don't exist yet."""
+        try:
+            with self._engine.connect() as conn:
+                row = conn.execute(sql, params).mappings().first()
+                return dict(row) if row else None
+        except sa.exc.ProgrammingError:
+            return None
+
     def _cp_clause(
         self, user: UserClaims, alias: str = "f"
     ) -> tuple[str, dict[str, Any]]:
@@ -56,13 +73,7 @@ class TCAService:
             WHERE h.order_bk = :order_id {cp_clause}
         """
         )
-        with self._engine.connect() as conn:
-            row = (
-                conn.execute(sql, {"order_id": order_id, **cp_params})
-                .mappings()
-                .first()
-            )
-        return dict(row) if row else None
+        return self._safe_one(sql, {"order_id": order_id, **cp_params})
 
     def get_tca_summary(
         self,
@@ -102,9 +113,7 @@ class TCAService:
             LIMIT :limit
         """
         )
-        with self._engine.connect() as conn:
-            rows = conn.execute(sql, params).mappings().all()
-        return [dict(r) for r in rows]
+        return self._safe_list(sql, params)
 
     def get_algo_performance(
         self, trade_date: str, user: UserClaims, instrument_class: str | None = None
@@ -135,9 +144,7 @@ class TCAService:
             ORDER BY f.instrument_class, algo_rank
         """
         )
-        with self._engine.connect() as conn:
-            rows = conn.execute(sql, params).mappings().all()
-        return [dict(r) for r in rows]
+        return self._safe_list(sql, params)
 
     def get_alpha_decay(self, trade_date: str, user: UserClaims) -> list[dict]:
         cp_clause, cp_params = self._cp_clause(user)
@@ -157,13 +164,7 @@ class TCAService:
             ORDER BY f.instrument_class, f.vol_regime
         """
         )
-        with self._engine.connect() as conn:
-            rows = (
-                conn.execute(sql, {"trade_date": trade_date, **cp_params})
-                .mappings()
-                .all()
-            )
-        return [dict(r) for r in rows]
+        return self._safe_list(sql, {"trade_date": trade_date, **cp_params})
 
     def get_peer_benchmark(self, order_id: str, user: UserClaims) -> dict | None:
         cp_clause, cp_params = self._cp_clause(user)
@@ -180,13 +181,7 @@ class TCAService:
             WHERE h.order_bk = :order_id {cp_clause}
         """
         )
-        with self._engine.connect() as conn:
-            row = (
-                conn.execute(sql, {"order_id": order_id, **cp_params})
-                .mappings()
-                .first()
-            )
-        return dict(row) if row else None
+        return self._safe_one(sql, {"order_id": order_id, **cp_params})
 
     def get_orders(
         self, trade_date: str, user: UserClaims, limit: int = 500
@@ -203,9 +198,7 @@ class TCAService:
             LIMIT :limit
         """
         )
-        with self._engine.connect() as conn:
-            rows = conn.execute(sql, {"limit": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        return self._safe_list(sql, {"limit": limit})
 
     def get_mifid_export(self, trade_date: str, user: UserClaims) -> list[dict]:
         sql = sa.text(
@@ -235,6 +228,4 @@ class TCAService:
             ORDER BY m.transaction_time
         """
         )
-        with self._engine.connect() as conn:
-            rows = conn.execute(sql, {"trade_date": trade_date}).mappings().all()
-        return [dict(r) for r in rows]
+        return self._safe_list(sql, {"trade_date": trade_date})
