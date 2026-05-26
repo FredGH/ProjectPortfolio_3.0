@@ -66,7 +66,6 @@ def get_detect(
 ) -> list[dict[str, Any]]:
     detect, *_ = _import_detector()
     try:
-        import pandas as pd
 
         df = detect(engine, trade_date)
         if df.empty:
