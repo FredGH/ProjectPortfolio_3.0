@@ -8,7 +8,7 @@ from jose import JWTError
 
 from api.auth.jwt_handler import verify_token
 
-_bearer = HTTPBearer(auto_error=True)
+_bearer = HTTPBearer(auto_error=False)
 
 
 @dataclass(frozen=True)
@@ -20,8 +20,14 @@ class UserClaims:
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> UserClaims:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = credentials.credentials
     try:
         claims = verify_token(token)
