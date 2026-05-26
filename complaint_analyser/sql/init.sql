@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS triage_results (
     input_id              TEXT PRIMARY KEY,
+    batch_id              TEXT NOT NULL DEFAULT '',
     domain                TEXT NOT NULL,
     priority              TEXT NOT NULL,
     composite_score       FLOAT NOT NULL,
@@ -14,6 +15,9 @@ CREATE TABLE IF NOT EXISTS triage_results (
     processed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     source_created_at     TIMESTAMPTZ
 );
+
+CREATE INDEX IF NOT EXISTS idx_triage_results_batch_id
+    ON triage_results (batch_id);
 
 CREATE INDEX IF NOT EXISTS idx_triage_results_domain_priority
     ON triage_results (domain, priority, processed_at DESC);
