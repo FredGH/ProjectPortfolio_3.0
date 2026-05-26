@@ -419,6 +419,35 @@ volumes:
 
 ---
 
+### Viewing n8n Workflows
+
+The three workflow JSON files in `n8n/` can be imported into the n8n canvas for a visual view of the node graph.
+
+**Steps:**
+
+1. Start n8n locally:
+   ```bash
+   docker-compose up n8n
+   ```
+2. Open the n8n UI at `http://localhost:5678` and log in (default credentials are set via `N8N_BASIC_AUTH_USER` / `N8N_BASIC_AUTH_PASSWORD` in `docker-compose.yml`).
+3. In the left sidebar, go to **Workflows → New → Import from file**.
+4. Select one of the workflow files:
+   - `n8n/workflow_triage_batch.json` — Workflow 1: daily triage batch
+   - `n8n/workflow_override_ingestion.json` — Workflow 2: analyst override ingestion
+   - `n8n/workflow_drift_response.json` — Workflow 3: BERTopic drift response + cache TTL expiry
+5. The workflow opens on the canvas. Before activating, configure the following n8n variables (Settings → Variables):
+   - `API_BASE_URL` — e.g. `http://fastapi:8000`
+   - `QDRANT_BASE_URL` — e.g. `http://qdrant:6333`
+   - `BERTOPIC_BASE_URL` — e.g. `http://bertopic:8001`
+   - `REPORT_FROM_EMAIL`, `REPORT_TO_EMAIL`, `ALERT_TO_EMAIL`
+   - `JIRA_BASE_URL`, `JIRA_PROJECT_KEY` (Workflow 3 only)
+6. Add the required credentials under Settings → Credentials:
+   - `Postgres Triage DB` — host, port, database, user, password
+   - `SMTP` — mail server settings
+   - `Jira API` — basic auth (email + API token)
+
+---
+
 ## CI/CD Pipeline
 
 All domain config files, n8n workflow exports, Docker service definitions, and framework code are Git-tracked and validated on every push. Every production deployment is gated on lint, tests, config schema validation, and a RAGAS quality evaluation.
