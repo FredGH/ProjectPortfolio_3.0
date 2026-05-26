@@ -1,0 +1,357 @@
+{
+  "name": "Workflow 1 — Daily Triage Batch",
+  "nodes": [
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Schedule: 06:00 daily",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Postgres: SELECT pending items",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT input_id, complaint_text AS text FROM complaints WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1000",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "postgres_triage",
+          "name": "Postgres Triage DB"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "IF: any items to process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-items-exist",
+              "leftValue": "={{ $items().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "Set: build batch payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [660, -100],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-items",
+              "name": "items",
+              "value": "={{ $items().map(i => ({input_id: i.json.input_id, text: i.json.text})) }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "HTTP: POST /batch/submit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, -100],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.API_BASE_URL }}/batch/submit/banking_complaints",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify($json.items) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "Set: store batch_id",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [1100, -100],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-batch-id",
+              "name": "batch_id",
+              "value": "={{ $json.batch_id }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-enqueued",
+              "name": "enqueued",
+              "value": "={{ $json.enqueued }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "Wait: 60 seconds",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1320, -100],
+      "parameters": {
+        "amount": 60,
+        "unit": "seconds"
+      },
+      "webhookId": "wait-poll-batch"
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "HTTP: GET /batch/status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, -100],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $vars.API_BASE_URL }}/batch/{{ $('Set: store batch_id').item.json.batch_id }}/status",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000009",
+      "name": "IF: batch complete?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1760, -100],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-complete",
+              "leftValue": "={{ $json.done + $json.failed }}",
+              "rightValue": "={{ $json.total }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000010",
+      "name": "IF: any failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1980, -100],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-failed",
+              "leftValue": "={{ $json.failed }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000011",
+      "name": "Postgres: mark failed items",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [2200, -200],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE complaints SET status = 'failed', retry_count = retry_count + 1 WHERE input_id IN (SELECT input_id FROM triage_results WHERE batch_id = '{{ $('Set: store batch_id').item.json.batch_id }}' AND priority = 'ERROR')",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "postgres_triage",
+          "name": "Postgres Triage DB"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000012",
+      "name": "HTTP: POST /report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, -20],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.API_BASE_URL }}/report/banking_complaints",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({batch_id: $('Set: store batch_id').item.json.batch_id}) }}",
+        "options": {
+          "timeout": 120000
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000013",
+      "name": "Send report email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [2420, -20],
+      "parameters": {
+        "fromEmail": "={{ $vars.REPORT_FROM_EMAIL }}",
+        "toEmail": "={{ $vars.REPORT_TO_EMAIL }}",
+        "subject": "Banking Complaints Triage Report — {{ new Date().toISOString().split('T')[0] }}",
+        "emailType": "text",
+        "message": "={{ $json.summary }}",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credentials",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "id": "a1b2c3d4-0001-0001-0001-000000000014",
+      "name": "No-op: nothing to process",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, 100],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Schedule: 06:00 daily": {
+      "main": [
+        [{"node": "Postgres: SELECT pending items", "type": "main", "index": 0}]
+      ]
+    },
+    "Postgres: SELECT pending items": {
+      "main": [
+        [{"node": "IF: any items to process?", "type": "main", "index": 0}]
+      ]
+    },
+    "IF: any items to process?": {
+      "main": [
+        [{"node": "Set: build batch payload", "type": "main", "index": 0}],
+        [{"node": "No-op: nothing to process", "type": "main", "index": 0}]
+      ]
+    },
+    "Set: build batch payload": {
+      "main": [
+        [{"node": "HTTP: POST /batch/submit", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: POST /batch/submit": {
+      "main": [
+        [{"node": "Set: store batch_id", "type": "main", "index": 0}]
+      ]
+    },
+    "Set: store batch_id": {
+      "main": [
+        [{"node": "Wait: 60 seconds", "type": "main", "index": 0}]
+      ]
+    },
+    "Wait: 60 seconds": {
+      "main": [
+        [{"node": "HTTP: GET /batch/status", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: GET /batch/status": {
+      "main": [
+        [{"node": "IF: batch complete?", "type": "main", "index": 0}]
+      ]
+    },
+    "IF: batch complete?": {
+      "main": [
+        [{"node": "IF: any failed?", "type": "main", "index": 0}],
+        [{"node": "Wait: 60 seconds", "type": "main", "index": 0}]
+      ]
+    },
+    "IF: any failed?": {
+      "main": [
+        [{"node": "Postgres: mark failed items", "type": "main", "index": 0}],
+        [{"node": "HTTP: POST /report", "type": "main", "index": 0}]
+      ]
+    },
+    "Postgres: mark failed items": {
+      "main": [
+        [{"node": "HTTP: POST /report", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: POST /report": {
+      "main": [
+        [{"node": "Send report email", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": ["triage", "banking"],
+  "pinData": {},
+  "versionId": "a1b2c3d4-0001-0001-0001-000000000000",
+  "id": "workflow-triage-batch-v1"
+}

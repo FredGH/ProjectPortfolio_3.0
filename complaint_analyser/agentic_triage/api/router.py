@@ -5,15 +5,19 @@ from typing import Annotated
 
 from arq import ArqRedis
 from fastapi import APIRouter, Depends, HTTPException, Request
+from qdrant_client import QdrantClient
 
 from agentic_triage.api.models import (
     BatchItem,
     BatchStatusResponse,
     BatchSubmitResponse,
+    FeedbackRequest,
+    FeedbackResponse,
     ReportRequest,
     ReportResponse,
 )
 from agentic_triage.reporting.reporter import generate_summary
+from agentic_triage.retrieval.feedback import ingest_confirmed_result
 
 router = APIRouter()
 
@@ -28,11 +32,16 @@ def get_redis(request: Request) -> ArqRedis:
 
 
 def get_db(request: Request):
-    return request.app.state.db  # asyncpg Pool — wired in step 12
+    return request.app.state.db
+
+
+def get_qdrant(request: Request) -> QdrantClient:
+    return request.app.state.qdrant
 
 
 RedisDep = Annotated[ArqRedis, Depends(get_redis)]
 DbDep = Annotated[object, Depends(get_db)]
+QdrantDep = Annotated[QdrantClient, Depends(get_qdrant)]
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +61,6 @@ async def batch_submit(
 
     batch_id = str(uuid.uuid4())
 
-    # Step 12 will replace these stubs with real asyncpg calls.
     await _insert_batch(db, batch_id, domain, len(items))
 
     already_done = 0
@@ -104,7 +112,46 @@ async def report(
 
 
 # ---------------------------------------------------------------------------
-# Helpers — stubs replaced by real DB calls in step 12
+# Feedback endpoint (Workflow 2 — analyst override ingestion)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/feedback/{domain}", response_model=FeedbackResponse)
+async def feedback(
+    domain: str,
+    body: FeedbackRequest,
+    db: DbDep,
+    qdrant: QdrantDep,
+    request: Request,
+) -> FeedbackResponse:
+    _validate_domain(domain, request)
+
+    await _write_analyst_override(db, body.input_id, body.analyst_override)
+
+    row = await _fetch_triage_result(db, body.input_id)
+    if row:
+        from agentic_triage.core.schema import TriageResult
+        import json as _json
+        result = TriageResult(
+            input_id=row["input_id"],
+            priority=row["priority"],
+            dimension_scores=_json.loads(row["dimension_scores"]),
+            composite_score=row["composite_score"],
+            confidence=row["confidence"],
+            low_confidence_reason=row["low_confidence_reason"],
+            triggered_keywords=list(row["triggered_keywords"]),
+            retrieved_references=_json.loads(row["retrieved_references"]),
+            reasoning=row["reasoning"],
+            recommended_action=row["recommended_action"],
+            analyst_override=body.analyst_override,
+        )
+        await ingest_confirmed_result(result, body.cleaned_text, "complaints_history", qdrant)
+
+    return FeedbackResponse(input_id=body.input_id, status="ingested")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -159,3 +206,21 @@ async def _fetch_batch_results(db, batch_id: str) -> list[dict]:
         batch_id,
     )
     return [dict(r) for r in rows]
+
+
+async def _write_analyst_override(db, input_id: str, analyst_override: str) -> None:
+    if db is None:
+        return
+    await db.execute(
+        "UPDATE triage_results SET analyst_override = $1 WHERE input_id = $2",
+        analyst_override, input_id,
+    )
+
+
+async def _fetch_triage_result(db, input_id: str) -> dict | None:
+    if db is None:
+        return None
+    row = await db.fetchrow(
+        "SELECT * FROM triage_results WHERE input_id = $1", input_id
+    )
+    return dict(row) if row else None

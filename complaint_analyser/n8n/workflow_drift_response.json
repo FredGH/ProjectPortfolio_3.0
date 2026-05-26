@@ -1,0 +1,249 @@
+{
+  "name": "Workflow 3 — BERTopic Drift Response + Cache TTL",
+  "nodes": [
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000001",
+      "name": "Schedule: Monday 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000002",
+      "name": "Set: compute cache cutoff",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.3,
+      "position": [220, 0],
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-cutoff",
+              "name": "cutoff_date",
+              "value": "={{ new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000003",
+      "name": "HTTP: Qdrant delete stale cache",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.QDRANT_BASE_URL }}/collections/query_cache/points/delete",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({filter: {must: [{key: 'cached_at', range: {lt: $json.cutoff_date}}]}}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000004",
+      "name": "HTTP: GET /clusters/diff",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 0],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $vars.BERTOPIC_BASE_URL }}/clusters/diff",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000005",
+      "name": "Split: iterate clusters",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [880, 0],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000006",
+      "name": "IF: new cluster > 5% volume?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-new-this-week",
+              "leftValue": "={{ $json.new_this_week }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "cond-pct-volume",
+              "leftValue": "={{ $json.pct_of_volume }}",
+              "rightValue": 0.05,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000007",
+      "name": "Postgres: INSERT drift_event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1320, -100],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO drift_events (cluster_id, label, size, pct_of_volume, sample_ids) VALUES ('{{ $json.cluster_id }}', '{{ $json.label }}', {{ $json.size }}, {{ $json.pct_of_volume }}, ARRAY[{{ ($json.sample_ids || []).map(id => `'${id}'`).join(',') }}])",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "postgres_triage",
+          "name": "Postgres Triage DB"
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000008",
+      "name": "HTTP: create Jira ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, -100],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.JIRA_BASE_URL }}/rest/api/3/issue",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({fields: {project: {key: $vars.JIRA_PROJECT_KEY}, summary: `New complaint cluster detected: ${$json.label} (${($json.pct_of_volume * 100).toFixed(1)}% of volume)`, description: {version: 1, type: 'doc', content: [{type: 'paragraph', content: [{type: 'text', text: `Cluster ${$json.cluster_id} labelled \"${$json.label}\" represents ${($json.pct_of_volume * 100).toFixed(1)}% of weekly complaint volume and did not exist in the prior week model. Review and add relevant keywords/KB entries within 5 business days.`}]}]}, issuetype: {name: 'Task'}, priority: {name: 'High'}}}) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "jira_credentials",
+          "name": "Jira API"
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000009",
+      "name": "Send drift alert email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1760, -100],
+      "parameters": {
+        "fromEmail": "={{ $vars.REPORT_FROM_EMAIL }}",
+        "toEmail": "={{ $vars.ALERT_TO_EMAIL }}",
+        "subject": "🔍 New Complaint Cluster Detected: {{ $('IF: new cluster > 5% volume?').item.json.label }}",
+        "emailType": "text",
+        "message": "A new complaint cluster has been detected this week:\n\nCluster: {{ $('IF: new cluster > 5% volume?').item.json.label }}\nVolume: {{ ($('IF: new cluster > 5% volume?').item.json.pct_of_volume * 100).toFixed(1) }}% of weekly complaints\nSize: {{ $('IF: new cluster > 5% volume?').item.json.size }} items\n\nA Jira ticket has been created. Please review sample items and update keywords.txt and/or Qdrant collections within 5 business days.",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credentials",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "id": "c3d4e5f6-0003-0003-0003-000000000010",
+      "name": "No-op: cluster below threshold",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1320, 100],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Schedule: Monday 07:00": {
+      "main": [
+        [{"node": "Set: compute cache cutoff", "type": "main", "index": 0}]
+      ]
+    },
+    "Set: compute cache cutoff": {
+      "main": [
+        [{"node": "HTTP: Qdrant delete stale cache", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: Qdrant delete stale cache": {
+      "main": [
+        [{"node": "HTTP: GET /clusters/diff", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: GET /clusters/diff": {
+      "main": [
+        [{"node": "Split: iterate clusters", "type": "main", "index": 0}]
+      ]
+    },
+    "Split: iterate clusters": {
+      "main": [
+        [{"node": "IF: new cluster > 5% volume?", "type": "main", "index": 0}]
+      ]
+    },
+    "IF: new cluster > 5% volume?": {
+      "main": [
+        [{"node": "Postgres: INSERT drift_event", "type": "main", "index": 0}],
+        [{"node": "No-op: cluster below threshold", "type": "main", "index": 0}]
+      ]
+    },
+    "Postgres: INSERT drift_event": {
+      "main": [
+        [{"node": "HTTP: create Jira ticket", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: create Jira ticket": {
+      "main": [
+        [{"node": "Send drift alert email", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": ["drift", "cache", "bertopic", "banking"],
+  "pinData": {},
+  "versionId": "c3d4e5f6-0003-0003-0003-000000000000",
+  "id": "workflow-drift-response-v1"
+}

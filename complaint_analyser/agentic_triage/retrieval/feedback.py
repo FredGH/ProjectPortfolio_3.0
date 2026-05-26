@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 import asyncpg
+from qdrant_client import QdrantClient
+from qdrant_client.models import PointStruct
 
 from agentic_triage.core.schema import TriageResult
 from agentic_triage.core.state import TriageState
+from agentic_triage.retrieval.cache import embed_text
 
 _INSERT_RESULT = """
     INSERT INTO triage_results (
@@ -84,8 +88,25 @@ async def write_triage_result_from_cache(
 
 async def ingest_confirmed_result(
     result: TriageResult,
-    text: str,  # noqa: ARG001
-    collection: str,  # noqa: ARG001
+    text: str,
+    collection: str,
+    qdrant: QdrantClient,
 ) -> None:
-    # Stub — real Qdrant upsert implemented in step 14 (n8n feedback workflow)
-    pass
+    """Embed text and upsert the confirmed result into a Qdrant collection.
+
+    Used by the analyst override feedback path to write corrected examples
+    back into complaints_history as authoritative precedents.
+    """
+    embedding = await embed_text(text)
+    point = PointStruct(
+        id=str(uuid.uuid5(uuid.NAMESPACE_DNS, result.input_id)),
+        vector=embedding,
+        payload={
+            "text": text,
+            "input_id": result.input_id,
+            "priority": result.analyst_override or result.priority,
+            "dimension_scores": result.dimension_scores,
+            "source": "analyst_override",
+        },
+    )
+    qdrant.upsert(collection_name=collection, points=[point])

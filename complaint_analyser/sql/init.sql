@@ -35,3 +35,22 @@ CREATE TABLE IF NOT EXISTS triage_batches (
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     completed_at TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS recalibration_alerts (
+    id            SERIAL PRIMARY KEY,
+    priority      TEXT NOT NULL,
+    override_rate FLOAT NOT NULL,
+    window_start  TIMESTAMPTZ NOT NULL,
+    detected_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS drift_events (
+    id            SERIAL PRIMARY KEY,
+    cluster_id    TEXT NOT NULL,
+    label         TEXT NOT NULL,
+    size          INT NOT NULL,
+    pct_of_volume FLOAT NOT NULL,
+    sample_ids    TEXT[] NOT NULL DEFAULT '{}',
+    detected_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resolved_at   TIMESTAMPTZ
+);
