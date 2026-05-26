@@ -73,4 +73,9 @@ def create_multi_domain_app(configs: dict[str, DomainConfig]) -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(router)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict:
+        return {"status": "ok"}
+
     return app
