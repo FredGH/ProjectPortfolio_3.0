@@ -63,18 +63,18 @@ class AnomalyDetector:
         self._min_history = min_history
 
     def check_zscore(self, values: list[float]) -> ZScoreResult:
-        """Check the last value in a series against the Z-score threshold."""
+        """Check the last value against the Z-score of the preceding baseline."""
         import numpy as np
 
         if len(values) < self._min_history:
             return ZScoreResult(is_anomaly=False)
-        arr = np.array(values, dtype=float)
-        mean = float(arr.mean())
-        std = float(arr.std())
+        baseline = np.array(values[:-1], dtype=float)
+        mean = float(baseline.mean())
+        std = float(baseline.std())
         if std == 0:
             return ZScoreResult(is_anomaly=False, z_score=0.0)
-        z = abs(arr[-1] - mean) / std
-        return ZScoreResult(is_anomaly=float(z) > self._z_threshold, z_score=float(z))
+        z = abs(values[-1] - mean) / std
+        return ZScoreResult(is_anomaly=z > self._z_threshold, z_score=z)
 
     def check(self, orders: pd.DataFrame, fills: pd.DataFrame) -> list[AnomalyWarning]:
         warnings: list[AnomalyWarning] = []
