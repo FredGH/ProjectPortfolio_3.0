@@ -22,7 +22,9 @@ class PeerBenchmarking:
         df = orders.copy()
 
         if not benchmarks.empty:
-            bm = benchmarks[["instrument_id", "session_vwap", "session_twap", "session_close"]].copy()
+            bm = benchmarks[
+                ["instrument_id", "session_vwap", "session_twap", "session_close"]
+            ].copy()
             df = df.merge(bm, on="instrument_id", how="left")
         else:
             df["session_vwap"] = df.get("avg_fill_price", df.get("arrival_price"))
@@ -34,13 +36,18 @@ class PeerBenchmarking:
 
         def _slippage(benchmark_col: str) -> pd.Series:
             bm_price = df[benchmark_col].fillna(p)
-            return ((p - bm_price) / bm_price.replace(0, float("nan")) * 10_000 * side).round(4)
+            return (
+                (p - bm_price) / bm_price.replace(0, float("nan")) * 10_000 * side
+            ).round(4)
 
-        df["vwap_slippage_bps"]   = _slippage("session_vwap")
-        df["twap_slippage_bps"]   = _slippage("session_twap")
-        df["close_slippage_bps"]  = _slippage("session_close")
+        df["vwap_slippage_bps"] = _slippage("session_vwap")
+        df["twap_slippage_bps"] = _slippage("session_twap")
+        df["close_slippage_bps"] = _slippage("session_close")
         df["arrival_slippage_bps"] = (
-            (p - df["arrival_price"]) / df["arrival_price"].replace(0, float("nan")) * 10_000 * side
+            (p - df["arrival_price"])
+            / df["arrival_price"].replace(0, float("nan"))
+            * 10_000
+            * side
         ).round(4)
 
         # Algo-level aggregate
@@ -57,8 +64,9 @@ class PeerBenchmarking:
             .reset_index()
         )
         algo_perf["algo_rank"] = (
-            algo_perf.groupby("instrument_class")["avg_vwap_slippage"]
-            .rank(method="min", ascending=True)
+            algo_perf.groupby("instrument_class")["avg_vwap_slippage"].rank(
+                method="min", ascending=True
+            )
         ).astype(int)
 
         return algo_perf

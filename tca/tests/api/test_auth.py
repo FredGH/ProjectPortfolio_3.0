@@ -1,4 +1,5 @@
 """Integration tests for FastAPI JWT auth endpoints — real DB, no mocking."""
+
 from __future__ import annotations
 
 import os
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 
 def _get_client() -> TestClient:
     from api.main import app
+
     return TestClient(app)
 
 
@@ -47,7 +49,9 @@ class TestAuthToken(unittest.TestCase):
         )
         token = resp.json()["access_token"]
         parts = token.split(".")
-        self.assertEqual(len(parts), 3, "JWT must have 3 parts (header.payload.signature)")
+        self.assertEqual(
+            len(parts), 3, "JWT must have 3 parts (header.payload.signature)"
+        )
 
     def test_missing_client_id_returns_422(self) -> None:
         resp = self.client.post(

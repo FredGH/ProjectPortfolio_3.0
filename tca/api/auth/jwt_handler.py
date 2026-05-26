@@ -1,4 +1,5 @@
 """JWT RS256 handler — issue / verify tokens, auto-generate key pair on startup."""
+
 from __future__ import annotations
 
 import logging
@@ -9,7 +10,7 @@ from pathlib import Path
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwt
+from jose import JWTError, jwt
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,9 @@ def load_keys() -> None:
     if _FALLBACK_PRIV.exists() and _FALLBACK_PUB.exists():
         _private_key_pem = _FALLBACK_PRIV.read_bytes()
         _public_key_pem = _FALLBACK_PUB.read_bytes()
-        logger.info("Loaded JWT RS256 key pair from fallback path %s", _FALLBACK_KEY_DIR)
+        logger.info(
+            "Loaded JWT RS256 key pair from fallback path %s", _FALLBACK_KEY_DIR
+        )
         return
 
     # Priority 3: generate and persist

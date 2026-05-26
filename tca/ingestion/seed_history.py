@@ -10,18 +10,20 @@ Usage (from project root inside Docker):
 Or locally with DATABASE_URL set:
     python -m ingestion.seed_history
 """
+
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date, timedelta
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from ingestion.pipelines.run_all import _build_pipeline  # noqa: E402
-from ingestion.pipelines.run_daily import run_daily  # noqa: E402
-from ingestion.sources.ref_data_source import ref_data_source  # noqa: E402
+from ingestion.pipelines.run_daily import run_daily
+from ingestion.pipelines.run_all import _build_pipeline
+from ingestion.sources.ref_data_source import ref_data_source
 
 logger = logging.getLogger(__name__)
 

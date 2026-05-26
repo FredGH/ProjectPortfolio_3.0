@@ -34,7 +34,9 @@ def compute_curves(orders: pd.DataFrame, benchmarks: pd.DataFrame) -> pd.DataFra
         bm = benchmarks[["instrument_id", "daily_vol_annualized"]].copy()
         bm["daily_vol_annualized_bps"] = bm["daily_vol_annualized"] * 10_000
         df = df.merge(bm, on="instrument_id", how="left")
-        df["vol_regime"] = df["daily_vol_annualized_bps"].fillna(100).apply(classify_regime)
+        df["vol_regime"] = (
+            df["daily_vol_annualized_bps"].fillna(100).apply(classify_regime)
+        )
     elif "vol_regime" in df.columns:
         pass
     else:
@@ -45,7 +47,11 @@ def compute_curves(orders: pd.DataFrame, benchmarks: pd.DataFrame) -> pd.DataFra
 
     if not available:
         return pd.DataFrame(
-            {"vol_regime": [], "instrument_class": [], "msg": ["No alpha columns available"]}
+            {
+                "vol_regime": [],
+                "instrument_class": [],
+                "msg": ["No alpha columns available"],
+            }
         )
 
     group_cols = ["vol_regime", "instrument_class"]

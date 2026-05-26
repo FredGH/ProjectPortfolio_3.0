@@ -4,18 +4,18 @@ import numpy as np
 import pandas as pd
 
 # Almgren-Chriss market impact parameters
-_ETA = 0.1        # permanent impact coefficient
-_GAMMA = 0.314    # temporary impact coefficient
+_ETA = 0.1  # permanent impact coefficient
+_GAMMA = 0.314  # temporary impact coefficient
 _VOL_BY_CLASS: dict[str, float] = {
-    "equity":        0.015,
+    "equity": 0.015,
     "equity_future": 0.012,
-    "fixed_income":  0.003,
+    "fixed_income": 0.003,
     "fx_derivative": 0.005,
 }
 _ADV_BY_CLASS: dict[str, int] = {
-    "equity":        2_000_000,
+    "equity": 2_000_000,
     "equity_future": 50_000,
-    "fixed_income":  50_000_000,
+    "fixed_income": 50_000_000,
     "fx_derivative": 100_000_000,
 }
 
@@ -68,7 +68,12 @@ class CostDecomposition:
         ).round(4)
 
         # Spread cost (half bid-ask, approximated from instrument class)
-        _spread_bps = {"equity": 2.0, "equity_future": 0.5, "fixed_income": 5.0, "fx_derivative": 3.0}
+        _spread_bps = {
+            "equity": 2.0,
+            "equity_future": 0.5,
+            "fixed_income": 5.0,
+            "fx_derivative": 3.0,
+        }
         df["spread_cost_bps"] = df["instrument_class"].map(_spread_bps).fillna(2.0)
 
         df["total_cost_bps"] = (
@@ -79,9 +84,18 @@ class CostDecomposition:
         ).round(4)
 
         cols = [
-            "hub_order_key", "instrument_class", "side", "quantity",
-            "arrival_price", "avg_fill_price",
-            "arrival_slippage_bps", "ac_impact_bps", "spread_cost_bps",
-            "total_cost_bps", "counterparty_id", "trader_id", "trade_date",
+            "hub_order_key",
+            "instrument_class",
+            "side",
+            "quantity",
+            "arrival_price",
+            "avg_fill_price",
+            "arrival_slippage_bps",
+            "ac_impact_bps",
+            "spread_cost_bps",
+            "total_cost_bps",
+            "counterparty_id",
+            "trader_id",
+            "trade_date",
         ]
         return df[[c for c in cols if c in df.columns]]

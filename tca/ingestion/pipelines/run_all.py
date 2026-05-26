@@ -31,11 +31,11 @@ def run_all(trade_date: date | None = None) -> dict[str, str]:
     results: dict[str, str] = {}
 
     steps = [
-        ("ref_data",    ref_data_source()),
-        ("oms",         oms_source(trade_date=trade_date)),
+        ("ref_data", ref_data_source()),
+        ("oms", oms_source(trade_date=trade_date)),
         ("market_data", market_data_source(trade_date=trade_date)),
-        ("fi_pricing",  fi_pricing_source(trade_date=trade_date)),
-        ("eurex",       eurex_source(trade_date=trade_date)),
+        ("fi_pricing", fi_pricing_source(trade_date=trade_date)),
+        ("eurex", eurex_source(trade_date=trade_date)),
     ]
 
     for name, source in steps:
@@ -48,7 +48,9 @@ def run_all(trade_date: date | None = None) -> dict[str, str]:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     results = run_all()
     for name, info in results.items():
         print(f"{name}: {info}")

@@ -39,7 +39,9 @@ def _generate_bars(
     prices = start_price * np.exp(np.cumsum(log_returns))
 
     bar_start = datetime(
-        trade_date.year, trade_date.month, trade_date.day,
+        trade_date.year,
+        trade_date.month,
+        trade_date.day,
         tzinfo=timezone.utc,
     ) + timedelta(minutes=_SESSION_START_MINUTES)
 
@@ -54,19 +56,21 @@ def _generate_bars(
         volume = int(rng.integers(vol_low, vol_high))
         ts = bar_start + timedelta(seconds=30 * i)
 
-        bars.append({
-            "bar_id": f"{instrument_id}_{int(ts.timestamp())}",
-            "instrument_id": instrument_id,
-            "ts": ts,
-            "open": round(open_, 6),
-            "high": high,
-            "low": max(low, 0.0001),
-            "close": round(close, 6),
-            "volume": volume,
-            "vwap": round((high + low + close) / 3, 6),
-            "trade_date": trade_date.isoformat(),
-            "_loaded_at": datetime.now(tz=timezone.utc),
-        })
+        bars.append(
+            {
+                "bar_id": f"{instrument_id}_{int(ts.timestamp())}",
+                "instrument_id": instrument_id,
+                "ts": ts,
+                "open": round(open_, 6),
+                "high": high,
+                "low": max(low, 0.0001),
+                "close": round(close, 6),
+                "volume": volume,
+                "vwap": round((high + low + close) / 3, 6),
+                "trade_date": trade_date.isoformat(),
+                "_loaded_at": datetime.now(tz=timezone.utc),
+            }
+        )
         prev_close = close
 
     return bars

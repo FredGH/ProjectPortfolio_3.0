@@ -52,7 +52,8 @@ def submit_fill(
     fill_id = str(uuid.uuid4())
     fill_time = datetime.now(timezone.utc)
 
-    sql = sa.text("""
+    sql = sa.text(
+        """
         INSERT INTO stg_raw.rt_fills (
             fill_id, order_id, instrument_id, instrument_class,
             counterparty_id, side, fill_price, fill_quantity,
@@ -62,7 +63,8 @@ def submit_fill(
             :counterparty_id, :side, :fill_price, :fill_quantity,
             :venue_id, :fill_time, :market_impact_bps, :commission_bps, :currency
         )
-    """)
+    """
+    )
 
     try:
         with engine.begin() as conn:

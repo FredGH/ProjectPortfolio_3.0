@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timezone
 from typing import Iterator
 
@@ -8,25 +9,87 @@ import numpy as np
 
 # BOND-001 … BOND-010  (must match ref_data_source.py)
 _BONDS: list[dict] = [
-    {"instrument_id": "BOND-001", "coupon": 2.50, "years_to_maturity": 5.0,  "country": "DE"},
-    {"instrument_id": "BOND-002", "coupon": 1.75, "years_to_maturity": 4.0,  "country": "FR"},
-    {"instrument_id": "BOND-003", "coupon": 3.00, "years_to_maturity": 6.0,  "country": "IT"},
-    {"instrument_id": "BOND-004", "coupon": 2.35, "years_to_maturity": 4.0,  "country": "ES"},
-    {"instrument_id": "BOND-005", "coupon": 1.625,"years_to_maturity": 3.0,  "country": "GB"},
-    {"instrument_id": "BOND-006", "coupon": 2.00, "years_to_maturity": 3.0,  "country": "NL"},
-    {"instrument_id": "BOND-007", "coupon": 1.90, "years_to_maturity": 2.0,  "country": "BE"},
-    {"instrument_id": "BOND-008", "coupon": 2.10, "years_to_maturity": 5.0,  "country": "AT"},
-    {"instrument_id": "BOND-009", "coupon": 1.875,"years_to_maturity": 4.0,  "country": "FI"},
-    {"instrument_id": "BOND-010", "coupon": 3.15, "years_to_maturity": 5.0,  "country": "PT"},
+    {
+        "instrument_id": "BOND-001",
+        "coupon": 2.50,
+        "years_to_maturity": 5.0,
+        "country": "DE",
+    },
+    {
+        "instrument_id": "BOND-002",
+        "coupon": 1.75,
+        "years_to_maturity": 4.0,
+        "country": "FR",
+    },
+    {
+        "instrument_id": "BOND-003",
+        "coupon": 3.00,
+        "years_to_maturity": 6.0,
+        "country": "IT",
+    },
+    {
+        "instrument_id": "BOND-004",
+        "coupon": 2.35,
+        "years_to_maturity": 4.0,
+        "country": "ES",
+    },
+    {
+        "instrument_id": "BOND-005",
+        "coupon": 1.625,
+        "years_to_maturity": 3.0,
+        "country": "GB",
+    },
+    {
+        "instrument_id": "BOND-006",
+        "coupon": 2.00,
+        "years_to_maturity": 3.0,
+        "country": "NL",
+    },
+    {
+        "instrument_id": "BOND-007",
+        "coupon": 1.90,
+        "years_to_maturity": 2.0,
+        "country": "BE",
+    },
+    {
+        "instrument_id": "BOND-008",
+        "coupon": 2.10,
+        "years_to_maturity": 5.0,
+        "country": "AT",
+    },
+    {
+        "instrument_id": "BOND-009",
+        "coupon": 1.875,
+        "years_to_maturity": 4.0,
+        "country": "FI",
+    },
+    {
+        "instrument_id": "BOND-010",
+        "coupon": 3.15,
+        "years_to_maturity": 5.0,
+        "country": "PT",
+    },
 ]
 
 # Risk-free rate by jurisdiction (EUR OIS approximation)
 _BASE_YIELD = 0.038  # ECB policy rate proxy
-_SPREADS = {"DE": 0.00, "FR": 0.01, "NL": 0.01, "BE": 0.015, "AT": 0.012, "FI": 0.008,
-            "IT": 0.025, "ES": 0.022, "PT": 0.035, "GB": 0.005}
+_SPREADS = {
+    "DE": 0.00,
+    "FR": 0.01,
+    "NL": 0.01,
+    "BE": 0.015,
+    "AT": 0.012,
+    "FI": 0.008,
+    "IT": 0.025,
+    "ES": 0.022,
+    "PT": 0.035,
+    "GB": 0.005,
+}
 
 
-def _bond_price(coupon_pct: float, yield_: float, n_years: float, freq: int = 2) -> float:
+def _bond_price(
+    coupon_pct: float, yield_: float, n_years: float, freq: int = 2
+) -> float:
     """Clean price (% of par) using standard bond pricing formula."""
     c = coupon_pct / 100 / freq
     n = int(n_years * freq)
@@ -38,7 +101,9 @@ def _bond_price(coupon_pct: float, yield_: float, n_years: float, freq: int = 2)
     return round(pv_coupons + pv_par, 6)
 
 
-def _dv01(coupon_pct: float, yield_: float, n_years: float, clean_price: float) -> float:
+def _dv01(
+    coupon_pct: float, yield_: float, n_years: float, clean_price: float
+) -> float:
     """DV01 in EUR per 100 nominal (modified duration method)."""
     freq = 2
     n = int(n_years * freq)

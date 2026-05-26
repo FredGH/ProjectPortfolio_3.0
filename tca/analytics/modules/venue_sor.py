@@ -26,9 +26,14 @@ class VenueSOR:
         else:
             fills_aug["session_vwap"] = fills_aug["fill_price"]
 
-        fills_aug["side_factor"] = fills_aug["side"].map({"BUY": 1, "SELL": -1}).fillna(1)
+        fills_aug["side_factor"] = (
+            fills_aug["side"].map({"BUY": 1, "SELL": -1}).fillna(1)
+        )
         fills_aug["slippage_vs_vwap_bps"] = (
-            (fills_aug["fill_price"] - fills_aug["session_vwap"].fillna(fills_aug["fill_price"]))
+            (
+                fills_aug["fill_price"]
+                - fills_aug["session_vwap"].fillna(fills_aug["fill_price"])
+            )
             / fills_aug["fill_price"].replace(0, float("nan"))
             * 10_000
             * fills_aug["side_factor"]
@@ -48,8 +53,9 @@ class VenueSOR:
         )
 
         scorecard["venue_rank"] = (
-            scorecard.groupby("instrument_class")["avg_slippage_vs_vwap_bps"]
-            .rank(method="min", ascending=True)
+            scorecard.groupby("instrument_class")["avg_slippage_vs_vwap_bps"].rank(
+                method="min", ascending=True
+            )
         ).astype(int)
 
         return scorecard.sort_values(["instrument_class", "venue_rank"])

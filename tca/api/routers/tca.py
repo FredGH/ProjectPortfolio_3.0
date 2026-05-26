@@ -5,8 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.auth.dependencies import UserClaims, get_current_user
-from api.schemas.models import (AlgoPerformance, AlphaDecayCurve,
-                                PeerBenchmark, TCAResult)
+from api.schemas.models import (
+    AlgoPerformance,
+    AlphaDecayCurve,
+    PeerBenchmark,
+    TCAResult,
+)
 from api.services.tca_service import TCAService
 
 router = APIRouter(prefix="/tca", tags=["tca"])
@@ -21,7 +25,9 @@ def get_order_tca(
     result = _svc.get_order_tca(order_id, user)
     if result is None:
         # HTTP 404 (not 403) to prevent existence leakage for CLIENT role
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
     return TCAResult(**result)
 
 
@@ -35,7 +41,9 @@ def get_tca_summary(
 ) -> list[TCAResult]:
     if user.role == "CLIENT":
         counterparty_id = None  # JWT counterparty_id overrides any requested value
-    rows = _svc.get_tca_summary(trade_date, user, counterparty_id, instrument_class, limit)
+    rows = _svc.get_tca_summary(
+        trade_date, user, counterparty_id, instrument_class, limit
+    )
     return [TCAResult(**r) for r in rows]
 
 
@@ -46,7 +54,9 @@ def get_algo_performance(
     instrument_class: Annotated[str | None, Query()] = None,
 ) -> list[AlgoPerformance]:
     if user.role == "CLIENT":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorised")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not authorised"
+        )
     rows = _svc.get_algo_performance(trade_date, user, instrument_class)
     return [AlgoPerformance(**r) for r in rows]
 
@@ -67,5 +77,7 @@ def get_peer_benchmark(
 ) -> PeerBenchmark:
     result = _svc.get_peer_benchmark(order_id, user)
     if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Order not found"
+        )
     return PeerBenchmark(**result)

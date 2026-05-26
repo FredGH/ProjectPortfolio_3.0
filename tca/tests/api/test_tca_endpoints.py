@@ -1,4 +1,5 @@
 """Integration tests for TCA API endpoints — real DB, real JWT."""
+
 from __future__ import annotations
 
 import os
@@ -24,6 +25,7 @@ class TestTcaSummaryEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         from api.main import app
+
         cls.client = TestClient(app)
         cls.token = _login(
             cls.client,
@@ -83,6 +85,7 @@ class TestAlgoPerformanceEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         from api.main import app
+
         cls.client = TestClient(app)
         cls.admin_token = _login(
             cls.client,
@@ -109,6 +112,7 @@ class TestOrdersEndpoint(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         from api.main import app
+
         cls.client = TestClient(app)
         cls.token = _login(
             cls.client,

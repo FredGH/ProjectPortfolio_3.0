@@ -27,14 +27,13 @@ class FXDerivativesTCA:
         fill_p = fx["avg_fill_price"].fillna(fx["arrival_price"])
 
         # Pip value: 4th decimal place for most EUR/XXX pairs
-        fx["slippage_pips"] = (
-            (fill_p - fx["arrival_price"]) * 10_000 * side
-        ).round(2)
+        fx["slippage_pips"] = ((fill_p - fx["arrival_price"]) * 10_000 * side).round(2)
 
         fx["slippage_bps"] = (
             (fill_p - fx["arrival_price"])
             / fx["arrival_price"].replace(0, float("nan"))
-            * 10_000 * side
+            * 10_000
+            * side
         ).round(4)
 
         # Notional in USD (quantity is base currency amount)
@@ -47,10 +46,19 @@ class FXDerivativesTCA:
         fx["spread_cost_bps"] = (fx["est_spread_cost_pips"] / fill_p / 100).round(6)
 
         cols = [
-            "hub_order_key", "instrument_id", "side", "quantity",
-            "arrival_price", "avg_fill_price",
-            "slippage_pips", "slippage_bps", "notional_usd",
-            "est_spread_cost_pips", "spread_cost_bps",
-            "counterparty_id", "trader_id", "trade_date",
+            "hub_order_key",
+            "instrument_id",
+            "side",
+            "quantity",
+            "arrival_price",
+            "avg_fill_price",
+            "slippage_pips",
+            "slippage_bps",
+            "notional_usd",
+            "est_spread_cost_pips",
+            "spread_cost_bps",
+            "counterparty_id",
+            "trader_id",
+            "trade_date",
         ]
         return fx[[c for c in cols if c in fx.columns]]

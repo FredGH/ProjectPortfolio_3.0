@@ -8,16 +8,66 @@ import numpy as np
 
 # Futures — FUTS-001…FUTS-010 (must match ref_data_source.py)
 _FUTURES: list[dict] = [
-    {"instrument_id": "FUTS-001", "underlying": "EURO STOXX 50", "mid_price": 4_850.0, "tick_size": 1.0},
-    {"instrument_id": "FUTS-002", "underlying": "DAX",           "mid_price": 16_500.0,"tick_size": 0.5},
-    {"instrument_id": "FUTS-003", "underlying": "FTSE 100",      "mid_price": 7_600.0, "tick_size": 0.5},
-    {"instrument_id": "FUTS-004", "underlying": "CAC 40",        "mid_price": 7_200.0, "tick_size": 0.5},
-    {"instrument_id": "FUTS-005", "underlying": "AEX",           "mid_price": 870.0,   "tick_size": 0.05},
-    {"instrument_id": "FUTS-006", "underlying": "SMI",           "mid_price": 11_500.0,"tick_size": 1.0},
-    {"instrument_id": "FUTS-007", "underlying": "IBEX 35",       "mid_price": 10_800.0,"tick_size": 1.0},
-    {"instrument_id": "FUTS-008", "underlying": "OMXS30",        "mid_price": 2_350.0, "tick_size": 0.25},
-    {"instrument_id": "FUTS-009", "underlying": "BEL 20",        "mid_price": 3_850.0, "tick_size": 0.5},
-    {"instrument_id": "FUTS-010", "underlying": "ATX",           "mid_price": 3_600.0, "tick_size": 0.5},
+    {
+        "instrument_id": "FUTS-001",
+        "underlying": "EURO STOXX 50",
+        "mid_price": 4_850.0,
+        "tick_size": 1.0,
+    },
+    {
+        "instrument_id": "FUTS-002",
+        "underlying": "DAX",
+        "mid_price": 16_500.0,
+        "tick_size": 0.5,
+    },
+    {
+        "instrument_id": "FUTS-003",
+        "underlying": "FTSE 100",
+        "mid_price": 7_600.0,
+        "tick_size": 0.5,
+    },
+    {
+        "instrument_id": "FUTS-004",
+        "underlying": "CAC 40",
+        "mid_price": 7_200.0,
+        "tick_size": 0.5,
+    },
+    {
+        "instrument_id": "FUTS-005",
+        "underlying": "AEX",
+        "mid_price": 870.0,
+        "tick_size": 0.05,
+    },
+    {
+        "instrument_id": "FUTS-006",
+        "underlying": "SMI",
+        "mid_price": 11_500.0,
+        "tick_size": 1.0,
+    },
+    {
+        "instrument_id": "FUTS-007",
+        "underlying": "IBEX 35",
+        "mid_price": 10_800.0,
+        "tick_size": 1.0,
+    },
+    {
+        "instrument_id": "FUTS-008",
+        "underlying": "OMXS30",
+        "mid_price": 2_350.0,
+        "tick_size": 0.25,
+    },
+    {
+        "instrument_id": "FUTS-009",
+        "underlying": "BEL 20",
+        "mid_price": 3_850.0,
+        "tick_size": 0.5,
+    },
+    {
+        "instrument_id": "FUTS-010",
+        "underlying": "ATX",
+        "mid_price": 3_600.0,
+        "tick_size": 0.5,
+    },
 ]
 
 # Quarterly expiry: last Friday of March 2025 = 2025-03-21
@@ -47,8 +97,12 @@ def eurex_source(trade_date: date | None = None) -> Iterator:
             # EDSP = mid_price ± small intraday noise (±0.3%)
             noise_pct = float(rng.normal(0, 0.003))
             edsp = _round_to_tick(fut["mid_price"] * (1 + noise_pct), fut["tick_size"])
-            prev_settlement = _round_to_tick(fut["mid_price"] * float(rng.uniform(0.995, 1.005)), fut["tick_size"])
-            daily_pnl_per_contract = round((edsp - prev_settlement) * 10, 2)  # contract_size=10
+            prev_settlement = _round_to_tick(
+                fut["mid_price"] * float(rng.uniform(0.995, 1.005)), fut["tick_size"]
+            )
+            daily_pnl_per_contract = round(
+                (edsp - prev_settlement) * 10, 2
+            )  # contract_size=10
 
             yield {
                 "instrument_id": fut["instrument_id"],

@@ -1,4 +1,5 @@
 """Trader attribution weekly digest — ranks traders by cost decomposition."""
+
 from __future__ import annotations
 
 import os
@@ -37,9 +38,11 @@ def generate_trader_digest(week_ending: date) -> Path:
     with _engine().connect() as conn:
         df = pd.read_sql(sql, conn, params={"s": week_start, "e": week_ending})
 
-    df["rank"] = df.groupby("instrument_class")["avg_arrival_slippage_bps"].rank(
-        ascending=True, method="min"
-    ).astype(int)
+    df["rank"] = (
+        df.groupby("instrument_class")["avg_arrival_slippage_bps"]
+        .rank(ascending=True, method="min")
+        .astype(int)
+    )
 
     out = _OUTPUT_DIR / f"trader_digest_{week_ending}.csv"
     df.to_csv(out, index=False)

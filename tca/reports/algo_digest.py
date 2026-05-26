@@ -1,4 +1,5 @@
 """Algo performance weekly digest — league table by instrument class."""
+
 from __future__ import annotations
 
 import os
@@ -37,9 +38,11 @@ def generate_algo_digest(week_ending: date) -> Path:
     with _engine().connect() as conn:
         df = pd.read_sql(sql, conn, params={"s": week_start, "e": week_ending})
 
-    df["rank"] = df.groupby("instrument_class")["avg_arrival_slippage_bps"].rank(
-        ascending=True, method="min"
-    ).astype(int)
+    df["rank"] = (
+        df.groupby("instrument_class")["avg_arrival_slippage_bps"]
+        .rank(ascending=True, method="min")
+        .astype(int)
+    )
 
     out = _OUTPUT_DIR / f"algo_digest_{week_ending}.csv"
     df.to_csv(out, index=False)
