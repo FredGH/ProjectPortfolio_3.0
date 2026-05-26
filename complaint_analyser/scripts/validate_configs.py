@@ -3,26 +3,27 @@ from pathlib import Path
 
 import yaml
 
-from agentic_triage.core.config import (  # noqa: F401 — verifies import chain
-    DomainConfig,
-)
+from agentic_triage.core.config import DomainConfig
 
 
-def _validate(path: Path) -> None:
+def _validate(path: Path) -> DomainConfig:
     with path.open() as fh:
         data = yaml.safe_load(fh)
-    if not isinstance(data, dict) or "domain_name" not in data:
-        raise ValueError(f"{path}: missing required field 'domain_name'")
+    return DomainConfig.from_dict(data)
 
 
 if __name__ == "__main__":
     configs = sorted(Path("domains").glob("*/config.yaml"))
+    if not configs:
+        print("No domain configs found under domains/*/config.yaml", file=sys.stderr)
+        sys.exit(1)
     errors = []
     for cfg in configs:
         try:
-            _validate(cfg)
+            domain = _validate(cfg)
+            print(f"  OK  {cfg}  ({domain.domain_name})")
         except Exception as exc:
-            errors.append(str(exc))
+            errors.append(f"  FAIL {cfg}: {exc}")
     if errors:
         for err in errors:
             print(err, file=sys.stderr)
