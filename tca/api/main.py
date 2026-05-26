@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRouter
 
 from api.auth.jwt_handler import load_keys
 from api.routers import (
@@ -42,15 +43,17 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(auth.router)
-    app.include_router(tca.router)
-    app.include_router(orders.router)
-    app.include_router(reports.router)
-    app.include_router(mifid.router)
-    app.include_router(pipeline.router)
-    app.include_router(fills.router)
-    app.include_router(predict.router)
-    app.include_router(regime.router)
+    api = APIRouter(prefix="/api")
+    api.include_router(auth.router)
+    api.include_router(tca.router)
+    api.include_router(orders.router)
+    api.include_router(reports.router)
+    api.include_router(mifid.router)
+    api.include_router(pipeline.router)
+    api.include_router(fills.router)
+    api.include_router(predict.router)
+    api.include_router(regime.router)
+    app.include_router(api)
 
     @app.get("/health", include_in_schema=False)
     def health() -> JSONResponse:
