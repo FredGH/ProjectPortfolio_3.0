@@ -1,0 +1,70 @@
+# Oracle Cloud Free Tier — ARM64 production overrides.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Changes vs. base:
+#   - platform: linux/arm64 on all services (Arm A1 cores)
+#   - OLLAMA_NUM_PARALLEL=2 (4 cores → 2 inference threads; 2 cores each)
+#   - No exposed ports — Cloudflare Tunnel handles all public ingress
+#   - cloudflared service added for Tunnel connectivity
+#   - restart: always for all long-running services
+
+services:
+
+  qdrant:
+    platform: linux/arm64
+    ports: !reset []
+    restart: always
+
+  postgres:
+    platform: linux/arm64
+    ports: !reset []
+    restart: always
+
+  redis:
+    platform: linux/arm64
+    ports: !reset []
+    restart: always
+
+  n8n:
+    platform: linux/arm64
+    ports: !reset []
+    restart: always
+
+  ollama:
+    platform: linux/arm64
+    ports: !reset []
+    environment:
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_NUM_CTX: "2048"
+    restart: always
+
+  api:
+    platform: linux/arm64
+    ports: !reset []
+    restart: always
+
+  worker-fast:
+    platform: linux/arm64
+    restart: always
+
+  worker-assess:
+    platform: linux/arm64
+    restart: always
+
+  spacy:
+    platform: linux/arm64
+    ports: !reset []
+    restart: always
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    platform: linux/arm64
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: always
+    depends_on:
+      api:
+        condition: service_started
+      n8n:
+        condition: service_healthy

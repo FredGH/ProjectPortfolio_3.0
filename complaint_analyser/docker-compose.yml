@@ -16,8 +16,8 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: complaints
-      POSTGRES_USER: complaints
+      POSTGRES_DB: triage
+      POSTGRES_USER: triage
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     ports:
       - "5432:5432"
@@ -25,7 +25,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U complaints -d complaints"]
+      test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -51,6 +51,11 @@ services:
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: admin
       N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-changeme}
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: triage
+      DB_POSTGRESDB_USER: triage
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - n8n_data:/home/node/.n8n
     depends_on:
@@ -84,9 +89,13 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://complaints:${POSTGRES_PASSWORD:-changeme}@postgres:5432/complaints
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://triage:${POSTGRES_PASSWORD:-changeme}@postgres:5432/triage
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      QDRANT_HOST: http://qdrant:6333
     depends_on:
       postgres:
         condition: service_healthy
@@ -94,29 +103,21 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
 
   worker-fast:
     build: .
-    command: ["python", "-m", "agentic_triage.workers.fast"]
+    command: ["python", "-m", "arq", "agentic_triage.workers.tasks.FastWorkerSettings"]
     environment:
-      DATABASE_URL: postgresql://complaints:${POSTGRES_PASSWORD:-changeme}@postgres:5432/complaints
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://triage:${POSTGRES_PASSWORD:-changeme}@postgres:5432/triage
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       OLLAMA_HOST: http://ollama:11434
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-  worker-assess:
-    build: .
-    command: ["python", "-m", "agentic_triage.workers.assess"]
-    environment:
-      DATABASE_URL: postgresql://complaints:${POSTGRES_PASSWORD:-changeme}@postgres:5432/complaints
-      REDIS_URL: redis://redis:6379
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_NUM_PARALLEL: "6"
-      OLLAMA_NUM_CTX: "2048"
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      QDRANT_HOST: http://qdrant:6333
     depends_on:
       postgres:
         condition: service_healthy
@@ -124,6 +125,31 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker-assess:
+    build: .
+    command: ["python", "-m", "arq", "agentic_triage.workers.tasks.AssessWorkerSettings"]
+    environment:
+      DATABASE_URL: postgresql://triage:${POSTGRES_PASSWORD:-changeme}@postgres:5432/triage
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      EMBED_MODEL: ${EMBED_MODEL:-nomic-embed-text}
+      QDRANT_HOST: http://qdrant:6333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
 
   spacy:
     build:
@@ -131,11 +157,7 @@ services:
       dockerfile: spacy_service/Dockerfile
     ports:
       - "8001:8001"
-    environment:
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      redis:
-        condition: service_healthy
+    restart: unless-stopped
 
   bertopic:
     build:
@@ -144,7 +166,7 @@ services:
     profiles:
       - batch
     environment:
-      DATABASE_URL: postgresql://complaints:${POSTGRES_PASSWORD:-changeme}@postgres:5432/complaints
+      DATABASE_URL: postgresql://triage:${POSTGRES_PASSWORD:-changeme}@postgres:5432/triage
       QDRANT_HOST: http://qdrant:6333
     depends_on:
       postgres:
