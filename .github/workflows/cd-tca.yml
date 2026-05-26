@@ -1,0 +1,111 @@
+name: tca CD
+
+# Runs only after tca CI passes on main — never on PRs or feature branches.
+on:
+  workflow_run:
+    workflows: [tca CI]
+    types: [completed]
+    branches: [main]
+
+env:
+  AWS_REGION: eu-west-1
+
+jobs:
+  build-and-push:
+    name: Build & push Docker images to ECR
+    runs-on: ubuntu-latest
+
+    # Skip entirely if CI did not succeed.
+    if: github.event.workflow_run.conclusion == 'success'
+
+    defaults:
+      run:
+        working-directory: tca
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - name: Set ECR registry
+        run: echo "ECR_REGISTRY=${{ steps.ecr-login.outputs.registry }}" >> $GITHUB_ENV
+
+      # ── tca-api (FastAPI + analytics) ────────────────────────────────────
+      - name: Build tca-api
+        run: |
+          docker build \
+            -f Dockerfile \
+            -t $ECR_REGISTRY/tca-api:$IMAGE_TAG \
+            -t $ECR_REGISTRY/tca-api:latest \
+            .
+
+      - name: Push tca-api
+        run: |
+          docker push $ECR_REGISTRY/tca-api:$IMAGE_TAG
+          docker push $ECR_REGISTRY/tca-api:latest
+
+      # ── tca-mock-server ──────────────────────────────────────────────────
+      - name: Build tca-mock-server
+        run: |
+          docker build \
+            -f Dockerfile \
+            -t $ECR_REGISTRY/tca-mock-server:$IMAGE_TAG \
+            -t $ECR_REGISTRY/tca-mock-server:latest \
+            .
+
+      - name: Push tca-mock-server
+        run: |
+          docker push $ECR_REGISTRY/tca-mock-server:$IMAGE_TAG
+          docker push $ECR_REGISTRY/tca-mock-server:latest
+
+      # ── tca-airflow ──────────────────────────────────────────────────────
+      - name: Build tca-airflow
+        run: |
+          docker build \
+            -f Dockerfile.airflow \
+            -t $ECR_REGISTRY/tca-airflow:$IMAGE_TAG \
+            -t $ECR_REGISTRY/tca-airflow:latest \
+            .
+
+      - name: Push tca-airflow
+        run: |
+          docker push $ECR_REGISTRY/tca-airflow:$IMAGE_TAG
+          docker push $ECR_REGISTRY/tca-airflow:latest
+
+      # ── tca-angular (nginx SPA) ──────────────────────────────────────────
+      - name: Build tca-angular
+        run: |
+          docker build \
+            -f Dockerfile.angular \
+            -t $ECR_REGISTRY/tca-angular:$IMAGE_TAG \
+            -t $ECR_REGISTRY/tca-angular:latest \
+            .
+
+      - name: Push tca-angular
+        run: |
+          docker push $ECR_REGISTRY/tca-angular:$IMAGE_TAG
+          docker push $ECR_REGISTRY/tca-angular:latest
+
+      - name: Summary
+        run: |
+          echo "### Images pushed to ECR" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| tca-api | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| tca-mock-server | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| tca-airflow | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| tca-angular | \`$IMAGE_TAG\` |" >> $GITHUB_STEP_SUMMARY

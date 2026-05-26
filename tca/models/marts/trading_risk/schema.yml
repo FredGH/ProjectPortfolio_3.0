@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: fact_order_execution
+    description: "Primary TCA fact table — one row per order with full cost decomposition and benchmark slippage. counterparty_id MUST be in every query (row-level security)."
+    columns:
+      - name: fact_id
+        tests: [unique, not_null]
+      - name: hub_order_key
+        tests: [unique, not_null]
+      - name: counterparty_id
+        tests: [not_null]
+      - name: instrument_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['equity', 'equity_future', 'fixed_income', 'fx_derivative']
+      - name: side
+        tests:
+          - accepted_values:
+              values: ['BUY', 'SELL']
+      - name: execution_quality
+        tests:
+          - accepted_values:
+              values: ['EXCELLENT', 'GOOD', 'FAIR', 'POOR']
+      - name: vol_regime
+        tests:
+          - accepted_values:
+              values: ['LOW', 'MEDIUM', 'HIGH', 'UNKNOWN']
+      - name: total_cost_bps
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: -200
+              max_value: 500
+              severity: warn
+
+  - name: dim_algo
+    description: "Algorithm dimension."
+    columns:
+      - name: hub_algo_key
+        tests: [unique, not_null]
+      - name: algo_id
+        tests: [unique, not_null]
+
+  - name: dim_trader
+    description: "Trader dimension."
+    columns:
+      - name: hub_trader_key
+        tests: [unique, not_null]
+      - name: trader_id
+        tests: [unique, not_null]
+
+  - name: dim_venue
+    description: "Execution venue dimension."
+    columns:
+      - name: hub_venue_key
+        tests: [unique, not_null]
+      - name: venue_id
+        tests: [unique, not_null]
+
+  - name: dim_mifid
+    description: "MiFID II RTS 27/28 fields per order."
+    columns:
+      - name: hub_order_key
+        tests: [unique, not_null]
+      - name: mifir_transaction_report_id
+        tests: [unique, not_null]

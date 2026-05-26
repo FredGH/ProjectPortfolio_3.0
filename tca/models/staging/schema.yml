@@ -1,0 +1,85 @@
+version: 2
+
+models:
+  - name: stg_orders
+    description: "Cleaned and typed orders from stg_raw.orders (dlt landing table)."
+    columns:
+      - name: order_id
+        description: "Business key — UUID assigned by OMS."
+        tests: [unique, not_null]
+      - name: instrument_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['equity', 'equity_future', 'fixed_income', 'fx_derivative']
+      - name: side
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['BUY', 'SELL']
+      - name: counterparty_id
+        tests: [not_null]
+
+  - name: stg_fills
+    description: "Cleaned fills from stg_raw.fills."
+    columns:
+      - name: fill_id
+        tests: [unique, not_null]
+      - name: order_id
+        tests: [not_null]
+      - name: fill_price
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 1000000
+      - name: fill_quantity
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 100000000
+
+  - name: stg_tick_bars
+    description: "30-second OHLCV bars from market data simulation."
+    columns:
+      - name: bar_id
+        tests: [unique, not_null]
+      - name: instrument_id
+        tests: [not_null]
+      - name: close
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0.0001
+              max_value: 1000000
+
+  - name: stg_clients
+    description: "Counterparty/client reference data."
+    columns:
+      - name: counterparty_id
+        tests: [unique, not_null]
+
+  - name: stg_instruments
+    description: "Instrument master — all 4 asset classes."
+    columns:
+      - name: instrument_id
+        tests: [unique, not_null]
+      - name: instrument_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['equity', 'equity_future', 'fixed_income', 'fx_derivative']
+
+  - name: stg_bond_prices
+    description: "Evaluated bond prices (clean, dirty, yield, DV01)."
+    columns:
+      - name: instrument_id
+        tests: [not_null]
+      - name: price_date
+        tests: [not_null]
+      - name: clean_price
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 50
+              max_value: 200

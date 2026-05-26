@@ -1,0 +1,26 @@
+FROM apache/airflow:2.9.3-python3.11
+
+USER airflow
+
+# psycopg2-binary provides the psycopg2 module as a pre-compiled binary wheel.
+# The dist-info shim below tells pip psycopg2 is already satisfied so that
+# dbt-postgres does not trigger a source build (which requires libpq-dev + gcc).
+RUN pip install --no-cache-dir "psycopg2-binary>=2.9,<3.0" && \
+    SITE=$(pip show psycopg2-binary | awk '/^Location:/{print $2}') && \
+    VER=$(python -c "import psycopg2; print(psycopg2.__version__.split()[0])") && \
+    mkdir -p "${SITE}/psycopg2-${VER}.dist-info" && \
+    printf 'Metadata-Version: 2.1\nName: psycopg2\nVersion: %s\n' "${VER}" \
+        > "${SITE}/psycopg2-${VER}.dist-info/METADATA" && \
+    printf 'pip\n' > "${SITE}/psycopg2-${VER}.dist-info/INSTALLER" && \
+    touch "${SITE}/psycopg2-${VER}.dist-info/RECORD"
+
+RUN pip install --no-cache-dir \
+    sqlalchemy \
+    bcrypt \
+    python-dotenv \
+    "dlt==1.5.0" \
+    faker \
+    numpy \
+    pandas \
+    scipy \
+    "dbt-postgres==1.8.1"

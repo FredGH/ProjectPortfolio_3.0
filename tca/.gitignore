@@ -1,0 +1,25 @@
+# dbt artefacts
+target/
+dbt_packages/
+
+# Angular
+frontend/node_modules/
+frontend/dist/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# ML model artefacts (large binaries — retrain via API)
+analytics/models/*.pkl
+
+# Airflow logs
+logs/
+
+# Environment / secrets
+.env
+
+# OS
+.DS_Store
