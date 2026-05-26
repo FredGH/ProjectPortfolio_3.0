@@ -26,10 +26,15 @@ def _generate_bars(
     instrument_id: str,
     start_price: float,
     vol_daily: float,
-    vol_low: int,
-    vol_high: int,
-    rng: np.random.Generator,
+    vol_low: int = 10_000,
+    vol_high: int = 2_000_000,
+    rng: np.random.Generator | None = None,
+    instrument_class: str = "",
 ) -> list[dict]:
+    if rng is None:
+        rng = np.random.default_rng(
+            seed=trade_date.toordinal() ^ hash(instrument_id) % (2**32)
+        )
     n = _N_BARS
     sigma_bar = vol_daily / np.sqrt(n)
 
@@ -60,7 +65,7 @@ def _generate_bars(
             {
                 "bar_id": f"{instrument_id}_{int(ts.timestamp())}",
                 "instrument_id": instrument_id,
-                "ts": ts,
+                "bar_start": ts,
                 "open": round(open_, 6),
                 "high": high,
                 "low": max(low, 0.0001),
