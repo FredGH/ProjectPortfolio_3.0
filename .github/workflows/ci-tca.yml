@@ -41,13 +41,13 @@ jobs:
         run: pip install ruff isort black
 
       - name: ruff
-        run: ruff check .
+        run: ruff check --output-format=github .
 
       - name: isort
-        run: isort --check .
+        run: isort --check --diff .
 
       - name: black
-        run: black --check .
+        run: black --check --diff .
 
   # ── Python unit + integration tests ──────────────────────────────────────
   test-python:
