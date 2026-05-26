@@ -8,6 +8,7 @@ from agentic_triage.preprocessing.normalizer import build_symspell, normalize
 class TestBuildSymspell(unittest.TestCase):
     def test_returns_symspell_instance(self):
         from symspellpy import SymSpell
+
         sym_spell = build_symspell()
         self.assertIsInstance(sym_spell, SymSpell)
 

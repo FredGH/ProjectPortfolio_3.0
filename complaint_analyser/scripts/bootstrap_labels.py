@@ -9,6 +9,7 @@ Usage:
     python scripts/bootstrap_labels.py --limit 20            # label first 20
     python scripts/bootstrap_labels.py                       # label all rows
 """
+
 import argparse
 import csv
 import io
@@ -33,8 +34,7 @@ def _build_prompt(narrative: str, config: dict) -> str:
     levels = sorted(config["priority_levels"], key=lambda x: -x["min_composite"])
 
     dim_lines = "\n".join(
-        f"  - {d['name']} (weight {d['weight']}): {d['description']}"
-        for d in dims
+        f"  - {d['name']} (weight {d['weight']}): {d['description']}" for d in dims
     )
 
     level_lines = "\n".join(
@@ -91,24 +91,49 @@ def _read_rows(data_dir: Path) -> list[dict]:
     if not zips:
         raise FileNotFoundError(f"No zip file found in {data_dir}")
     with zipfile.ZipFile(zips[0]) as zf:
-        csv_names = [n for n in zf.namelist() if n.endswith(".csv") and not n.startswith("__")]
+        csv_names = [
+            n for n in zf.namelist() if n.endswith(".csv") and not n.startswith("__")
+        ]
         if not csv_names:
             raise FileNotFoundError("No CSV inside zip")
         with zf.open(csv_names[0]) as fh:
-            reader = csv.DictReader(io.TextIOWrapper(fh, encoding="utf-8", errors="replace"))
+            reader = csv.DictReader(
+                io.TextIOWrapper(fh, encoding="utf-8", errors="replace")
+            )
             return list(reader)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Bootstrap complaint priority labels using Ollama.")
-    parser.add_argument("--limit", type=int, default=None, help="Max complaints to process (default: all)")
+    parser = argparse.ArgumentParser(
+        description="Bootstrap complaint priority labels using Ollama."
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Max complaints to process (default: all)",
+    )
     parser.add_argument("--offset", type=int, default=0, help="Skip the first N rows")
-    parser.add_argument("--output", default="data/complaints_labelled.jsonl", help="Output JSONL path")
+    parser.add_argument(
+        "--output", default="data/complaints_labelled.jsonl", help="Output JSONL path"
+    )
     parser.add_argument("--model", default="llama3.1:8b", help="Ollama model name")
-    parser.add_argument("--ollama-host", default="http://localhost:11434", help="Ollama base URL")
-    parser.add_argument("--timeout", type=int, default=120, help="Per-request timeout in seconds")
-    parser.add_argument("--dry-run", action="store_true", help="Print first prompt and exit without calling Ollama")
-    parser.add_argument("--domain", default="domains/banking_complaints/config.yaml", help="Domain config path")
+    parser.add_argument(
+        "--ollama-host", default="http://localhost:11434", help="Ollama base URL"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=120, help="Per-request timeout in seconds"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print first prompt and exit without calling Ollama",
+    )
+    parser.add_argument(
+        "--domain",
+        default="domains/banking_complaints/config.yaml",
+        help="Domain config path",
+    )
     parser.add_argument("--data-dir", default="data", help="Data directory")
     args = parser.parse_args()
 
@@ -156,7 +181,9 @@ def main() -> None:
             if "level" in result and "priority" not in result:
                 result["priority"] = result.pop("level")
             if "priority" in result:
-                result["priority"] = re.sub(r"[<>\[\]]", "", str(result["priority"])).strip()
+                result["priority"] = re.sub(
+                    r"[<>\[\]]", "", str(result["priority"])
+                ).strip()
 
             record = {
                 "input_id": f"seed_{args.offset + i:05d}",
@@ -172,7 +199,9 @@ def main() -> None:
             if (i + 1) % 25 == 0 or (i + 1) == len(rows):
                 elapsed = time.time() - t0
                 rate = ok / elapsed if elapsed > 0 else 0
-                print(f"  [{i + 1:>5}/{len(rows)}] ok={ok} failed={failed} ({rate:.1f}/s)")
+                print(
+                    f"  [{i + 1:>5}/{len(rows)}] ok={ok} failed={failed} ({rate:.1f}/s)"
+                )
 
     print(f"\nDone: ok={ok}, failed={failed}, output={output_path}")
     if ok > 0:

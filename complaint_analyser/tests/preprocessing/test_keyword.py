@@ -3,10 +3,16 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from agentic_triage.preprocessing.keyword import build_keyword_processor, extract_keywords
+from agentic_triage.preprocessing.keyword import (
+    build_keyword_processor,
+    extract_keywords,
+)
 
 KEYWORDS_PATH = str(
-    Path(__file__).parent.parent.parent / "domains" / "banking_complaints" / "keywords.txt"
+    Path(__file__).parent.parent.parent
+    / "domains"
+    / "banking_complaints"
+    / "keywords.txt"
 )
 
 
@@ -27,7 +33,9 @@ class TestExtractKeywords(unittest.TestCase):
         cls.processor = build_keyword_processor(KEYWORDS_PATH)
 
     def test_extracts_known_keyword(self):
-        result = extract_keywords("There was a GDPR breach in my account", self.processor)
+        result = extract_keywords(
+            "There was a GDPR breach in my account", self.processor
+        )
         self.assertIn("GDPR", result)
 
     def test_case_insensitive(self):
@@ -35,7 +43,9 @@ class TestExtractKeywords(unittest.TestCase):
         self.assertTrue(any(k.upper() == "GDPR" for k in result))
 
     def test_extracts_multi_word_keyword(self):
-        result = extract_keywords("I noticed an unauthorised transaction", self.processor)
+        result = extract_keywords(
+            "I noticed an unauthorised transaction", self.processor
+        )
         self.assertTrue(any("unauthorised" in k.lower() for k in result))
 
     def test_no_duplicates(self):
@@ -47,7 +57,9 @@ class TestExtractKeywords(unittest.TestCase):
         self.assertEqual(result, [])
 
     def test_multiple_keywords_detected(self):
-        result = extract_keywords("GDPR breach involving fraud and FCA violation", self.processor)
+        result = extract_keywords(
+            "GDPR breach involving fraud and FCA violation", self.processor
+        )
         self.assertGreaterEqual(len(result), 2)
 
 

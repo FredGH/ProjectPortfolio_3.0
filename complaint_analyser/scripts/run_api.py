@@ -3,6 +3,7 @@
 Usage:
   python scripts/run_api.py
 """
+
 from __future__ import annotations
 
 from pathlib import Path

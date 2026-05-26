@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import httpx
 
+from agentic_triage import settings
 from agentic_triage.core.config import DomainConfig
 from agentic_triage.core.state import TriageState
-from agentic_triage import settings
 
 _REWRITE_PROMPT = """\
 The complaint below did not retrieve strong evidence from these knowledge-base \

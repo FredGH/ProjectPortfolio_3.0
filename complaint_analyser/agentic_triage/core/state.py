@@ -26,4 +26,6 @@ class TriageState(TypedDict):
     analyst_override: str | None
     hyde_text: str | None
     retrieval_queries: list[str]
-    retrieved_references: dict[str, list[str]]  # role → list of point IDs; set by finalize
+    retrieved_references: dict[
+        str, list[str]
+    ]  # role → list of point IDs; set by finalize

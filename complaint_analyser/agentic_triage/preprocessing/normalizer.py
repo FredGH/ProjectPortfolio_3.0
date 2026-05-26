@@ -9,6 +9,7 @@ def build_symspell(vocab_path: str | None = None) -> SymSpell:
     sym_spell = SymSpell(max_dictionary_edit_distance=2, prefix_length=7)
 
     import pkg_resources
+
     builtin = pkg_resources.resource_filename(
         "symspellpy", "frequency_dictionary_en_82_765.txt"
     )

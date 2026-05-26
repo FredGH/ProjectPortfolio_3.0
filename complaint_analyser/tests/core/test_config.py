@@ -62,9 +62,7 @@ class TestDomainConfigFromDict(unittest.TestCase):
             "domain_name": "test",
             "input_field": "text",
             "id_prefix": "T-",
-            "scoring_dimensions": [
-                {"name": "risk", "description": "test risk"}
-            ],
+            "scoring_dimensions": [{"name": "risk", "description": "test risk"}],
             "priority_levels": [
                 {
                     "label": "P1",

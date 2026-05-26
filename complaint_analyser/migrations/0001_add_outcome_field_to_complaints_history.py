@@ -3,6 +3,7 @@
 Qdrant is schema-less, so this just initialises the field to ``None`` on every
 existing point. New points written by the ingest pipeline carry the field already.
 """
+
 from __future__ import annotations
 
 import uuid

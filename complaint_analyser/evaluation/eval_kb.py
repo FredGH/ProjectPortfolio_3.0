@@ -16,6 +16,7 @@ Exit codes:
   0 — all collections pass recall@k >= threshold
   1 — one or more collections fail or Qdrant is unreachable
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,6 @@ from pathlib import Path
 
 import httpx
 from qdrant_client import QdrantClient
-
 
 EMBED_MODEL = "nomic-embed-text"
 
@@ -71,7 +71,9 @@ def evaluate(
     ollama_url: str,
     top_k: int,
 ) -> dict[str, dict]:
-    stats: dict[str, dict] = defaultdict(lambda: {"hits": 0, "total": 0, "failures": []})
+    stats: dict[str, dict] = defaultdict(
+        lambda: {"hits": 0, "total": 0, "failures": []}
+    )
 
     for entry in queries:
         collection = entry["collection"]
@@ -81,7 +83,9 @@ def evaluate(
         try:
             existing = {c.name for c in client.get_collections().collections}
             if collection not in existing:
-                print(f"  SKIP {collection!r} — collection not found (run ingest first)")
+                print(
+                    f"  SKIP {collection!r} — collection not found (run ingest first)"
+                )
                 continue
 
             [embedding] = embed([query], ollama_url)
@@ -107,8 +111,12 @@ def main() -> None:
     parser.add_argument("--queries", default="evaluation/kb_test_queries.json")
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--threshold", type=float, default=0.70)
-    parser.add_argument("--qdrant-url", default=os.environ.get("QDRANT_HOST", "http://localhost:6333"))
-    parser.add_argument("--ollama-url", default=os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
+    parser.add_argument(
+        "--qdrant-url", default=os.environ.get("QDRANT_HOST", "http://localhost:6333")
+    )
+    parser.add_argument(
+        "--ollama-url", default=os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    )
     args = parser.parse_args()
 
     queries = json.loads(Path(args.queries).read_text())
@@ -131,7 +139,9 @@ def main() -> None:
             continue
         recall = s["hits"] / total
         status = "PASS" if recall >= args.threshold else "FAIL"
-        print(f"  {collection}: recall@{args.top_k}={recall:.2f} ({s['hits']}/{total}) [{status}]")
+        print(
+            f"  {collection}: recall@{args.top_k}={recall:.2f} ({s['hits']}/{total}) [{status}]"
+        )
         if s["failures"]:
             for q in s["failures"]:
                 print(f"    miss: {q}")

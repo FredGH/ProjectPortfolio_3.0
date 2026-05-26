@@ -7,6 +7,7 @@ Discovers every ``migrations/NNNN_*.py`` module in lexicographic order and
 calls its ``up(client)`` function. Each migration is idempotent — already-applied
 migrations are tracked in the ``_migrations`` Qdrant collection and skipped.
 """
+
 from __future__ import annotations
 
 import importlib.util

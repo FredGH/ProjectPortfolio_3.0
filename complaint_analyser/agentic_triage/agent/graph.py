@@ -218,7 +218,11 @@ def make_assess_node(config: DomainConfig):
 
         # Recommended action from the matched priority level
         recommended_action = next(
-            (lv.recommended_action for lv in config.priority_levels if lv.label == priority),
+            (
+                lv.recommended_action
+                for lv in config.priority_levels
+                if lv.label == priority
+            ),
             "",
         )
 
@@ -391,9 +395,7 @@ async def _call_ollama_json(prompt: str) -> dict:
         return {}
 
 
-def _parse_dimension_scores(
-    raw: dict, config: DomainConfig
-) -> dict[str, int]:
+def _parse_dimension_scores(raw: dict, config: DomainConfig) -> dict[str, int]:
     scores: dict[str, int] = {}
     for d in config.scoring_dimensions:
         raw_val = raw.get(d.name, 0)

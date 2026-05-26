@@ -5,6 +5,7 @@ dense vector search already present. The QdrantRetriever ``"hybrid"`` mode
 over-retrieves 2× candidates for the cross-encoder reranker; this index
 improves keyword recall within that candidate pool.
 """
+
 from __future__ import annotations
 
 import uuid
