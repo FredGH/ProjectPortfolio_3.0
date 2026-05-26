@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from ingestion.sources.oms_source import _generate_oms_data, INSTRUMENT_CONFIG
+from ingestion.sources.oms_source import INSTRUMENT_CONFIG, _generate_oms_data
 
 _TRADE_DATE = date(2025, 1, 15)
 _ASSET_CLASSES = list(INSTRUMENT_CONFIG.keys())

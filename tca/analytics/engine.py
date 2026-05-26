@@ -98,6 +98,7 @@ class AnalyticsEngine:
 
 if __name__ == "__main__":
     import argparse
+
     from dotenv import load_dotenv
 
     load_dotenv()

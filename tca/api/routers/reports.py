@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from api.auth.dependencies import UserClaims, get_current_user
+from api.auth.dependencies import UserClaims
 from api.auth.rbac import require_min_role
 from api.schemas.models import ObsWarning
 from api.services.tca_service import TCAService

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 
