@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 from datetime import date
 
-from ingestion.sources.market_data_source import _generate_bars, _N_BARS
+from ingestion.sources.market_data_source import _N_BARS, _generate_bars
 
 _TRADE_DATE = date(2025, 1, 15)
 

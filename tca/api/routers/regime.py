@@ -12,13 +12,8 @@ router = APIRouter(prefix="/regime", tags=["regime"])
 
 
 def _import_detector():
-    from analytics.modules.regime_detection import (
-        detect,
-        model_status,
-        summary,
-        timeline,
-        train,
-    )
+    from analytics.modules.regime_detection import (detect, model_status,
+                                                    summary, timeline, train)
     return detect, model_status, summary, timeline, train
 
 

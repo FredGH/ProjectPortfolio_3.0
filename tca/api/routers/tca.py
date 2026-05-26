@@ -5,7 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from api.auth.dependencies import UserClaims, get_current_user
-from api.schemas.models import AlgoPerformance, AlphaDecayCurve, PeerBenchmark, TCAResult
+from api.schemas.models import (AlgoPerformance, AlphaDecayCurve,
+                                PeerBenchmark, TCAResult)
 from api.services.tca_service import TCAService
 
 router = APIRouter(prefix="/tca", tags=["tca"])
