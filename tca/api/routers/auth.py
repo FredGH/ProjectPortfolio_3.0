@@ -4,12 +4,13 @@ import hashlib
 import os
 from typing import Annotated
 
+import bcrypt as _bcrypt
 import sqlalchemy as sa
 from fastapi import APIRouter, Form, HTTPException, status
 from jose import JWTError
-import bcrypt as _bcrypt
 
-from api.auth.jwt_handler import issue_access_token, issue_refresh_token, verify_token
+from api.auth.jwt_handler import (issue_access_token, issue_refresh_token,
+                                  verify_token)
 from api.schemas.models import TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])

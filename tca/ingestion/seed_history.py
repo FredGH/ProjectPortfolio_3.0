@@ -19,8 +19,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from ingestion.pipelines.run_daily import run_daily  # noqa: E402
 from ingestion.pipelines.run_all import _build_pipeline  # noqa: E402
+from ingestion.pipelines.run_daily import run_daily  # noqa: E402
 from ingestion.sources.ref_data_source import ref_data_source  # noqa: E402
 
 logger = logging.getLogger(__name__)

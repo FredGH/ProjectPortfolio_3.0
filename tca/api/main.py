@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.auth.jwt_handler import load_keys
-from api.routers import auth, fills, mifid, orders, pipeline, predict, regime, reports, tca
+from api.routers import (auth, fills, mifid, orders, pipeline, predict, regime,
+                         reports, tca)
 
 
 @asynccontextmanager
