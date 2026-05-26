@@ -26,6 +26,7 @@ joblib==1.4.2
 
 # ── dbt transform ────────────────────────────────────────────
 dbt-postgres==1.8.1
+dbt-core>=1.8.0,<1.9.0
 
 # ── Redis Streams (real-time mock) ───────────────────────────
 redis[hiredis]==5.0.4
