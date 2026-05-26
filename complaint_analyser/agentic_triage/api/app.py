@@ -61,6 +61,7 @@ def create_multi_domain_app(configs: dict[str, DomainConfig]) -> FastAPI:
             )
         )
         app.state.db = await pg_create_pool()
+        app.state.qdrant = QdrantClient(url=settings.QDRANT_HOST)
         app.state.configs = configs
         yield
         await app.state.redis.close()

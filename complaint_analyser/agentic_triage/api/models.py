@@ -31,3 +31,14 @@ class ReportResponse(BaseModel):
     batch_id: str
     domain: str
     summary: str
+
+
+class FeedbackRequest(BaseModel):
+    input_id: str
+    analyst_override: str
+    cleaned_text: str
+
+
+class FeedbackResponse(BaseModel):
+    input_id: str
+    status: str

@@ -1,0 +1,176 @@
+{
+  "name": "Workflow 2 — Analyst Override Ingestion",
+  "nodes": [
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000001",
+      "name": "Webhook: analyst override",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {
+        "path": "analyst-override",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "analyst-override-webhook"
+    },
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000002",
+      "name": "HTTP: POST /feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.API_BASE_URL }}/feedback/banking_complaints",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({input_id: $json.body.input_id, analyst_override: $json.body.analyst_override, cleaned_text: $json.body.cleaned_text}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000003",
+      "name": "Postgres: check override rate",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT priority, COUNT(*) FILTER (WHERE analyst_override IS NOT NULL AND processed_at >= now() - INTERVAL '7 days') AS overrides, COUNT(*) FILTER (WHERE processed_at >= now() - INTERVAL '7 days') AS total, ROUND(COUNT(*) FILTER (WHERE analyst_override IS NOT NULL AND processed_at >= now() - INTERVAL '7 days')::numeric / NULLIF(COUNT(*) FILTER (WHERE processed_at >= now() - INTERVAL '7 days'), 0), 3) AS override_rate FROM triage_results GROUP BY priority HAVING ROUND(COUNT(*) FILTER (WHERE analyst_override IS NOT NULL AND processed_at >= now() - INTERVAL '7 days')::numeric / NULLIF(COUNT(*) FILTER (WHERE processed_at >= now() - INTERVAL '7 days'), 0), 3) > 0.15",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "postgres_triage",
+          "name": "Postgres Triage DB"
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000004",
+      "name": "IF: override rate > 15%?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-override-rate",
+              "leftValue": "={{ $items().length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000005",
+      "name": "Postgres: log recalibration alert",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [880, -100],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO recalibration_alerts (priority, override_rate, window_start) VALUES ('{{ $json.priority }}', {{ $json.override_rate }}, now() - INTERVAL '7 days')",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "postgres_triage",
+          "name": "Postgres Triage DB"
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000006",
+      "name": "Send override alert email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1100, -100],
+      "parameters": {
+        "fromEmail": "={{ $vars.REPORT_FROM_EMAIL }}",
+        "toEmail": "={{ $vars.ALERT_TO_EMAIL }}",
+        "subject": "⚠️ Triage Recalibration Alert — {{ $json.priority }} override rate {{ $json.override_rate * 100 }}%",
+        "emailType": "text",
+        "message": "Priority {{ $json.priority }} has an override rate of {{ ($json.override_rate * 100).toFixed(1) }}% over the last 7 days ({{ $json.overrides }} overrides / {{ $json.total }} items).\n\nThis exceeds the 15% threshold. Please review the scoring model calibration for this priority level.",
+        "options": {}
+      },
+      "credentials": {
+        "smtp": {
+          "id": "smtp_credentials",
+          "name": "SMTP"
+        }
+      }
+    },
+    {
+      "id": "b2c3d4e5-0002-0002-0002-000000000007",
+      "name": "Respond to webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [880, 100],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\", \"input_id\": \"{{ $('Webhook: analyst override').item.json.body.input_id }}\" }"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: analyst override": {
+      "main": [
+        [{"node": "HTTP: POST /feedback", "type": "main", "index": 0}]
+      ]
+    },
+    "HTTP: POST /feedback": {
+      "main": [
+        [{"node": "Postgres: check override rate", "type": "main", "index": 0}]
+      ]
+    },
+    "Postgres: check override rate": {
+      "main": [
+        [{"node": "IF: override rate > 15%?", "type": "main", "index": 0}]
+      ]
+    },
+    "IF: override rate > 15%?": {
+      "main": [
+        [{"node": "Postgres: log recalibration alert", "type": "main", "index": 0}],
+        [{"node": "Respond to webhook", "type": "main", "index": 0}]
+      ]
+    },
+    "Postgres: log recalibration alert": {
+      "main": [
+        [{"node": "Send override alert email", "type": "main", "index": 0}]
+      ]
+    },
+    "Send override alert email": {
+      "main": [
+        [{"node": "Respond to webhook", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": ["override", "feedback", "banking"],
+  "pinData": {},
+  "versionId": "b2c3d4e5-0002-0002-0002-000000000000",
+  "id": "workflow-override-ingestion-v1"
+}
