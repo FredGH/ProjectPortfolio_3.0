@@ -21,6 +21,10 @@ env:
   POSTGRES_DB: tca_db
   DATABASE_URL: postgresql://tca_user:tca_password@localhost:5432/tca_db
   REDIS_URL: redis://localhost:6379/0
+  TEST_ADMIN_CLIENT_ID: admin_01
+  TEST_ADMIN_SECRET: changeme
+  TEST_CLIENT_CLIENT_ID: client_cp_a
+  TEST_CLIENT_SECRET: changeme
 
 jobs:
   # ── Code quality ─────────────────────────────────────────────────────────
