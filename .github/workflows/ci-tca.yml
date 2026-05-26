@@ -11,6 +11,7 @@ on:
     paths:
       - "tca/**"
       - ".github/workflows/ci-tca.yml"
+  workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.11"
