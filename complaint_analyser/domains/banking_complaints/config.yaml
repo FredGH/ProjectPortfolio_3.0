@@ -1,0 +1,59 @@
+domain_name: banking_complaints
+input_field: complaint_text
+id_prefix: "C-"
+confidence_threshold: 0.7
+max_reretrieval_loops: 2
+ner_labels: [MONEY, DATE, ORG, PRODUCT, PERSON]
+keyword_library_path: ./keywords.txt
+
+scoring_dimensions:
+  - name: reputational_risk
+    description: Regulatory breaches, GDPR violations, fee errors
+    weight: 1.0
+    high_score_examples:
+      - GDPR breach with third-party data exposure
+      - Incorrect fee charged in breach of FCA rules
+  - name: financial_impact
+    description: Direct financial harm to the customer
+    weight: 1.0
+    high_score_examples:
+      - Unauthorised transaction on frozen account
+      - Failed payment causing downstream penalties
+
+priority_levels:
+  - label: P1
+    min_composite: 8.0
+    escalate_if_any_dimension_exceeds: 4.0
+    description: Regulatory breach or immediate financial loss
+    response_sla: "4 hours"
+    recommended_action: Escalate to DPO or compliance team immediately
+  - label: P2
+    min_composite: 5.0
+    description: Reputational risk or significant financial impact
+    response_sla: Same day
+    recommended_action: Assign to senior support agent
+  - label: P3
+    min_composite: 3.0
+    description: Process failure, moderate impact
+    response_sla: 24–48 hours
+    recommended_action: Standard escalation queue
+  - label: P4
+    min_composite: 0.0
+    description: General enquiry or minor issue
+    response_sla: Standard queue
+    recommended_action: First-line support
+
+collections:
+  - name: complaints_history
+    role: precedent
+    top_k: 5
+    filter_fields: [category, date]
+    search_mode: hybrid
+  - name: regulatory_rules
+    role: rules
+    top_k: 3
+    search_mode: hybrid
+  - name: risk_taxonomy
+    role: rubric
+    top_k: 2
+    search_mode: dense

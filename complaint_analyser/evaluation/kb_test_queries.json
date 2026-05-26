@@ -1,0 +1,77 @@
+[
+  {
+    "collection": "regulatory_rules",
+    "query": "GDPR Article 33 personal data breach notification 72 hours supervisory authority",
+    "expected_payload_matches": ["72 hours", "Article 33", "breach notification", "supervisory authority"]
+  },
+  {
+    "collection": "regulatory_rules",
+    "query": "PSD2 unauthorised transaction refund liability payment service provider",
+    "expected_payload_matches": ["unauthorised", "PSD2", "refund", "Article 73"]
+  },
+  {
+    "collection": "regulatory_rules",
+    "query": "FCA Consumer Duty fair value retail customer price charges",
+    "expected_payload_matches": ["Consumer Duty", "fair value", "retail customer"]
+  },
+  {
+    "collection": "regulatory_rules",
+    "query": "strong customer authentication SCA knowledge possession inherence",
+    "expected_payload_matches": ["strong customer authentication", "SCA", "knowledge", "possession"]
+  },
+  {
+    "collection": "regulatory_rules",
+    "query": "GDPR right to erasure data subject personal data no longer necessary",
+    "expected_payload_matches": ["erasure", "data subject", "Article 17"]
+  },
+  {
+    "collection": "risk_taxonomy",
+    "query": "unauthorised payment transaction without customer consent fraud account takeover",
+    "expected_payload_matches": ["UNAUTHORIZED_TRANSACTION", "consent", "PSD2"]
+  },
+  {
+    "collection": "risk_taxonomy",
+    "query": "GDPR data breach personal data disclosed without authorisation",
+    "expected_payload_matches": ["GDPR_DATA_BREACH", "personal data", "Article 33"]
+  },
+  {
+    "collection": "risk_taxonomy",
+    "query": "incorrect fee charged customer account calculation error tariff",
+    "expected_payload_matches": ["FEE_ERROR", "fee", "incorrect"]
+  },
+  {
+    "collection": "risk_taxonomy",
+    "query": "account frozen locked customer unable to access funds",
+    "expected_payload_matches": ["FROZEN_ACCOUNT", "access", "funds"]
+  },
+  {
+    "collection": "risk_taxonomy",
+    "query": "complaint not handled within deadline eight weeks FCA DISP",
+    "expected_payload_matches": ["COMPLAINT_HANDLING_FAILURE", "complaint", "deadline"]
+  },
+  {
+    "collection": "complaints_history",
+    "query": "credit card unauthorised charge fraud dispute refund",
+    "expected_payload_matches": ["priority"]
+  },
+  {
+    "collection": "complaints_history",
+    "query": "GDPR breach personal information shared third party without consent",
+    "expected_payload_matches": ["priority"]
+  },
+  {
+    "collection": "complaints_history",
+    "query": "wrong fee applied bank account statement error overcharged",
+    "expected_payload_matches": ["priority"]
+  },
+  {
+    "collection": "complaints_history",
+    "query": "account frozen unable to access money direct debit failed",
+    "expected_payload_matches": ["priority"]
+  },
+  {
+    "collection": "complaints_history",
+    "query": "payment not received sent transfer missing funds bank error",
+    "expected_payload_matches": ["priority"]
+  }
+]
