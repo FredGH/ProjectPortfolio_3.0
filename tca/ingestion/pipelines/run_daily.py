@@ -2,6 +2,7 @@
 
 Excludes ref_data — reference tables are stable and seeded once.
 """
+
 from __future__ import annotations
 
 import logging
@@ -31,10 +32,10 @@ def run_daily(trade_date: date) -> dict[str, str]:
     results: dict[str, str] = {}
 
     steps = [
-        ("oms",         oms_source(trade_date=trade_date)),
+        ("oms", oms_source(trade_date=trade_date)),
         ("market_data", market_data_source(trade_date=trade_date)),
-        ("fi_pricing",  fi_pricing_source(trade_date=trade_date)),
-        ("eurex",       eurex_source(trade_date=trade_date)),
+        ("fi_pricing", fi_pricing_source(trade_date=trade_date)),
+        ("eurex", eurex_source(trade_date=trade_date)),
     ]
 
     for name, source in steps:

@@ -1,10 +1,11 @@
 """Integration tests for oms_source — validates generated order/fill data."""
+
 from __future__ import annotations
 
 import unittest
 from datetime import date
 
-from ingestion.sources.oms_source import INSTRUMENT_CONFIG, _generate_oms_data
+from ingestion.sources.oms_source import _generate_oms_data, INSTRUMENT_CONFIG
 
 _TRADE_DATE = date(2025, 1, 15)
 _ASSET_CLASSES = list(INSTRUMENT_CONFIG.keys())
@@ -25,19 +26,30 @@ class TestOmsSourceGeneration(unittest.TestCase):
 
     def test_each_asset_class_has_100_orders(self) -> None:
         from collections import Counter
+
         counts = Counter(o["instrument_class"] for o in self.orders)
         for cls_ in _ASSET_CLASSES:
             self.assertEqual(counts[cls_], 100, f"{cls_} != 100 orders")
 
     def test_order_required_fields_present(self) -> None:
         required = {
-            "order_id", "instrument_id", "instrument_class", "counterparty_id",
-            "side", "order_quantity", "arrival_price", "algo_id", "trader_id",
-            "trade_date", "order_time",
+            "order_id",
+            "instrument_id",
+            "instrument_class",
+            "counterparty_id",
+            "side",
+            "order_quantity",
+            "arrival_price",
+            "algo_id",
+            "trader_id",
+            "trade_date",
+            "order_time",
         }
         for order in self.orders:
             missing = required - set(order.keys())
-            self.assertFalse(missing, f"Order {order.get('order_id')} missing: {missing}")
+            self.assertFalse(
+                missing, f"Order {order.get('order_id')} missing: {missing}"
+            )
 
     def test_no_spot_fx_orders(self) -> None:
         classes = {o["instrument_class"] for o in self.orders}

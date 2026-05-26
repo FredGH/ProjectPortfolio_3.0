@@ -43,9 +43,17 @@ class EurexDerivatives:
         ).round(4)
 
         cols = [
-            "hub_order_key", "instrument_id", "side", "quantity",
-            "arrival_price", "avg_fill_price", "edsp_price",
-            "edsp_slippage_bps", "basis_bps",
-            "counterparty_id", "trader_id", "trade_date",
+            "hub_order_key",
+            "instrument_id",
+            "side",
+            "quantity",
+            "arrival_price",
+            "avg_fill_price",
+            "edsp_price",
+            "edsp_slippage_bps",
+            "basis_bps",
+            "counterparty_id",
+            "trader_id",
+            "trade_date",
         ]
         return fut[[c for c in cols if c in fut.columns]]

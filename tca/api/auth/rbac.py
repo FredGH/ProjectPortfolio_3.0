@@ -17,6 +17,7 @@ _ROLE_HIERARCHY = {
 
 def require_role(*allowed_roles: str) -> Callable:
     """Dependency factory: raises 403 if user's role is not in allowed_roles."""
+
     def dependency(user: UserClaims = Depends(get_current_user)) -> UserClaims:
         if user.role not in allowed_roles:
             raise HTTPException(
@@ -24,6 +25,7 @@ def require_role(*allowed_roles: str) -> Callable:
                 detail=f"Role '{user.role}' is not authorised for this endpoint.",
             )
         return user
+
     return dependency
 
 
@@ -39,4 +41,5 @@ def require_min_role(min_role: str) -> Callable:
                 detail=f"Minimum required role: {min_role}",
             )
         return user
+
     return dependency

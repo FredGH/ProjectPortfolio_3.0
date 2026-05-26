@@ -7,6 +7,7 @@ counterparty_id injected. Internal roles may pass counterparty_id=None
 
 CLIENT queries for another counterparty's data return None → HTTP 404.
 """
+
 from __future__ import annotations
 
 import os
@@ -22,15 +23,20 @@ class TCAService:
         url = db_url or os.environ["DATABASE_URL"]
         self._engine = sa.create_engine(url)
 
-    def _cp_clause(self, user: UserClaims, alias: str = "f") -> tuple[str, dict[str, Any]]:
+    def _cp_clause(
+        self, user: UserClaims, alias: str = "f"
+    ) -> tuple[str, dict[str, Any]]:
         """Returns SQL clause and params to enforce counterparty isolation."""
         if user.counterparty_id is not None:
-            return f" AND {alias}.counterparty_id = :_cp_id", {"_cp_id": user.counterparty_id}
+            return f" AND {alias}.counterparty_id = :_cp_id", {
+                "_cp_id": user.counterparty_id
+            }
         return "", {}
 
     def get_order_tca(self, order_id: str, user: UserClaims) -> dict | None:
         cp_clause, cp_params = self._cp_clause(user)
-        sql = sa.text(f"""
+        sql = sa.text(
+            f"""
             SELECT
                 h.order_bk AS order_id,
                 f.instrument_id, f.instrument_class, f.counterparty_id,
@@ -48,9 +54,14 @@ class TCAService:
             FROM mart_trading_risk.fact_order_execution AS f
             JOIN raw_vault.hub_order AS h USING (hub_order_key)
             WHERE h.order_bk = :order_id {cp_clause}
-        """)
+        """
+        )
         with self._engine.connect() as conn:
-            row = conn.execute(sql, {"order_id": order_id, **cp_params}).mappings().first()
+            row = (
+                conn.execute(sql, {"order_id": order_id, **cp_params})
+                .mappings()
+                .first()
+            )
         return dict(row) if row else None
 
     def get_tca_summary(
@@ -73,7 +84,8 @@ class TCAService:
             params["ic"] = instrument_class
 
         where = " AND ".join(clauses)
-        sql = sa.text(f"""
+        sql = sa.text(
+            f"""
             SELECT
                 h.order_bk AS order_id, f.instrument_id, f.instrument_class,
                 f.counterparty_id, f.side, f.order_type,
@@ -88,7 +100,8 @@ class TCAService:
             WHERE {where}
             ORDER BY f.order_time DESC
             LIMIT :limit
-        """)
+        """
+        )
         with self._engine.connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
         return [dict(r) for r in rows]
@@ -102,7 +115,8 @@ class TCAService:
         if instrument_class:
             params["ic"] = instrument_class
 
-        sql = sa.text(f"""
+        sql = sa.text(
+            f"""
             SELECT
                 f.algo_id, f.instrument_class,
                 COUNT(*) AS order_count,
@@ -119,14 +133,16 @@ class TCAService:
               AND f.algo_id IS NOT NULL
             GROUP BY f.algo_id, f.instrument_class
             ORDER BY f.instrument_class, algo_rank
-        """)
+        """
+        )
         with self._engine.connect() as conn:
             rows = conn.execute(sql, params).mappings().all()
         return [dict(r) for r in rows]
 
     def get_alpha_decay(self, trade_date: str, user: UserClaims) -> list[dict]:
         cp_clause, cp_params = self._cp_clause(user)
-        sql = sa.text(f"""
+        sql = sa.text(
+            f"""
             SELECT
                 f.vol_regime, f.instrument_class,
                 COUNT(*)                                  AS order_count,
@@ -139,14 +155,20 @@ class TCAService:
               AND f.vol_regime IS NOT NULL
             GROUP BY f.vol_regime, f.instrument_class
             ORDER BY f.instrument_class, f.vol_regime
-        """)
+        """
+        )
         with self._engine.connect() as conn:
-            rows = conn.execute(sql, {"trade_date": trade_date, **cp_params}).mappings().all()
+            rows = (
+                conn.execute(sql, {"trade_date": trade_date, **cp_params})
+                .mappings()
+                .all()
+            )
         return [dict(r) for r in rows]
 
     def get_peer_benchmark(self, order_id: str, user: UserClaims) -> dict | None:
         cp_clause, cp_params = self._cp_clause(user)
-        sql = sa.text(f"""
+        sql = sa.text(
+            f"""
             SELECT
                 h.order_bk AS order_id, b.instrument_id,
                 b.arrival_price, b.avg_fill_price, b.vwap_price, b.twap_price,
@@ -156,9 +178,14 @@ class TCAService:
             JOIN raw_vault.hub_order AS h USING (hub_order_key)
             JOIN mart_trading_risk.fact_order_execution AS f USING (hub_order_key)
             WHERE h.order_bk = :order_id {cp_clause}
-        """)
+        """
+        )
         with self._engine.connect() as conn:
-            row = conn.execute(sql, {"order_id": order_id, **cp_params}).mappings().first()
+            row = (
+                conn.execute(sql, {"order_id": order_id, **cp_params})
+                .mappings()
+                .first()
+            )
         return dict(row) if row else None
 
     def get_orders(
@@ -167,19 +194,22 @@ class TCAService:
         return self.get_tca_summary(trade_date, user, limit=limit)
 
     def get_warnings(self, limit: int = 100) -> list[dict]:
-        sql = sa.text("""
+        sql = sa.text(
+            """
             SELECT DISTINCT ON (check_name, affected_table)
                 id, check_name, affected_table, affected_rows, warn_value, warn_time
             FROM obs.obs_warnings
             ORDER BY check_name, affected_table, warn_time DESC
             LIMIT :limit
-        """)
+        """
+        )
         with self._engine.connect() as conn:
             rows = conn.execute(sql, {"limit": limit}).mappings().all()
         return [dict(r) for r in rows]
 
     def get_mifid_export(self, trade_date: str, user: UserClaims) -> list[dict]:
-        sql = sa.text("""
+        sql = sa.text(
+            """
             SELECT
                 h.order_bk AS order_id,
                 m.instrument_id,
@@ -203,7 +233,8 @@ class TCAService:
             JOIN mart_trading_risk.fact_order_execution AS f USING (hub_order_key)
             WHERE m.trade_date = :trade_date
             ORDER BY m.transaction_time
-        """)
+        """
+        )
         with self._engine.connect() as conn:
             rows = conn.execute(sql, {"trade_date": trade_date}).mappings().all()
         return [dict(r) for r in rows]

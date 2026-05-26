@@ -55,7 +55,7 @@ INSTRUMENT_CONFIG: dict[str, dict] = {
 }
 
 # European session 08:00–16:30 CET = 07:00–15:30 UTC
-_SESSION_START_MINUTES = 7 * 60       # 420 minutes from midnight
+_SESSION_START_MINUTES = 7 * 60  # 420 minutes from midnight
 _SESSION_END_MINUTES = 15 * 60 + 30  # 930 minutes from midnight
 _SESSION_DURATION = _SESSION_END_MINUTES - _SESSION_START_MINUTES  # 510 min
 
@@ -63,7 +63,9 @@ _SESSION_DURATION = _SESSION_END_MINUTES - _SESSION_START_MINUTES  # 510 min
 def _session_time(trade_date: date, rng: np.random.Generator) -> datetime:
     offset_min = int(rng.integers(0, _SESSION_DURATION))
     return datetime(
-        trade_date.year, trade_date.month, trade_date.day,
+        trade_date.year,
+        trade_date.month,
+        trade_date.day,
         tzinfo=timezone.utc,
     ) + timedelta(minutes=_SESSION_START_MINUTES + offset_min)
 
@@ -94,7 +96,9 @@ def _generate_oms_data(
     loaded_at = datetime.now(tz=timezone.utc)
 
     for asset_class, cfg in INSTRUMENT_CONFIG.items():
-        instrument_ids = [f"{cfg['prefix']}-{i:03d}" for i in range(1, cfg["count"] + 1)]
+        instrument_ids = [
+            f"{cfg['prefix']}-{i:03d}" for i in range(1, cfg["count"] + 1)
+        ]
         qty_low, qty_high = cfg["qty_range"]
         p_low, p_high = cfg["price_range"]
 
@@ -117,25 +121,27 @@ def _generate_oms_data(
             algo_id: str | None = algo_choice
             venue_id = str(rng.choice(cfg["venues"]))
 
-            orders.append({
-                "order_id": order_id,
-                "instrument_id": instrument_id,
-                "instrument_class": asset_class,
-                "side": side,
-                "order_type": order_type,
-                "quantity": quantity,
-                "arrival_price": arrival_price,
-                "limit_price": limit_price,
-                "order_time": order_time,
-                "counterparty_id": counterparty_id,
-                "trader_id": trader_id,
-                "algo_id": algo_id,
-                "venue_id": venue_id,
-                "currency": cfg["currency"],
-                "status": "FILLED",
-                "client_order_id": fake.bothify(text="ORD-########"),
-                "_loaded_at": loaded_at,
-            })
+            orders.append(
+                {
+                    "order_id": order_id,
+                    "instrument_id": instrument_id,
+                    "instrument_class": asset_class,
+                    "side": side,
+                    "order_type": order_type,
+                    "quantity": quantity,
+                    "arrival_price": arrival_price,
+                    "limit_price": limit_price,
+                    "order_time": order_time,
+                    "counterparty_id": counterparty_id,
+                    "trader_id": trader_id,
+                    "algo_id": algo_id,
+                    "venue_id": venue_id,
+                    "currency": cfg["currency"],
+                    "status": "FILLED",
+                    "client_order_id": fake.bothify(text="ORD-########"),
+                    "_loaded_at": loaded_at,
+                }
+            )
 
             n_fills = int(rng.integers(1, 6))
             fill_quantities = _split_quantity(quantity, n_fills, rng)
@@ -147,24 +153,28 @@ def _generate_oms_data(
                     continue
                 current_price = _gbm_step(current_price, cfg["vol_daily"], rng)
                 fill_time = order_time + timedelta(seconds=int(rng.integers(30, 1800)))
-                market_impact = abs(current_price - arrival_price) / arrival_price * 10_000
+                market_impact = (
+                    abs(current_price - arrival_price) / arrival_price * 10_000
+                )
 
-                fills.append({
-                    "fill_id": str(uuid.uuid4()),
-                    "order_id": order_id,
-                    "counterparty_id": counterparty_id,
-                    "instrument_id": instrument_id,
-                    "instrument_class": asset_class,
-                    "venue_id": venue_id,
-                    "fill_time": fill_time,
-                    "fill_price": round(current_price, 6),
-                    "fill_quantity": fill_qty,
-                    "side": side,
-                    "market_impact_bps": round(market_impact, 4),
-                    "commission_bps": round(float(rng.uniform(0.5, 3.0)), 2),
-                    "currency": cfg["currency"],
-                    "_loaded_at": loaded_at,
-                })
+                fills.append(
+                    {
+                        "fill_id": str(uuid.uuid4()),
+                        "order_id": order_id,
+                        "counterparty_id": counterparty_id,
+                        "instrument_id": instrument_id,
+                        "instrument_class": asset_class,
+                        "venue_id": venue_id,
+                        "fill_time": fill_time,
+                        "fill_price": round(current_price, 6),
+                        "fill_quantity": fill_qty,
+                        "side": side,
+                        "market_impact_bps": round(market_impact, 4),
+                        "commission_bps": round(float(rng.uniform(0.5, 3.0)), 2),
+                        "currency": cfg["currency"],
+                        "_loaded_at": loaded_at,
+                    }
+                )
                 filled_qty += fill_qty
 
     return orders, fills

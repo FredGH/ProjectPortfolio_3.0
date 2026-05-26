@@ -20,7 +20,16 @@ class FillPattern:
             return pd.DataFrame()
 
         fills_c = fills.copy()
-        orders_c = orders[["hub_order_key", "order_id", "quantity", "order_time", "algo_id", "instrument_class"]].copy()
+        orders_c = orders[
+            [
+                "hub_order_key",
+                "order_id",
+                "quantity",
+                "order_time",
+                "algo_id",
+                "instrument_class",
+            ]
+        ].copy()
 
         # Merge order metadata into fills
         merged = fills_c.merge(
@@ -32,8 +41,13 @@ class FillPattern:
         # Fill timing: seconds from order placement to each fill
         if "order_time" in merged.columns and "fill_time" in merged.columns:
             merged["seconds_to_fill"] = (
-                pd.to_datetime(merged["fill_time"]) - pd.to_datetime(merged["order_time"])
-            ).dt.total_seconds().clip(lower=0)
+                (
+                    pd.to_datetime(merged["fill_time"])
+                    - pd.to_datetime(merged["order_time"])
+                )
+                .dt.total_seconds()
+                .clip(lower=0)
+            )
         else:
             merged["seconds_to_fill"] = float("nan")
 

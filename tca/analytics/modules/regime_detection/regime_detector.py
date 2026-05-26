@@ -15,6 +15,7 @@ Data source : stg_raw.tick_bars (TimescaleDB hypertable, 30-second bars)
 Output      : predicted vol regime (LOW / MEDIUM / HIGH) per tick + confidence
 Persistence : analytics/models/regime_kmeans.pkl
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,9 +41,9 @@ FEATURE_COLS = ["intraday_vol", "volume_ratio", "momentum"]
 
 # Human-readable descriptions per regime (derived at train time, stored in artifact)
 _REGIME_DESCRIPTIONS = {
-    "LOW":    "Trending / tight spread — low urgency, passive strategies preferred",
+    "LOW": "Trending / tight spread — low urgency, passive strategies preferred",
     "MEDIUM": "Normal / mixed flow — standard VWAP/TWAP conditions",
-    "HIGH":   "Choppy / wide spread — elevated stress, IS or faster schedule recommended",
+    "HIGH": "Choppy / wide spread — elevated stress, IS or faster schedule recommended",
 }
 
 
@@ -54,19 +55,22 @@ _TRAIN_SAMPLE = 100_000  # cap training data to keep memory bounded
 
 def _load_ticks(engine: sa.Engine, trade_date: str | None = None) -> pd.DataFrame:
     if trade_date:
-        sql = sa.text("""
+        sql = sa.text(
+            """
             SELECT
                 bar_id, instrument_id, ts,
                 "open", high, low, close, volume, trade_date
             FROM stg_raw.tick_bars
             WHERE trade_date = :trade_date
             ORDER BY instrument_id, ts
-        """)
+        """
+        )
         with engine.connect() as conn:
             return pd.read_sql(sql, conn, params={"trade_date": trade_date})
     # For training: stratified sample across instrument × trade_date to stay within
     # memory limits while preserving distribution (4M+ bars would OOM-kill the process)
-    sql = sa.text("""
+    sql = sa.text(
+        """
         SELECT
             bar_id, instrument_id, ts,
             "open", high, low, close, volume, trade_date
@@ -74,19 +78,22 @@ def _load_ticks(engine: sa.Engine, trade_date: str | None = None) -> pd.DataFram
         TABLESAMPLE BERNOULLI(2.5)
         ORDER BY instrument_id, ts
         LIMIT :limit
-    """)
+    """
+    )
     with engine.connect() as conn:
         df = pd.read_sql(sql, conn, params={"limit": _TRAIN_SAMPLE})
     # Fallback: if TABLESAMPLE returns too few rows (sparse data), full scan with LIMIT
     if len(df) < 1_000:
-        sql_full = sa.text("""
+        sql_full = sa.text(
+            """
             SELECT
                 bar_id, instrument_id, ts,
                 "open", high, low, close, volume, trade_date
             FROM stg_raw.tick_bars
             ORDER BY random()
             LIMIT :limit
-        """)
+        """
+        )
         with engine.connect() as conn:
             df = pd.read_sql(sql_full, conn, params={"limit": _TRAIN_SAMPLE})
     return df
@@ -145,23 +152,24 @@ def train(engine: sa.Engine) -> dict[str, Any]:
     # Map cluster IDs → regime labels by ascending average intraday_vol
     cluster_mean_vol = df.groupby("cluster_id")["intraday_vol"].mean().sort_values()
     cluster_to_regime: dict[int, str] = {
-        int(cid): REGIME_LABELS[rank]
-        for rank, cid in enumerate(cluster_mean_vol.index)
+        int(cid): REGIME_LABELS[rank] for rank, cid in enumerate(cluster_mean_vol.index)
     }
 
     centroids: list[dict[str, Any]] = []
     for cid, regime in cluster_to_regime.items():
         sub = df[df["cluster_id"] == cid]
-        centroids.append({
-            "regime": regime,
-            "cluster_id": cid,
-            "description": _REGIME_DESCRIPTIONS[regime],
-            "tick_count": int(len(sub)),
-            "avg_intraday_vol": round(float(sub["intraday_vol"].mean()), 6),
-            "avg_volume_ratio": round(float(sub["volume_ratio"].mean()), 4),
-            "avg_momentum": round(float(sub["momentum"].mean()), 6),
-            "pct_of_total": round(len(sub) / n * 100, 1),
-        })
+        centroids.append(
+            {
+                "regime": regime,
+                "cluster_id": cid,
+                "description": _REGIME_DESCRIPTIONS[regime],
+                "tick_count": int(len(sub)),
+                "avg_intraday_vol": round(float(sub["intraday_vol"].mean()), 6),
+                "avg_volume_ratio": round(float(sub["volume_ratio"].mean()), 4),
+                "avg_momentum": round(float(sub["momentum"].mean()), 6),
+                "pct_of_total": round(len(sub) / n * 100, 1),
+            }
+        )
 
     # Inertia as a model quality proxy (lower = tighter clusters)
     inertia = float(kmeans.inertia_)
@@ -178,7 +186,9 @@ def train(engine: sa.Engine) -> dict[str, Any]:
     joblib.dump(artifact, MODEL_PATH)
     logger.info(
         "Regime detector saved — %d bars, inertia=%.2f, path=%s",
-        n, inertia, MODEL_PATH,
+        n,
+        inertia,
+        MODEL_PATH,
     )
 
     return {
@@ -210,9 +220,7 @@ def _run_inference(df: pd.DataFrame) -> pd.DataFrame:
 
     # Confidence: inverse of normalised distance to nearest cluster centre
     centres_scaled = kmeans.cluster_centers_
-    dists = np.linalg.norm(
-        X_scaled - centres_scaled[df["cluster_id"].values], axis=1
-    )
+    dists = np.linalg.norm(X_scaled - centres_scaled[df["cluster_id"].values], axis=1)
     df["cluster_confidence"] = (1.0 / (1.0 + dists)).round(4)
 
     return df
@@ -244,7 +252,11 @@ def timeline(
     df = detect(engine, trade_date)
     if df.empty:
         return []
-    sub = df[df["instrument_id"] == instrument_id].sort_values("ts").reset_index(drop=True)
+    sub = (
+        df[df["instrument_id"] == instrument_id]
+        .sort_values("ts")
+        .reset_index(drop=True)
+    )
     if sub.empty:
         return []
     ts_series = pd.to_datetime(sub["ts"])
@@ -268,16 +280,24 @@ def summary(engine: sa.Engine, trade_date: str) -> list[dict[str, Any]]:
     for regime in REGIME_LABELS:
         sub = df[df["regime"] == regime]
         n = len(sub)
-        result.append({
-            "regime": regime,
-            "description": _REGIME_DESCRIPTIONS[regime],
-            "tick_count": n,
-            "pct_of_session": round(n / total * 100, 1) if total else 0.0,
-            "avg_intraday_vol": round(float(sub["intraday_vol"].mean()), 6) if n else 0.0,
-            "avg_volume_ratio": round(float(sub["volume_ratio"].mean()), 4) if n else 0.0,
-            "avg_momentum": round(float(sub["momentum"].mean()), 6) if n else 0.0,
-            "avg_confidence": round(float(sub["cluster_confidence"].mean()), 4) if n else 0.0,
-        })
+        result.append(
+            {
+                "regime": regime,
+                "description": _REGIME_DESCRIPTIONS[regime],
+                "tick_count": n,
+                "pct_of_session": round(n / total * 100, 1) if total else 0.0,
+                "avg_intraday_vol": (
+                    round(float(sub["intraday_vol"].mean()), 6) if n else 0.0
+                ),
+                "avg_volume_ratio": (
+                    round(float(sub["volume_ratio"].mean()), 4) if n else 0.0
+                ),
+                "avg_momentum": round(float(sub["momentum"].mean()), 6) if n else 0.0,
+                "avg_confidence": (
+                    round(float(sub["cluster_confidence"].mean()), 4) if n else 0.0
+                ),
+            }
+        )
     return result
 
 

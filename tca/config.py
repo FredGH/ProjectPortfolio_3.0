@@ -26,8 +26,12 @@ def get_config() -> Config:
         database_url=os.environ["DATABASE_URL"],
         redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
         jwt_algorithm=os.environ.get("JWT_ALGORITHM", "RS256"),
-        jwt_access_expire_hours=int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_HOURS", "8")),
-        jwt_refresh_expire_days=int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7")),
+        jwt_access_expire_hours=int(
+            os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_HOURS", "8")
+        ),
+        jwt_refresh_expire_days=int(
+            os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7")
+        ),
         jwt_private_key_path=os.environ.get("JWT_PRIVATE_KEY_PATH"),
         jwt_public_key_path=os.environ.get("JWT_PUBLIC_KEY_PATH"),
     )

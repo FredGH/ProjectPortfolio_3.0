@@ -40,8 +40,10 @@ class PreTrade:
         df["vol_daily"] = df["instrument_class"].map(_VOL_BY_CLASS).fillna(0.01)
         df["adv"] = df["instrument_class"].map(_ADV_BY_CLASS).fillna(1_000_000)
         df["participation_rate"] = (
-            df["quantity"] / df["adv"].replace(0, float("nan"))
-        ).clip(upper=1.0).round(4)
+            (df["quantity"] / df["adv"].replace(0, float("nan")))
+            .clip(upper=1.0)
+            .round(4)
+        )
 
         # Expected market impact estimate (pre-trade)
         df["est_impact_bps"] = (
@@ -51,8 +53,10 @@ class PreTrade:
         # Optimal execution horizon (minutes): sqrt(X/ADV) × session_duration_min
         session_minutes = 510  # 8.5 hours
         df["optimal_horizon_min"] = (
-            np.sqrt(df["participation_rate"]) * session_minutes
-        ).round(0).clip(lower=5, upper=session_minutes)
+            (np.sqrt(df["participation_rate"]) * session_minutes)
+            .round(0)
+            .clip(lower=5, upper=session_minutes)
+        )
 
         # Recommend algo based on participation rate
         df["recommended_algo"] = df["participation_rate"].apply(
@@ -60,9 +64,16 @@ class PreTrade:
         )
 
         cols = [
-            "hub_order_key", "instrument_class", "side", "quantity",
-            "arrival_price", "participation_rate",
-            "est_impact_bps", "optimal_horizon_min", "recommended_algo",
-            "counterparty_id", "trade_date",
+            "hub_order_key",
+            "instrument_class",
+            "side",
+            "quantity",
+            "arrival_price",
+            "participation_rate",
+            "est_impact_bps",
+            "optimal_horizon_min",
+            "recommended_algo",
+            "counterparty_id",
+            "trade_date",
         ]
         return df[[c for c in cols if c in df.columns]]

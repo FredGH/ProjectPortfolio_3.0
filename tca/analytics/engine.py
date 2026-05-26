@@ -73,30 +73,37 @@ class AnalyticsEngine:
             SELECT * FROM biz_vault.bv_order_enriched
             WHERE trade_date = :trade_date
         """
-        return pd.read_sql(sa.text(sql), self._engine, params={"trade_date": trade_date})
+        return pd.read_sql(
+            sa.text(sql), self._engine, params={"trade_date": trade_date}
+        )
 
     def _load_fills(self, trade_date: date) -> pd.DataFrame:
         sql = """
             SELECT * FROM raw_vault.sat_fill_execution
             WHERE trade_date = :trade_date
         """
-        return pd.read_sql(sa.text(sql), self._engine, params={"trade_date": trade_date})
+        return pd.read_sql(
+            sa.text(sql), self._engine, params={"trade_date": trade_date}
+        )
 
     def _load_benchmarks(self, trade_date: date) -> pd.DataFrame:
         sql = """
             SELECT * FROM mart_market_data.fact_price_benchmark
             WHERE price_date = :trade_date
         """
-        return pd.read_sql(sa.text(sql), self._engine, params={"trade_date": trade_date})
+        return pd.read_sql(
+            sa.text(sql), self._engine, params={"trade_date": trade_date}
+        )
 
 
 if __name__ == "__main__":
     import argparse
-
     from dotenv import load_dotenv
 
     load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default="2025-01-15")

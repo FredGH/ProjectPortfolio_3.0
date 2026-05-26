@@ -33,7 +33,9 @@ def get_current_user(
         ) from exc
 
     if claims.get("token_type") != "access":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not an access token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not an access token"
+        )
 
     return UserClaims(
         client_id=claims["sub"],

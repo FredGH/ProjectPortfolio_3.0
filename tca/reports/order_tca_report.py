@@ -1,4 +1,5 @@
 """Order TCA report — per-order HTML summary and venue scorecard CSV."""
+
 from __future__ import annotations
 
 import os

@@ -3,6 +3,7 @@
 Run once after `docker compose up postgres` to populate stg_raw.
 Requires DATABASE_URL to be set (loaded from .env if present).
 """
+
 from __future__ import annotations
 
 import logging
@@ -13,10 +14,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import bcrypt as _bcrypt  # noqa: E402
-import sqlalchemy as sa  # noqa: E402
+import sqlalchemy as sa
+import bcrypt as _bcrypt
 
-from ingestion.pipelines.run_all import run_all  # noqa: E402
+from ingestion.pipelines.run_all import run_all
 
 logger = logging.getLogger(__name__)
 
@@ -27,17 +28,19 @@ def _seed_auth_clients() -> None:
     engine = sa.create_engine(db_url)
 
     client_secrets = {
-        "trader_01":     os.environ.get("TRADER_01_SECRET", "changeme"),
+        "trader_01": os.environ.get("TRADER_01_SECRET", "changeme"),
         "compliance_01": os.environ.get("COMPLIANCE_01_SECRET", "changeme"),
-        "head_trading":  os.environ.get("TRADER_01_SECRET", "changeme"),
-        "client_cp_a":   os.environ.get("CLIENT_CP_A_SECRET", "changeme"),
-        "client_cp_b":   os.environ.get("CLIENT_CP_A_SECRET", "changeme"),
-        "admin_01":      os.environ.get("TRADER_01_SECRET", "changeme"),
+        "head_trading": os.environ.get("TRADER_01_SECRET", "changeme"),
+        "client_cp_a": os.environ.get("CLIENT_CP_A_SECRET", "changeme"),
+        "client_cp_b": os.environ.get("CLIENT_CP_A_SECRET", "changeme"),
+        "admin_01": os.environ.get("TRADER_01_SECRET", "changeme"),
     }
 
     with engine.begin() as conn:
         for client_id, secret in client_secrets.items():
-            hashed = _bcrypt.hashpw(secret.encode("utf-8"), _bcrypt.gensalt()).decode("utf-8")
+            hashed = _bcrypt.hashpw(secret.encode("utf-8"), _bcrypt.gensalt()).decode(
+                "utf-8"
+            )
             conn.execute(
                 sa.text(
                     "UPDATE auth.api_clients SET client_secret_hash = :h WHERE client_id = :cid"
@@ -62,7 +65,9 @@ def seed_all(trade_date: date | None = None) -> dict[str, str]:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     results = seed_all()
     for name, info in results.items():
         print(f"  {name}: {info}")

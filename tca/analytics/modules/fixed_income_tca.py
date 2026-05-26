@@ -30,7 +30,8 @@ class FixedIncomeTCA:
         bonds["price_slippage_bps"] = (
             (fill_p - bonds["arrival_price"])
             / bonds["arrival_price"].replace(0, float("nan"))
-            * 10_000 * side
+            * 10_000
+            * side
         ).round(4)
 
         # Yield slippage: ΔY ≈ ΔP / DV01 (approximate, DV01 not in orders table)
@@ -39,13 +40,25 @@ class FixedIncomeTCA:
 
         # DV01-adjusted notional (approx: 5yr duration × quantity × price / 100 / 10000)
         bonds["dv01_adjusted_notional"] = (
-            bonds.get("quantity", pd.Series(1_000_000, index=bonds.index)) * fill_p / 100 * 5 / 10_000
+            bonds.get("quantity", pd.Series(1_000_000, index=bonds.index))
+            * fill_p
+            / 100
+            * 5
+            / 10_000
         ).round(2)
 
         cols = [
-            "hub_order_key", "instrument_id", "side", "quantity",
-            "arrival_price", "avg_fill_price",
-            "price_slippage_bps", "yield_slippage_bps", "dv01_adjusted_notional",
-            "counterparty_id", "trader_id", "trade_date",
+            "hub_order_key",
+            "instrument_id",
+            "side",
+            "quantity",
+            "arrival_price",
+            "avg_fill_price",
+            "price_slippage_bps",
+            "yield_slippage_bps",
+            "dv01_adjusted_notional",
+            "counterparty_id",
+            "trader_id",
+            "trade_date",
         ]
         return bonds[[c for c in cols if c in bonds.columns]]

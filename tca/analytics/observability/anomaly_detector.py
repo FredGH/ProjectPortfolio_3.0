@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 import sqlalchemy as sa
 
@@ -14,20 +15,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#For a normal distribution, the percentage of data within each threshold is:
-#Z-score threshold |    Data within |   Data outside (both tails)
-#±1σ	                68.3%	         31.7%
-#±2σ	                95.4%	        4.6%
-#±3σ	                99.7%	        0.3%
-#±4σ	                99.994%	        0.006%
-#So at |Z| > 3.0, only 0.3% of observations from a normal distribution would naturally fall there. 
-# That's roughly 1-in-333 chance — rare enough to flag as "worth investigating" without being 
+# For a normal distribution, the percentage of data within each threshold is:
+# Z-score threshold |    Data within |   Data outside (both tails)
+# ±1σ	                68.3%	         31.7%
+# ±2σ	                95.4%	        4.6%
+# ±3σ	                99.7%	        0.3%
+# ±4σ	                99.994%	        0.006%
+# So at |Z| > 3.0, only 0.3% of observations from a normal distribution would naturally fall there.
+# That's roughly 1-in-333 chance — rare enough to flag as "worth investigating" without being
 # so strict that you catch nothing.
 
-#Why 3.0 specifically (and not 2.0 or 4.0)?
-#2.0 → 5% false positive rate. Too noisy for a trading system — 1-in-20 observations flagged is operationally unmanageable.
-#3.0 → 0.3% false positive rate. The convention in most anomaly detection and Six Sigma quality control. Low enough noise, high enough sensitivity.
-#4.0+ → You'd miss real anomalies. A fill 3.8σ away from normal is genuinely suspicious even if it doesn't clear the 4σ bar.
+# Why 3.0 specifically (and not 2.0 or 4.0)?
+# 2.0 → 5% false positive rate. Too noisy for a trading system — 1-in-20 observations flagged is operationally unmanageable.
+# 3.0 → 0.3% false positive rate. The convention in most anomaly detection and Six Sigma quality control. Low enough noise, high enough sensitivity.
+# 4.0+ → You'd miss real anomalies. A fill 3.8σ away from normal is genuinely suspicious even if it doesn't clear the 4σ bar.
 _ZSCORE_THRESHOLD = 3.0
 _MIN_HISTORY_ROWS = 10
 
@@ -72,12 +73,14 @@ class AnomalyDetector:
             outlier_count = int(mask.sum())
             if outlier_count == 0:
                 continue
-            warnings.append(AnomalyWarning(
-                check_name=f"slippage_zscore_{asset_class}",
-                affected_table="biz_vault.bv_order_enriched",
-                affected_rows=outlier_count,
-                warn_value=f"mean={mean:.2f}bps std={std:.2f}bps outliers={outlier_count}",
-            ))
+            warnings.append(
+                AnomalyWarning(
+                    check_name=f"slippage_zscore_{asset_class}",
+                    affected_table="biz_vault.bv_order_enriched",
+                    affected_rows=outlier_count,
+                    warn_value=f"mean={mean:.2f}bps std={std:.2f}bps outliers={outlier_count}",
+                )
+            )
             if self._quarantine is not None:
                 outlier_rows = grp.loc[mask.index[mask]]
                 for _, row in outlier_rows.iterrows():
@@ -113,16 +116,22 @@ class AnomalyDetector:
             outlier_count = int(mask.sum())
             if outlier_count == 0:
                 continue
-            warnings.append(AnomalyWarning(
-                check_name=f"volume_zscore_{asset_class}",
-                affected_table="raw_vault.sat_fill_execution",
-                affected_rows=outlier_count,
-                warn_value=f"mean_qty={mean:.0f} outliers={outlier_count}",
-            ))
+            warnings.append(
+                AnomalyWarning(
+                    check_name=f"volume_zscore_{asset_class}",
+                    affected_table="raw_vault.sat_fill_execution",
+                    affected_rows=outlier_count,
+                    warn_value=f"mean_qty={mean:.0f} outliers={outlier_count}",
+                )
+            )
             if self._quarantine is not None:
                 outlier_rows = grp.loc[mask.index[mask]]
                 for _, row in outlier_rows.iterrows():
-                    record_id = str(row.get("hub_fill_key") or row.get("sat_fill_execution_id") or row.name)
+                    record_id = str(
+                        row.get("hub_fill_key")
+                        or row.get("sat_fill_execution_id")
+                        or row.name
+                    )
                     zscore = abs(row["fill_quantity"] - mean) / std
                     self._quarantine.quarantine_record(
                         record_id=record_id,
@@ -143,10 +152,12 @@ class AnomalyDetector:
 
         count = len(df)
         if count == 0:
-            return [AnomalyWarning(
-                check_name="empty_order_set",
-                affected_table="biz_vault.bv_order_enriched",
-                affected_rows=0,
-                warn_value="No orders loaded for trade_date",
-            )]
+            return [
+                AnomalyWarning(
+                    check_name="empty_order_set",
+                    affected_table="biz_vault.bv_order_enriched",
+                    affected_rows=0,
+                    warn_value="No orders loaded for trade_date",
+                )
+            ]
         return []

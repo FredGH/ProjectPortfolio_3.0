@@ -2,14 +2,15 @@
 
 Sequence: dlt EL sources → dbt staging views → obs freshness check → catalog update.
 """
+
 from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
 
 _DBT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/tca")
 
@@ -33,15 +34,19 @@ with DAG(
     def _run_dlt_pipelines(**ctx: dict) -> None:
         import sys
         from datetime import date
+
         sys.path.insert(0, _DBT_DIR)
         from ingestion.pipelines.run_all import run_all
+
         trade_date = date.fromisoformat(ctx["ds"])
         run_all(trade_date=trade_date)
 
     def _seed_auth(**_ctx: dict) -> None:
         import sys
+
         sys.path.insert(0, _DBT_DIR)
         from ingestion.seed import _seed_auth_clients
+
         _seed_auth_clients()
 
     seed_auth = PythonOperator(

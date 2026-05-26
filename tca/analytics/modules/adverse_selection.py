@@ -54,7 +54,8 @@ class AdverseSelection:
             .reset_index()
         )
         order_agg["adverse_selection_rate"] = (
-            order_agg["adversely_selected_fills"] / order_agg["fill_count"].replace(0, 1)
+            order_agg["adversely_selected_fills"]
+            / order_agg["fill_count"].replace(0, 1)
         ).round(4)
 
         return order_agg

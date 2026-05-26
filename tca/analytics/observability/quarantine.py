@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
@@ -12,19 +12,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_INSERT_WARNING = sa.text("""
+_INSERT_WARNING = sa.text(
+    """
     INSERT INTO obs.obs_warnings
         (check_name, affected_table, affected_rows, warn_value, warn_time)
     VALUES
         (:check_name, :affected_table, :affected_rows, :warn_value, :warn_time)
-""")
+"""
+)
 
-_INSERT_QUARANTINE = sa.text("""
+_INSERT_QUARANTINE = sa.text(
+    """
     INSERT INTO obs.quarantine_queue
         (record_id, source_table, failed_check, severity, original_payload, quarantine_reason)
     VALUES
         (:record_id, :source_table, :failed_check, :severity, CAST(:original_payload AS jsonb), :quarantine_reason)
-""")
+"""
+)
 
 
 class Quarantine:
@@ -65,13 +69,16 @@ class Quarantine:
         assert severity in ("hard", "soft"), f"Invalid severity: {severity}"
         try:
             with self._engine.begin() as conn:
-                conn.execute(_INSERT_QUARANTINE, {
-                    "record_id": record_id,
-                    "source_table": source_table,
-                    "failed_check": failed_check,
-                    "severity": severity,
-                    "original_payload": json.dumps(payload, default=str),
-                    "quarantine_reason": reason,
-                })
+                conn.execute(
+                    _INSERT_QUARANTINE,
+                    {
+                        "record_id": record_id,
+                        "source_table": source_table,
+                        "failed_check": failed_check,
+                        "severity": severity,
+                        "original_payload": json.dumps(payload, default=str),
+                        "quarantine_reason": reason,
+                    },
+                )
         except Exception as exc:
             logger.error("Failed to quarantine record %s: %s", record_id, exc)

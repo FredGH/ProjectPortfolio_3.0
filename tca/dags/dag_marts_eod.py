@@ -2,6 +2,7 @@
 
 Builds information mart star schemas, updates catalog, triggers MiFID export.
 """
+
 from __future__ import annotations
 
 import os
@@ -68,10 +69,11 @@ with DAG(
 
     def _generate_mifid_export(**ctx: dict) -> None:
         import sys
+
         sys.path.insert(0, _DBT_DIR)
+        from reports.mifid_export import generate_mifid_rts27
         from datetime import date as _date
 
-        from reports.mifid_export import generate_mifid_rts27
         generate_mifid_rts27(trade_date=_date.fromisoformat(ctx["ds"]))
 
     mifid_export = PythonOperator(
@@ -81,18 +83,19 @@ with DAG(
 
     def _update_catalog(**ctx: dict) -> None:
         import sys
-
         import sqlalchemy as sa
+
         sys.path.insert(0, _DBT_DIR)
         from db import engine
+
         datasets = [
             ("fact_order_execution", "mart_trading_risk"),
-            ("dim_algo",             "mart_trading_risk"),
-            ("dim_venue",            "mart_trading_risk"),
-            ("dim_mifid",            "mart_trading_risk"),
-            ("dim_instrument",       "mart_market_data"),
+            ("dim_algo", "mart_trading_risk"),
+            ("dim_venue", "mart_trading_risk"),
+            ("dim_mifid", "mart_trading_risk"),
+            ("dim_instrument", "mart_market_data"),
             ("fact_price_benchmark", "mart_market_data"),
-            ("dim_client",           "mart_corporate"),
+            ("dim_client", "mart_corporate"),
             ("fact_client_activity", "mart_corporate"),
         ]
         with engine.begin() as conn:

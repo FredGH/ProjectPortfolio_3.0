@@ -6,6 +6,7 @@ Run as a standalone process or via Airflow dag_rt_consumer.py.
 Usage:
     python -m ingestion.mock.redis_consumer
 """
+
 from __future__ import annotations
 
 import logging
@@ -26,7 +27,8 @@ _CONSUMER_NAME = "rt-consumer-1"
 _BLOCK_MS = 2_000
 _BATCH_SIZE = 100
 
-_INSERT_RT_FILL = sa.text("""
+_INSERT_RT_FILL = sa.text(
+    """
     INSERT INTO stg_raw.rt_fills (
         stream_id, fill_id, order_id, instrument_id, instrument_class,
         counterparty_id, side, fill_price, fill_quantity, venue_id,
@@ -37,7 +39,8 @@ _INSERT_RT_FILL = sa.text("""
         :fill_time, :market_impact_bps, :commission_bps, :currency, :received_at
     )
     ON CONFLICT (stream_id) DO NOTHING
-""")
+"""
+)
 
 
 def _parse_fill(stream_id: str, data: dict[bytes | str, bytes | str]) -> dict:
@@ -54,7 +57,11 @@ def _parse_fill(stream_id: str, data: dict[bytes | str, bytes | str]) -> dict:
         return int(v) if v is not None else None
 
     fill_time_raw = _s("fill_time")
-    fill_time = datetime.fromisoformat(fill_time_raw) if fill_time_raw else datetime.now(tz=timezone.utc)
+    fill_time = (
+        datetime.fromisoformat(fill_time_raw)
+        if fill_time_raw
+        else datetime.now(tz=timezone.utc)
+    )
 
     return {
         "stream_id": stream_id,
@@ -134,5 +141,7 @@ def consume(poll_interval: float = 0.5) -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     consume()

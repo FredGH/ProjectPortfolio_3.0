@@ -4,13 +4,13 @@ import hashlib
 import os
 from typing import Annotated
 
-import bcrypt as _bcrypt
 import sqlalchemy as sa
-from fastapi import APIRouter, Form, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from jose import JWTError
+import bcrypt as _bcrypt
 
-from api.auth.jwt_handler import (issue_access_token, issue_refresh_token,
-                                  verify_token)
+from api.auth.dependencies import UserClaims, get_current_user
+from api.auth.jwt_handler import issue_access_token, issue_refresh_token, verify_token
 from api.schemas.models import TokenResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -26,11 +26,13 @@ def _get_engine() -> sa.Engine:
 
 
 def _get_client(client_id: str) -> dict | None:
-    sql = sa.text("""
+    sql = sa.text(
+        """
         SELECT client_id, client_secret_hash, role, counterparty_id, legal_entity
         FROM auth.api_clients
         WHERE client_id = :cid AND is_active = TRUE
-    """)
+    """
+    )
     with _get_engine().connect() as conn:
         row = conn.execute(sql, {"cid": client_id}).mappings().first()
     return dict(row) if row else None
@@ -38,17 +40,20 @@ def _get_client(client_id: str) -> dict | None:
 
 def _store_refresh_token(client_id: str, token: str, expires_days: int) -> None:
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    sql = sa.text("""
+    sql = sa.text(
+        """
         INSERT INTO auth.refresh_tokens (client_id, token_hash, expires_at)
         VALUES (:cid, :hash, NOW() + INTERVAL ':days days')
-    """)
+    """
+    )
     with _get_engine().begin() as conn:
         conn.execute(sql, {"cid": client_id, "hash": token_hash, "days": expires_days})
 
 
 def _validate_refresh_token(token: str) -> dict | None:
     token_hash = hashlib.sha256(token.encode()).hexdigest()
-    sql = sa.text("""
+    sql = sa.text(
+        """
         SELECT rt.client_id, ac.role, ac.counterparty_id, ac.legal_entity
         FROM auth.refresh_tokens AS rt
         JOIN auth.api_clients AS ac USING (client_id)
@@ -56,7 +61,8 @@ def _validate_refresh_token(token: str) -> dict | None:
           AND rt.revoked = FALSE
           AND rt.expires_at > NOW()
           AND ac.is_active = TRUE
-    """)
+    """
+    )
     with _get_engine().connect() as conn:
         row = conn.execute(sql, {"hash": token_hash}).mappings().first()
     return dict(row) if row else None

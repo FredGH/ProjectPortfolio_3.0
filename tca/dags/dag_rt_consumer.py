@@ -3,6 +3,7 @@
 Polls Redis stream pb:fills via custom sensor. When new fills arrive,
 runs a lightweight dbt micro-refresh of the biz_vault RT satellites.
 """
+
 from __future__ import annotations
 
 import os
@@ -32,6 +33,7 @@ class RedisStreamSensor(BaseSensorOperator):
 
     def poke(self, context: Context) -> bool:
         import redis as _redis
+
         r = _redis.from_url(_REDIS_URL)
         try:
             result = r.xlen(self.stream_key)
@@ -62,10 +64,19 @@ with DAG(
 
     def _process_rt_fills(**_ctx: dict) -> None:
         import sys
+
         sys.path.insert(0, _DBT_DIR)
         import subprocess
+
         subprocess.run(
-            ["dbt", "run", "--select", "biz_vault.bv_order_enriched", "--target", "docker"],
+            [
+                "dbt",
+                "run",
+                "--select",
+                "biz_vault.bv_order_enriched",
+                "--target",
+                "docker",
+            ],
             cwd=_DBT_DIR,
             env={**os.environ, "HOME": "/root", "DBT_PROFILES_DIR": _DBT_DIR},
             check=True,

@@ -1,12 +1,15 @@
 """Unit tests for the anomaly detector — Z-score logic and quarantine routing."""
+
 from __future__ import annotations
 
 import unittest
+from unittest.mock import MagicMock, patch
 
 
 class TestAnomalyDetector(unittest.TestCase):
     def _make_detector(self) -> object:
         from analytics.observability.anomaly_detector import AnomalyDetector
+
         return AnomalyDetector(z_threshold=3.0, min_history=5)
 
     def test_no_anomaly_for_normal_values(self) -> None:

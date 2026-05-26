@@ -12,6 +12,7 @@ Usage:
     # Predict
     est = predict("equity", "BUY", 10000, "HIGH", "VWAP", "XLON", 10, 2)
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,8 @@ MIN_SAMPLES = 100  # minimum per class to attempt training
 
 
 def _load_training_data(engine: sa.Engine) -> pd.DataFrame:
-    sql = sa.text("""
+    sql = sa.text(
+        """
         SELECT
             instrument_class,
             side,
@@ -56,7 +58,8 @@ def _load_training_data(engine: sa.Engine) -> pd.DataFrame:
         FROM mart_trading_risk.fact_order_execution
         WHERE arrival_slippage_bps IS NOT NULL
           AND order_time IS NOT NULL
-    """)
+    """
+    )
     with engine.connect() as conn:
         return pd.read_sql(sql, conn)
 
@@ -87,19 +90,18 @@ def train(engine: sa.Engine) -> dict[str, Any]:
         X = subset[ALL_FEATURES]
         y = subset[TARGET]
 
-
-        #param_grid = {
+        # param_grid = {
         #    "n_estimators": [100, 300, 500],
         #    "max_depth": [3, 4, 6],
         #    "learning_rate": [0.01, 0.05, 0.1],
-        #}
-        
-        #search = GridSearchCV(
+        # }
+
+        # search = GridSearchCV(
         #    GradientBoostingRegressor(subsample=0.8, random_state=42),
         #    param_grid,
         #    cv=cv_folds,
         #    scoring="r2",
-        #)
+        # )
 
         model = GradientBoostingRegressor(
             n_estimators=300,
@@ -109,9 +111,9 @@ def train(engine: sa.Engine) -> dict[str, Any]:
             random_state=42,
         )
 
-        #9000 records -> 5 folds -> 450 records per fold 
+        # 9000 records -> 5 folds -> 450 records per fold
         cv_folds = min(5, n // 20)
-        #do not cross validate if not enough data
+        # do not cross validate if not enough data
         if cv_folds >= 2:
             scores = cross_val_score(model, X, y, cv=cv_folds, scoring="r2")
             cv_r2_mean = float(scores.mean())
@@ -131,12 +133,20 @@ def train(engine: sa.Engine) -> dict[str, Any]:
             "encoders": encoders,
             "iqr_low": iqr_low,
             "iqr_high": iqr_high,
-            "feature_importance": dict(zip(ALL_FEATURES, model.feature_importances_.tolist())),
+            "feature_importance": dict(
+                zip(ALL_FEATURES, model.feature_importances_.tolist())
+            ),
             "trained_on": n,
         }
         path = MODEL_DIR / f"slippage_{cls}.pkl"
         joblib.dump(artifact, path)
-        logger.info("Saved model for %s (%d rows, CV R²=%.3f ± %.3f).", cls, n, cv_r2_mean, cv_r2_std)
+        logger.info(
+            "Saved model for %s (%d rows, CV R²=%.3f ± %.3f).",
+            cls,
+            n,
+            cv_r2_mean,
+            cv_r2_std,
+        )
 
         summary["models"][cls] = {
             "status": "trained",
@@ -161,18 +171,20 @@ def predict(
     """Return predicted arrival slippage (bps) with a confidence interval."""
     path = MODEL_DIR / f"slippage_{instrument_class}.pkl"
     if not path.exists():
-        return {"error": f"No trained model for '{instrument_class}'. Call POST /predict/train first."}
+        return {
+            "error": f"No trained model for '{instrument_class}'. Call POST /predict/train first."
+        }
 
     artifact = joblib.load(path)
     model: GradientBoostingRegressor = artifact["model"]
     encoders: dict[str, LabelEncoder] = artifact["encoders"]
 
     row: dict[str, Any] = {
-        "side":        side,
-        "vol_regime":  vol_regime or "MEDIUM",
-        "algo_id":     algo_id or "UNKNOWN",
-        "venue_id":    venue_id or "UNKNOWN",
-        "quantity":    quantity,
+        "side": side,
+        "vol_regime": vol_regime or "MEDIUM",
+        "algo_id": algo_id or "UNKNOWN",
+        "venue_id": venue_id or "UNKNOWN",
+        "quantity": quantity,
         "hour_of_day": order_hour,
         "day_of_week": order_dow,
     }
@@ -209,7 +221,8 @@ def model_status() -> dict[str, Any]:
                 "trained_on": artifact["trained_on"],
                 "top_features": sorted(
                     artifact["feature_importance"].items(),
-                    key=lambda x: x[1], reverse=True
+                    key=lambda x: x[1],
+                    reverse=True,
                 )[:3],
             }
         else:

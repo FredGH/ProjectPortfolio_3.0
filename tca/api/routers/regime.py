@@ -12,8 +12,14 @@ router = APIRouter(prefix="/regime", tags=["regime"])
 
 
 def _import_detector():
-    from analytics.modules.regime_detection import (detect, model_status,
-                                                    summary, timeline, train)
+    from analytics.modules.regime_detection import (
+        detect,
+        model_status,
+        summary,
+        timeline,
+        train,
+    )
+
     return detect, model_status, summary, timeline, train
 
 
@@ -61,6 +67,7 @@ def get_detect(
 ) -> list[dict[str, Any]]:
     detect, *_ = _import_detector()
     try:
+        import pandas as pd
 
         df = detect(engine, trade_date)
         if df.empty:
@@ -70,8 +77,14 @@ def get_detect(
         if len(df) > sample_size:
             df = df.sample(n=sample_size, random_state=42)
         cols = [
-            "bar_id", "instrument_id", "regime", "cluster_id",
-            "intraday_vol", "volume_ratio", "momentum", "cluster_confidence",
+            "bar_id",
+            "instrument_id",
+            "regime",
+            "cluster_id",
+            "intraday_vol",
+            "volume_ratio",
+            "momentum",
+            "cluster_confidence",
         ]
         out = df[[c for c in cols if c in df.columns]].copy()
         return out.to_dict(orient="records")
