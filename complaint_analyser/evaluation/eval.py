@@ -201,7 +201,7 @@ def main() -> None:
     report["f1_per_class"] = per_class
     report["macro_f1"] = round(macro, 4)
 
-    print(f"F1 per class:")
+    print("F1 per class:")
     for lbl, scores in per_class.items():
         print(
             f"  {lbl}  precision={scores['precision']:.3f}"
