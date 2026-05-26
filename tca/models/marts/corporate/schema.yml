@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: fact_client_activity
+    description: "Daily client activity aggregated by counterparty and instrument class. counterparty_id is mandatory."
+    columns:
+      - name: fact_id
+        tests: [unique, not_null]
+      - name: counterparty_id
+        tests: [not_null]
+      - name: trade_date
+        tests: [not_null]
+
+  - name: dim_client
+    description: "Counterparty/client dimension."
+    columns:
+      - name: hub_client_key
+        tests: [unique, not_null]
+      - name: counterparty_id
+        tests: [unique, not_null]
+
+  - name: dim_legal_entity
+    description: "PrivateBank legal entities."
+    columns:
+      - name: hub_legal_entity_key
+        tests: [unique, not_null]
+      - name: entity_id
+        tests: [unique, not_null]

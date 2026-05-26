@@ -1,0 +1,82 @@
+version: 2
+
+sources:
+  - name: stg_raw
+    schema: stg_raw
+    description: "dlt landing zone — immutable raw tables loaded by ingestion pipelines."
+    freshness:
+      warn_after: {count: 1, period: day}
+      error_after: {count: 2, period: day}
+    loaded_at_field: _loaded_at
+
+    tables:
+      - name: orders
+        description: "OMS orders for all 4 asset classes (400 total)."
+        columns:
+          - name: order_id
+            description: "Primary key — UUID."
+            tests: [unique, not_null]
+
+      - name: fills
+        description: "Order fills (child records of orders)."
+        columns:
+          - name: fill_id
+            description: "Primary key — UUID."
+            tests: [unique, not_null]
+
+      - name: tick_bars
+        description: "30-second OHLCV bars from market data simulation."
+        columns:
+          - name: bar_id
+            description: "Primary key — instrument_id + unix timestamp."
+            tests: [unique, not_null]
+
+      - name: clients
+        description: "Counterparty/client reference data."
+        columns:
+          - name: counterparty_id
+            tests: [unique, not_null]
+
+      - name: instruments
+        description: "Instrument master for all 4 asset classes."
+        columns:
+          - name: instrument_id
+            tests: [unique, not_null]
+
+      - name: venues
+        description: "Execution venues (MICs)."
+        columns:
+          - name: venue_id
+            tests: [unique, not_null]
+
+      - name: algos
+        description: "Algorithm definitions."
+        columns:
+          - name: algo_id
+            tests: [unique, not_null]
+
+      - name: traders
+        description: "Trader profiles."
+        columns:
+          - name: trader_id
+            tests: [unique, not_null]
+
+      - name: legal_entities
+        description: "PrivateBank legal entities (PB_DE, PB_UK, BCM_US)."
+        columns:
+          - name: entity_id
+            tests: [unique, not_null]
+
+      - name: bond_prices
+        description: "Evaluated bond prices + DV01 from fi_pricing_source."
+
+      - name: edsp_settlements
+        description: "Eurex EDSP settlement prices for equity futures."
+
+      - name: rt_fills
+        description: "Real-time fills from Redis Streams consumer."
+        loaded_at_field: received_at
+        freshness: null
+        columns:
+          - name: stream_id
+            tests: [unique, not_null]

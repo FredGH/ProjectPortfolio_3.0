@@ -1,0 +1,61 @@
+name: 'tca'
+version: '1.0.0'
+config-version: 2
+
+profile: 'tca'
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  trade_date: '2025-01-15'
+  record_source: 'tca_dbt'
+  session_start_utc: '07:00:00'
+  session_end_utc: '15:30:00'
+
+models:
+  tca:
+    staging:
+      +materialized: view
+      +tags: ['staging']
+    raw_vault:
+      hubs:
+        +materialized: incremental
+        +schema: raw_vault
+        +tags: ['raw_vault', 'hub']
+      links:
+        +materialized: incremental
+        +schema: raw_vault
+        +tags: ['raw_vault', 'link']
+      satellites:
+        +materialized: incremental
+        +schema: raw_vault
+        +tags: ['raw_vault', 'satellite']
+    biz_vault:
+      +materialized: incremental
+      +schema: biz_vault
+      +tags: ['biz_vault']
+    marts:
+      trading_risk:
+        +materialized: table
+        +schema: mart_trading_risk
+        +tags: ['mart', 'trading_risk']
+      market_data:
+        +materialized: table
+        +schema: mart_market_data
+        +tags: ['mart', 'market_data']
+      corporate:
+        +materialized: table
+        +schema: mart_corporate
+        +tags: ['mart', 'corporate']
+      consolidated:
+        +materialized: table
+        +schema: mart_consolidated
+        +tags: ['mart', 'consolidated']

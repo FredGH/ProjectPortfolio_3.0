@@ -1,0 +1,31 @@
+tca:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      user: "{{ env_var('POSTGRES_USER', 'tca_user') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'tca_password') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'tca_db') }}"
+      schema: stg_raw
+      threads: 4
+      keepalives_idle: 0
+    docker:
+      type: postgres
+      host: postgres
+      user: "{{ env_var('POSTGRES_USER', 'tca_user') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'tca_password') }}"
+      port: 5432
+      dbname: "{{ env_var('POSTGRES_DB', 'tca_db') }}"
+      schema: stg_raw
+      threads: 4
+    ci:
+      type: postgres
+      host: localhost
+      user: tca_user
+      password: tca_password
+      port: 5432
+      dbname: tca_db
+      schema: stg_raw
+      threads: 4

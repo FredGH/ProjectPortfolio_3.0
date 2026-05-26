@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: fact_price_benchmark
+    description: "Daily price benchmarks per instrument: VWAP, TWAP, open, close, EDSP."
+    columns:
+      - name: fact_id
+        tests: [unique, not_null]
+      - name: instrument_id
+        tests: [not_null]
+      - name: price_date
+        tests: [not_null]
+      - name: session_close
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0.0001
+              max_value: 1000000
+
+  - name: dim_instrument
+    description: "Instrument master — all 4 asset classes."
+    columns:
+      - name: hub_instrument_key
+        tests: [unique, not_null]
+      - name: instrument_id
+        tests: [unique, not_null]
+      - name: instrument_class
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['equity', 'equity_future', 'fixed_income', 'fx_derivative']
+
+  - name: dim_date
+    description: "Date spine 2024–2025."
+    columns:
+      - name: date_id
+        tests: [unique, not_null]

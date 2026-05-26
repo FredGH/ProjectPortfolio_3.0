@@ -1,0 +1,83 @@
+"""Raw Vault DAG — runs at 07:15 CET daily (after dag_ingest_batch completes).
+
+Builds all DV2 Hubs, Links, and Satellites incrementally.
+"""
+from __future__ import annotations
+
+import os
+from datetime import datetime, timedelta
+
+from airflow import DAG
+from airflow.models import DagRun
+from airflow.operators.bash import BashOperator
+from airflow.sensors.external_task import ExternalTaskSensor
+from airflow.utils.state import DagRunState
+
+_DBT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/tca")
+
+default_args = {
+    "owner": "tca-platform",
+    "retries": 2,
+    "retry_delay": timedelta(minutes=5),
+    "email_on_failure": False,
+}
+
+with DAG(
+    dag_id="tca_raw_vault",
+    description="dbt raw_vault layer (Hubs + Links + Satellites)",
+    schedule="15 6 * * 1-5",  # 07:15 CET = 06:15 UTC, Mon–Fri
+    start_date=datetime(2025, 1, 1),
+    catchup=False,
+    default_args=default_args,
+    tags=["tca", "raw_vault", "daily"],
+) as dag:
+
+    def _most_recent_ingest(dt):
+        """Return execution dates of successful tca_ingest_batch runs in last 24 h.
+        Handles both scheduled runs (different fixed offsets) and manual triggers."""
+        runs = DagRun.find(dag_id="tca_ingest_batch", state=DagRunState.SUCCESS)
+        cutoff = dt - timedelta(hours=24)
+        dates = [r.execution_date for r in runs if r.execution_date >= cutoff]
+        return dates or [dt - timedelta(minutes=30)]
+
+    wait_for_ingest = ExternalTaskSensor(
+        task_id="wait_for_ingest",
+        external_dag_id="tca_ingest_batch",
+        external_task_id="dbt_source_freshness",
+        execution_date_fn=_most_recent_ingest,
+        timeout=3600,
+        poke_interval=60,
+        mode="reschedule",
+    )
+
+    _env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+
+    dbt_hubs = BashOperator(
+        task_id="dbt_hubs",
+        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select raw_vault.hubs --target docker",
+        env=_env,
+        append_env=True,
+    )
+
+    dbt_links = BashOperator(
+        task_id="dbt_links",
+        bash_command=f"cd {_DBT_DIR} && dbt run --select raw_vault.links --target docker",
+        env=_env,
+        append_env=True,
+    )
+
+    dbt_satellites = BashOperator(
+        task_id="dbt_satellites",
+        bash_command=f"cd {_DBT_DIR} && dbt run --select raw_vault.satellites --target docker",
+        env=_env,
+        append_env=True,
+    )
+
+    dbt_test_raw_vault = BashOperator(
+        task_id="dbt_test_raw_vault",
+        bash_command=f"cd {_DBT_DIR} && dbt test --select raw_vault --target docker",
+        env=_env,
+        append_env=True,
+    )
+
+    wait_for_ingest >> dbt_hubs >> dbt_links >> dbt_satellites >> dbt_test_raw_vault

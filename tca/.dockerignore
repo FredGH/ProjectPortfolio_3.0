@@ -1,0 +1,34 @@
+# Node / Angular — never needed in the Python app image
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+
+# Python artifacts
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# dbt compiled artefacts
+target/
+dbt_packages/
+
+# Secrets / local config
+.env
+*.local.md
+
+# Test / coverage output
+.coverage
+htmlcov/
+
+# Logs
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
