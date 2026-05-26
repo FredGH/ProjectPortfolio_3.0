@@ -71,8 +71,9 @@ with DAG(
         import sys
 
         sys.path.insert(0, _DBT_DIR)
-        from reports.mifid_export import generate_mifid_rts27
         from datetime import date as _date
+
+        from reports.mifid_export import generate_mifid_rts27
 
         generate_mifid_rts27(trade_date=_date.fromisoformat(ctx["ds"]))
 
@@ -83,6 +84,7 @@ with DAG(
 
     def _update_catalog(**ctx: dict) -> None:
         import sys
+
         import sqlalchemy as sa
 
         sys.path.insert(0, _DBT_DIR)

@@ -34,8 +34,9 @@ with DAG(
         import sys
 
         sys.path.insert(0, _DBT_DIR)
-        from reports.algo_digest import generate_algo_digest
         from datetime import date as _date
+
+        from reports.algo_digest import generate_algo_digest
 
         generate_algo_digest(week_ending=_date.fromisoformat(ctx["ds"]))
 
@@ -43,8 +44,9 @@ with DAG(
         import sys
 
         sys.path.insert(0, _DBT_DIR)
-        from reports.trader_digest import generate_trader_digest
         from datetime import date as _date
+
+        from reports.trader_digest import generate_trader_digest
 
         generate_trader_digest(week_ending=_date.fromisoformat(ctx["ds"]))
 
@@ -52,8 +54,9 @@ with DAG(
         import sys
 
         sys.path.insert(0, _DBT_DIR)
-        from reports.order_tca_report import generate_venue_scorecard
         from datetime import date as _date
+
+        from reports.order_tca_report import generate_venue_scorecard
 
         generate_venue_scorecard(week_ending=_date.fromisoformat(ctx["ds"]))
 

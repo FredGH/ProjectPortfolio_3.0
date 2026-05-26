@@ -35,8 +35,9 @@ with DAG(
         import sys
 
         sys.path.insert(0, _DBT_DIR)
-        import dlt
         import os as _os
+
+        import dlt
 
         trade_date = ctx["ds"]
         pipeline = dlt.pipeline(
@@ -46,9 +47,10 @@ with DAG(
             ),
             dataset_name="stg_raw",
         )
-        from ingestion.sources.fi_pricing_source import fi_pricing_source
-        from ingestion.sources.eurex_source import eurex_source
         from datetime import date as _date
+
+        from ingestion.sources.eurex_source import eurex_source
+        from ingestion.sources.fi_pricing_source import fi_pricing_source
 
         pipeline.run(fi_pricing_source(trade_date=_date.fromisoformat(trade_date)))
         pipeline.run(eurex_source(trade_date=_date.fromisoformat(trade_date)))
@@ -78,8 +80,9 @@ with DAG(
         import sys
 
         sys.path.insert(0, _DBT_DIR)
-        from analytics.engine import AnalyticsEngine
         from datetime import date as _date
+
+        from analytics.engine import AnalyticsEngine
 
         trade_date = _date.fromisoformat(ctx["ds"])
         AnalyticsEngine().run(trade_date=trade_date)
