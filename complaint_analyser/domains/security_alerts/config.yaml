@@ -1,0 +1,60 @@
+domain_name: security_alerts
+input_field: alert_text
+id_prefix: "SA-"
+confidence_threshold: 0.75
+max_reretrieval_loops: 1
+ner_labels: [MONEY, DATE, ORG, PERSON, IP_ADDRESS, URL]
+keyword_library_path: ./keywords.txt
+
+scoring_dimensions:
+  - name: threat_severity
+    description: Potential for data exfiltration, account takeover, or fraud
+    weight: 1.5
+    high_score_examples:
+      - Multiple failed authentication attempts followed by a successful login from an unknown IP
+      - Credential stuffing attack detected across 1000+ accounts
+      - Root access gained on production database server
+  - name: blast_radius
+    description: Number of accounts or systems potentially affected
+    weight: 1.0
+    high_score_examples:
+      - API key exposed in public GitHub repository affecting all customers
+      - Shared service account compromised with access to all tenant databases
+
+priority_levels:
+  - label: P1
+    min_composite: 10.0
+    escalate_if_any_dimension_exceeds: 4.5
+    description: Active breach or imminent account compromise
+    response_sla: "30 minutes"
+    recommended_action: Engage incident response team immediately and isolate affected systems
+  - label: P2
+    min_composite: 6.0
+    description: High-risk security event requiring rapid containment
+    response_sla: "2 hours"
+    recommended_action: Assign to security operations team for immediate investigation
+  - label: P3
+    min_composite: 3.0
+    description: Suspicious activity requiring investigation
+    response_sla: "8 hours"
+    recommended_action: Security analyst review and enhanced monitoring
+  - label: P4
+    min_composite: 0.0
+    description: Low-risk security noise or informational alert
+    response_sla: Standard queue
+    recommended_action: Log and monitor; no immediate action required
+
+collections:
+  - name: security_incidents
+    role: precedent
+    top_k: 5
+    filter_fields: [category, severity]
+    search_mode: hybrid
+  - name: threat_intelligence
+    role: rules
+    top_k: 3
+    search_mode: hybrid
+  - name: risk_taxonomy
+    role: rubric
+    top_k: 2
+    search_mode: dense

@@ -7,6 +7,15 @@
 #   - No exposed ports — Cloudflare Tunnel handles all public ingress
 #   - cloudflared service added for Tunnel connectivity
 #   - restart: always for all long-running services
+#   - POSTGRES_PASSWORD injected via Docker secret (file: ./secrets/postgres_password)
+#     Create it once on the host:
+#       mkdir -p /opt/complaint_analyser/secrets
+#       printf '%s' 'your-strong-password' > /opt/complaint_analyser/secrets/postgres_password
+#       chmod 600 /opt/complaint_analyser/secrets/postgres_password
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
 
 services:
 
@@ -19,6 +28,10 @@ services:
     platform: linux/arm64
     ports: !reset []
     restart: always
+    secrets:
+      - postgres_password
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
 
   redis:
     platform: linux/arm64
@@ -42,19 +55,34 @@ services:
     platform: linux/arm64
     ports: !reset []
     restart: always
+    secrets:
+      - postgres_password
+    entrypoint: ["/app/scripts/entrypoint.sh"]
 
   worker-fast:
     platform: linux/arm64
     restart: always
+    secrets:
+      - postgres_password
+    entrypoint: ["/app/scripts/entrypoint.sh"]
 
   worker-assess:
     platform: linux/arm64
     restart: always
+    secrets:
+      - postgres_password
+    entrypoint: ["/app/scripts/entrypoint.sh"]
 
   spacy:
     platform: linux/arm64
     ports: !reset []
     restart: always
+
+  bertopic:
+    platform: linux/arm64
+    secrets:
+      - postgres_password
+    entrypoint: ["/app/scripts/entrypoint.sh"]
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -65,6 +93,6 @@ services:
     restart: always
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       n8n:
         condition: service_healthy

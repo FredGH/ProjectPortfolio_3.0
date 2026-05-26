@@ -1,0 +1,30 @@
+unauthorized access
+brute force
+credential stuffing
+account takeover
+data exfiltration
+phishing
+malware
+ransomware
+sql injection
+cross-site scripting
+privilege escalation
+man in the middle
+denial of service
+api key exposed
+secret leaked
+password breach
+suspicious login
+unusual activity
+multiple failed attempts
+access from unknown ip
+session hijacking
+token theft
+certificate expired
+vulnerability
+zero day
+lateral movement
+command injection
+remote code execution
+supply chain attack
+insider threat

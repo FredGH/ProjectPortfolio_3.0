@@ -614,3 +614,97 @@ jobs:
 | Docker Compose definition (`docker-compose.yml`)  | Git history — service and volume changes are versioned                     |
 | RAGAS evaluation results                          | GitHub Actions artifact pinned to commit SHA                               |
 | Coverage report                                   | GitHub Actions artifact pinned to commit SHA                               |
+
+---
+
+## Production
+
+### Secrets Setup
+
+The production stack reads the Postgres password from a Docker secret file instead of a plain environment variable. Create it once on the Oracle instance before the first `docker compose up`:
+
+```bash
+mkdir -p /opt/complaint_analyser/secrets
+printf '%s' 'your-strong-password' > /opt/complaint_analyser/secrets/postgres_password
+chmod 600 /opt/complaint_analyser/secrets/postgres_password
+```
+
+The file is mounted read-only at `/run/secrets/postgres_password` inside each container. `scripts/entrypoint.sh` reads it and exports `DATABASE_URL` before starting the process. The `secrets/` directory is `.gitignore`d — never commit it.
+
+### Ollama Tuning (Oracle A1 Flex, 4 OCPUs / 24 GB RAM)
+
+`docker-compose.prod.yml` overrides the base values:
+
+| Variable              | Dev default | Prod override | Reason                                                          |
+| --------------------- | ----------- | ------------- | --------------------------------------------------------------- |
+| `OLLAMA_NUM_PARALLEL` | `6`         | `2`           | 4 Arm cores → 2 inference threads with 2 cores each            |
+| `OLLAMA_NUM_CTX`      | `2048`      | `2048`        | Keeps the context window short; scoring prompts fit comfortably |
+
+With `llama3.1:8b` Q4 and `OLLAMA_NUM_PARALLEL=2`, each inference call uses ~6 GB of RAM. Total steady-state RAM budget:
+
+| Service         | Approx. RAM |
+| --------------- | ----------- |
+| Ollama (2× Q4)  | ~6.5 GB     |
+| Postgres        | ~0.5 GB     |
+| Qdrant          | ~1.0 GB     |
+| Redis           | ~0.1 GB     |
+| api + workers   | ~0.8 GB     |
+| n8n             | ~0.3 GB     |
+| spaCy service   | ~0.8 GB     |
+| **Total**       | **~10 GB**  |
+
+This leaves ~14 GB headroom on the 24 GB A1.Flex instance. Verify with `docker stats --no-stream` after the first deployment.
+
+### Daily Postgres Backup
+
+Automated backups to OCI Object Storage. Set up once after initial deployment:
+
+```bash
+# On the Oracle instance
+export OCI_NAMESPACE=<your-tenancy-namespace>        # Console → Tenancy → Object Storage namespace
+export OCI_BACKUP_BUCKET=complaint-analyser-backups  # Create this bucket first in OCI Console
+
+bash /opt/complaint_analyser/scripts/install_backup_cron.sh
+```
+
+Backups run at 02:00 UTC daily. Objects older than 30 days are pruned automatically. Restore a backup:
+
+```bash
+# Download
+oci os object get \
+  --namespace $OCI_NAMESPACE \
+  --bucket-name $OCI_BACKUP_BUCKET \
+  --name postgres/triage_YYYYMMDD_HHMMSS.sql.gz \
+  --file /tmp/restore.sql.gz
+
+# Restore
+gunzip -c /tmp/restore.sql.gz | \
+  docker compose exec -T postgres psql -U triage triage
+```
+
+### Multi-Domain Deployment
+
+The system auto-discovers domains from `domains/*/config.yaml` at startup. Two domains are included:
+
+| Domain             | Use case                                        | Priority SLA |
+| ------------------ | ----------------------------------------------- | ------------ |
+| `banking_complaints` | Customer complaint triage (P1–P4)             | P1: 4 hours  |
+| `security_alerts`  | Security event triage (P1–P4)                  | P1: 30 min   |
+
+To add a domain: create `domains/<name>/config.yaml` following the schema in `domains/banking_complaints/config.yaml`, add a `keywords.txt`, ingest its KB collections, and restart the API.
+
+### Health Checks
+
+All services expose healthcheck endpoints consumed by Docker Compose (`depends_on: condition: service_healthy`):
+
+| Service    | Endpoint                            |
+| ---------- | ----------------------------------- |
+| `api`      | `GET http://localhost:8000/healthz` |
+| `spacy`    | `GET http://localhost:8001/healthz` |
+| `qdrant`   | `GET http://localhost:6333/collections` |
+| `postgres` | `pg_isready -U triage -d triage`   |
+| `redis`    | `redis-cli ping`                    |
+| `ollama`   | `GET http://localhost:11434/api/tags` |
+| `n8n`      | `GET http://localhost:5678/healthz` |
+
+Workers depend on `api: condition: service_healthy`, ensuring Qdrant migrations complete before any worker begins processing jobs.
