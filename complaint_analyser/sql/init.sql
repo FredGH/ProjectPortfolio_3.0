@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS triage_results (
     reasoning             TEXT NOT NULL,
     recommended_action    TEXT NOT NULL,
     analyst_override      TEXT,
+    is_auto_p4            BOOLEAN NOT NULL DEFAULT FALSE,
     processed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     source_created_at     TIMESTAMPTZ
 );

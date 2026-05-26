@@ -15,8 +15,9 @@ _INSERT_RESULT = """
     INSERT INTO triage_results (
         input_id, batch_id, domain, priority, composite_score,
         dimension_scores, confidence, low_confidence_reason,
-        triggered_keywords, retrieved_references, reasoning, recommended_action
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        triggered_keywords, retrieved_references, reasoning, recommended_action,
+        is_auto_p4
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     ON CONFLICT (input_id) DO NOTHING
 """
 
@@ -59,6 +60,7 @@ async def write_triage_result(
         json.dumps(result.retrieved_references),
         result.reasoning,
         result.recommended_action,
+        state.get("is_auto_p4", False),
     )
 
 
@@ -83,6 +85,7 @@ async def write_triage_result_from_cache(
         json.dumps(cached.retrieved_references),
         cached.reasoning,
         cached.recommended_action,
+        False,
     )
 
 
