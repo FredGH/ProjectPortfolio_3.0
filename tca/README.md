@@ -1077,6 +1077,53 @@ Go to [github.com/FredGH/ProjectPortfolio_3.0](https://github.com/FredGH/Project
 
 > If you are not sure what IAM permissions you have, use **AdministratorAccess** for a personal account — the deploy creates VPC, IAM roles, RDS, ECR, ECS, ALB, CloudFront, and Secrets Manager resources.
 
+#### Secrets 1 & 2 — AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+
+You need an IAM user with programmatic access. In the AWS Console:
+
+1. Go to **IAM → Users → Create user**
+2. Username: `tca-deploy` (or anything you like)
+3. Select **Attach policies directly** and tick **AdministratorAccess**
+4. Click through to **Create user**
+
+Now create the access key:
+
+5. Click on the user you just created → **Security credentials** tab
+6. Scroll to **Access keys** → **Create access key**
+7. Select **Other** as the use case → Next
+8. Click **Create access key**
+9. Copy both the **Access key ID** and the **Secret access key** — the secret is only shown once
+
+#### Secret 3 — AWS_ACCOUNT_ID
+
+1. In the AWS Console, click your account name in the **top-right corner**
+2. The dropdown shows your **Account ID** as a 12-digit number (e.g. `123456789012`)
+3. Copy it using the copy button to avoid formatting issues
+
+#### Secret 4 — TF_VAR_DB_PASSWORD
+
+Choose any password for the RDS database (e.g. `TcaDemo2024!`) and write it down — you will need it if you ever connect to the DB directly. The workflow stores it in AWS Secrets Manager automatically.
+
+Rules: minimum 8 characters, avoid `@`, `/`, `"` and spaces (they break connection strings).
+
+#### Adding each secret to GitHub
+
+Repeat for all four secrets:
+
+1. Go to **Settings → Secrets and variables → Actions → New repository secret**
+2. Enter the secret name exactly as shown in the table above
+3. Paste the value
+4. Click **Add secret**
+
+| Order | Secret name | Where the value comes from |
+|---|---|---|
+| 1 | `AWS_ACCESS_KEY_ID` | IAM → user → Security credentials → Access key ID |
+| 2 | `AWS_SECRET_ACCESS_KEY` | Same page — shown only once at creation |
+| 3 | `AWS_ACCOUNT_ID` | AWS Console top-right → account dropdown |
+| 4 | `TF_VAR_DB_PASSWORD` | You choose it |
+
+Once all four appear in the Secrets list, you are ready for Step 2.
+
 ### Step 2 — Trigger the deploy
 
 **Actions → Deploy TCA to AWS → Run workflow** (leave the image tag blank).
