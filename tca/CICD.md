@@ -160,7 +160,12 @@ Only runs after all CI jobs pass (uses `needs: [quality, test-python, test-dbt, 
 ### Steps
 
 ```yaml
+env:
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-1.amazonaws.com
+
 steps:
+  - uses: actions/checkout@v4
+
   - name: Configure AWS credentials
     uses: aws-actions/configure-aws-credentials@v4
     with:
@@ -171,15 +176,30 @@ steps:
   - name: Login to ECR
     uses: aws-actions/amazon-ecr-login@v2
 
-  - name: Build and push all images
+  - name: Build and push tca-api
     run: |
-      docker build -t tca-api -f Dockerfile .
-      docker tag tca-api $ECR_REGISTRY/tca-api:$GITHUB_SHA
+      docker build -t $ECR_REGISTRY/tca-api:$GITHUB_SHA -f Dockerfile .
       docker push $ECR_REGISTRY/tca-api:$GITHUB_SHA
-      # ... repeated for mock-server, airflow, angular
+
+  - name: Build and push tca-mock-server
+    run: |
+      docker build -t $ECR_REGISTRY/tca-mock-server:$GITHUB_SHA \
+        -f Dockerfile --build-arg SERVICE=mock_server .
+      docker push $ECR_REGISTRY/tca-mock-server:$GITHUB_SHA
+
+  - name: Build and push tca-airflow
+    run: |
+      docker build -t $ECR_REGISTRY/tca-airflow:$GITHUB_SHA -f Dockerfile.airflow .
+      docker push $ECR_REGISTRY/tca-airflow:$GITHUB_SHA
+
+  - name: Build and push tca-angular
+    run: |
+      docker build -t $ECR_REGISTRY/tca-angular:$GITHUB_SHA \
+        -f Dockerfile.angular frontend/
+      docker push $ECR_REGISTRY/tca-angular:$GITHUB_SHA
 ```
 
-Images are tagged with the Git commit SHA (`$GITHUB_SHA`) so every pushed image is traceable to an exact commit.
+Images are tagged with the Git commit SHA (`$GITHUB_SHA`) so every pushed image is traceable to an exact commit. No `latest` tag is pushed — all deployments must reference an explicit SHA.
 
 ---
 
@@ -192,6 +212,8 @@ Images are tagged with the Git commit SHA (`$GITHUB_SHA`) so every pushed image 
 | `AWS_ACCOUNT_ID` | Used to construct the ECR registry URL |
 
 These are only needed for the `cd.yml` workflow. The `ci.yml` test pipeline has zero AWS dependencies.
+
+`ECR_REGISTRY` is constructed at runtime as `$AWS_ACCOUNT_ID.dkr.ecr.eu-west-1.amazonaws.com` — it is not stored as a separate secret.
 
 ---
 
@@ -212,6 +234,40 @@ tca:
       schema: stg_raw
       threads: 4
 ```
+
+---
+
+## Caching Strategy
+
+Add these steps in `ci.yml` and `cd.yml` to avoid re-downloading dependencies on every run.
+
+### Python (pip)
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: ~/.cache/pip
+    key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+    restore-keys: pip-${{ runner.os }}-
+```
+
+Add before the `pip install` step in `quality`, `test-python`, and `test-dbt` jobs.
+
+### Node / npm
+
+```yaml
+- uses: actions/cache@v4
+  with:
+    path: frontend/node_modules
+    key: npm-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+    restore-keys: npm-${{ runner.os }}-
+```
+
+Add before `npm ci` in `test-angular`. When the cache hits, `npm ci` is effectively skipped.
+
+### Docker layer cache
+
+Docker BuildKit layer caching is not configured for the PoC — image builds start cold. For a production pipeline, add `--cache-from` with a registry cache manifest per image.
 
 ---
 
