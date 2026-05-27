@@ -1060,6 +1060,91 @@ docker compose exec app bash -c "cd /app && dbt source freshness --target docker
 
 ---
 
+## AWS teardown
+
+After the 2-day demo, run `teardown.sh` to destroy all AWS resources and stop charges. The script delegates to the `teardown-tca.yml` GitHub Actions workflow, so no AWS credentials are needed locally — only the `gh` CLI.
+
+### Prerequisites
+
+```bash
+# Install gh CLI (macOS)
+brew install gh
+
+# Authenticate (one-time)
+gh auth login
+```
+
+GitHub Secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ACCOUNT_ID`, `TF_VAR_DB_PASSWORD`) must already be set in the `FredGH/ProjectPortfolio_3.0` repository under **Settings → Secrets and variables → Actions**.
+
+### Running the teardown
+
+```bash
+cd tca
+./teardown.sh
+```
+
+The script will:
+
+1. Confirm `gh` is installed and authenticated.
+2. Print the target repo and workflow name.
+3. Prompt you to type `destroy` — nothing runs until you confirm.
+4. Trigger the `teardown-tca.yml` workflow via `gh workflow run`.
+5. Tail the live workflow logs in your terminal (`gh run watch`) and exit with the workflow's exit code.
+
+The workflow itself scales all ECS services to 0, drains tasks (30 s), empties all four ECR repositories (Terraform cannot delete non-empty repos), then runs `terraform destroy -auto-approve` to remove every provisioned resource.
+
+### Visual checks after teardown
+
+Once the script exits successfully, open the [AWS Console](https://console.aws.amazon.com) and verify the following are gone. These are the resources that cost money or hold state — confirming them manually takes under two minutes.
+
+**ECS — `eu-west-1` → Elastic Container Service → Clusters**
+
+- Cluster `tca-prod` should not appear in the list.
+- If it does: click into it, check Services tab — all four services (`tca-prod-api`, `tca-prod-mock-server`, `tca-prod-airflow-webserver`, `tca-prod-airflow-scheduler`) should show 0/0 tasks, then delete the cluster manually.
+
+**RDS — `eu-west-1` → RDS → Databases**
+
+- Instance `tca-prod` should not appear.
+- If it does: verify it is not in `deleting` state (takes a few minutes). A retained snapshot is harmless but not created by this teardown.
+
+**NAT Gateway — `eu-west-1` → VPC → NAT Gateways**
+
+- No gateway named `tca-prod-nat` (or similar) should have status `Available`. This is the most expensive idle resource at **$0.048/hr**.
+- If it lingers in `deleting` state, wait 5 minutes and refresh — AWS takes time to release the Elastic IP.
+
+**CloudFront — Global → CloudFront → Distributions**
+
+- No distribution with origin pointing to an `tca-prod` ALB should be `Enabled`.
+- CloudFront distributions are global; check the Distributions list regardless of selected region.
+
+**ECR — `eu-west-1` → Elastic Container Registry → Repositories**
+
+- Repositories `tca-api`, `tca-mock-server`, `tca-airflow`, `tca-angular` should not appear (Terraform deletes them once emptied by the workflow).
+
+**Secrets Manager — `eu-west-1` → Secrets Manager**
+
+- Secrets `tca/db-credentials`, `tca/airflow-db`, `tca/redis-url`, `tca/jwt-private-key`, `tca/jwt-public-key`, `tca/airflow-secret-key` should either be absent or in `Scheduled for deletion` state (recovery window = 0 days, so deletion is immediate).
+
+**S3 / Terraform state — `eu-west-1` → S3**
+
+- If a remote Terraform state bucket was used, verify it is empty or delete it manually — `terraform destroy` does not remove its own state bucket.
+
+### If something is still running
+
+Check the GitHub Actions run log for the step that failed:
+
+```bash
+# List recent runs
+gh run list --repo FredGH/ProjectPortfolio_3.0 --workflow teardown-tca.yml --limit 5
+
+# View logs for the latest run
+gh run view --repo FredGH/ProjectPortfolio_3.0 --log $(gh run list --repo FredGH/ProjectPortfolio_3.0 --workflow teardown-tca.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+```
+
+For persistent NAT Gateway or EIP orphans, use the AWS Console to delete them manually — they are not stateful and safe to force-delete once ECS tasks are gone.
+
+---
+
 ## Tech stack
 
 
