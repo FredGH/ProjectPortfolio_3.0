@@ -264,56 +264,80 @@ docker compose up --build    # full stack locally
 
 ### Layer 2 — Terraform (LocalStack Community)
 
-LocalStack Community emulates the AWS API for services that don't require compute (S3, ECR, Secrets Manager, IAM, CloudFront). Use `tflocal` to redirect Terraform API calls to LocalStack.
+LocalStack Community emulates the AWS API for services that don't require compute (S3, Secrets Manager, IAM). Use `terraform` with the LocalStack provider endpoints already configured in `environments/local/main.tf`.
+
+ECR and CloudFront are LocalStack **Pro** features and are not tested here; they are validated by `terraform validate` in Layer 3.
 
 **Setup:**
 ```bash
 pip install localstack awscli-local terraform-local
-brew install terraform
+
+# Intel Mac / Linux:
+brew install hashicorp/tap/terraform
+
+# Apple Silicon (arm64) — must use native arm64 binary to avoid Rosetta startup timeout:
+/opt/homebrew/bin/brew install hashicorp/tap/terraform
+# Use /opt/homebrew/bin/terraform for all commands below on Apple Silicon.
 ```
 
-**Start LocalStack alongside the existing stack:**
+**Start LocalStack:**
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.localstack.yml up -d localstack
+docker compose -f docker-compose.localstack.yml up -d localstack
 ```
 
 **Apply LocalStack-testable modules:**
 ```bash
 cd terraform/environments/local
-tflocal init
-tflocal apply
+terraform init    # or /opt/homebrew/bin/terraform init on Apple Silicon
+terraform apply -auto-approve
 ```
 
-This validates and applies: ECR repositories, S3 bucket + CloudFront config, Secrets Manager secrets, IAM roles and policies.
+This validates and applies: IAM execution + task roles and policies, all 5 Secrets Manager secrets, and the S3 bucket (Angular SPA).
 
-### Layer 3 — `terraform plan` (VPC, RDS, ECS, ALB, ElastiCache)
+**What passes vs. what requires Pro:**
 
-For services LocalStack Community cannot emulate, `terraform plan` against the real AWS API validates all resource definitions without creating anything (plan is always free).
+| Resource | LocalStack Community | Note |
+|---|---|---|
+| `aws_iam_role` + policies | ✅ | Fully tested |
+| `aws_secretsmanager_secret` (×5) | ✅ | Fully tested |
+| `aws_s3_bucket` + access block | ✅ | Fully tested |
+| `aws_ecr_repository` | ❌ Pro | Validated by `terraform validate` |
+| `aws_cloudfront_*` | ❌ Pro | Validated by `terraform validate` |
+
+### Layer 3 — `terraform validate` + `terraform plan` (all modules)
+
+`terraform validate` checks HCL syntax and module wiring for all 14 modules with no AWS credentials required. `terraform plan` additionally calls the AWS API to validate resource constraints (AMIs, parameter group values, etc.) but requires real credentials.
 
 ```bash
 cd terraform/environments/prod
 
-# Requires AWS credentials in ~/.aws/credentials or env vars
-# No resources are created; this only calls the AWS planning API
+# validate — no credentials needed, checks all modules including vpc/rds/ecs/alb/cdn/ecr
 terraform init
-terraform plan -var-file=terraform.tfvars
+terraform validate   # ✅ passes with no AWS credentials
+
+# plan — requires AWS credentials; no resources created
+# export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+TF_VAR_db_password=dummy terraform plan -var="aws_account_id=123456789012"
 ```
 
-Catches: invalid AMIs, IAM policy syntax errors, security group rule conflicts, missing subnet groups, unsupported RDS parameter values.
+`terraform validate` catches: HCL syntax errors, missing required variables, invalid resource arguments, mismatched module input/output types.
+
+`terraform plan` additionally catches: invalid parameter group family, unsupported engine versions, IAM policy JSON errors.
 
 ### Summary
 
 | Module | Local test method | Cost |
 |---|---|---|
-| `ecr` | `tflocal apply` → LocalStack | $0 |
-| `cdn` (S3 + CloudFront) | `tflocal apply` → LocalStack | $0 |
-| `iam` | `tflocal apply` → LocalStack | $0 |
-| `secrets` | `tflocal apply` → LocalStack | $0 |
-| `vpc` | `terraform plan` only | $0 |
-| `rds` | `terraform plan` only | $0 |
-| `elasticache` | `terraform plan` only | $0 |
-| `alb` | `terraform plan` only | $0 |
-| `ecs/*` | `terraform plan` only | $0 |
+| `iam` | `terraform apply` → LocalStack | $0 |
+| `secrets` | `terraform apply` → LocalStack | $0 |
+| `cdn` (S3 bucket) | `terraform apply` → LocalStack | $0 |
+| `ecr` | `terraform validate` (LocalStack Pro) | $0 |
+| `cdn` (CloudFront) | `terraform validate` (LocalStack Pro) | $0 |
+| `vpc` | `terraform validate` | $0 |
+| `rds` | `terraform validate` + plan | $0 |
+| `elasticache` | `terraform validate` + plan | $0 |
+| `alb` | `terraform validate` + plan | $0 |
+| `ecs/*` | `terraform validate` + plan | $0 |
 | Full runtime stack | `docker compose up` | $0 |
 
 ---
