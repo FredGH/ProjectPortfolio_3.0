@@ -276,10 +276,18 @@ def provision(interval: int) -> None:
 
     attempt = 0
     ad_index = 0
+    excluded_ads: set[str] = set()  # ADs where the subnet doesn't exist (AD-specific subnets)
 
     while True:
+        active_ads = [a for a in ads if a not in excluded_ads]
+        if not active_ads:
+            raise RuntimeError(
+                "All availability domains returned 404. "
+                "Check OCI_SUBNET_ID — it may belong to a different region or compartment."
+            )
+
         attempt += 1
-        ad = ads[ad_index % len(ads)]
+        ad = active_ads[ad_index % len(active_ads)]
         ad_index += 1
 
         log.info("Attempt %d  →  %s", attempt, ad)
@@ -287,15 +295,16 @@ def provision(interval: int) -> None:
         try:
             instance = _try_launch(compute, ad, compartment_id, image_id, ssh_key)
         except oci.exceptions.ServiceError as exc:
-            # Non-capacity API errors (404, 401, 400) are config problems — exit immediately
-            log.error(
-                "  OCI %d (%s): %s", exc.status, exc.code, exc.message
-            )
             if exc.status == 404:
-                log.error(
-                    "  404 = subnet, image, or compartment OCID not found. "
-                    "Check OCI_SUBNET_ID is set correctly."
+                # Subnet is AD-specific and not available in this AD — skip it
+                log.warning(
+                    "  Subnet not available in %s (AD-specific subnet) — excluding this AD",
+                    ad,
                 )
+                excluded_ads.add(ad)
+                log.info("  Active ADs remaining: %s", [a for a in ads if a not in excluded_ads])
+                continue  # no sleep — immediately try the next AD
+            log.error("  OCI %d (%s): %s", exc.status, exc.code, exc.message)
             raise
         except Exception as exc:
             log.error("  Unexpected error: %s", exc, exc_info=True)
