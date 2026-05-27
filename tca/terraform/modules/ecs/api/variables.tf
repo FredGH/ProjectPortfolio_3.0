@@ -64,6 +64,11 @@ variable "memory" {
   default = 1024
 }
 
+variable "cors_origins" {
+  type    = string
+  default = "*"
+}
+
 variable "desired_count" {
   type    = number
   default = 1

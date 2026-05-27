@@ -1,0 +1,83 @@
+name: Teardown TCA on AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm teardown of all TCA resources'
+        required: true
+
+env:
+  AWS_REGION: eu-west-1
+  TF_DIR: tca/terraform/environments/prod
+
+jobs:
+  teardown:
+    name: Destroy
+    runs-on: ubuntu-latest
+    if: inputs.confirm == 'destroy'
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: Write tfvars
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          cat > terraform.tfvars <<EOF
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          db_password    = "${{ secrets.TF_VAR_DB_PASSWORD }}"
+          image_tag      = "latest"
+          EOF
+
+      - name: Scale ECS services to zero
+        run: |
+          CLUSTER="tca-prod"
+          for SVC in api mock-server airflow-webserver airflow-scheduler; do
+            aws ecs update-service \
+              --cluster "$CLUSTER" \
+              --service "${CLUSTER}-${SVC}" \
+              --desired-count 0 \
+              --output text --query 'service.serviceName' 2>/dev/null || true
+          done
+          echo "Services scaled to 0. Waiting 30 s for tasks to drain …"
+          sleep 30
+
+      - name: Empty ECR repositories
+        run: |
+          for REPO in tca-api tca-mock-server tca-airflow tca-angular; do
+            IMAGES=$(aws ecr list-images \
+              --repository-name "$REPO" \
+              --query 'imageIds[*]' \
+              --output json 2>/dev/null)
+            if [ "$IMAGES" != "[]" ] && [ -n "$IMAGES" ]; then
+              aws ecr batch-delete-image \
+                --repository-name "$REPO" \
+                --image-ids "$IMAGES" || true
+            fi
+          done
+          echo "ECR repos emptied."
+
+      - name: Terraform destroy
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform destroy -auto-approve
+
+      - name: Confirm teardown
+        run: echo "All TCA resources destroyed. No further AWS charges will accrue."

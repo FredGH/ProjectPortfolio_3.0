@@ -17,3 +17,7 @@ output "jwt_public_key_arn" {
 output "airflow_secret_key_arn" {
   value = aws_secretsmanager_secret.airflow_secret_key.arn
 }
+
+output "airflow_db_arn" {
+  value = aws_secretsmanager_secret.airflow_db.arn
+}

@@ -18,7 +18,7 @@ resource "aws_ecs_task_definition" "airflow_scheduler" {
         { name = "AIRFLOW__CORE__LOAD_EXAMPLES", value = "false" },
       ]
       secrets = [
-        { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", valueFrom = var.db_secret_arn },
+        { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", valueFrom = var.airflow_db_secret_arn },
         { name = "AIRFLOW__WEBSERVER__SECRET_KEY", valueFrom = var.airflow_secret_key_arn },
         { name = "DATABASE_URL", valueFrom = var.db_secret_arn },
         { name = "REDIS_URL", valueFrom = var.redis_url_secret_arn },
@@ -38,11 +38,12 @@ resource "aws_ecs_task_definition" "airflow_scheduler" {
 }
 
 resource "aws_ecs_service" "airflow_scheduler" {
-  name            = "${var.name_prefix}-airflow-scheduler"
-  cluster         = var.cluster_arn
-  task_definition = aws_ecs_task_definition.airflow_scheduler.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name                   = "${var.name_prefix}-airflow-scheduler"
+  cluster                = var.cluster_arn
+  task_definition        = aws_ecs_task_definition.airflow_scheduler.arn
+  desired_count          = var.desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     subnets          = var.subnet_ids

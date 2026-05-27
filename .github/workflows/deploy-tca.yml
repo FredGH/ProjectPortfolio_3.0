@@ -1,0 +1,239 @@
+name: Deploy TCA to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag (leave blank to use git SHA)'
+        required: false
+        default: ''
+
+env:
+  AWS_REGION: eu-west-1
+  TF_DIR: tca/terraform/environments/prod
+  CLUSTER: tca-prod
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── AWS credentials ────────────────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── Resolve image tag ──────────────────────────────────────────────────
+      - name: Set image tag
+        id: tag
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then TAG="${GITHUB_SHA::8}"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Using image tag: $TAG"
+
+      # ── Terraform ─────────────────────────────────────────────────────────
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.6"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform init
+
+      - name: Write tfvars
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          cat > terraform.tfvars <<EOF
+          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
+          db_password    = "${{ secrets.TF_VAR_DB_PASSWORD }}"
+          image_tag      = "${{ steps.tag.outputs.tag }}"
+          EOF
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -auto-approve
+
+      # ── Capture outputs ────────────────────────────────────────────────────
+      - name: Get Terraform outputs
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          RDS_ADDR=$(terraform output -raw rds_address)
+          ALB_DNS=$(terraform output -raw alb_dns_name)
+          CF_URL=$(terraform output -raw cloudfront_url)
+          REDIS_CS=$(terraform output -raw redis_connection_string)
+          # subnet IDs as comma-separated string for JSON array construction
+          SUBNETS=$(terraform output -json private_subnet_ids | jq -r 'join(",")')
+          API_SG=$(terraform output -raw api_sg_id)
+          ECR_API=$(terraform output -json ecr_repositories | jq -r '.["tca-api"]')
+          ECR_MOCK=$(terraform output -json ecr_repositories | jq -r '.["tca-mock-server"]')
+          ECR_AIRFLOW=$(terraform output -json ecr_repositories | jq -r '.["tca-airflow"]')
+          ECR_ANGULAR=$(terraform output -json ecr_repositories | jq -r '.["tca-angular"]')
+          echo "rds_addr=$RDS_ADDR"         >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$ALB_DNS"           >> "$GITHUB_OUTPUT"
+          echo "cf_url=$CF_URL"             >> "$GITHUB_OUTPUT"
+          echo "redis_cs=$REDIS_CS"         >> "$GITHUB_OUTPUT"
+          echo "subnets=$SUBNETS"           >> "$GITHUB_OUTPUT"
+          echo "api_sg=$API_SG"             >> "$GITHUB_OUTPUT"
+          echo "ecr_api=$ECR_API"           >> "$GITHUB_OUTPUT"
+          echo "ecr_mock=$ECR_MOCK"         >> "$GITHUB_OUTPUT"
+          echo "ecr_airflow=$ECR_AIRFLOW"   >> "$GITHUB_OUTPUT"
+          echo "ecr_angular=$ECR_ANGULAR"   >> "$GITHUB_OUTPUT"
+
+      # ── Update Secrets Manager with real endpoints ─────────────────────────
+      - name: Seed Secrets Manager
+        env:
+          DB_PASS: ${{ secrets.TF_VAR_DB_PASSWORD }}
+          RDS_ADDR: ${{ steps.tf.outputs.rds_addr }}
+          REDIS_CS: ${{ steps.tf.outputs.redis_cs }}
+        run: |
+          # DB credentials — plain URL consumed directly as DATABASE_URL
+          aws secretsmanager update-secret \
+            --secret-id "tca/db-credentials" \
+            --secret-string "postgresql://tca_user:${DB_PASS}@${RDS_ADDR}:5432/tca_db"
+
+          # Airflow DB — SQLAlchemy format, points to airflow_db
+          aws secretsmanager update-secret \
+            --secret-id "tca/airflow-db" \
+            --secret-string "postgresql+psycopg2://tca_user:${DB_PASS}@${RDS_ADDR}:5432/airflow_db"
+
+          # Redis URL
+          aws secretsmanager update-secret \
+            --secret-id "tca/redis-url" \
+            --secret-string "${REDIS_CS}"
+
+          # JWT RS256 key pair
+          openssl genrsa -out /tmp/jwt_priv.pem 2048 2>/dev/null
+          openssl rsa -in /tmp/jwt_priv.pem -pubout -out /tmp/jwt_pub.pem 2>/dev/null
+          aws secretsmanager update-secret \
+            --secret-id "tca/jwt-private-key" \
+            --secret-string "$(cat /tmp/jwt_priv.pem)"
+          aws secretsmanager update-secret \
+            --secret-id "tca/jwt-public-key" \
+            --secret-string "$(cat /tmp/jwt_pub.pem)"
+          rm -f /tmp/jwt_priv.pem /tmp/jwt_pub.pem
+
+          # Airflow webserver secret key (random 32-byte hex)
+          aws secretsmanager update-secret \
+            --secret-id "tca/airflow-secret-key" \
+            --secret-string "$(openssl rand -hex 32)"
+
+          echo "Secrets updated."
+
+      # ── Build and push Docker images ───────────────────────────────────────
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push images
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          REG: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+        working-directory: tca
+        run: |
+          # tca-api  (also used as the bootstrap / mock-server image)
+          docker build -t "$REG/tca-api:$TAG" -t "$REG/tca-api:latest" -f Dockerfile .
+          docker push "$REG/tca-api:$TAG"
+          docker push "$REG/tca-api:latest"
+
+          # tca-mock-server  (same Python image, different ECS command)
+          docker tag "$REG/tca-api:$TAG" "$REG/tca-mock-server:$TAG"
+          docker tag "$REG/tca-api:$TAG" "$REG/tca-mock-server:latest"
+          docker push "$REG/tca-mock-server:$TAG"
+          docker push "$REG/tca-mock-server:latest"
+
+          # tca-airflow
+          docker build -t "$REG/tca-airflow:$TAG" -t "$REG/tca-airflow:latest" -f Dockerfile.airflow .
+          docker push "$REG/tca-airflow:$TAG"
+          docker push "$REG/tca-airflow:latest"
+
+          # tca-angular
+          docker build -t "$REG/tca-angular:$TAG" -t "$REG/tca-angular:latest" -f Dockerfile.angular frontend/
+          docker push "$REG/tca-angular:$TAG"
+          docker push "$REG/tca-angular:latest"
+
+      # ── Run DB init + seed as a one-off Fargate task ───────────────────────
+      - name: Bootstrap DB (init + seed)
+        env:
+          SUBNETS: ${{ steps.tf.outputs.subnets }}
+          API_SG: ${{ steps.tf.outputs.api_sg }}
+          REG: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          SUBNET_JSON=$(echo "$SUBNETS" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip().split(',')))")
+
+          TASK_DEF="${{ env.CLUSTER }}-api"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ env.CLUSTER }}" \
+            --task-definition "$TASK_DEF" \
+            --launch-type FARGATE \
+            --network-configuration "{\"awsvpcConfiguration\":{\"subnets\":${SUBNET_JSON},\"securityGroups\":[\"${API_SG}\"],\"assignPublicIp\":\"DISABLED\"}}" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"tca-api\",\"command\":[\"python\",\"ingestion/bootstrap.py\"]}]}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Bootstrap task: $TASK_ARN"
+          echo "Waiting for bootstrap to complete (up to 10 minutes) …"
+          aws ecs wait tasks-stopped \
+            --cluster "${{ env.CLUSTER }}" \
+            --tasks "$TASK_ARN"
+
+          EXIT=$(aws ecs describe-tasks \
+            --cluster "${{ env.CLUSTER }}" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)
+
+          if [ "$EXIT" != "0" ]; then
+            echo "Bootstrap task failed (exit $EXIT). Check CloudWatch logs."
+            exit 1
+          fi
+          echo "Bootstrap succeeded."
+
+      # ── Force ECS redeployment with new images + updated secrets ──────────
+      - name: Force ECS redeployment
+        run: |
+          for SVC in api mock-server airflow-webserver airflow-scheduler; do
+            aws ecs update-service \
+              --cluster "${{ env.CLUSTER }}" \
+              --service "${{ env.CLUSTER }}-${SVC}" \
+              --force-new-deployment \
+              --output text --query 'service.serviceName'
+          done
+
+      - name: Wait for services to stabilise
+        run: |
+          aws ecs wait services-stable \
+            --cluster "${{ env.CLUSTER }}" \
+            --services \
+              "${{ env.CLUSTER }}-api" \
+              "${{ env.CLUSTER }}-mock-server" \
+              "${{ env.CLUSTER }}-airflow-webserver" \
+              "${{ env.CLUSTER }}-airflow-scheduler"
+
+      # ── Summary ────────────────────────────────────────────────────────────
+      - name: Deployment summary
+        run: |
+          ALB="${{ steps.tf.outputs.alb_dns }}"
+          CF="${{ steps.tf.outputs.cf_url }}"
+          echo ""
+          echo "╔══════════════════════════════════════════════════════╗"
+          echo "║        TCA Platform — deployment complete            ║"
+          echo "╠══════════════════════════════════════════════════════╣"
+          echo "║  Angular SPA   https://$CF"
+          echo "║  API docs      http://$ALB/docs"
+          echo "║  Airflow UI    http://$ALB/airflow"
+          echo "║  Mock server   http://$ALB/mock/docs"
+          echo "╚══════════════════════════════════════════════════════╝"
+          echo ""
+          echo "To destroy after 2 days: run the 'Teardown TCA on AWS' workflow."

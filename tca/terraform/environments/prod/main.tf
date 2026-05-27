@@ -161,6 +161,7 @@ module "ecs_airflow_webserver" {
   db_secret_arn          = module.secrets.db_credentials_arn
   redis_url_secret_arn   = module.secrets.redis_url_arn
   airflow_secret_key_arn = module.secrets.airflow_secret_key_arn
+  airflow_db_secret_arn  = module.secrets.airflow_db_arn
   tags                   = local.tags
 }
 
@@ -178,6 +179,7 @@ module "ecs_airflow_scheduler" {
   db_secret_arn          = module.secrets.db_credentials_arn
   redis_url_secret_arn   = module.secrets.redis_url_arn
   airflow_secret_key_arn = module.secrets.airflow_secret_key_arn
+  airflow_db_secret_arn  = module.secrets.airflow_db_arn
   tags                   = local.tags
 }
 
@@ -194,6 +196,24 @@ output "rds_endpoint" {
   sensitive = true
 }
 
+output "rds_address" {
+  value     = module.rds.address
+  sensitive = true
+}
+
+output "redis_connection_string" {
+  value     = module.elasticache.connection_string
+  sensitive = true
+}
+
 output "ecr_repositories" {
   value = module.ecr.repository_urls
+}
+
+output "private_subnet_ids" {
+  value = module.vpc.private_subnet_ids
+}
+
+output "api_sg_id" {
+  value = module.vpc.sg_api_id
 }
