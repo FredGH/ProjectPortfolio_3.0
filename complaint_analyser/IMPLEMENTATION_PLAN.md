@@ -129,6 +129,60 @@ Each phase is a self-contained deliverable that can be committed, reviewed, and 
 
 **Gate:** `ssh -i ~/.ssh/oracle_complaint ubuntu@<PUBLIC_IP>` succeeds.
 
+---
+
+> ### 2.1a — Automated provisioner (optional fallback)
+>
+> If the OCI Console returns **"Out of capacity for shape VM.Standard.A1.Flex — try again later"**,
+> use `scripts/provision_oracle.py` to poll automatically until capacity becomes available.
+>
+> **Prerequisites**
+>
+> 1. **OCI SDK:**
+>    ```bash
+>    pip install oci
+>    ```
+>
+> 2. **OCI API key** — do this in the console:
+>    - Identity & Security → Identity → My Profile → **Tokens and keys** tab
+>    - **Add API Key** → Generate key pair → download the private key → click Add
+>    - Copy the config snippet that appears and paste it into `~/.oci/config`:
+>      ```
+>      [DEFAULT]
+>      user=ocid1.user.oc1...
+>      fingerprint=xx:xx:xx:...
+>      tenancy=ocid1.tenancy.oc1...
+>      region=uk-london-1
+>      key_file=~/.oci/oci_api_key.pem
+>      ```
+>    - Move the downloaded key:
+>      ```bash
+>      mv ~/Downloads/*.pem ~/.oci/oci_api_key.pem
+>      chmod 600 ~/.oci/oci_api_key.pem
+>      ```
+>
+> 3. **Subnet OCID** — in the console:
+>    - Networking → Virtual Cloud Networks → click your VCN
+>    - Click **Subnets** → click the public subnet → copy its **OCID**
+>
+> **Run the script**
+>
+> ```bash
+> export OCI_SUBNET_ID="ocid1.subnet.oc1.uk-london-1.XXXXXXXX"
+> python complaint_analyser/scripts/provision_oracle.py
+> # faster polling (30 s):
+> python complaint_analyser/scripts/provision_oracle.py --interval 30
+> ```
+>
+> The script cycles through all availability domains round-robin, retries every
+> 60 s (±5 s jitter), and keeps the Mac awake via `caffeinate`.
+> **Keep the MacBook plugged in** — `caffeinate -s` only prevents sleep on AC power.
+>
+> On success it prints the SSH command and writes `instance_info.json` with the
+> public IP. Continue from step 2.2 as normal.
+
+---
+
 ### 2.2 — OCI security list (firewall)
 
 - [ ] In OCI Console → VCN → Security Lists → Default → Ingress rules:
