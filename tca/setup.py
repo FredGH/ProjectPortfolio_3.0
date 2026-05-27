@@ -20,7 +20,7 @@ setup(
         "numpy>=1.26.0",
         "pandas>=2.2.0",
         "scipy>=1.13.0",
-        "dbt-postgres>=1.8.0,<1.9.0",
+        "dbt-postgres>=1.8.0",
         "redis[hiredis]>=5.0.0",
         "openpyxl>=3.1.0",
         "python-dotenv>=1.0.0",
