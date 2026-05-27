@@ -103,13 +103,7 @@ def _generate_oms_data(
         p_low, p_high = cfg["price_range"]
 
         for _ in range(orders_per_class):
-            uid_int = (
-                (int(rng.integers(0, 2**32)) << 96)
-                | (int(rng.integers(0, 2**32)) << 64)
-                | (int(rng.integers(0, 2**32)) << 32)
-                | int(rng.integers(0, 2**32))
-            )
-            order_id = str(uuid.UUID(int=uid_int))
+            order_id = str(uuid.uuid4())
             instrument_id = str(rng.choice(instrument_ids))
             side = str(rng.choice(["BUY", "SELL"]))
             order_type = str(rng.choice(ORDER_TYPES))
@@ -134,8 +128,7 @@ def _generate_oms_data(
                     "instrument_class": asset_class,
                     "side": side,
                     "order_type": order_type,
-                    "order_quantity": quantity,
-                    "trade_date": trade_date,
+                    "quantity": quantity,
                     "arrival_price": arrival_price,
                     "limit_price": limit_price,
                     "order_time": order_time,
@@ -166,14 +159,7 @@ def _generate_oms_data(
 
                 fills.append(
                     {
-                        "fill_id": str(
-                            uuid.UUID(
-                                int=(int(rng.integers(0, 2**32)) << 96)
-                                | (int(rng.integers(0, 2**32)) << 64)
-                                | (int(rng.integers(0, 2**32)) << 32)
-                                | int(rng.integers(0, 2**32))
-                            )
-                        ),
+                        "fill_id": str(uuid.uuid4()),
                         "order_id": order_id,
                         "counterparty_id": counterparty_id,
                         "instrument_id": instrument_id,

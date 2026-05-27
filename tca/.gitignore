@@ -24,3 +24,9 @@ logs/
 
 # OS
 .DS_Store
+dbt_internal_packages/
+
+# Local-only / personal
+CLAUDE.local.md
+.user.yml
+.claude/settings.local.json

@@ -34,7 +34,7 @@ def get_order_tca(
 @router.get("/summary", response_model=list[TCAResult])
 def get_tca_summary(
     user: Annotated[UserClaims, Depends(get_current_user)],
-    trade_date: Annotated[str, Query()],
+    trade_date: Annotated[str, Query()] = "2025-01-15",
     instrument_class: Annotated[str | None, Query()] = None,
     counterparty_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(le=1000)] = 200,
@@ -50,7 +50,7 @@ def get_tca_summary(
 @router.get("/algo-performance", response_model=list[AlgoPerformance])
 def get_algo_performance(
     user: Annotated[UserClaims, Depends(get_current_user)],
-    trade_date: Annotated[str, Query()],
+    trade_date: Annotated[str, Query()] = "2025-01-15",
     instrument_class: Annotated[str | None, Query()] = None,
 ) -> list[AlgoPerformance]:
     if user.role == "CLIENT":
@@ -64,7 +64,7 @@ def get_algo_performance(
 @router.get("/alpha-decay", response_model=list[AlphaDecayCurve])
 def get_alpha_decay(
     user: Annotated[UserClaims, Depends(get_current_user)],
-    trade_date: Annotated[str, Query()],
+    trade_date: Annotated[str, Query()] = "2025-01-15",
 ) -> list[AlphaDecayCurve]:
     rows = _svc.get_alpha_decay(trade_date, user)
     return [AlphaDecayCurve(**r) for r in rows]
