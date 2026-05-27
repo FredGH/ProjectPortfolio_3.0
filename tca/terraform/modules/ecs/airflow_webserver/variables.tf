@@ -50,14 +50,18 @@ variable "airflow_secret_key_arn" {
   type = string
 }
 
+variable "airflow_db_secret_arn" {
+  type = string
+}
+
 variable "cpu" {
   type    = number
-  default = 512
+  default = 1024
 }
 
 variable "memory" {
   type    = number
-  default = 1024
+  default = 2048
 }
 
 variable "desired_count" {

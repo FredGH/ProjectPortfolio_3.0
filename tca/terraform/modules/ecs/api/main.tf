@@ -15,6 +15,9 @@ resource "aws_ecs_task_definition" "api" {
       portMappings = [
         { containerPort = 8000, protocol = "tcp" }
       ]
+      environment = [
+        { name = "CORS_ORIGINS", value = var.cors_origins },
+      ]
       secrets = [
         { name = "DATABASE_URL", valueFrom = var.db_secret_arn },
         { name = "REDIS_URL", valueFrom = var.redis_url_secret_arn },
@@ -36,11 +39,12 @@ resource "aws_ecs_task_definition" "api" {
 }
 
 resource "aws_ecs_service" "api" {
-  name            = "${var.name_prefix}-api"
-  cluster         = var.cluster_arn
-  task_definition = aws_ecs_task_definition.api.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+  name                   = "${var.name_prefix}-api"
+  cluster                = var.cluster_arn
+  task_definition        = aws_ecs_task_definition.api.arn
+  desired_count          = var.desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     subnets          = var.subnet_ids

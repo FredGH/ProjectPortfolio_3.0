@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — never commit it.
+
+aws_account_id = "123456789012"   # your 12-digit AWS account ID
+db_password    = "CHANGE_ME"      # min 8 chars; used for RDS + Secrets Manager
+image_tag      = "latest"         # overridden by the deploy workflow (uses git SHA)
+aws_region     = "eu-west-1"      # optional — default is eu-west-1

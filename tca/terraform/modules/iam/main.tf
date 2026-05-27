@@ -62,6 +62,17 @@ resource "aws_iam_role_policy" "task_policy" {
         Effect   = "Allow"
         Action   = ["s3:PutObject", "s3:GetObject"]
         Resource = "arn:aws:s3:::${var.name_prefix}-reports/*"
+      },
+      {
+        # Required for ECS Exec (aws ecs execute-command)
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel",
+        ]
+        Resource = "*"
       }
     ]
   })

@@ -5,14 +5,22 @@ resource "aws_secretsmanager_secret" "db_credentials" {
 }
 
 resource "aws_secretsmanager_secret_version" "db_credentials" {
-  secret_id = aws_secretsmanager_secret.db_credentials.id
-  secret_string = jsonencode({
-    username = var.db_username
-    password = var.db_password
-    host     = "PENDING_RDS_ENDPOINT"
-    dbname   = "tca_db"
-    port     = 5432
-  })
+  secret_id     = aws_secretsmanager_secret.db_credentials.id
+  # Plain URL — ECS valueFrom injects the entire string as DATABASE_URL.
+  # The deploy workflow overwrites this with the real RDS endpoint after terraform apply.
+  secret_string = "postgresql://${var.db_username}:${var.db_password}@PENDING_RDS_ENDPOINT:5432/tca_db"
+}
+
+resource "aws_secretsmanager_secret" "airflow_db" {
+  name                    = "tca/airflow-db"
+  recovery_window_in_days = 0
+  tags                    = merge(var.tags, { Name = "tca/airflow-db" })
+}
+
+resource "aws_secretsmanager_secret_version" "airflow_db" {
+  secret_id     = aws_secretsmanager_secret.airflow_db.id
+  # SQLAlchemy format required by Airflow. Updated with real endpoint post-apply.
+  secret_string = "postgresql+psycopg2://${var.db_username}:${var.db_password}@PENDING_RDS_ENDPOINT:5432/airflow_db"
 }
 
 resource "aws_secretsmanager_secret" "redis_url" {

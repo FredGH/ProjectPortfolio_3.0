@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -26,6 +27,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("CORS_ORIGINS", "http://localhost:4200")
+    if raw == "*":
+        return ["*"]
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="PrivateBank TCA API",
@@ -34,10 +42,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    origins = _cors_origins()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:4200"],
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=origins != ["*"],
         allow_methods=["*"],
         allow_headers=["*"],
     )
