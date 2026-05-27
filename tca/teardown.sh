@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
-# teardown.sh — destroy all TCA AWS resources after the 2-day demo.
+# teardown.sh — trigger the GitHub Actions teardown workflow for TCA.
+#
+# Prerequisites:
+#   gh CLI installed and authenticated  (brew install gh && gh auth login)
 #
 # Usage:
-#   export AWS_ACCESS_KEY_ID=...
-#   export AWS_SECRET_ACCESS_KEY=...
-#   export AWS_ACCOUNT_ID=...        # 12-digit account ID
-#   export TF_VAR_db_password=...    # same password used at deploy time
 #   ./teardown.sh
 #
-# Or pass them inline:
-#   AWS_ACCOUNT_ID=123456789012 TF_VAR_db_password=TcaDemo2024! ./teardown.sh
+# AWS credentials are NOT required locally; the workflow uses GitHub Secrets.
 
 set -euo pipefail
 
-REGION="${AWS_DEFAULT_REGION:-eu-west-1}"
-CLUSTER="tca-prod"
-TF_DIR="$(dirname "$0")/terraform/environments/prod"
-ECR_REPOS=("tca-api" "tca-mock-server" "tca-airflow" "tca-angular")
+REPO="FredGH/ProjectPortfolio_3.0"
+WORKFLOW="teardown-tca.yml"
 
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
 
@@ -26,23 +22,16 @@ echo ""
 echo -e "${YELLOW}TCA Platform — AWS Teardown${NC}"
 echo "────────────────────────────────────────────"
 
-if ! command -v aws &>/dev/null; then
-  echo -e "${RED}✗ aws CLI not found. Install: brew install awscli${NC}"; exit 1
+if ! command -v gh &>/dev/null; then
+  echo -e "${RED}✗ gh CLI not found. Install: brew install gh${NC}"; exit 1
 fi
-if ! command -v terraform &>/dev/null && ! command -v /opt/homebrew/bin/terraform &>/dev/null; then
-  echo -e "${RED}✗ terraform not found. Install: brew install hashicorp/tap/terraform${NC}"; exit 1
+
+if ! gh auth status &>/dev/null; then
+  echo -e "${RED}✗ gh CLI not authenticated. Run: gh auth login${NC}"; exit 1
 fi
-TF_BIN="$(command -v /opt/homebrew/bin/terraform 2>/dev/null || command -v terraform)"
 
-for VAR in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_ACCOUNT_ID TF_VAR_db_password; do
-  if [ -z "${!VAR:-}" ]; then
-    echo -e "${RED}✗ $VAR is not set.${NC}"; exit 1
-  fi
-done
-
-echo "  Region:  $REGION"
-echo "  Account: $AWS_ACCOUNT_ID"
-echo "  Cluster: $CLUSTER"
+echo "  Repo:     $REPO"
+echo "  Workflow: $WORKFLOW"
 echo ""
 echo -e "${RED}This will permanently destroy all TCA resources including RDS data.${NC}"
 read -r -p "Type 'destroy' to confirm: " CONFIRM
@@ -51,74 +40,53 @@ if [ "$CONFIRM" != "destroy" ]; then
 fi
 echo ""
 
-# ── Step 1: Scale ECS services to 0 ────────────────────────────────────────
+# ── Trigger workflow ────────────────────────────────────────────────────────
 
-echo "▶ Scaling ECS services to 0 …"
-for SVC in api mock-server airflow-webserver airflow-scheduler; do
-  SVC_NAME="${CLUSTER}-${SVC}"
-  if aws ecs describe-services \
-       --cluster "$CLUSTER" --services "$SVC_NAME" \
-       --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
-    aws ecs update-service \
-      --cluster "$CLUSTER" --service "$SVC_NAME" \
-      --desired-count 0 \
-      --output text --query 'service.serviceName'
-    echo "  scaled $SVC_NAME → 0"
-  else
-    echo "  $SVC_NAME not found or already gone"
+echo "▶ Triggering teardown workflow …"
+gh workflow run "$WORKFLOW" \
+  --repo "$REPO" \
+  --ref main \
+  -f confirm=destroy
+
+# Give GitHub a moment to register the run
+sleep 5
+
+# ── Tail the run ────────────────────────────────────────────────────────────
+
+echo "▶ Waiting for workflow run to appear …"
+RUN_ID=""
+for i in $(seq 1 12); do
+  RUN_ID=$(gh run list \
+    --repo "$REPO" \
+    --workflow "$WORKFLOW" \
+    --limit 1 \
+    --json databaseId \
+    --jq '.[0].databaseId' 2>/dev/null || true)
+  if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+    break
   fi
+  sleep 5
 done
 
-echo "  Waiting 30 s for tasks to drain …"
-sleep 30
+if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+  echo -e "${RED}✗ Could not find the triggered run. Check:${NC}"
+  echo "  gh run list --repo $REPO --workflow $WORKFLOW"
+  exit 1
+fi
 
-# ── Step 2: Empty ECR repositories (terraform can't delete non-empty repos) ─
-
+echo "  Run ID: $RUN_ID"
+echo "  View:   https://github.com/$REPO/actions/runs/$RUN_ID"
 echo ""
-echo "▶ Emptying ECR repositories …"
-for REPO in "${ECR_REPOS[@]}"; do
-  IMAGES=$(aws ecr list-images \
-    --repository-name "$REPO" \
-    --query 'imageIds[*]' \
-    --output json 2>/dev/null || echo "[]")
-  if [ "$IMAGES" != "[]" ] && [ "$IMAGES" != "" ]; then
-    aws ecr batch-delete-image \
-      --repository-name "$REPO" \
-      --image-ids "$IMAGES" \
-      --output text --query 'imageIds[*].imageTag' 2>/dev/null | tr '\t' '\n' | \
-      sed "s/^/  deleted $REPO:/" || true
-    echo "  $REPO emptied"
-  else
-    echo "  $REPO already empty"
-  fi
-done
 
-# ── Step 3: terraform destroy ───────────────────────────────────────────────
-
-echo ""
-echo "▶ Running terraform destroy …"
-
-# Write tfvars so terraform has what it needs to identify the state
-cat > "$TF_DIR/terraform.tfvars" <<EOF
-aws_account_id = "$AWS_ACCOUNT_ID"
-db_password    = "$TF_VAR_db_password"
-image_tag      = "latest"
-aws_region     = "$REGION"
-EOF
-
-export AWS_DEFAULT_REGION="$REGION"
-
-cd "$TF_DIR"
-"$TF_BIN" init -upgrade -no-color
-"$TF_BIN" destroy -auto-approve -no-color
+gh run watch "$RUN_ID" --repo "$REPO" --exit-status
 
 # ── Done ────────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${GREEN}✓ All TCA resources destroyed. No further AWS charges will accrue.${NC}"
+echo -e "${GREEN}✓ Teardown workflow completed. No further AWS charges will accrue.${NC}"
 echo ""
 echo "Tip: confirm in the AWS Console that the following are gone:"
-echo "  • ECS cluster:     $CLUSTER"
+echo "  • ECS cluster:     tca-prod"
 echo "  • RDS instance:    tca-prod"
 echo "  • NAT Gateway:     tca-prod-nat  (stops the \$0.048/hr clock)"
 echo "  • CloudFront dist: check Distributions list"
