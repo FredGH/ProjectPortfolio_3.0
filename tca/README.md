@@ -1060,6 +1060,46 @@ docker compose exec app bash -c "cd /app && dbt source freshness --target docker
 
 ---
 
+## Deploying to AWS
+
+The platform ships with a one-click GitHub Actions workflow. You need four GitHub Secrets and about 25–30 minutes.
+
+### Step 1 — Add 4 GitHub Secrets
+
+Go to [github.com/FredGH/ProjectPortfolio_3.0](https://github.com/FredGH/ProjectPortfolio_3.0) → **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret name | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | Your IAM access key |
+| `AWS_SECRET_ACCESS_KEY` | Your IAM secret key |
+| `AWS_ACCOUNT_ID` | Your 12-digit account ID (visible top-right in AWS Console) |
+| `TF_VAR_DB_PASSWORD` | Any strong password ≥ 8 chars (e.g. `TcaDemo2024!`) |
+
+> If you are not sure what IAM permissions you have, use **AdministratorAccess** for a personal account — the deploy creates VPC, IAM roles, RDS, ECR, ECS, ALB, CloudFront, and Secrets Manager resources.
+
+### Step 2 — Trigger the deploy
+
+**Actions → Deploy TCA to AWS → Run workflow** (leave the image tag blank).
+
+The workflow runs for ~25–30 minutes and prints the live URLs at the end.
+
+### Step 3 — After 2 days, tear it down
+
+**Actions → Teardown TCA on AWS → Run workflow**, type `destroy` to confirm. Kills everything and stops all charges. See [AWS teardown](#aws-teardown) below for a post-run visual checklist.
+
+### What the workflow does automatically
+
+You do not need to touch any of this — it is fully automated:
+
+1. `terraform apply` — provisions VPC, RDS (PostgreSQL 16), ElastiCache (Redis), ECR repositories, IAM roles, Secrets Manager secrets, ALB, CloudFront distribution, and the ECS cluster.
+2. Updates Secrets Manager with the real RDS and Redis endpoints, and generates a fresh JWT RS256 key pair.
+3. Builds and pushes all four Docker images to ECR (`tca-api`, `tca-mock-server`, `tca-airflow`, `tca-angular`).
+4. Runs `bootstrap.py` as a one-off Fargate task — creates all database schemas and seeds 400 synthetic orders.
+5. Forces ECS redeployment and waits for all four services to reach a healthy state.
+6. Prints the CloudFront URL (Angular SPA), API docs URL, and Airflow UI URL.
+
+---
+
 ## AWS teardown
 
 After the 2-day demo, run `teardown.sh` to destroy all AWS resources and stop charges. The script delegates to the `teardown-tca.yml` GitHub Actions workflow, so no AWS credentials are needed locally — only the `gh` CLI.
