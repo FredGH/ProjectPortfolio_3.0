@@ -11,3 +11,4 @@ dist/
 .ruff_cache/
 secrets/*
 !secrets/.gitkeep
+instance_info.json
