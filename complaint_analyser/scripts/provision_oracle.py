@@ -287,9 +287,16 @@ def provision(interval: int) -> None:
         try:
             instance = _try_launch(compute, ad, compartment_id, image_id, ssh_key)
         except oci.exceptions.ServiceError as exc:
-            log.warning("  OCI %d (%s): %s", exc.status, exc.code, exc.message)
-            _sleep_with_jitter(interval)
-            continue
+            # Non-capacity API errors (404, 401, 400) are config problems — exit immediately
+            log.error(
+                "  OCI %d (%s): %s", exc.status, exc.code, exc.message
+            )
+            if exc.status == 404:
+                log.error(
+                    "  404 = subnet, image, or compartment OCID not found. "
+                    "Check OCI_SUBNET_ID is set correctly."
+                )
+            raise
         except Exception as exc:
             log.error("  Unexpected error: %s", exc, exc_info=True)
             _sleep_with_jitter(interval)
