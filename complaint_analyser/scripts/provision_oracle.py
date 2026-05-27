@@ -97,6 +97,7 @@ MEMORY_GBS = 24
 BOOT_VOLUME_GBS = 50
 
 DEFAULT_INTERVAL = 60  # seconds between attempts
+RATE_LIMIT_BACKOFF = 120  # extra sleep on 429 TooManyRequests
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -182,6 +183,10 @@ def _is_capacity_error(exc: oci.exceptions.ServiceError) -> bool:
     return exc.status == 500 and "capacity" in exc.message.lower()
 
 
+def _is_rate_limit_error(exc: oci.exceptions.ServiceError) -> bool:
+    return exc.status == 429
+
+
 def _try_launch(
     compute: oci.core.ComputeClient,
     ad: str,
@@ -215,6 +220,8 @@ def _try_launch(
     except oci.exceptions.ServiceError as exc:
         if _is_capacity_error(exc):
             return None
+        if _is_rate_limit_error(exc):
+            raise  # caller handles 429 with longer backoff
         raise
 
 
@@ -304,6 +311,13 @@ def provision(interval: int) -> None:
                 excluded_ads.add(ad)
                 log.info("  Active ADs remaining: %s", [a for a in ads if a not in excluded_ads])
                 continue  # no sleep — immediately try the next AD
+            if _is_rate_limit_error(exc):
+                log.warning(
+                    "  Rate-limited by OCI (429) — backing off %d s before retrying",
+                    RATE_LIMIT_BACKOFF,
+                )
+                time.sleep(RATE_LIMIT_BACKOFF)
+                continue
             log.error("  OCI %d (%s): %s", exc.status, exc.code, exc.message)
             raise
         except Exception as exc:
