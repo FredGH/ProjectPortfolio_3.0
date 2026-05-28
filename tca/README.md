@@ -1096,7 +1096,56 @@ Verify:
 gh auth status   # → Logged in to github.com as <your-username> ✓
 ```
 
-> `gh` is the only local tool needed. AWS credentials stay inside GitHub Secrets — you never need the `aws` CLI locally.
+> `gh` is sufficient to trigger deployments. The AWS CLI is optional but useful for quickly checking resource state from the terminal without opening the Console.
+
+### Optional — AWS CLI
+
+Install it once if you want to inspect ECR, ECS, or other AWS resources from the terminal:
+
+```bash
+# macOS
+brew install awscli
+```
+
+Configure with your IAM credentials (the same key pair used as GitHub Secrets):
+
+```bash
+aws configure
+```
+
+Answer the prompts:
+
+```
+AWS Access Key ID:     <paste AWS_ACCESS_KEY_ID>
+AWS Secret Access Key: <paste AWS_SECRET_ACCESS_KEY>
+Default region name:   eu-west-1
+Default output format: (press Enter)
+```
+
+Verify:
+
+```bash
+aws sts get-caller-identity   # → prints your account ID and IAM user ARN
+```
+
+Quick checks after a deploy:
+
+```bash
+# List ECR repositories
+aws ecr describe-repositories --region eu-west-1 \
+  --query 'repositories[*].repositoryName' --output table
+
+# Check ECS service health
+aws ecs describe-services \
+  --cluster tca-prod-cluster \
+  --services tca-prod-api tca-prod-mock-server \
+             tca-prod-airflow-webserver tca-prod-airflow-scheduler \
+  --region eu-west-1 \
+  --query 'services[*].{Name:serviceName,Status:status,Running:runningCount,Desired:desiredCount}' \
+  --output table
+```
+
+> Make sure you are in `eu-west-1` — all resources are deployed to that region.
 
 ### Step 1 — Add 4 GitHub Secrets
 
