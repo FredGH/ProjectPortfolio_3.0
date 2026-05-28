@@ -312,6 +312,45 @@ jobs:
           fi
           echo "Bootstrap succeeded."
 
+      # ── Initialise Airflow metadata DB (one-off Fargate task) ─────────────
+      - name: Initialise Airflow DB
+        env:
+          SUBNETS: ${{ steps.tf.outputs.subnets }}
+          API_SG: ${{ steps.tf.outputs.api_sg }}
+        run: |
+          SUBNET_JSON=$(echo "$SUBNETS" | \
+            python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip().split(',')))")
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ env.CLUSTER }}" \
+            --task-definition "${{ env.SERVICE_PREFIX }}-airflow-webserver" \
+            --launch-type FARGATE \
+            --network-configuration \
+              "{\"awsvpcConfiguration\":{\"subnets\":${SUBNET_JSON},\
+                \"securityGroups\":[\"${API_SG}\"],\"assignPublicIp\":\"DISABLED\"}}" \
+            --overrides \
+              "{\"containerOverrides\":[{\"name\":\"tca-airflow-webserver\",\
+                \"command\":[\"airflow\",\"db\",\"migrate\"]}]}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Airflow db migrate task: $TASK_ARN"
+          aws ecs wait tasks-stopped \
+            --cluster "${{ env.CLUSTER }}" \
+            --tasks "$TASK_ARN"
+
+          EXIT=$(aws ecs describe-tasks \
+            --cluster "${{ env.CLUSTER }}" \
+            --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode // 1' \
+            --output text)
+
+          if [ "$EXIT" != "0" ]; then
+            echo "Airflow db migrate failed (exit $EXIT)"
+            exit 1
+          fi
+          echo "Airflow DB initialised."
+
       # ── Force ECS redeployment with new images ─────────────────────────────
       - name: Force ECS redeployment
         run: |
