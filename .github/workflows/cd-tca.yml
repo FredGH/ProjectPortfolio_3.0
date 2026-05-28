@@ -225,11 +225,13 @@ jobs:
       # ── Build and push Docker images ───────────────────────────────────────
       - name: Login to ECR
         run: |
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
-            docker login \
-              --username AWS \
-              --password-stdin \
-              ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          REG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          # ubuntu-latest has credsStore:desktop-linux which intercepts docker login
+          # and causes a 400 from ECR. Reset config to plain auths storage first.
+          mkdir -p ~/.docker
+          echo '{"auths":{}}' > ~/.docker/config.json
+          TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
+          docker login --username AWS --password "$TOKEN" "$REG"
 
       - name: Build and push images
         env:
