@@ -1071,15 +1071,29 @@ You need the **GitHub CLI** (`gh`) to trigger workflows and run teardown from yo
 ```bash
 # macOS
 brew install gh
+```
 
-# Authenticate (one-time — opens a browser to github.com)
+Then authenticate (one-time):
+
+```bash
 gh auth login
 ```
+
+Answer the prompts as follows:
+
+```
+? What account do you want to log into?       → GitHub.com
+? What is your preferred protocol?            → HTTPS
+? Authenticate Git with your GitHub credentials? → Yes
+? How would you like to authenticate?         → Login with a web browser
+```
+
+It prints a one-time code (e.g. `ABCD-1234`) and opens `github.com/login/device` in your browser. Paste the code, click **Authorize**, and you are done.
 
 Verify:
 
 ```bash
-gh auth status   # should show: Logged in to github.com as <your-username>
+gh auth status   # → Logged in to github.com as <your-username> ✓
 ```
 
 > `gh` is the only local tool needed. AWS credentials stay inside GitHub Secrets — you never need the `aws` CLI locally.
