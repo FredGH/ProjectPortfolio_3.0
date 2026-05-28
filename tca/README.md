@@ -1160,18 +1160,33 @@ Once all four appear in the Secrets list, you are ready for Step 2.
 
 ### Step 2 — Trigger the deploy
 
-**Option A — GitHub UI:** Actions → tca CD → Run workflow (leave the image tag blank).
+The CD workflow is **manual-only** — pushing to `main` or a passing CI run never starts a deployment automatically. You must trigger it yourself.
 
-**Option B — terminal:**
+#### Option A — GitHub UI
+
+1. Go to **Actions → tca CD** in the left sidebar.
+2. Click **Run workflow** (top-right of the run table) → leave the image tag blank → **Run workflow**.
+3. A new run appears with a yellow **Waiting for approval** badge. Click **Review deployments**, tick **production**, then **Approve and deploy**.
+
+The job starts immediately after approval.
+
+#### Option B — terminal (`gh` CLI)
 
 ```bash
-gh workflow run cd-tca.yml \
-  --repo FredGH/ProjectPortfolio_3.0 \
-  --ref main
+# Trigger the workflow
+gh workflow run cd-tca.yml --repo FredGH/ProjectPortfolio_3.0
 
-# Watch live logs
+# Find the run ID (give it a few seconds to appear)
+gh run list --repo FredGH/ProjectPortfolio_3.0 --workflow cd-tca.yml --limit 3
+
+# The run will be paused waiting for your approval — approve it in the GitHub UI
+# (Actions → tca CD → the pending run → Review deployments → Approve and deploy)
+
+# Then stream live logs
 gh run watch --repo FredGH/ProjectPortfolio_3.0
 ```
+
+> The approval step is browser-only — GitHub does not expose an approval API via `gh` CLI, so you always click it in the UI even when you triggered via the terminal.
 
 The workflow runs for ~25–30 minutes and prints the live URLs at the end.
 
