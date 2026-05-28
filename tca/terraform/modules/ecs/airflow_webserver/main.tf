@@ -19,6 +19,7 @@ resource "aws_ecs_task_definition" "airflow_webserver" {
         { name = "AIRFLOW__CORE__EXECUTOR", value = "LocalExecutor" },
         { name = "AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION", value = "true" },
         { name = "AIRFLOW__CORE__LOAD_EXAMPLES", value = "false" },
+        { name = "AIRFLOW__WEBSERVER__BASE_URL", value = "http://${var.alb_dns_name}/airflow" },
       ]
       secrets = [
         { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", valueFrom = var.airflow_db_secret_arn },

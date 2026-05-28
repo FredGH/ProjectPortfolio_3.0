@@ -160,6 +160,7 @@ module "ecs_airflow_webserver" {
   redis_url_secret_arn   = module.secrets.redis_url_arn
   airflow_secret_key_arn = module.secrets.airflow_secret_key_arn
   airflow_db_secret_arn  = module.secrets.airflow_db_arn
+  alb_dns_name           = module.alb.dns_name
   tags                   = local.tags
 }
 
@@ -214,4 +215,12 @@ output "private_subnet_ids" {
 
 output "api_sg_id" {
   value = module.vpc.sg_api_id
+}
+
+output "cloudfront_distribution_id" {
+  value = module.cdn.cloudfront_distribution_id
+}
+
+output "s3_spa_bucket" {
+  value = module.cdn.s3_bucket_name
 }

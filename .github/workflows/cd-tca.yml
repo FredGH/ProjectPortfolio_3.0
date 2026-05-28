@@ -172,12 +172,16 @@ jobs:
           REDIS_CS=$(terraform output -raw redis_connection_string)
           SUBNETS=$(terraform output -json private_subnet_ids | jq -r 'join(",")')
           API_SG=$(terraform output -raw api_sg_id)
-          echo "rds_addr=$RDS_ADDR" >> "$GITHUB_OUTPUT"
-          echo "alb_dns=$ALB_DNS"   >> "$GITHUB_OUTPUT"
-          echo "cf_url=$CF_URL"     >> "$GITHUB_OUTPUT"
-          echo "redis_cs=$REDIS_CS" >> "$GITHUB_OUTPUT"
-          echo "subnets=$SUBNETS"   >> "$GITHUB_OUTPUT"
-          echo "api_sg=$API_SG"     >> "$GITHUB_OUTPUT"
+          CF_DIST_ID=$(terraform output -raw cloudfront_distribution_id)
+          S3_BUCKET=$(terraform output -raw s3_spa_bucket)
+          echo "rds_addr=$RDS_ADDR"       >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$ALB_DNS"         >> "$GITHUB_OUTPUT"
+          echo "cf_url=$CF_URL"           >> "$GITHUB_OUTPUT"
+          echo "redis_cs=$REDIS_CS"       >> "$GITHUB_OUTPUT"
+          echo "subnets=$SUBNETS"         >> "$GITHUB_OUTPUT"
+          echo "api_sg=$API_SG"           >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID"   >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=$S3_BUCKET"     >> "$GITHUB_OUTPUT"
 
       # ── Update Secrets Manager with real endpoints ─────────────────────────
       - name: Seed Secrets Manager
@@ -252,6 +256,35 @@ jobs:
             -f Dockerfile.angular .
           docker push "$REG/tca-angular:$TAG"
           docker push "$REG/tca-angular:latest"
+
+      # ── Upload Angular SPA to S3 + invalidate CloudFront ─────────────────────
+      - name: Upload Angular SPA to S3
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+          REG: ${{ steps.ecr-login.outputs.registry }}
+          CF_ID: ${{ steps.tf.outputs.cf_dist_id }}
+          S3_BUCKET: ${{ steps.tf.outputs.s3_bucket }}
+        run: |
+          # Extract pre-built Angular dist from the Docker image
+          CID=$(docker create "$REG/tca-angular:$TAG")
+          docker cp "$CID:/usr/share/nginx/html" /tmp/angular-dist
+          docker rm "$CID"
+
+          # Sync all assets; re-upload index.html with no-cache so browsers
+          # always fetch the latest shell on next visit
+          aws s3 sync /tmp/angular-dist "s3://$S3_BUCKET" \
+            --delete \
+            --region "${{ env.AWS_REGION }}"
+          aws s3 cp /tmp/angular-dist/index.html "s3://$S3_BUCKET/index.html" \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "text/html" \
+            --region "${{ env.AWS_REGION }}"
+
+          # Flush CloudFront edge caches so visitors get the new build
+          aws cloudfront create-invalidation \
+            --distribution-id "$CF_ID" \
+            --paths "/*"
+          echo "Angular SPA uploaded to s3://$S3_BUCKET and CloudFront invalidated."
 
       # ── Bootstrap DB as a one-off Fargate task ─────────────────────────────
       - name: Bootstrap DB (init.sql + seed)
@@ -349,6 +382,48 @@ jobs:
           fi
           echo "Airflow DB initialised."
 
+      # ── Create Airflow admin user (idempotent one-off Fargate task) ──────────
+      - name: Create Airflow admin user
+        env:
+          SUBNETS: ${{ steps.tf.outputs.subnets }}
+          API_SG: ${{ steps.tf.outputs.api_sg }}
+        run: |
+          SUBNET_JSON=$(echo "$SUBNETS" | \
+            python3 -c "import sys,json; print(json.dumps(sys.stdin.read().strip().split(',')))")
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ env.CLUSTER }}" \
+            --task-definition "${{ env.SERVICE_PREFIX }}-airflow-webserver" \
+            --launch-type FARGATE \
+            --network-configuration \
+              "{\"awsvpcConfiguration\":{\"subnets\":${SUBNET_JSON},\
+                \"securityGroups\":[\"${API_SG}\"],\"assignPublicIp\":\"DISABLED\"}}" \
+            --overrides \
+              "{\"containerOverrides\":[{\"name\":\"tca-airflow-webserver\",\
+                \"command\":[\"airflow\",\"users\",\"create\",\
+                  \"--username\",\"admin\",\
+                  \"--password\",\"admin\",\
+                  \"--firstname\",\"Admin\",\
+                  \"--lastname\",\"User\",\
+                  \"--role\",\"Admin\",\
+                  \"--email\",\"admin@example.com\"]}]}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Airflow admin user task: $TASK_ARN"
+          aws ecs wait tasks-stopped \
+            --cluster "${{ env.CLUSTER }}" \
+            --tasks "$TASK_ARN"
+
+          EXIT=$(aws ecs describe-tasks \
+            --cluster "${{ env.CLUSTER }}" \
+            --tasks "$TASK_ARN" | jq -r '.tasks[0].containers[0].exitCode // 1')
+          if [ "$EXIT" != "0" ]; then
+            echo "Admin user creation returned exit $EXIT (user may already exist — continuing)."
+          else
+            echo "Airflow admin user created."
+          fi
+
       # ── Force ECS redeployment with new images ─────────────────────────────
       - name: Force ECS redeployment
         run: |
@@ -379,7 +454,7 @@ jobs:
           echo "### Deployment complete" >> "$GITHUB_STEP_SUMMARY"
           echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Angular SPA | https://$CF |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| API docs | http://$ALB/docs |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Angular SPA | $CF |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| API docs | http://$ALB/api/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Airflow UI | http://$ALB/airflow |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Image tag | \`$TAG\` |" >> "$GITHUB_STEP_SUMMARY"

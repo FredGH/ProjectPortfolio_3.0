@@ -64,6 +64,10 @@ variable "memory" {
   default = 2048
 }
 
+variable "alb_dns_name" {
+  type = string
+}
+
 variable "desired_count" {
   type    = number
   default = 1
