@@ -7,8 +7,14 @@
 -- Airflow metadata lives in a separate database
 CREATE DATABASE airflow_db;
 
--- Enable TimescaleDB (required before schema creation)
-CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+-- Enable TimescaleDB when available (Docker/CI); silently skipped on RDS.
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'TimescaleDB not available — tick_bars will be a plain table';
+END
+$$;
 
 -- ============================================================
 -- SCHEMAS
@@ -138,6 +144,8 @@ BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.tables
         WHERE table_schema = 'stg_raw' AND table_name = 'tick_bars'
+    ) AND EXISTS (
+        SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
     ) THEN
         PERFORM create_hypertable(
             'stg_raw.tick_bars', 'ts',
