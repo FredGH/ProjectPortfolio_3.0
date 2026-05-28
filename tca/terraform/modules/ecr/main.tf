@@ -14,7 +14,7 @@ resource "aws_ecr_repository" "repos" {
   tags = merge(var.tags, { Name = each.value })
 }
 
-resource "aws_ecr_lifecycle_policy" "keep_last_10" {
+resource "aws_ecr_lifecycle_policy" "keep_last_1" {
   for_each   = aws_ecr_repository.repos
   repository = each.value.name
 
@@ -22,11 +22,11 @@ resource "aws_ecr_lifecycle_policy" "keep_last_10" {
     rules = [
       {
         rulePriority = 1
-        description  = "Keep last 10 images"
+        description  = "Keep only the latest image; expire everything else immediately"
         selection = {
           tagStatus   = "any"
           countType   = "imageCountMoreThan"
-          countNumber = 10
+          countNumber = 1
         }
         action = { type = "expire" }
       }
