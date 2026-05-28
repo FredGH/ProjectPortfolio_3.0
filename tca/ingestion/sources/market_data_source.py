@@ -63,7 +63,7 @@ def _generate_bars(
             {
                 "bar_id": f"{instrument_id}_{int(ts.timestamp())}",
                 "instrument_id": instrument_id,
-                "ts": ts,
+                "bar_start": ts,
                 "open": round(open_, 6),
                 "high": high,
                 "low": max(low, 0.0001),

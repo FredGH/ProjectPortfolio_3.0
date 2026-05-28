@@ -63,12 +63,16 @@ class AnomalyDetector:
         self._min_history = min_history
 
     def check_zscore(self, values: list[float]) -> ZScoreResult:
-        """Check whether the last value in *values* is a z-score outlier."""
+        """Check whether the last value in *values* is a z-score outlier.
+
+        Mean and std are computed from the history (all but the last value)
+        so the candidate point cannot self-dilute its own z-score.
+        """
         if len(values) < self._min_history:
             return ZScoreResult(is_anomaly=False, z_score=None)
-        series = pd.Series(values)
-        mean = series.mean()
-        std = series.std()
+        history = pd.Series(values[:-1])
+        mean = history.mean()
+        std = history.std()
         if std == 0:
             return ZScoreResult(is_anomaly=False, z_score=0.0)
         z = float(abs(values[-1] - mean) / std)
