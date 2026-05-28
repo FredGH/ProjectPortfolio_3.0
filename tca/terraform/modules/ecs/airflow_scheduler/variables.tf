@@ -52,12 +52,12 @@ variable "airflow_db_secret_arn" {
 
 variable "cpu" {
   type    = number
-  default = 512
+  default = 1024
 }
 
 variable "memory" {
   type    = number
-  default = 1024
+  default = 4096
 }
 
 variable "desired_count" {
