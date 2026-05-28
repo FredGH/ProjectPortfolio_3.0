@@ -40,6 +40,9 @@ def create_app() -> FastAPI:
         description="Transaction Cost Analysis platform — pan-European equities, MiFID II compliant.",
         version="1.0.0",
         lifespan=lifespan,
+        docs_url="/api/docs",
+        redoc_url="/api/redoc",
+        openapi_url="/api/openapi.json",
     )
 
     origins = _cors_origins()
