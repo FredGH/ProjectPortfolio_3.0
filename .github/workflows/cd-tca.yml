@@ -341,9 +341,7 @@ jobs:
 
           EXIT=$(aws ecs describe-tasks \
             --cluster "${{ env.CLUSTER }}" \
-            --tasks "$TASK_ARN" \
-            --query 'tasks[0].containers[0].exitCode // 1' \
-            --output text)
+            --tasks "$TASK_ARN" | jq -r '.tasks[0].containers[0].exitCode // 1')
 
           if [ "$EXIT" != "0" ]; then
             echo "Airflow db migrate failed (exit $EXIT)"
