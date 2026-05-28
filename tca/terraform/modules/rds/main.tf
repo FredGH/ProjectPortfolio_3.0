@@ -10,7 +10,7 @@ resource "aws_db_parameter_group" "timescaledb" {
 
   parameter {
     name         = "shared_preload_libraries"
-    value        = "timescaledb"
+    value        = "pg_stat_statements"
     apply_method = "pending-reboot"
   }
 
