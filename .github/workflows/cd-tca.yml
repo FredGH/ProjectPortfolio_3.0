@@ -34,18 +34,33 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Check ECR repositories exist
+        id: ecr-check
+        run: |
+          if aws ecr describe-repositories --repository-names tca-api --region ${{ env.AWS_REGION }} \
+              --query 'repositories[0].repositoryName' --output text 2>/dev/null | grep -q tca-api; then
+            echo "provisioned=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "provisioned=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ECR not yet provisioned — skipping image push. Run the 'Deploy TCA to AWS' workflow first to provision infrastructure."
+          fi
+
       - name: Login to ECR
+        if: steps.ecr-check.outputs.provisioned == 'true'
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Set image tag
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
 
       - name: Set ECR registry
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: echo "ECR_REGISTRY=${{ steps.ecr-login.outputs.registry }}" >> $GITHUB_ENV
 
       # ── tca-api (FastAPI + analytics) ────────────────────────────────────
       - name: Build tca-api
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker build \
             -f Dockerfile \
@@ -54,12 +69,14 @@ jobs:
             .
 
       - name: Push tca-api
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker push $ECR_REGISTRY/tca-api:$IMAGE_TAG
           docker push $ECR_REGISTRY/tca-api:latest
 
       # ── tca-mock-server ──────────────────────────────────────────────────
       - name: Build tca-mock-server
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker build \
             -f Dockerfile \
@@ -68,12 +85,14 @@ jobs:
             .
 
       - name: Push tca-mock-server
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker push $ECR_REGISTRY/tca-mock-server:$IMAGE_TAG
           docker push $ECR_REGISTRY/tca-mock-server:latest
 
       # ── tca-airflow ──────────────────────────────────────────────────────
       - name: Build tca-airflow
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker build \
             -f Dockerfile.airflow \
@@ -82,12 +101,14 @@ jobs:
             .
 
       - name: Push tca-airflow
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker push $ECR_REGISTRY/tca-airflow:$IMAGE_TAG
           docker push $ECR_REGISTRY/tca-airflow:latest
 
       # ── tca-angular (nginx SPA) ──────────────────────────────────────────
       - name: Build tca-angular
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker build \
             -f Dockerfile.angular \
@@ -96,11 +117,13 @@ jobs:
             .
 
       - name: Push tca-angular
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           docker push $ECR_REGISTRY/tca-angular:$IMAGE_TAG
           docker push $ECR_REGISTRY/tca-angular:latest
 
       - name: Summary
+        if: steps.ecr-check.outputs.provisioned == 'true'
         run: |
           echo "### Images pushed to ECR" >> $GITHUB_STEP_SUMMARY
           echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
