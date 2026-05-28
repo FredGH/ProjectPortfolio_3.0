@@ -1,20 +1,15 @@
 -- ============================================================
 -- PrivateBank TCA Platform — PostgreSQL initialisation
 -- Creates all schemas + non-dlt/non-dbt tables.
--- dlt creates stg_raw tables; dbt creates vault/mart tables.
+-- dlt creates stg_raw tables — dbt creates vault/mart tables.
 -- ============================================================
 
 -- Airflow metadata lives in a separate database
 CREATE DATABASE airflow_db;
 
--- Enable TimescaleDB when available (Docker/CI); silently skipped on RDS.
-DO $$
-BEGIN
-    CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
-EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'TimescaleDB not available — tick_bars will be a plain table';
-END
-$$;
+-- Enable TimescaleDB when available (Docker/CI) — silently skipped on RDS.
+-- bootstrap.py catches the error if the extension is unavailable.
+CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
 
 -- ============================================================
 -- SCHEMAS
@@ -134,27 +129,9 @@ CREATE TABLE IF NOT EXISTS stg_raw.rt_fills (
     received_at       TIMESTAMPTZ   DEFAULT NOW()
 );
 
--- ============================================================
--- TimescaleDB hypertable pre-declaration
--- dlt creates stg_raw.tick_bars; we convert it after first dlt run.
--- The DO block is idempotent — runs only if the table exists.
--- ============================================================
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'stg_raw' AND table_name = 'tick_bars'
-    ) AND EXISTS (
-        SELECT 1 FROM pg_extension WHERE extname = 'timescaledb'
-    ) THEN
-        PERFORM create_hypertable(
-            'stg_raw.tick_bars', 'ts',
-            if_not_exists => TRUE,
-            chunk_time_interval => INTERVAL '7 days'
-        );
-    END IF;
-END
-$$;
+-- TimescaleDB hypertable conversion for stg_raw.tick_bars is handled
+-- by a post-dlt hook when TimescaleDB is available (local Docker only).
+-- On RDS the table stays as a plain PostgreSQL table.
 
 -- ============================================================
 -- GRANTS
