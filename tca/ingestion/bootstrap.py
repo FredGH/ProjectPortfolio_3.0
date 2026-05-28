@@ -44,7 +44,16 @@ def _init_db() -> None:
     with conn.cursor() as cur:
         for raw in sql.split(";"):
             stmt = raw.strip()
-            if not stmt or stmt.startswith("--"):
+            if not stmt:
+                continue
+            # Skip fragments that contain no actual SQL (only comments/whitespace).
+            # A fragment may start with comment lines due to section headers in
+            # init.sql; PostgreSQL handles inline -- comments fine, so we pass
+            # the full fragment through. We only skip pure-comment fragments.
+            if not any(
+                line.strip() and not line.strip().startswith("--")
+                for line in stmt.splitlines()
+            ):
                 continue
             try:
                 cur.execute(stmt)
