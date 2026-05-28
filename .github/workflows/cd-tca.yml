@@ -223,20 +223,23 @@ jobs:
             --secret-string "$(openssl rand -hex 32)"
 
       # ── Build and push Docker images ───────────────────────────────────────
-      - name: Login to ECR
+      - name: Clear Docker credential store
+        # ubuntu-latest sets credsStore:desktop-linux which makes amazon-ecr-login
+        # store credentials via a helper. That helper is not in PATH during docker
+        # push, causing "no basic auth credentials". Clearing credsStore forces the
+        # action to store credentials in the auths section instead.
         run: |
-          REG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          # ubuntu-latest has credsStore:desktop-linux which intercepts docker login
-          # and causes a 400 from ECR. Reset config to plain auths storage first.
           mkdir -p ~/.docker
-          echo '{"auths":{}}' > ~/.docker/config.json
-          TOKEN=$(aws ecr get-login-password --region ${{ env.AWS_REGION }})
-          docker login --username AWS --password "$TOKEN" "$REG"
+          printf '{}' > ~/.docker/config.json
+
+      - name: Login to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push images
         env:
           TAG: ${{ steps.tag.outputs.tag }}
-          REG: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          REG: ${{ steps.ecr-login.outputs.registry }}
         run: |
           # tca-api (FastAPI + analytics)
           docker build -t "$REG/tca-api:$TAG" -t "$REG/tca-api:latest" -f Dockerfile .
