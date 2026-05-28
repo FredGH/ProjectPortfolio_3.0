@@ -71,11 +71,16 @@ jobs:
       - name: Empty ECR repositories
         run: |
           for REPO in tca-api tca-mock-server tca-airflow tca-angular; do
+            if ! aws ecr describe-repositories --repository-names "$REPO" \
+                --region "${{ env.AWS_REGION }}" 2>/dev/null; then
+              echo "Repo $REPO not found; skipping."
+              continue
+            fi
             IMAGES=$(aws ecr list-images \
               --repository-name "$REPO" \
               --region "${{ env.AWS_REGION }}" \
               --query 'imageIds[*]' \
-              --output json 2>/dev/null)
+              --output json 2>/dev/null || echo '[]')
             if [ "$IMAGES" != "[]" ] && [ -n "$IMAGES" ]; then
               aws ecr batch-delete-image \
                 --repository-name "$REPO" \
