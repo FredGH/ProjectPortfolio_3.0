@@ -125,6 +125,26 @@ jobs:
           image_tag      = "${{ steps.tag.outputs.tag }}"
           EOF
 
+      - name: Clear stale Terraform lock (if any)
+        run: |
+          LOCK_KEY="${{ env.TF_STATE_BUCKET }}/prod/terraform.tfstate"
+          LOCK=$(aws dynamodb get-item \
+            --table-name "${{ env.TF_LOCK_TABLE }}" \
+            --key "{\"LockID\": {\"S\": \"$LOCK_KEY\"}}" \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'Item.LockID.S' \
+            --output text 2>/dev/null || echo "")
+          if [ -n "$LOCK" ] && [ "$LOCK" != "None" ]; then
+            echo "Stale lock found — clearing $LOCK_KEY"
+            aws dynamodb delete-item \
+              --table-name "${{ env.TF_LOCK_TABLE }}" \
+              --key "{\"LockID\": {\"S\": \"$LOCK_KEY\"}}" \
+              --region "${{ env.AWS_REGION }}"
+            echo "Lock cleared."
+          else
+            echo "No stale lock."
+          fi
+
       - name: Terraform apply
         working-directory: ${{ env.TF_DIR }}
         run: terraform apply -auto-approve
