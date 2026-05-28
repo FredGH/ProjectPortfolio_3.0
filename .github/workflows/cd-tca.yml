@@ -259,7 +259,7 @@ jobs:
 
           # tca-angular (nginx SPA)
           docker build -t "$REG/tca-angular:$TAG" -t "$REG/tca-angular:latest" \
-            -f Dockerfile.angular frontend/
+            -f Dockerfile.angular .
           docker push "$REG/tca-angular:$TAG"
           docker push "$REG/tca-angular:latest"
 
