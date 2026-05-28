@@ -104,7 +104,9 @@ def _generate_oms_data(
 
         for _ in range(orders_per_class):
             order_id = str(
-                uuid.UUID(bytes=bytes(rng.integers(0, 256, 16, dtype=np.uint8).tolist()))
+                uuid.UUID(
+                    bytes=bytes(rng.integers(0, 256, 16, dtype=np.uint8).tolist())
+                )
             )
             instrument_id = str(rng.choice(instrument_ids))
             side = str(rng.choice(["BUY", "SELL"]))
