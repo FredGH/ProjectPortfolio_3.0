@@ -6,6 +6,7 @@ Run as a one-off ECS Fargate task by the deploy workflow:
 
 Idempotent: safe to re-run (CREATE IF NOT EXISTS throughout init.sql).
 """
+
 from __future__ import annotations
 
 import logging
