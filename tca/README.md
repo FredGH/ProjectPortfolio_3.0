@@ -1241,13 +1241,15 @@ The workflow runs for ~25–30 minutes. The live URLs are printed in the **Step 
 
 ### Step 3 — Access the services
 
-Once the CD completes, the following endpoints are live. URLs are stable across re-deployments as long as infrastructure is not torn down.
+Once the CD completes, the following endpoints are live. **URLs are updated automatically by the CD workflow** — this section always reflects the current deployment.
 
 #### Angular SPA (via CloudFront)
 
+<!-- CLOUDFRONT_URL_START -->
 ```
 https://dhcbvhx45z6d7.cloudfront.net
 ```
+<!-- CLOUDFRONT_URL_END -->
 
 Open in your browser. You will see the login screen. Use any of these credentials:
 
@@ -1260,9 +1262,11 @@ Open in your browser. You will see the login screen. Use any of these credential
 
 #### Airflow UI (via ALB)
 
+<!-- AIRFLOW_URL_START -->
 ```
 http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/airflow
 ```
+<!-- AIRFLOW_URL_END -->
 
 Login: `admin` / `admin` (created automatically by the CD on first deploy).
 
@@ -1270,9 +1274,11 @@ The DAG list shows 6 DAGs, all paused at creation. Trigger them in order for the
 
 #### API docs (via ALB)
 
+<!-- API_DOCS_URL_START -->
 ```
 http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/api/docs
 ```
+<!-- API_DOCS_URL_END -->
 
 Interactive Swagger UI. All routes are under the `/api/` prefix. Authenticate via `POST /api/auth/token` using any client ID and password from the table above.
 

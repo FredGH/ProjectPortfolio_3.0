@@ -445,6 +445,50 @@ jobs:
               "${{ env.SERVICE_PREFIX }}-airflow-webserver" \
               "${{ env.SERVICE_PREFIX }}-airflow-scheduler"
 
+      # ── Update README with live endpoints ─────────────────────────────────
+      - name: Update README live endpoints
+        env:
+          CF_URL: ${{ steps.tf.outputs.cf_url }}
+          ALB_DNS: ${{ steps.tf.outputs.alb_dns }}
+        run: |
+          README="tca/README.md"
+
+          # Replace content between each marker pair with the current URL
+          python3 - <<'PYEOF'
+import os, re
+
+readme = "tca/README.md"
+cf_url  = os.environ["CF_URL"]
+alb_dns = os.environ["ALB_DNS"]
+
+replacements = {
+    ("CLOUDFRONT_URL_START", "CLOUDFRONT_URL_END"):
+        f"<!-- CLOUDFRONT_URL_START -->\n```\n{cf_url}\n```\n<!-- CLOUDFRONT_URL_END -->",
+    ("AIRFLOW_URL_START", "AIRFLOW_URL_END"):
+        f"<!-- AIRFLOW_URL_START -->\n```\nhttp://{alb_dns}/airflow\n```\n<!-- AIRFLOW_URL_END -->",
+    ("API_DOCS_URL_START", "API_DOCS_URL_END"):
+        f"<!-- API_DOCS_URL_START -->\n```\nhttp://{alb_dns}/api/docs\n```\n<!-- API_DOCS_URL_END -->",
+}
+
+text = open(readme).read()
+for (start, end), replacement in replacements.items():
+    text = re.sub(
+        rf"<!-- {start} -->.*?<!-- {end} -->",
+        replacement,
+        text,
+        flags=re.DOTALL,
+    )
+open(readme, "w").write(text)
+print("README endpoints updated.")
+PYEOF
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add tca/README.md
+          git diff --staged --quiet || \
+            git commit -m "chore: update live endpoint URLs in README [skip ci]"
+          git push
+
       # ── Summary ────────────────────────────────────────────────────────────
       - name: Summary
         run: |
