@@ -1,11 +1,7 @@
 name: tca CD
 
-# Triggered automatically after tca CI passes on main, or manually.
+# Manual trigger only — CI never starts a deployment automatically.
 on:
-  workflow_run:
-    workflows: [tca CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       image_tag:
@@ -25,12 +21,7 @@ jobs:
   deploy:
     name: Terraform + Build & push + Redeploy ECS
     runs-on: ubuntu-latest
-
-    # For workflow_run: only proceed when CI succeeded.
-    # For workflow_dispatch: always run.
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+    environment: production
 
     defaults:
       run:
@@ -39,8 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # workflow_run supplies the triggering SHA; workflow_dispatch uses HEAD.
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
 
       # ── AWS credentials ────────────────────────────────────────────────────
       - name: Configure AWS credentials
@@ -56,8 +46,8 @@ jobs:
         run: |
           TAG="${{ inputs.image_tag }}"
           if [ -z "$TAG" ]; then
-            SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
-            TAG="${SHA::8}"
+            TAG="${{ github.sha }}"
+            TAG="${TAG::8}"
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Using image tag: $TAG"
@@ -293,14 +283,32 @@ jobs:
             --cluster "${{ env.CLUSTER }}" \
             --tasks "$TASK_ARN"
 
-          EXIT=$(aws ecs describe-tasks \
+          TASK_JSON=$(aws ecs describe-tasks \
             --cluster "${{ env.CLUSTER }}" \
-            --tasks "$TASK_ARN" \
-            --query 'tasks[0].containers[0].exitCode' \
-            --output text)
+            --tasks "$TASK_ARN")
+
+          EXIT=$(echo "$TASK_JSON" | jq -r '.tasks[0].containers[0].exitCode // "null"')
+          STOP_CODE=$(echo "$TASK_JSON" | jq -r '.tasks[0].stopCode // ""')
+          STOP_REASON=$(echo "$TASK_JSON" | jq -r '.tasks[0].stoppedReason // ""')
+          CONTAINER_REASON=$(echo "$TASK_JSON" | jq -r '.tasks[0].containers[0].reason // ""')
+
+          echo "Exit code    : $EXIT"
+          echo "Stop code    : $STOP_CODE"
+          echo "Stopped reason : $STOP_REASON"
+          echo "Container reason: $CONTAINER_REASON"
+
+          # Fetch last 50 CloudWatch log lines for this task
+          TASK_ID="${TASK_ARN##*/}"
+          aws logs get-log-events \
+            --log-group-name "/ecs/${{ env.SERVICE_PREFIX }}" \
+            --log-stream-name "api/tca-api/${TASK_ID}" \
+            --limit 50 \
+            --region "${{ env.AWS_REGION }}" \
+            --query 'events[*].message' \
+            --output text 2>/dev/null || echo "(no CloudWatch logs found)"
 
           if [ "$EXIT" != "0" ]; then
-            echo "Bootstrap task failed (exit $EXIT) — check CloudWatch logs."
+            echo "Bootstrap task failed (exit $EXIT)."
             exit 1
           fi
           echo "Bootstrap succeeded."
