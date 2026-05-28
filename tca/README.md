@@ -1064,6 +1064,26 @@ docker compose exec app bash -c "cd /app && dbt source freshness --target docker
 
 The platform ships with a one-click GitHub Actions workflow. You need four GitHub Secrets and about 25–30 minutes.
 
+### Prerequisites — local tools
+
+You need the **GitHub CLI** (`gh`) to trigger workflows and run teardown from your terminal. Install it once:
+
+```bash
+# macOS
+brew install gh
+
+# Authenticate (one-time — opens a browser to github.com)
+gh auth login
+```
+
+Verify:
+
+```bash
+gh auth status   # should show: Logged in to github.com as <your-username>
+```
+
+> `gh` is the only local tool needed. AWS credentials stay inside GitHub Secrets — you never need the `aws` CLI locally.
+
 ### Step 1 — Add 4 GitHub Secrets
 
 Go to [github.com/FredGH/ProjectPortfolio_3.0](https://github.com/FredGH/ProjectPortfolio_3.0) → **Settings → Secrets and variables → Actions → New repository secret**
@@ -1126,7 +1146,18 @@ Once all four appear in the Secrets list, you are ready for Step 2.
 
 ### Step 2 — Trigger the deploy
 
-**Actions → Deploy TCA to AWS → Run workflow** (leave the image tag blank).
+**Option A — GitHub UI:** Actions → tca CD → Run workflow (leave the image tag blank).
+
+**Option B — terminal:**
+
+```bash
+gh workflow run cd-tca.yml \
+  --repo FredGH/ProjectPortfolio_3.0 \
+  --ref main
+
+# Watch live logs
+gh run watch --repo FredGH/ProjectPortfolio_3.0
+```
 
 The workflow runs for ~25–30 minutes and prints the live URLs at the end.
 
@@ -1149,19 +1180,12 @@ You do not need to touch any of this — it is fully automated:
 
 ## AWS teardown
 
-After the 2-day demo, run `teardown.sh` to destroy all AWS resources and stop charges. The script delegates to the `teardown-tca.yml` GitHub Actions workflow, so no AWS credentials are needed locally — only the `gh` CLI.
+After the 2-day demo, run `teardown.sh` to destroy all AWS resources and stop charges. The script delegates to the `teardown-tca.yml` GitHub Actions workflow, so no AWS credentials are needed locally.
 
 ### Prerequisites
 
-```bash
-# Install gh CLI (macOS)
-brew install gh
-
-# Authenticate (one-time)
-gh auth login
-```
-
-GitHub Secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ACCOUNT_ID`, `TF_VAR_DB_PASSWORD`) must already be set in the `FredGH/ProjectPortfolio_3.0` repository under **Settings → Secrets and variables → Actions**.
+- `gh` CLI installed and authenticated — see [Prerequisites — local tools](#prerequisites--local-tools) above.
+- The four GitHub Secrets (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ACCOUNT_ID`, `TF_VAR_DB_PASSWORD`) must already be set under **Settings → Secrets and variables → Actions**.
 
 ### Running the teardown
 
