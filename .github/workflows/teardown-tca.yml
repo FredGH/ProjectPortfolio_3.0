@@ -85,6 +85,51 @@ jobs:
           done
           echo "ECR repos emptied."
 
+      - name: Empty S3 SPA bucket
+        run: |
+          BUCKET="tca-prod-angular-spa"
+          if aws s3api head-bucket --bucket "$BUCKET" --region "${{ env.AWS_REGION }}" 2>/dev/null; then
+            # Delete all versioned objects and delete markers
+            aws s3api list-object-versions \
+              --bucket "$BUCKET" \
+              --region "${{ env.AWS_REGION }}" \
+              --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' \
+              --output json 2>/dev/null | \
+              python3 -c "
+import json, sys, subprocess
+data = json.load(sys.stdin)
+objs = data.get('Objects') or []
+if objs:
+    payload = json.dumps({'Objects': objs, 'Quiet': True})
+    subprocess.run(['aws', 's3api', 'delete-objects',
+                    '--bucket', '$BUCKET',
+                    '--region', '${{ env.AWS_REGION }}',
+                    '--delete', payload], check=True)
+" || true
+            # Delete all delete markers
+            aws s3api list-object-versions \
+              --bucket "$BUCKET" \
+              --region "${{ env.AWS_REGION }}" \
+              --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' \
+              --output json 2>/dev/null | \
+              python3 -c "
+import json, sys, subprocess
+data = json.load(sys.stdin)
+objs = data.get('Objects') or []
+if objs:
+    payload = json.dumps({'Objects': objs, 'Quiet': True})
+    subprocess.run(['aws', 's3api', 'delete-objects',
+                    '--bucket', '$BUCKET',
+                    '--region', '${{ env.AWS_REGION }}',
+                    '--delete', payload], check=True)
+" || true
+            # Also remove any unversioned objects
+            aws s3 rm "s3://$BUCKET" --recursive --region "${{ env.AWS_REGION }}" || true
+            echo "S3 bucket $BUCKET emptied."
+          else
+            echo "Bucket $BUCKET does not exist; skipping."
+          fi
+
       - name: Terraform destroy
         working-directory: ${{ env.TF_DIR }}
         run: terraform destroy -auto-approve
