@@ -21,10 +21,6 @@ variable "aws_region" {
   default = "eu-west-1"
 }
 
-variable "aws_account_id" {
-  type = string
-}
-
 variable "image_tag" {
   type    = string
   default = "latest"
@@ -35,9 +31,11 @@ variable "db_password" {
   sensitive = true
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   name_prefix  = "tca-prod"
-  ecr_registry = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
+  ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
   tags = {
     Project     = "tca"
     Environment = "prod"

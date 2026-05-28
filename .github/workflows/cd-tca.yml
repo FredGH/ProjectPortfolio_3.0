@@ -111,9 +111,8 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           cat > terraform.tfvars <<EOF
-          aws_account_id = "${{ secrets.AWS_ACCOUNT_ID }}"
-          db_password    = "${{ secrets.TF_VAR_DB_PASSWORD }}"
-          image_tag      = "${{ steps.tag.outputs.tag }}"
+          db_password = "${{ secrets.TF_VAR_DB_PASSWORD }}"
+          image_tag   = "${{ steps.tag.outputs.tag }}"
           EOF
 
       - name: Import orphaned AWS resources into state
