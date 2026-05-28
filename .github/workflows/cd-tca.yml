@@ -16,7 +16,8 @@ on:
 env:
   AWS_REGION: eu-west-1
   TF_DIR: tca/terraform/environments/prod
-  CLUSTER: tca-prod
+  CLUSTER: tca-prod-cluster
+  SERVICE_PREFIX: tca-prod
   TF_STATE_BUCKET: tca-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}
   TF_LOCK_TABLE: tca-terraform-locks
 
@@ -275,7 +276,7 @@ jobs:
 
           TASK_ARN=$(aws ecs run-task \
             --cluster "${{ env.CLUSTER }}" \
-            --task-definition "${{ env.CLUSTER }}-api" \
+            --task-definition "${{ env.SERVICE_PREFIX }}-api" \
             --launch-type FARGATE \
             --network-configuration \
               "{\"awsvpcConfiguration\":{\"subnets\":${SUBNET_JSON},\
@@ -310,7 +311,7 @@ jobs:
           for SVC in api mock-server airflow-webserver airflow-scheduler; do
             aws ecs update-service \
               --cluster "${{ env.CLUSTER }}" \
-              --service "${{ env.CLUSTER }}-${SVC}" \
+              --service "${{ env.SERVICE_PREFIX }}-${SVC}" \
               --force-new-deployment \
               --output text --query 'service.serviceName'
           done
@@ -320,10 +321,10 @@ jobs:
           aws ecs wait services-stable \
             --cluster "${{ env.CLUSTER }}" \
             --services \
-              "${{ env.CLUSTER }}-api" \
-              "${{ env.CLUSTER }}-mock-server" \
-              "${{ env.CLUSTER }}-airflow-webserver" \
-              "${{ env.CLUSTER }}-airflow-scheduler"
+              "${{ env.SERVICE_PREFIX }}-api" \
+              "${{ env.SERVICE_PREFIX }}-mock-server" \
+              "${{ env.SERVICE_PREFIX }}-airflow-webserver" \
+              "${{ env.SERVICE_PREFIX }}-airflow-scheduler"
 
       # ── Summary ────────────────────────────────────────────────────────────
       - name: Summary
