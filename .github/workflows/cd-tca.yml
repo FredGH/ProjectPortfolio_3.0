@@ -224,8 +224,12 @@ jobs:
 
       # ── Build and push Docker images ───────────────────────────────────────
       - name: Login to ECR
-        id: ecr-login
-        uses: aws-actions/amazon-ecr-login@v2
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login \
+              --username AWS \
+              --password-stdin \
+              ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
       - name: Build and push images
         env:
