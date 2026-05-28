@@ -125,6 +125,28 @@ jobs:
           image_tag      = "${{ steps.tag.outputs.tag }}"
           EOF
 
+      - name: Import orphaned AWS resources into state
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          # Resources created by a previous failed run may exist in AWS but not
+          # in state. Import them so Terraform can manage them rather than failing
+          # with "already exists". Each import is a no-op if already in state.
+
+          import_if_missing() {
+            local addr=$1 id=$2 check_cmd=$3
+            if eval "$check_cmd" 2>/dev/null; then
+              terraform import "$addr" "$id" 2>/dev/null && \
+                echo "Imported $addr" || echo "$addr already in state"
+            fi
+          }
+
+          import_if_missing \
+            "module.rds.aws_db_parameter_group.timescaledb" \
+            "tca-prod-pg16-timescaledb" \
+            "aws rds describe-db-parameter-groups \
+              --db-parameter-group-name tca-prod-pg16-timescaledb \
+              --region ${{ env.AWS_REGION }}"
+
       - name: Clear stale Terraform lock (if any)
         run: |
           LOCK_KEY="${{ env.TF_STATE_BUCKET }}/prod/terraform.tfstate"
