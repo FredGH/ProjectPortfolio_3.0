@@ -24,3 +24,13 @@ RUN pip install --no-cache-dir \
     pandas \
     scipy \
     "dbt-postgres==1.8.1"
+
+# Copy the entire project so DAGs can import from ingestion/, analytics/, reports/
+# and dbt tasks can find dbt_project.yml and profiles.yml.
+# Build context is the tca/ directory (cd tca && docker build -f Dockerfile.airflow .)
+COPY --chown=airflow:root . /opt/airflow/tca/
+
+# Tell Airflow where to find DAGs and expose the project root on PYTHONPATH
+ENV AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/tca/dags \
+    DBT_PROJECT_DIR=/opt/airflow/tca \
+    PYTHONPATH=/opt/airflow/tca
