@@ -103,7 +103,9 @@ def _generate_oms_data(
         p_low, p_high = cfg["price_range"]
 
         for _ in range(orders_per_class):
-            order_id = str(uuid.uuid4())
+            order_id = str(
+                uuid.UUID(bytes=bytes(rng.integers(0, 256, 16, dtype=np.uint8).tolist()))
+            )
             instrument_id = str(rng.choice(instrument_ids))
             side = str(rng.choice(["BUY", "SELL"]))
             order_type = str(rng.choice(ORDER_TYPES))
@@ -129,8 +131,10 @@ def _generate_oms_data(
                     "side": side,
                     "order_type": order_type,
                     "quantity": quantity,
+                    "order_quantity": quantity,
                     "arrival_price": arrival_price,
                     "limit_price": limit_price,
+                    "trade_date": trade_date,
                     "order_time": order_time,
                     "counterparty_id": counterparty_id,
                     "trader_id": trader_id,
@@ -159,7 +163,13 @@ def _generate_oms_data(
 
                 fills.append(
                     {
-                        "fill_id": str(uuid.uuid4()),
+                        "fill_id": str(
+                            uuid.UUID(
+                                bytes=bytes(
+                                    rng.integers(0, 256, 16, dtype=np.uint8).tolist()
+                                )
+                            )
+                        ),
                         "order_id": order_id,
                         "counterparty_id": counterparty_id,
                         "instrument_id": instrument_id,

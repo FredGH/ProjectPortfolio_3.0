@@ -66,3 +66,6 @@ def create_app() -> FastAPI:
         return JSONResponse({"status": "ok"})
 
     return app
+
+
+app = create_app()
