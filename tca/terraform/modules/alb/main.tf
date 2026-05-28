@@ -18,7 +18,7 @@ resource "aws_lb_target_group" "api" {
   target_type = "ip"
 
   health_check {
-    path                = "/docs"
+    path                = "/health"
     healthy_threshold   = 2
     unhealthy_threshold = 5
     timeout             = 10
@@ -106,7 +106,7 @@ resource "aws_lb_listener_rule" "airflow" {
     target_group_arn = aws_lb_target_group.airflow.arn
   }
   condition {
-    path_pattern { values = ["/airflow/*"] }
+    path_pattern { values = ["/airflow", "/airflow/*"] }
   }
 }
 

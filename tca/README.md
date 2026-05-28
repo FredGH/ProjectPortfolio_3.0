@@ -1239,6 +1239,36 @@ gh run watch --repo FredGH/ProjectPortfolio_3.0
 
 The workflow runs for ~25–30 minutes and prints the live URLs at the end.
 
+### Live endpoints after a successful deploy
+
+| Endpoint | URL |
+|---|---|
+| Angular SPA | `https://<cloudfront-domain>` |
+| API (Swagger docs) | `http://<alb-dns>/api/docs` |
+| Airflow UI | `http://<alb-dns>/airflow` |
+
+#### API — `GET /api/docs`
+
+The Swagger UI is served at `/api/docs`. All routes are prefixed `/api/`, matching the ALB forwarding rule.
+
+```
+GET http://tca-prod-alb-xxx.eu-west-1.elb.amazonaws.com/api/docs
+→ 200 OK — Swagger interactive UI
+```
+
+If you see `{"detail":"Not Found"}`, the Docker image pre-dates the `docs_url="/api/docs"` fix — re-run the CD.
+
+#### Airflow — `GET /airflow`
+
+The Airflow webserver is routed at `/airflow` and `/airflow/*`. Log in with `admin` / `admin` (created by the CD on first deploy).
+
+```
+GET http://tca-prod-alb-xxx.eu-west-1.elb.amazonaws.com/airflow
+→ 302 → /airflow/login
+```
+
+If you see plain-text `Not Found`, the running task definition pre-dates the ALB path fix — re-run the CD.
+
 ### Step 3 — After 2 days, tear it down
 
 **Actions → Teardown TCA on AWS → Run workflow**, type `destroy` to confirm. Kills everything and stops all charges. See [AWS teardown](#aws-teardown) below for a post-run visual checklist.
