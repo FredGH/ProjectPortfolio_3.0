@@ -41,12 +41,38 @@ class AnomalyWarning:
     warn_time: datetime = field(default_factory=datetime.utcnow)
 
 
+@dataclass
+class ZScoreResult:
+    is_anomaly: bool
+    z_score: float | None
+
+
 class AnomalyDetector:
     """Z-score and volume anomaly detection over rolling 30-day window."""
 
-    def __init__(self, engine: sa.Engine, quarantine: Quarantine | None = None) -> None:
+    def __init__(
+        self,
+        engine: sa.Engine | None = None,
+        quarantine: Quarantine | None = None,
+        z_threshold: float = _ZSCORE_THRESHOLD,
+        min_history: int = _MIN_HISTORY_ROWS,
+    ) -> None:
         self._engine = engine
         self._quarantine = quarantine
+        self._z_threshold = z_threshold
+        self._min_history = min_history
+
+    def check_zscore(self, values: list[float]) -> ZScoreResult:
+        """Check whether the last value in *values* is a z-score outlier."""
+        if len(values) < self._min_history:
+            return ZScoreResult(is_anomaly=False, z_score=None)
+        series = pd.Series(values)
+        mean = series.mean()
+        std = series.std()
+        if std == 0:
+            return ZScoreResult(is_anomaly=False, z_score=0.0)
+        z = float(abs(values[-1] - mean) / std)
+        return ZScoreResult(is_anomaly=z > self._z_threshold, z_score=z)
 
     def check(self, orders: pd.DataFrame, fills: pd.DataFrame) -> list[AnomalyWarning]:
         warnings: list[AnomalyWarning] = []

@@ -26,10 +26,13 @@ def _generate_bars(
     instrument_id: str,
     start_price: float,
     vol_daily: float,
-    vol_low: int,
-    vol_high: int,
-    rng: np.random.Generator,
+    vol_low: int = 10_000,
+    vol_high: int = 2_000_000,
+    rng: np.random.Generator | None = None,
+    instrument_class: str | None = None,
 ) -> list[dict]:
+    if rng is None:
+        rng = np.random.default_rng(seed=hash(instrument_id) % (2**32))
     n = _N_BARS
     sigma_bar = vol_daily / np.sqrt(n)
 
