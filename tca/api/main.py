@@ -51,15 +51,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(auth.router)
-    app.include_router(tca.router)
-    app.include_router(orders.router)
-    app.include_router(reports.router)
-    app.include_router(mifid.router)
-    app.include_router(pipeline.router)
-    app.include_router(fills.router)
-    app.include_router(predict.router)
-    app.include_router(regime.router)
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(tca.router, prefix="/api")
+    app.include_router(orders.router, prefix="/api")
+    app.include_router(reports.router, prefix="/api")
+    app.include_router(mifid.router, prefix="/api")
+    app.include_router(pipeline.router, prefix="/api")
+    app.include_router(fills.router, prefix="/api")
+    app.include_router(predict.router, prefix="/api")
+    app.include_router(regime.router, prefix="/api")
 
     @app.get("/health", include_in_schema=False)
     def health() -> JSONResponse:
