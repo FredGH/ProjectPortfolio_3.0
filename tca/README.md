@@ -1237,39 +1237,55 @@ gh run watch --repo FredGH/ProjectPortfolio_3.0
 
 > The approval step is browser-only — GitHub does not expose an approval API via `gh` CLI, so you always click it in the UI even when you triggered via the terminal.
 
-The workflow runs for ~25–30 minutes and prints the live URLs at the end.
+The workflow runs for ~25–30 minutes. The live URLs are printed in the **Step Summary** at the end of the run (Actions → the completed run → Summary tab).
 
-### Live endpoints after a successful deploy
+### Step 3 — Access the services
 
-| Endpoint | URL |
-|---|---|
-| Angular SPA | `https://<cloudfront-domain>` |
-| API (Swagger docs) | `http://<alb-dns>/api/docs` |
-| Airflow UI | `http://<alb-dns>/airflow` |
+Once the CD completes, the following endpoints are live. URLs are stable across re-deployments as long as infrastructure is not torn down.
 
-#### API — `GET /api/docs`
-
-The Swagger UI is served at `/api/docs`. All routes are prefixed `/api/`, matching the ALB forwarding rule.
+#### Angular SPA (via CloudFront)
 
 ```
-GET http://tca-prod-alb-xxx.eu-west-1.elb.amazonaws.com/api/docs
-→ 200 OK — Swagger interactive UI
+https://dhcbvhx45z6d7.cloudfront.net
 ```
 
-If you see `{"detail":"Not Found"}`, the Docker image pre-dates the `docs_url="/api/docs"` fix — re-run the CD.
+Open in your browser. You will see the login screen. Use any of these credentials:
 
-#### Airflow — `GET /airflow`
+| Client ID | Password | Role |
+|---|---|---|
+| `trader_01` | `changeme` | Trader — order TCA, algo perf, alpha decay, venue SOR |
+| `admin_01` | `changeme` | Admin — full access including pipeline triggers |
+| `compliance_01` | `changeme` | Compliance — MiFID exports, RTS reports |
+| `client_cp_a` | `changeme` | Client — own counterparty (CP_ABCD) only |
 
-The Airflow webserver is routed at `/airflow` and `/airflow/*`. Log in with `admin` / `admin` (created by the CD on first deploy).
+#### Airflow UI (via ALB)
 
 ```
-GET http://tca-prod-alb-xxx.eu-west-1.elb.amazonaws.com/airflow
-→ 302 → /airflow/login
+http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/airflow
 ```
 
-If you see plain-text `Not Found`, the running task definition pre-dates the ALB path fix — re-run the CD.
+Login: `admin` / `admin` (created automatically by the CD on first deploy).
 
-### Step 3 — After 2 days, tear it down
+The DAG list shows 6 DAGs, all paused at creation. Trigger them in order for the first run — see [Manual first-run — trigger order](#manual-first-run--trigger-order) in the Docker section for the sequence.
+
+#### API docs (via ALB)
+
+```
+http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/api/docs
+```
+
+Interactive Swagger UI. All routes are under the `/api/` prefix. Authenticate via `POST /api/auth/token` using any client ID and password from the table above.
+
+#### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `{"detail":"Not Found"}` at `/api/docs` | Image pre-dates `docs_url="/api/docs"` fix | Re-run the CD |
+| Plain-text `Not Found` at `/airflow` | Image pre-dates ALB path-pattern fix | Re-run the CD |
+| Airflow shows 0 DAGs | Image pre-dates `COPY . /opt/airflow/tca/` fix | Re-run the CD |
+| Airflow login page broken (CSS missing) | `AIRFLOW__WEBSERVER__BASE_URL` not yet deployed | Re-run the CD |
+
+### Step 4 — After 2 days, tear it down
 
 **Actions → Teardown TCA on AWS → Run workflow**, type `destroy` to confirm. Kills everything and stops all charges. See [AWS teardown](#aws-teardown) below for a post-run visual checklist.
 
