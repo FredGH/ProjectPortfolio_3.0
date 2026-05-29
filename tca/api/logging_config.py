@@ -4,6 +4,7 @@ Every log line is a single JSON object, making it queryable with:
   fields @timestamp, level, event, method, path, status, duration_ms
   | filter level = "error"
 """
+
 from __future__ import annotations
 
 import logging

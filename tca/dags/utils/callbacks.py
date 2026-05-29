@@ -4,6 +4,7 @@ Add to any DAG's default_args:
     from dags.utils.callbacks import on_task_failure
     default_args = { ..., "on_failure_callback": on_task_failure }
 """
+
 from __future__ import annotations
 
 import json
@@ -56,4 +57,12 @@ def on_task_failure(context: dict) -> None:
             ],
         )
     except Exception as exc:  # never kill the task over a metrics call
-        print(json.dumps({"level": "warning", "event": "cloudwatch_put_failed", "error": str(exc)}))
+        print(
+            json.dumps(
+                {
+                    "level": "warning",
+                    "event": "cloudwatch_put_failed",
+                    "error": str(exc),
+                }
+            )
+        )

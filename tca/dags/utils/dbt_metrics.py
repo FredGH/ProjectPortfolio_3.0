@@ -15,6 +15,7 @@ Emits to namespace TCA/dbt with dimensions DagId + Layer:
   - ModelsFailed   (Count)
   - ExecutionSeconds (Seconds)
 """
+
 from __future__ import annotations
 
 import json
@@ -47,7 +48,9 @@ def make_dbt_metrics_callback(layer: str) -> Callable:
             data = json.load(fh)
 
         results = data.get("results", [])
-        passed = sum(1 for r in results if r.get("status") in {"success", "pass", "warn"})
+        passed = sum(
+            1 for r in results if r.get("status") in {"success", "pass", "warn"}
+        )
         failed = sum(1 for r in results if r.get("status") in {"error", "fail"})
         total_seconds = sum(r.get("execution_time", 0.0) for r in results)
 
