@@ -138,4 +138,11 @@ with DAG(
         append_env=True,
     )
 
-    wait_for_biz_vault >> dbt_marts >> dbt_test_marts >> elementary_monitor >> mifid_export >> update_catalog
+    (
+        wait_for_biz_vault
+        >> dbt_marts
+        >> dbt_test_marts
+        >> elementary_monitor
+        >> mifid_export
+        >> update_catalog
+    )
