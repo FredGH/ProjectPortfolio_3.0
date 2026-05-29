@@ -1,6 +1,8 @@
 name: tca CD
 
-# Manual trigger only — CI never starts a deployment automatically.
+# Triggered automatically when CI passes on main, or manually via workflow_dispatch.
+# The deploy job is gated by the "production" environment — a reviewer must approve
+# before Terraform / Docker / ECS steps run.
 on:
   workflow_dispatch:
     inputs:
@@ -8,13 +10,16 @@ on:
         description: 'Docker image tag (leave blank to use git SHA)'
         required: false
         default: ''
+  workflow_run:
+    workflows: ["Run TCA CI"]
+    types: [completed]
+    branches: [main]
 
 env:
   AWS_REGION: eu-west-1
   TF_DIR: tca/terraform/environments/prod
   CLUSTER: tca-prod-cluster
   SERVICE_PREFIX: tca-prod
-  TF_STATE_BUCKET: tca-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}
   TF_LOCK_TABLE: tca-terraform-locks
 
 jobs:
@@ -22,6 +27,11 @@ jobs:
     name: Terraform + Build & push + Redeploy ECS
     runs-on: ubuntu-latest
     environment: production
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    env:
+      TF_STATE_BUCKET: tca-terraform-state-${{ secrets.AWS_ACCOUNT_ID }}
 
     defaults:
       run:
