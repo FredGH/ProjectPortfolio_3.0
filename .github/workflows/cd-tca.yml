@@ -472,7 +472,7 @@ jobs:
           git add tca/README.md
           git diff --staged --quiet || \
             git commit -m "chore: update live endpoint URLs in README [skip ci]"
-          git push
+          git push origin HEAD:main
 
       # ── Summary ────────────────────────────────────────────────────────────
       - name: Summary
