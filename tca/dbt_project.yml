@@ -21,6 +21,11 @@ vars:
   session_end_utc: '15:30:00'
 
 models:
+  # Elementary writes test results + anomaly data to its own schema so the
+  # edr CLI can generate historical reports without scanning the whole DWH.
+  elementary:
+    +schema: elementary
+    +enabled: true
   tca:
     staging:
       +materialized: view

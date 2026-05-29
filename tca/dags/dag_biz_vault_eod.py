@@ -12,6 +12,9 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 
+from dags.utils.callbacks import on_task_failure
+from dags.utils.dbt_metrics import make_dbt_metrics_callback
+
 _DBT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/tca")
 
 default_args = {
@@ -19,6 +22,7 @@ default_args = {
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": False,
+    "on_failure_callback": on_task_failure,
 }
 
 with DAG(
@@ -67,13 +71,15 @@ with DAG(
         bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select biz_vault --target docker",
         env=_env,
         append_env=True,
+        on_success_callback=make_dbt_metrics_callback("biz_vault"),
     )
 
     dbt_test_biz_vault = BashOperator(
         task_id="dbt_test_biz_vault",
-        bash_command=f"cd {_DBT_DIR} && dbt test --select biz_vault --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt test --select biz_vault --store-failures --target docker",
         env=_env,
         append_env=True,
+        on_success_callback=make_dbt_metrics_callback("biz_vault_tests"),
     )
 
     def _run_analytics(**ctx: dict) -> None:

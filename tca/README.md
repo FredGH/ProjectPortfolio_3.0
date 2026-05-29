@@ -817,6 +817,21 @@ The PrivateBank TCA platform includes robust error handling and observability me
 
 This observability layer ensures the platform detects and mitigates issues like late arriving data or anomalies, maintaining compliance and user trust.
 
+### AWS Platform Observability
+
+Eight observability items were implemented across the infrastructure, application, pipeline, and data layers. The table below describes each item and how to access it.
+
+| # | Item | Component | What it monitors | How to view |
+|---|---|---|---|---|
+| 1 | **AWS Budgets alarm** | AWS Budgets + SNS | Monthly spend vs. limit (80% actual, 100% forecasted notifications) | AWS Console → **Billing → Budgets** → `tca-prod-monthly-budget`. Alerts fire to the SNS topic `tca-prod-alarms`; email sent to `ALARM_EMAIL` secret if set. |
+| 2 | **Structured JSON logging** | FastAPI (`api/logging_config.py`) | Every HTTP request (method, path, status, duration_ms), startup/shutdown events, and application errors — all as structured JSON | AWS Console → **CloudWatch → Log groups → `/ecs/tca-prod-api`**. Use Logs Insights to query: `filter level = "error"` or `filter event = "http_request" \| stats avg(duration_ms) by path`. |
+| 3 | **Task-level failure callbacks** | Airflow (`dags/utils/callbacks.py`) | Each Airflow task failure emits a structured log line and a `TaskFailures` count metric with `DagId` + `TaskId` dimensions | CloudWatch → **Metrics → TCA/Airflow → TaskFailures**. Log lines also appear in `/ecs/tca-prod-airflow-scheduler` log group. Create an alarm on `Sum ≥ 1` to get paged on any DAG failure. |
+| 4 | **StatsD → CloudWatch** | Airflow scheduler + CW agent sidecar | Airflow scheduler internals: task execution latency, DAG processing time, pool slots, executor queue depth | CloudWatch → **Metrics → TCA/Airflow** — metrics named by Airflow's StatsD schema (e.g. `airflow.scheduler.tasks.running`, `airflow.dag.*.duration`). Aggregation interval: 5 min. |
+| 5 | **dbt run metrics** | Airflow (`dags/utils/dbt_metrics.py`) | Per-layer model pass/fail counts and total execution time, emitted after every `dbt run` and `dbt test` task | CloudWatch → **Metrics → TCA/dbt** — dimensions `DagId` + `Layer`. Metrics: `ModelsPassed`, `ModelsFailed`, `ExecutionSeconds`. Graph `ModelsFailed > 0` to build a data-quality alarm. |
+| 6 | **dbt tests as data quality gates** | dbt (`--store-failures` flag in all DAGs) | Schema tests (not_null, unique, relationships, accepted_values) and dbt-expectations tests fail the Airflow task if assertions break | Airflow UI — failed `dbt_test_*` tasks block downstream tasks. Failure rows are persisted to the `*_dbt_test__failures` schema in PostgreSQL for post-mortem queries. |
+| 7 | **Elementary** | dbt + Elementary package (`edr monitor`) | Historical test-result trends, anomaly detection on row counts and freshness, HTML evidence reports | CloudWatch → `/ecs/tca-prod-airflow-scheduler` → task `elementary_monitor` stdout shows per-model pass/fail counts. For HTML reports, configure Elementary to write to S3 (see `IMPROVEMENTS.md`). |
+| 8 | **pg_stat_statements / slow query log** | PostgreSQL 16 (RDS) | Queries running longer than 5 s are written to the PostgreSQL log; all DDL statements are logged; `pg_stat_statements` extension is preloaded for top-query analysis | CloudWatch → **Log groups → `/aws/rds/instance/tca-prod-postgres/postgresql`**. Filter for `duration:` lines. For top-N query analysis: connect to RDS and run `SELECT query, calls, mean_exec_time FROM pg_stat_statements ORDER BY mean_exec_time DESC LIMIT 20;`. |
+
 ---
 
 ## Running on Docker

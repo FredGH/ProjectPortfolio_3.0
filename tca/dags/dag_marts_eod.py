@@ -15,6 +15,9 @@ from airflow.operators.python import PythonOperator
 from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.utils.state import DagRunState
 
+from dags.utils.callbacks import on_task_failure
+from dags.utils.dbt_metrics import make_dbt_metrics_callback
+
 _DBT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/tca")
 
 default_args = {
@@ -22,6 +25,7 @@ default_args = {
     "retries": 2,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": False,
+    "on_failure_callback": on_task_failure,
 }
 
 with DAG(
@@ -58,13 +62,15 @@ with DAG(
         bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select marts --target docker",
         env=_env,
         append_env=True,
+        on_success_callback=make_dbt_metrics_callback("marts"),
     )
 
     dbt_test_marts = BashOperator(
         task_id="dbt_test_marts",
-        bash_command=f"cd {_DBT_DIR} && dbt test --select marts --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt test --select marts --store-failures --target docker",
         env=_env,
         append_env=True,
+        on_success_callback=make_dbt_metrics_callback("marts_tests"),
     )
 
     def _generate_mifid_export(**ctx: dict) -> None:
@@ -117,4 +123,19 @@ with DAG(
         python_callable=_update_catalog,
     )
 
-    wait_for_biz_vault >> dbt_marts >> dbt_test_marts >> mifid_export >> update_catalog
+    # Elementary reads test + anomaly history from the elementary schema and
+    # writes a report. The || true makes it non-fatal: a missing edr binary or
+    # misconfiguration does not block the MiFID export or catalog update.
+    elementary_monitor = BashOperator(
+        task_id="elementary_monitor",
+        bash_command=(
+            f"cd {_DBT_DIR} && "
+            f"edr monitor --days-back 1 "
+            f"--profiles-dir {_DBT_DIR} --project-dir {_DBT_DIR} "
+            f"|| true"
+        ),
+        env=_env,
+        append_env=True,
+    )
+
+    wait_for_biz_vault >> dbt_marts >> dbt_test_marts >> elementary_monitor >> mifid_export >> update_catalog
