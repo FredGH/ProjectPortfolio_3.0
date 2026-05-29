@@ -21,6 +21,9 @@ resource "aws_ecs_task_definition" "airflow_scheduler" {
         { name = "AIRFLOW__METRICS__STATSD_HOST",                  value = "localhost" },
         { name = "AIRFLOW__METRICS__STATSD_PORT",                  value = "8125" },
         { name = "AIRFLOW__METRICS__STATSD_PREFIX",                value = "airflow" },
+        { name = "AIRFLOW__LOGGING__REMOTE_LOGGING",              value = "True" },
+        { name = "AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER",      value = "s3://${var.name_prefix}-airflow-logs/logs" },
+        { name = "AIRFLOW__LOGGING__ENCRYPT_S3_LOGS",             value = "False" },
       ]
       secrets = [
         { name = "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN", valueFrom = var.airflow_db_secret_arn },

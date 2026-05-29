@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from urllib.parse import urlparse as _urlparse
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
@@ -64,11 +65,25 @@ with DAG(
         python_callable=_run_fi_and_eurex,
     )
 
-    _env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+    def _make_dbt_env() -> dict:
+        env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url:
+            u = _urlparse(db_url)
+            env.update({
+                "POSTGRES_HOST": u.hostname or "",
+                "POSTGRES_USER": u.username or "tca_user",
+                "POSTGRES_PASSWORD": u.password or "",
+                "POSTGRES_DB": (u.path or "").lstrip("/") or "tca_db",
+            })
+        return env
+
+    _env = _make_dbt_env()
+    _dbt_target = "prod" if os.environ.get("DATABASE_URL") else "docker"
 
     dbt_biz_vault = BashOperator(
         task_id="dbt_biz_vault",
-        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select biz_vault --target docker",
+        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select biz_vault --target {_dbt_target}",
         env=_env,
         append_env=True,
         on_success_callback=make_dbt_metrics_callback("biz_vault"),
@@ -76,7 +91,7 @@ with DAG(
 
     dbt_test_biz_vault = BashOperator(
         task_id="dbt_test_biz_vault",
-        bash_command=f"cd {_DBT_DIR} && dbt test --select biz_vault --store-failures --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt test --select biz_vault --store-failures --target {_dbt_target}",
         env=_env,
         append_env=True,
         on_success_callback=make_dbt_metrics_callback("biz_vault_tests"),

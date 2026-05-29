@@ -64,6 +64,16 @@ resource "aws_iam_role_policy" "task_policy" {
         Resource = "arn:aws:s3:::${var.name_prefix}-reports/*"
       },
       {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Resource = "arn:aws:s3:::${var.name_prefix}-airflow-logs/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = "arn:aws:s3:::${var.name_prefix}-airflow-logs"
+      },
+      {
         # Required for ECS Exec (aws ecs execute-command)
         Effect = "Allow"
         Action = [

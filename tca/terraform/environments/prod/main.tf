@@ -149,6 +149,30 @@ module "ecs_mock_server" {
   tags                 = local.tags
 }
 
+# S3 bucket for Airflow remote task logs (shared by scheduler and webserver)
+resource "aws_s3_bucket" "airflow_logs" {
+  bucket = "${local.name_prefix}-airflow-logs"
+  tags   = merge(local.tags, { Name = "${local.name_prefix}-airflow-logs" })
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "airflow_logs" {
+  bucket = aws_s3_bucket.airflow_logs.id
+  rule {
+    id     = "expire-old-logs"
+    status = "Enabled"
+    filter {}
+    expiration { days = 30 }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "airflow_logs" {
+  bucket                  = aws_s3_bucket.airflow_logs.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 module "ecs_airflow_webserver" {
   source                 = "../../modules/ecs/airflow_webserver"
   name_prefix            = local.name_prefix
