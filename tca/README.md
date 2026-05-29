@@ -2,6 +2,8 @@
 
 Transaction Cost Analysis platform for PrivateBank's pan-European institutional equities business. MiFID II / MiFIR compliant. Fully containerised, local-only PoC with 400 synthetic orders across four asset classes.
 
+> Planned enhancements and future work: [IMPROVEMENTS.md](IMPROVEMENTS.md)
+
 ---
 
 ## Architecture overview
