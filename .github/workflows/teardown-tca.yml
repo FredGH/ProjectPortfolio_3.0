@@ -116,6 +116,16 @@ jobs:
             echo "Bucket $BUCKET does not exist; skipping."
           fi
 
+      - name: Empty S3 Airflow logs bucket
+        run: |
+          BUCKET="tca-prod-airflow-logs"
+          if aws s3api head-bucket --bucket "$BUCKET" --region "${{ env.AWS_REGION }}" 2>/dev/null; then
+            aws s3 rm "s3://$BUCKET" --recursive --region "${{ env.AWS_REGION }}" || true
+            echo "Bucket $BUCKET emptied."
+          else
+            echo "Bucket $BUCKET does not exist; skipping."
+          fi
+
       - name: Terraform destroy
         working-directory: ${{ env.TF_DIR }}
         run: terraform destroy -auto-approve
