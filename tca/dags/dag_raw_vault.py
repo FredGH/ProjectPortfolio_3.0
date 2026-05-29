@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from urllib.parse import urlparse as _urlparse
 
 from airflow import DAG
 from airflow.models import DagRun
@@ -55,11 +56,25 @@ with DAG(
         mode="reschedule",
     )
 
-    _env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+    def _make_dbt_env() -> dict:
+        env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url:
+            u = _urlparse(db_url)
+            env.update({
+                "POSTGRES_HOST": u.hostname or "",
+                "POSTGRES_USER": u.username or "tca_user",
+                "POSTGRES_PASSWORD": u.password or "",
+                "POSTGRES_DB": (u.path or "").lstrip("/") or "tca_db",
+            })
+        return env
+
+    _env = _make_dbt_env()
+    _dbt_target = "prod" if os.environ.get("DATABASE_URL") else "docker"
 
     dbt_hubs = BashOperator(
         task_id="dbt_hubs",
-        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select raw_vault.hubs --target docker",
+        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select raw_vault.hubs --target {_dbt_target}",
         env=_env,
         append_env=True,
         on_success_callback=make_dbt_metrics_callback("raw_vault"),
@@ -67,21 +82,21 @@ with DAG(
 
     dbt_links = BashOperator(
         task_id="dbt_links",
-        bash_command=f"cd {_DBT_DIR} && dbt run --select raw_vault.links --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt run --select raw_vault.links --target {_dbt_target}",
         env=_env,
         append_env=True,
     )
 
     dbt_satellites = BashOperator(
         task_id="dbt_satellites",
-        bash_command=f"cd {_DBT_DIR} && dbt run --select raw_vault.satellites --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt run --select raw_vault.satellites --target {_dbt_target}",
         env=_env,
         append_env=True,
     )
 
     dbt_test_raw_vault = BashOperator(
         task_id="dbt_test_raw_vault",
-        bash_command=f"cd {_DBT_DIR} && dbt test --select raw_vault --store-failures --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt test --select raw_vault --store-failures --target {_dbt_target}",
         env=_env,
         append_env=True,
         on_success_callback=make_dbt_metrics_callback("raw_vault_tests"),

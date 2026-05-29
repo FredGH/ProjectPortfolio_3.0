@@ -20,6 +20,16 @@ tca:
       dbname: "{{ env_var('POSTGRES_DB', 'tca_db') }}"
       schema: stg_raw
       threads: 4
+    prod:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST') }}"
+      user: "{{ env_var('POSTGRES_USER', 'tca_user') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      port: 5432
+      dbname: "{{ env_var('POSTGRES_DB', 'tca_db') }}"
+      schema: stg_raw
+      threads: 4
+      keepalives_idle: 0
     ci:
       type: postgres
       host: localhost

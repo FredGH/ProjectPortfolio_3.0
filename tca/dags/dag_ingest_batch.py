@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
+from urllib.parse import urlparse as _urlparse
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
@@ -63,11 +64,25 @@ with DAG(
         python_callable=_run_dlt_pipelines,
     )
 
-    _dbt_env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+    def _make_dbt_env() -> dict:
+        env = {"HOME": "/home/airflow", "DBT_PROFILES_DIR": _DBT_DIR}
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url:
+            u = _urlparse(db_url)
+            env.update({
+                "POSTGRES_HOST": u.hostname or "",
+                "POSTGRES_USER": u.username or "tca_user",
+                "POSTGRES_PASSWORD": u.password or "",
+                "POSTGRES_DB": (u.path or "").lstrip("/") or "tca_db",
+            })
+        return env
+
+    _dbt_env = _make_dbt_env()
+    _dbt_target = "prod" if os.environ.get("DATABASE_URL") else "docker"
 
     dbt_staging = BashOperator(
         task_id="dbt_staging",
-        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select staging --target docker",
+        bash_command=f"cd {_DBT_DIR} && find dbt_packages -depth -delete 2>/dev/null; dbt deps && dbt run --select staging --target {_dbt_target}",
         env=_dbt_env,
         append_env=True,
         on_success_callback=make_dbt_metrics_callback("staging"),
@@ -78,7 +93,7 @@ with DAG(
     # for post-mortem querying.
     dbt_test_staging = BashOperator(
         task_id="dbt_test_staging",
-        bash_command=f"cd {_DBT_DIR} && dbt test --select staging --store-failures --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt test --select staging --store-failures --target {_dbt_target}",
         env=_dbt_env,
         append_env=True,
         on_success_callback=make_dbt_metrics_callback("staging_tests"),
@@ -86,7 +101,7 @@ with DAG(
 
     dbt_source_freshness = BashOperator(
         task_id="dbt_source_freshness",
-        bash_command=f"cd {_DBT_DIR} && dbt source freshness --target docker",
+        bash_command=f"cd {_DBT_DIR} && dbt source freshness --target {_dbt_target}",
         env=_dbt_env,
         append_env=True,
     )
