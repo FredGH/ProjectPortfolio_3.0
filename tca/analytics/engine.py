@@ -91,9 +91,14 @@ class AnalyticsEngine:
             SELECT * FROM mart_market_data.fact_price_benchmark
             WHERE price_date = :trade_date
         """
-        return pd.read_sql(
-            sa.text(sql), self._engine, params={"trade_date": trade_date}
-        )
+        try:
+            return pd.read_sql(
+                sa.text(sql), self._engine, params={"trade_date": trade_date}
+            )
+        except Exception as exc:
+            # Table may not exist yet if marts_eod hasn't run for the day
+            logger.warning("fact_price_benchmark unavailable, continuing without benchmarks: %s", exc)
+            return pd.DataFrame()
 
 
 if __name__ == "__main__":
