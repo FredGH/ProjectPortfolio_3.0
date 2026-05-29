@@ -113,6 +113,7 @@ jobs:
           cat > terraform.tfvars <<EOF
           db_password = "${{ secrets.TF_VAR_DB_PASSWORD }}"
           image_tag   = "${{ steps.tag.outputs.tag }}"
+          alarm_email = "${{ secrets.ALARM_EMAIL }}"
           EOF
 
       - name: Import orphaned AWS resources into state
@@ -174,14 +175,16 @@ jobs:
           API_SG=$(terraform output -raw api_sg_id)
           CF_DIST_ID=$(terraform output -raw cloudfront_distribution_id)
           S3_BUCKET=$(terraform output -raw s3_spa_bucket)
-          echo "rds_addr=$RDS_ADDR"       >> "$GITHUB_OUTPUT"
-          echo "alb_dns=$ALB_DNS"         >> "$GITHUB_OUTPUT"
-          echo "cf_url=$CF_URL"           >> "$GITHUB_OUTPUT"
-          echo "redis_cs=$REDIS_CS"       >> "$GITHUB_OUTPUT"
-          echo "subnets=$SUBNETS"         >> "$GITHUB_OUTPUT"
-          echo "api_sg=$API_SG"           >> "$GITHUB_OUTPUT"
-          echo "cf_dist_id=$CF_DIST_ID"   >> "$GITHUB_OUTPUT"
-          echo "s3_bucket=$S3_BUCKET"     >> "$GITHUB_OUTPUT"
+          DASHBOARD_URL=$(terraform output -raw dashboard_url)
+          echo "rds_addr=$RDS_ADDR"             >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$ALB_DNS"               >> "$GITHUB_OUTPUT"
+          echo "cf_url=$CF_URL"                 >> "$GITHUB_OUTPUT"
+          echo "redis_cs=$REDIS_CS"             >> "$GITHUB_OUTPUT"
+          echo "subnets=$SUBNETS"               >> "$GITHUB_OUTPUT"
+          echo "api_sg=$API_SG"                 >> "$GITHUB_OUTPUT"
+          echo "cf_dist_id=$CF_DIST_ID"         >> "$GITHUB_OUTPUT"
+          echo "s3_bucket=$S3_BUCKET"           >> "$GITHUB_OUTPUT"
+          echo "dashboard_url=$DASHBOARD_URL"   >> "$GITHUB_OUTPUT"
 
       # ── Update Secrets Manager with real endpoints ─────────────────────────
       - name: Seed Secrets Manager
@@ -447,19 +450,19 @@ jobs:
 
       # ── Update README with live endpoints ─────────────────────────────────
       - name: Update README live endpoints
+        working-directory: ${{ github.workspace }}
         env:
           CF_URL: ${{ steps.tf.outputs.cf_url }}
           ALB_DNS: ${{ steps.tf.outputs.alb_dns }}
+          DASHBOARD_URL: ${{ steps.tf.outputs.dashboard_url }}
         run: |
-          README="tca/README.md"
-
-          # Replace content between each marker pair with the current URL
           python3 - <<'PYEOF'
 import os, re
 
 readme = "tca/README.md"
-cf_url  = os.environ["CF_URL"]
-alb_dns = os.environ["ALB_DNS"]
+cf_url        = os.environ["CF_URL"]
+alb_dns       = os.environ["ALB_DNS"]
+dashboard_url = os.environ["DASHBOARD_URL"]
 
 replacements = {
     ("CLOUDFRONT_URL_START", "CLOUDFRONT_URL_END"):
@@ -468,6 +471,8 @@ replacements = {
         f"<!-- AIRFLOW_URL_START -->\n```\nhttp://{alb_dns}/airflow\n```\n<!-- AIRFLOW_URL_END -->",
     ("API_DOCS_URL_START", "API_DOCS_URL_END"):
         f"<!-- API_DOCS_URL_START -->\n```\nhttp://{alb_dns}/api/docs\n```\n<!-- API_DOCS_URL_END -->",
+    ("DASHBOARD_URL_START", "DASHBOARD_URL_END"):
+        f"<!-- DASHBOARD_URL_START -->\n```\n{dashboard_url}\n```\n<!-- DASHBOARD_URL_END -->",
 }
 
 text = open(readme).read()
@@ -495,10 +500,12 @@ PYEOF
           TAG="${{ steps.tag.outputs.tag }}"
           ALB="${{ steps.tf.outputs.alb_dns }}"
           CF="${{ steps.tf.outputs.cf_url }}"
+          DASH="${{ steps.tf.outputs.dashboard_url }}"
           echo "### Deployment complete" >> "$GITHUB_STEP_SUMMARY"
           echo "| | |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Angular SPA | $CF |" >> "$GITHUB_STEP_SUMMARY"
           echo "| API docs | http://$ALB/api/docs |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Airflow UI | http://$ALB/airflow |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Observability | $DASH |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Image tag | \`$TAG\` |" >> "$GITHUB_STEP_SUMMARY"

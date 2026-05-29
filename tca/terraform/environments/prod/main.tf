@@ -31,6 +31,11 @@ variable "db_password" {
   sensitive = true
 }
 
+variable "alarm_email" {
+  type    = string
+  default = ""
+}
+
 data "aws_caller_identity" "current" {}
 
 locals {
@@ -182,6 +187,16 @@ module "ecs_airflow_scheduler" {
   tags                   = local.tags
 }
 
+module "observability" {
+  source          = "../../modules/observability"
+  name_prefix     = local.name_prefix
+  aws_region      = var.aws_region
+  log_group_name  = module.ecs_cluster.log_group_name
+  rds_instance_id = "${local.name_prefix}-postgres"
+  alarm_email     = var.alarm_email
+  tags            = local.tags
+}
+
 output "alb_dns_name" {
   value = module.alb.dns_name
 }
@@ -223,4 +238,8 @@ output "cloudfront_distribution_id" {
 
 output "s3_spa_bucket" {
   value = module.cdn.s3_bucket_name
+}
+
+output "dashboard_url" {
+  value = module.observability.dashboard_url
 }

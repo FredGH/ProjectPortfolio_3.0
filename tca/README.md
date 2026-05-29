@@ -1282,6 +1282,25 @@ http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/api/docs
 
 Interactive Swagger UI. All routes are under the `/api/` prefix. Authenticate via `POST /api/auth/token` using any client ID and password from the table above.
 
+#### Observability dashboard (CloudWatch)
+
+<!-- DASHBOARD_URL_START -->
+```
+https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#dashboards:name=tca-prod-observability
+```
+<!-- DASHBOARD_URL_END -->
+
+Single-pane CloudWatch dashboard covering:
+
+| Section | What you see |
+|---|---|
+| ECS CPU | Per-service CPU % with 80% alarm threshold line |
+| ECS Memory | Per-service memory % with 80% alarm threshold line |
+| Application Logs | Last 100 lines per service (API, Airflow webserver, scheduler, mock server) |
+| RDS Postgres | CPU %, connection count, free storage |
+
+CloudWatch Alarms fire to an SNS topic (email subscription if `ALARM_EMAIL` secret is set) when any service CPU or memory exceeds 80%, RDS CPU exceeds 80%, connections exceed 80, or free storage drops below 1 GB.
+
 #### Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -1299,7 +1318,7 @@ Interactive Swagger UI. All routes are under the `/api/` prefix. Authenticate vi
 
 You do not need to touch any of this — it is fully automated:
 
-1. `terraform apply` — provisions VPC, RDS (PostgreSQL 16), ElastiCache (Redis), ECR repositories, IAM roles, Secrets Manager secrets, ALB, CloudFront distribution, and the ECS cluster.
+1. `terraform apply` — provisions VPC, RDS (PostgreSQL 16), ElastiCache (Redis), ECR repositories, IAM roles, Secrets Manager secrets, ALB, CloudFront distribution, ECS cluster, and the CloudWatch observability dashboard + alarms.
 2. Updates Secrets Manager with the real RDS and Redis endpoints, and generates a fresh JWT RS256 key pair.
 3. Builds and pushes all four Docker images to ECR (`tca-api`, `tca-mock-server`, `tca-airflow`, `tca-angular`).
 4. Runs `bootstrap.py` as a one-off Fargate task — creates all database schemas and seeds 400 synthetic orders.
