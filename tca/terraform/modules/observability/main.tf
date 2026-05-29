@@ -245,6 +245,7 @@ resource "aws_cloudwatch_dashboard" "tca" {
         properties = {
           title  = "${svc.label} — CPU %"
           view   = "timeSeries"
+          region = var.aws_region
           period = 60
           metrics = [
             [{ expression = "m1/m2*100", label = "CPU %", id = "e1", region = var.aws_region }],
@@ -273,6 +274,7 @@ resource "aws_cloudwatch_dashboard" "tca" {
         properties = {
           title  = "${svc.label} — Memory %"
           view   = "timeSeries"
+          region = var.aws_region
           period = 60
           metrics = [
             [{ expression = "m1/m2*100", label = "Memory %", id = "e1", region = var.aws_region }],
@@ -342,6 +344,7 @@ resource "aws_cloudwatch_dashboard" "tca" {
           properties = {
             title   = "CPU %"
             view    = "timeSeries"
+            region  = var.aws_region
             period  = 60
             metrics = [["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", var.rds_instance_id, { region = var.aws_region }]]
             yAxis   = { left = { min = 0, max = 100 } }
@@ -352,6 +355,7 @@ resource "aws_cloudwatch_dashboard" "tca" {
           properties = {
             title   = "Connections"
             view    = "timeSeries"
+            region  = var.aws_region
             period  = 60
             metrics = [["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", var.rds_instance_id, { region = var.aws_region }]]
             annotations = { horizontal = [{ value = var.rds_connections_threshold, color = "#ff6961", label = "Alarm" }] }
@@ -361,6 +365,7 @@ resource "aws_cloudwatch_dashboard" "tca" {
           properties = {
             title   = "Free Storage (bytes)"
             view    = "timeSeries"
+            region  = var.aws_region
             period  = 300
             metrics = [["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", var.rds_instance_id, { region = var.aws_region }]]
             annotations = { horizontal = [{ value = var.rds_free_storage_bytes, color = "#ff6961", label = "Alarm (1 GB)" }] }
