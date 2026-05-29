@@ -151,8 +151,9 @@ module "ecs_mock_server" {
 
 # S3 bucket for Airflow remote task logs (shared by scheduler and webserver)
 resource "aws_s3_bucket" "airflow_logs" {
-  bucket = "${local.name_prefix}-airflow-logs"
-  tags   = merge(local.tags, { Name = "${local.name_prefix}-airflow-logs" })
+  bucket        = "${local.name_prefix}-airflow-logs"
+  force_destroy = true
+  tags          = merge(local.tags, { Name = "${local.name_prefix}-airflow-logs" })
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "airflow_logs" {
