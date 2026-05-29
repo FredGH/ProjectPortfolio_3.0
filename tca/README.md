@@ -1264,7 +1264,7 @@ Once the CD completes, the following endpoints are live. **URLs are updated auto
 
 <!-- CLOUDFRONT_URL_START -->
 ```
-https://dhcbvhx45z6d7.cloudfront.net
+https://d1znwkkyy6ejet.cloudfront.net
 ```
 <!-- CLOUDFRONT_URL_END -->
 
@@ -1281,7 +1281,7 @@ Open in your browser. You will see the login screen. Use any of these credential
 
 <!-- AIRFLOW_URL_START -->
 ```
-http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/airflow
+http://tca-prod-alb-969799969.eu-west-1.elb.amazonaws.com/airflow
 ```
 <!-- AIRFLOW_URL_END -->
 
@@ -1293,7 +1293,7 @@ The DAG list shows 6 DAGs, all paused at creation. Trigger them in order for the
 
 <!-- API_DOCS_URL_START -->
 ```
-http://tca-prod-alb-462247379.eu-west-1.elb.amazonaws.com/api/docs
+http://tca-prod-alb-969799969.eu-west-1.elb.amazonaws.com/api/docs
 ```
 <!-- API_DOCS_URL_END -->
 
