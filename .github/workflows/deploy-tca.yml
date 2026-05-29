@@ -1,4 +1,4 @@
-name: Deploy TCA to AWS
+name: Deploy TCA to AWS (CD)
 
 on:
   workflow_dispatch:

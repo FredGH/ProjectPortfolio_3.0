@@ -1,4 +1,4 @@
-name: tca CI
+name: Run TCA CI
 
 on:
   push:
