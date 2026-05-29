@@ -43,6 +43,12 @@ variable "rds_free_storage_bytes" {
   description = "Alarm when RDS free storage drops below this value (bytes)."
 }
 
+variable "monthly_budget_limit_usd" {
+  type        = number
+  default     = 50
+  description = "Monthly AWS spend limit in USD. Alarms fire at 80% actual and 100% forecasted."
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

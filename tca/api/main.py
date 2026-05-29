@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import os
+import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import structlog
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from api.auth.jwt_handler import load_keys
+from api.logging_config import configure_logging
 from api.routers import (
     auth,
     fills,
@@ -20,11 +24,16 @@ from api.routers import (
     tca,
 )
 
+log = structlog.get_logger()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     load_keys()
+    log.info("api_startup", version="1.0.0")
     yield
+    log.info("api_shutdown")
 
 
 def _cors_origins() -> list[str]:
@@ -63,6 +72,22 @@ def create_app() -> FastAPI:
     app.include_router(fills.router, prefix="/api")
     app.include_router(predict.router, prefix="/api")
     app.include_router(regime.router, prefix="/api")
+
+    @app.middleware("http")
+    async def log_requests(request: Request, call_next: Callable) -> Response:
+        start = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        # Skip health-check spam from ALB probes
+        if request.url.path != "/health":
+            log.info(
+                "http_request",
+                method=request.method,
+                path=request.url.path,
+                status=response.status_code,
+                duration_ms=elapsed_ms,
+            )
+        return response
 
     @app.get("/health", include_in_schema=False)
     def health() -> JSONResponse:

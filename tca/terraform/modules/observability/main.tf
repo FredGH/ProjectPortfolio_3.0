@@ -33,6 +33,49 @@ resource "aws_sns_topic_subscription" "email" {
   endpoint  = var.alarm_email
 }
 
+# Allow AWS Budgets to publish to the SNS topic
+resource "aws_sns_topic_policy" "allow_budgets" {
+  arn = aws_sns_topic.alarms.arn
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AWSBudgetsPublish"
+      Effect    = "Allow"
+      Principal = { Service = "budgets.amazonaws.com" }
+      Action    = "SNS:Publish"
+      Resource  = aws_sns_topic.alarms.arn
+    }]
+  })
+}
+
+# ── AWS Budgets ────────────────────────────────────────────────────────────────
+
+resource "aws_budgets_budget" "monthly" {
+  name         = "${var.name_prefix}-monthly-budget"
+  budget_type  = "COST"
+  limit_amount = tostring(var.monthly_budget_limit_usd)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  # Notify at 80 % of actual spend
+  notification {
+    comparison_operator       = "GREATER_THAN"
+    threshold                 = 80
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "ACTUAL"
+    subscriber_sns_topic_arns = [aws_sns_topic.alarms.arn]
+  }
+
+  # Notify when forecast exceeds 100 % of budget
+  notification {
+    comparison_operator       = "GREATER_THAN"
+    threshold                 = 100
+    threshold_type            = "PERCENTAGE"
+    notification_type         = "FORECASTED"
+    subscriber_sns_topic_arns = [aws_sns_topic.alarms.arn]
+  }
+}
+
 # ── ECS CPU alarms ─────────────────────────────────────────────────────────────
 
 resource "aws_cloudwatch_metric_alarm" "ecs_cpu_high" {

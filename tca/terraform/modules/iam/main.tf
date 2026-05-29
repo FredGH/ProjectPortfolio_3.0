@@ -73,6 +73,12 @@ resource "aws_iam_role_policy" "task_policy" {
           "ssmmessages:OpenDataChannel",
         ]
         Resource = "*"
+      },
+      {
+        # CloudWatch agent sidecar (StatsD bridge) + boto3 callbacks in DAGs
+        Effect   = "Allow"
+        Action   = ["cloudwatch:PutMetricData"]
+        Resource = "*"
       }
     ]
   })

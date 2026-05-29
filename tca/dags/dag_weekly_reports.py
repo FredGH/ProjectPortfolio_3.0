@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
+from dags.utils.callbacks import on_task_failure
+
 _DBT_DIR = os.environ.get("DBT_PROJECT_DIR", "/opt/airflow/tca")
 
 default_args = {
@@ -18,6 +20,7 @@ default_args = {
     "retries": 1,
     "retry_delay": timedelta(minutes=10),
     "email_on_failure": False,
+    "on_failure_callback": on_task_failure,
 }
 
 with DAG(

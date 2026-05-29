@@ -14,6 +14,20 @@ resource "aws_db_parameter_group" "timescaledb" {
     apply_method = "pending-reboot"
   }
 
+  # Log queries that run longer than 5 seconds → exported to CloudWatch Logs
+  parameter {
+    name         = "log_min_duration_statement"
+    value        = "5000"
+    apply_method = "immediate"
+  }
+
+  # Log all DDL (CREATE / ALTER / DROP) for audit trail
+  parameter {
+    name         = "log_statement"
+    value        = "ddl"
+    apply_method = "immediate"
+  }
+
   tags = merge(var.tags, { Name = "${var.name_prefix}-pg16-timescaledb" })
 }
 
@@ -31,9 +45,10 @@ resource "aws_db_instance" "main" {
   allocated_storage      = var.allocated_storage
   storage_type           = "gp2"
   storage_encrypted      = true
-  backup_retention_period = 7
-  skip_final_snapshot    = true
-  deletion_protection    = false
+  backup_retention_period          = 7
+  skip_final_snapshot              = true
+  deletion_protection              = false
+  enabled_cloudwatch_logs_exports  = ["postgresql"]
 
   tags = merge(var.tags, { Name = "${var.name_prefix}-postgres" })
 }
