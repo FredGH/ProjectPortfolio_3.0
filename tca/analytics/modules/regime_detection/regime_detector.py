@@ -58,11 +58,11 @@ def _load_ticks(engine: sa.Engine, trade_date: str | None = None) -> pd.DataFram
         sql = sa.text(
             """
             SELECT
-                bar_id, instrument_id, ts,
+                bar_id, instrument_id, bar_start,
                 "open", high, low, close, volume, trade_date
             FROM stg_raw.tick_bars
             WHERE trade_date = :trade_date
-            ORDER BY instrument_id, ts
+            ORDER BY instrument_id, bar_start
         """
         )
         with engine.connect() as conn:
@@ -72,11 +72,11 @@ def _load_ticks(engine: sa.Engine, trade_date: str | None = None) -> pd.DataFram
     sql = sa.text(
         """
         SELECT
-            bar_id, instrument_id, ts,
+            bar_id, instrument_id, bar_start,
             "open", high, low, close, volume, trade_date
         FROM stg_raw.tick_bars
         TABLESAMPLE BERNOULLI(2.5)
-        ORDER BY instrument_id, ts
+        ORDER BY instrument_id, bar_start
         LIMIT :limit
     """
     )
@@ -87,7 +87,7 @@ def _load_ticks(engine: sa.Engine, trade_date: str | None = None) -> pd.DataFram
         sql_full = sa.text(
             """
             SELECT
-                bar_id, instrument_id, ts,
+                bar_id, instrument_id, bar_start,
                 "open", high, low, close, volume, trade_date
             FROM stg_raw.tick_bars
             ORDER BY random()
@@ -254,12 +254,12 @@ def timeline(
         return []
     sub = (
         df[df["instrument_id"] == instrument_id]
-        .sort_values("ts")
+        .sort_values("bar_start")
         .reset_index(drop=True)
     )
     if sub.empty:
         return []
-    ts_series = pd.to_datetime(sub["ts"])
+    ts_series = pd.to_datetime(sub["bar_start"])
     return [
         {
             "ts": ts_series.iloc[i].strftime("%H:%M"),
