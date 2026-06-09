@@ -6,6 +6,87 @@ Transaction Cost Analysis platform for PrivateBank's pan-European institutional 
 
 ---
 
+## Platform UI — Screen Tour
+
+> Screenshots from the live local deployment (`docker compose up`). All data is synthetic (400 orders, 4 asset classes).
+> Save the images to `docs/screenshots/` with the filenames below to render them here.
+
+---
+
+### 1. Dashboard
+
+![Dashboard](docs/screenshots/01_dashboard.png)
+
+Role-aware landing page showing four session KPIs — warning count, orders today, average arrival slippage, and trade date. The **Active Warnings** table surfaces anomaly-detector results from the observability layer, flagging volume z-score outliers per asset class in real time.
+
+---
+
+### 2. Submit Fill
+
+![Submit Fill](docs/screenshots/02_submit_fill.png)
+
+Two-step real-time fill entry form. Step 1 selects an open order by trade date and order ID (asset class, side, arrival price, and counterparty are shown automatically). Step 2 captures fill details — price, quantity, venue, currency, market impact, and commission — and computes implied arrival slippage live before the fill is written to `stg_raw.rt_fills` via the Redis stream.
+
+---
+
+### 3. Algo Performance League Table
+
+![Algo Performance](docs/screenshots/03_algo_performance.png)
+
+Ranks all execution algorithms by average arrival slippage, VWAP slippage, market impact, and participation rate. Filterable by trade date and asset class. Values coloured amber/orange indicate adverse slippage — lower arrival slippage and lower market impact are better.
+
+---
+
+### 4. Alpha Decay by Volatility Regime
+
+![Alpha Decay](docs/screenshots/04_alpha_decay.png)
+
+Measures how quickly post-trade alpha (excess return vs arrival price) erodes at T+30M, T+1H, and T+4H, segmented by LOW / MEDIUM / HIGH volatility regime. Helps calibrate optimal execution urgency — orders placed in a HIGH-regime session must be worked faster to avoid adverse decay.
+
+---
+
+### 5. Venue / SOR Scorecard
+
+![Venue SOR](docs/screenshots/05_venue_sor.png)
+
+Ranks all execution venues and Smart Order Router destinations by VWAP slippage, market impact, fill rate, and average spread across asset classes. Used by the trading desk to identify best-performing venues per asset class and tune SOR destination weights.
+
+---
+
+### 6. MiFID II / RTS 27 Export
+
+![MiFID Export](docs/screenshots/06_mifid_export.png)
+
+Regulatory transaction reporting screen (COMPLIANCE & ADMIN only). Generates the MiFID II / RTS 27 report for a selected trade date with all required fields — ORDER ID, INSTRUMENT, CLASS, SIDE, QUANTITY, NOTIONAL (€M), VENUE, WAIVER, LRGS DEFERRAL, RTS 27 CATEGORY. Preview all records in-browser then export as CSV for submission to the national competent authority.
+
+---
+
+### 7. Pre-Trade Slippage Estimate
+
+![Pre-Trade Estimate](docs/screenshots/07_pre_trade.png)
+
+ML-powered pre-trade cost estimator. Enter planned order parameters (instrument class, side, quantity, volatility regime, algorithm, venue, execution hour, day of week) and receive a predicted arrival slippage with an IQR-based confidence interval. The top-5 cost drivers are rendered as feature importance bars from the underlying `GradientBoostingRegressor` trained per instrument class on `fact_order_execution`.
+
+---
+
+### 8. ML Regime Detection
+
+![Regime Detection — KPI Cards](docs/screenshots/08_regime_detection_kpis.png)
+
+![Regime Detection — Timeline and Feature Space](docs/screenshots/09_regime_detection_timeline.png)
+
+Unsupervised K-Means (k=3) classifier trained on 30-second OHLCV bar features: bar price-range volatility, normalised volume z-score, and directional momentum. Displays session regime distribution (LOW / MEDIUM / HIGH) as KPI cards with animated progress bars, an intraday timeline strip of 1,020 colour-coded 30-second slices, a 3D feature-space scatter plot of sampled bars, and a cluster centroid comparison table showing what separates the three regimes in feature space. The ML regime label replaces the legacy daily-vol threshold and enriches every other model in the platform.
+
+---
+
+### 9. TCA Glossary
+
+![TCA Glossary](docs/screenshots/10_tca_glossary.png)
+
+Plain-English reference guide covering all TCA concepts — arrival price, average fill price, basis points, slippage benchmarks, execution algorithms, alpha decay, venues, Smart Order Routing, MiFID II regulatory requirements, and asset class definitions. Designed for both desk users and compliance teams unfamiliar with TCA terminology.
+
+---
+
 ## Architecture overview
 
 ```mermaid
@@ -272,60 +353,6 @@ In the PoC, this is simulated via the mock server, but production would handle r
 - **Production Scaling**: In production (100,000+ orders/day), real-time streams and micro-batches handle volume; the PoC simulates this via mock server.
 
 In summary, late arriving data is seamlessly integrated via incremental UPSERTs, Data Vault change tracking, and reprocessing, maintaining data freshness and compliance without disrupting operations. If you need code examples (e.g., from `dags/dag_raw_vault.py`), let me know.
-
----
-
-### Component Interactions with Embedded Tableau (Alternative Version)
-
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant Angular
-    participant Okta
-    participant Tableau
-    participant FastAPI
-    participant PostgreSQL
-    participant Redis
-    participant Airflow
-
-    Note over Airflow,PostgreSQL: 06:45 CET — Batch ingest
-    Airflow->>PostgreSQL: dlt pipelines → stg_raw (e.g., orders, fills)
-    Airflow->>PostgreSQL: dbt Data Vault → marts (e.g., fact_order_execution)
-
-    Note over Redis,PostgreSQL: Continuous — Real-time fills
-    Browser->>Angular: POST /mock/fill (synthetic)
-    Angular->>FastAPI: (via nginx proxy /api/)
-    FastAPI->>Redis: XADD pb:fills
-    Redis-->>PostgreSQL: XREADGROUP consumer → stg_raw.rt_fills
-
-    Note over Browser,Okta: User session with Okta SSO
-    Browser->>Angular: Click login
-    Angular->>Okta: Redirect to Okta SSO (SAML/OIDC)
-    Okta->>Browser: Prompt for PrivateBank credentials
-    Browser->>Okta: Authenticate
-    Okta->>Angular: Redirect with SAML assertion / OIDC tokens
-    Angular->>FastAPI: Exchange Okta tokens for platform JWT
-    FastAPI->>Okta: Validate tokens (optional)
-    FastAPI-->>Angular: {access_token, refresh_token} (RS256 JWT)
-    Angular->>Angular: NgRx store + localStorage
-
-    Browser->>Angular: Navigate to /dashboard
-    Angular->>Tableau: Load embedded dashboard (via JS API, passing Okta tokens for SSO)
-    Tableau->>Okta: Validate SSO tokens
-    Okta-->>Tableau: Confirm auth + user claims
-    Tableau->>PostgreSQL: Query marts (e.g., SELECT ... WHERE counterparty_id = :cp from claims)
-    PostgreSQL-->>Tableau: TCA results (e.g., slippage, benchmarks)
-    Tableau-->>Angular: Render interactive charts (e.g., cost decomposition)
-    Angular-->>Browser: Display embedded Tableau viz
-
-    Note over Tableau: Security
-    Tableau->>Okta: SSO validation for row-level security (RLS)
-    Okta-->>Tableau: User claims (CLIENT sees own data only)
-```
-
-
-
-This alternative version incorporates Okta SSO for unified authentication across PrivateBank's ecosystem, with Tableau embedded in the Angular SPA using Okta tokens for secure access. It connects directly to PostgreSQL for TCA data visualization, maintaining RBAC via Okta claims and data isolation. Embedding uses Tableau's JS API with Okta SSO for seamless integration.
 
 ---
 
