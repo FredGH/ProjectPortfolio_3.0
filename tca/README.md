@@ -87,6 +87,51 @@ Plain-English reference guide covering all TCA concepts — arrival price, avera
 
 ---
 
+### 10. Airflow DAG Orchestration
+
+![Airflow DAGs](docs/screenshots/11_airflow_dags.png)
+
+Six DAGs orchestrate the full pipeline. For an initial bootstrap, trigger them in the dependency order below — do not start the next DAG until the previous one shows green:
+
+| Run Order | DAG | Schedule | What it does |
+|---|---|---|---|
+| 1 | `tca_ingest_batch` | 05:45 UTC Mon–Fri | Lands raw data into `stg_raw` via dlt; builds staging views |
+| 2 | `tca_raw_vault` | 06:15 UTC Mon–Fri | Builds hubs, links, and satellites in `raw_vault` |
+| 3 | `tca_biz_vault_eod` | 16:30 UTC Mon–Fri | Derives business vault metrics and PIT snapshot in `biz_vault` |
+| 4 | `tca_marts_eod` | 17:15 UTC Mon–Fri | Builds mart star schemas; runs MiFID export and catalog update |
+| 5 | `tca_weekly_reports` | 06:00 UTC Monday | Generates algo/trader/venue digest CSVs (run any time after step 4) |
+| — | `tca_rt_consumer` | Every 30 s (continuous) | Start last — polls Redis for real-time fills; micro-refresh of `bv_order_enriched` |
+
+`tca_rt_consumer` is the only DAG running on a fully automatic continuous schedule (every 30 seconds via `RedisStreamSensor`, `max_active_runs=1`). It runs independently of the daily batch chain and is always active once unpaused — visible in the Airflow UI as the DAG with the highest run count and a persistently running task instance.
+
+---
+
+### 11. AWS CloudWatch Observability Dashboard
+
+![ECS CPU Utilisation](docs/screenshots/12_cw_ecs_cpu.png)
+
+![ECS Memory Utilisation](docs/screenshots/13_cw_ecs_memory.png)
+
+![Application Logs](docs/screenshots/14_cw_app_logs.png)
+
+![RDS Postgres](docs/screenshots/15_cw_rds.png)
+
+The `tca-prod-observability` CloudWatch dashboard provides a unified view of infrastructure health across four panels, all with an 80% alarm threshold line:
+
+**ECS Services — CPU & Memory Utilisation**
+
+Four services are monitored side by side — API, Airflow Webserver, Airflow Scheduler, and Mock Server. The Airflow Scheduler shows the highest and most variable CPU activity (burst spikes up to ~65%), reflecting DAG scheduling and task execution cycles. The Airflow Webserver holds the most memory (~35–50%), consistent with its persistent gunicorn worker pool. API and Mock Server remain well under 10% for both metrics in steady state.
+
+**Application Logs**
+
+Structured JSON logs from CloudWatch Log Groups (`/ecs/tca-prod-api` and `/ecs/tca-prod-airflow-webserver`) stream directly into the dashboard. The API panel shows ALB health-check traffic (`GET /health 200 OK`) from two task IPs, confirming both ECS task replicas are alive. The Airflow Webserver panel shows a mix of `GET /airflow/` page loads and `POST /airflow/` state-change calls, reflecting scheduler and UI activity.
+
+**RDS Postgres**
+
+Three metrics track the database tier: CPU utilisation (low and spiky — typical of batch dbt runs), connection count (ramping from 0 to ~15–20 as services start and Airflow workers connect), and free storage (a slow downward slope from ~20.5 GB with a 1 GB alarm floor). The connection ramp is the clearest signal of a cold start — it reaches steady state once all ECS services and Airflow workers have registered their connection pools.
+
+---
+
 ## Architecture overview
 
 ```mermaid
