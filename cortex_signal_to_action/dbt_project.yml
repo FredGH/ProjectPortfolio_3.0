@@ -1,0 +1,51 @@
+name: cortex_signal_to_action
+version: '1.0.0'
+config-version: 2
+
+profile: cortex_signal_to_action
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+docs-paths: ["docs"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Populated in Phase 8 — Observability.
+# Final hooks: {{ log_test_results() }} + CALL UPLOAD_DBT_ARTIFACTS(...)
+on-run-end: []
+
+vars:
+  observability_enabled: false
+  drift_baseline_run_id: null
+
+models:
+  cortex_signal_to_action:
+    bronze:
+      +materialized: table
+      +schema: bronze
+      +tags: ['bronze']
+    silver:
+      +materialized: table
+      +schema: silver
+      +tags: ['silver']
+    gold:
+      +materialized: table
+      +schema: gold
+      +tags: ['gold']
+
+seeds:
+  cortex_signal_to_action:
+    +schema: bronze
+
+snapshots:
+  cortex_signal_to_action:
+    +target_schema: snapshots
+    +strategy: timestamp
+    +updated_at: _updated_at

@@ -23,6 +23,8 @@ venv/
 
 # Secrets
 complaint_analyser/secrets/
+*.p8
+*.pub
 
 # Not ready for publishing
 digital_advertising_performance_intelligence/

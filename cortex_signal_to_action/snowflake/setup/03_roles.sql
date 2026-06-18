@@ -687,8 +687,15 @@ GRANT ROLE CSTA_OBSERVER_ROLE TO ROLE CSTA_STREAMLIT_ROLE;
 --   Wraps the SNOWFLAKE.CORTEX_USER database role so that any functional
 --   role granted CSTA_CORTEX_ROLE can invoke Cortex functions (TRANSLATE,
 --   AI_SENTIMENT, COMPLETE, FORECAST).
+--
+--   GRANT DATABASE ROLE from the SNOWFLAKE system database requires
+--   ACCOUNTADMIN — SECURITYADMIN cannot issue it.
 -- ---------------------------------------------------------------------------
+USE ROLE ACCOUNTADMIN;
+
 GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE CSTA_CORTEX_ROLE;
+
+USE ROLE SECURITYADMIN;
 
 GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DBT_DEV_ROLE;
 GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DBT_UAT_ROLE;
@@ -709,11 +716,16 @@ GRANT USAGE ON WAREHOUSE CSTA_DBT_DEV_WH  TO ROLE CSTA_OBSERVER_ROLE;
 -- EXECUTE TASK privilege — scoped to dev task ownership only for CSTA_DBT_DEV_ROLE.
 -- CSTA_DBT_UAT_ROLE and CSTA_DBT_PROD_ROLE inherit EXECUTE TASK via task ownership
 -- (the service account that creates the task can execute it without this grant).
+--
+-- EXECUTE TASK ON ACCOUNT is an account-level privilege; SYSADMIN cannot grant
+-- it.  Switch to ACCOUNTADMIN for this statement, then return to SYSADMIN.
 -- ---------------------------------------------------------------------------
+USE ROLE ACCOUNTADMIN;
 GRANT EXECUTE TASK ON ACCOUNT TO ROLE CSTA_DBT_DEV_ROLE;
+USE ROLE SYSADMIN;
 
 -- ===========================================================================
--- SECTION 7 — HUMAN USER FUNCTIONAL ROLES
+-- SECTION 6 — HUMAN USER FUNCTIONAL ROLES
 -- ===========================================================================
 
 USE ROLE SECURITYADMIN;
@@ -749,7 +761,9 @@ GRANT ROLE CSTA_CORTEX_ROLE                                    TO ROLE CSTA_DEV_
 USE ROLE SYSADMIN;
 
 GRANT USAGE ON WAREHOUSE CSTA_DBT_DEV_WH TO ROLE CSTA_DEV_ROLE;
+USE ROLE ACCOUNTADMIN;
 GRANT EXECUTE TASK ON ACCOUNT             TO ROLE CSTA_DEV_ROLE;
+USE ROLE SYSADMIN;
 
 USE ROLE SECURITYADMIN;
 
@@ -771,26 +785,17 @@ USE ROLE SYSADMIN;
 GRANT USAGE ON WAREHOUSE CSTA_DBT_UAT_WH TO ROLE CSTA_UAT_DEV_ROLE;
 
 -- ---------------------------------------------------------------------------
--- Streamlit network integration
---   Allows the Streamlit app hosted in Snowflake to serve external traffic.
---   Adjust ALLOWED_URLS if you restrict to a custom domain.
+-- Streamlit network integration (deferred — added when Streamlit app is built)
+--   HOST_PORT network rules require explicit hostname:port pairs; CIDR notation
+--   is not supported.  The specific external hosts the app needs are not known
+--   at bootstrap time.  Create these objects in the Streamlit phase:
+--
+--   USE ROLE ACCOUNTADMIN;
+--   CREATE NETWORK RULE ... TYPE = HOST_PORT VALUE_LIST = ('host:443', ...);
+--   CREATE EXTERNAL ACCESS INTEGRATION ... ALLOWED_NETWORK_RULES = (...);
+--   USE ROLE SECURITYADMIN;
+--   GRANT USAGE ON INTEGRATION ... TO ROLE CSTA_STREAMLIT_ROLE;
 -- ---------------------------------------------------------------------------
-USE ROLE ACCOUNTADMIN;
-
-CREATE NETWORK RULE IF NOT EXISTS CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_STREAMLIT_NETWORK_RULE
-    TYPE        = HOST_PORT
-    VALUE_LIST  = ('0.0.0.0/0:443')
-    MODE        = EGRESS
-    COMMENT     = 'Allow outbound HTTPS from Streamlit app';
-
-CREATE EXTERNAL ACCESS INTEGRATION IF NOT EXISTS CSTA_STREAMLIT_INTEGRATION
-    ALLOWED_NETWORK_RULES = (CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_STREAMLIT_NETWORK_RULE)
-    ENABLED               = TRUE
-    COMMENT               = 'Network integration for Observability Streamlit app';
-
-USE ROLE SECURITYADMIN;
-
-GRANT USAGE ON INTEGRATION CSTA_STREAMLIT_INTEGRATION TO ROLE CSTA_STREAMLIT_ROLE;
 
 -- ---------------------------------------------------------------------------
 -- Anchor all functional roles under SYSADMIN in the role hierarchy.
@@ -806,7 +811,7 @@ GRANT ROLE CSTA_DEV_ROLE        TO ROLE SYSADMIN;
 GRANT ROLE CSTA_UAT_DEV_ROLE    TO ROLE SYSADMIN;
 
 -- ===========================================================================
--- SECTION 6 — SERVICE ACCOUNT USERS AND ROLE MAPPINGS
+-- SECTION 7 — SERVICE ACCOUNT USERS AND ROLE MAPPINGS
 --
 -- Each service account authenticates via key-pair only (no password).
 -- Replace each <RSA_PUBLIC_KEY_*> placeholder with the base64 body of the

@@ -1,0 +1,51 @@
+# profiles.yml.example — copy to ~/.dbt/profiles.yml and fill in env vars.
+# All credentials are injected via env vars — no secrets in this file.
+# In Snowflake Task execution the profile is injected from Snowflake Secrets
+# (PROFILES_YML_DEV / UAT / PROD) by the dbt stored procedure (Phase 9).
+
+cortex_signal_to_action:
+  target: dev
+  outputs:
+
+    dev:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'SVC_CSTA_DBT_DEV') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: CSTA_DBT_DEV_ROLE
+      database: CSTA_MARKETING_DEV
+      warehouse: CSTA_DBT_DEV_WH
+      # Developer-namespaced schema — routed by macros/generate_schema_name.sql.
+      schema: "DBT_{{ env_var('DBT_DEVELOPER', 'dev') }}"
+      threads: 4
+      client_session_keep_alive: false
+      query_tag: dbt_dev
+
+    uat:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'SVC_CSTA_DBT_UAT') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: CSTA_DBT_UAT_ROLE
+      database: CSTA_MARKETING_UAT
+      warehouse: CSTA_DBT_UAT_WH
+      schema: dbt
+      threads: 8
+      client_session_keep_alive: false
+      query_tag: dbt_uat
+
+    prod:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER', 'SVC_CSTA_DBT_PROD') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      private_key_passphrase: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PASSPHRASE', '') }}"
+      role: CSTA_DBT_PROD_ROLE
+      database: CSTA_MARKETING_PROD
+      warehouse: CSTA_DBT_PROD_WH
+      schema: dbt
+      threads: 16
+      client_session_keep_alive: false
+      query_tag: dbt_prod
