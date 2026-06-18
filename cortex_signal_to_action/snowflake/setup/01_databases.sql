@@ -4,10 +4,10 @@
 --
 -- After this script runs, import the databases into Terraform state and let
 -- Terraform become the source of truth for all object changes:
---   terraform import snowflake_database.dev    CSTA_MARKETING_DEV
---   terraform import snowflake_database.uat    CSTA_MARKETING_UAT
---   terraform import snowflake_database.prod   CSTA_MARKETING_PROD
---   terraform import snowflake_database.shared CSTA_MARKETING_SHARED
+--   terraform import 'module.databases.snowflake_database.this["dev"]'    CSTA_MARKETING_DEV
+--   terraform import 'module.databases.snowflake_database.this["uat"]'    CSTA_MARKETING_UAT
+--   terraform import 'module.databases.snowflake_database.this["prod"]'   CSTA_MARKETING_PROD
+--   terraform import 'module.databases.snowflake_database.this["shared"]' CSTA_MARKETING_SHARED
 
 USE ROLE ACCOUNTADMIN;
 
@@ -25,8 +25,17 @@ CREATE USER IF NOT EXISTS TERRAFORM_SVC
 -- SYSADMIN grants full control over databases, schemas, warehouses, and stages.
 GRANT ROLE SYSADMIN TO USER TERRAFORM_SVC;
 
--- ACCOUNTADMIN is needed to import existing objects into Terraform state
--- and to grant SNOWFLAKE database roles (e.g., CORTEX_USER).
+-- ACCOUNTADMIN is needed during bootstrap to import existing objects into
+-- Terraform state and for the provider to grant SNOWFLAKE database roles
+-- (e.g., CORTEX_USER).  The Terraform provider is configured to run as
+-- ACCOUNTADMIN (see terraform/versions.tf).
+--
+-- POST-BOOTSTRAP: once `terraform import` is complete and you have confirmed
+-- that all objects are tracked in state, revoke ACCOUNTADMIN and leave only
+-- SYSADMIN to reduce the blast radius of a compromised key:
+--
+--   REVOKE ROLE ACCOUNTADMIN FROM USER TERRAFORM_SVC;
+--
 GRANT ROLE ACCOUNTADMIN TO USER TERRAFORM_SVC;
 
 USE ROLE SYSADMIN;

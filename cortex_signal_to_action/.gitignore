@@ -1,0 +1,21 @@
+# Terraform — local state files contain sensitive Snowflake credentials
+terraform/environments/*.tfstate
+terraform/environments/*.tfstate.backup
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+
+# dbt — compiled artefacts and local package installs
+target/
+dbt_packages/
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets — never commit
+*.p8
+*.pem
+profiles.yml

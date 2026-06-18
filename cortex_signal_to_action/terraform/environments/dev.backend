@@ -1,0 +1,5 @@
+# Local backend configuration for the dev environment.
+# Applied at init time:
+#   terraform init -backend-config=environments/dev.backend
+
+path = "environments/dev.tfstate"

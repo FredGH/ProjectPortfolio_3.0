@@ -21,28 +21,13 @@ CREATE STAGE IF NOT EXISTS CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS
     DIRECTORY         = (ENABLE = TRUE)
     COMMENT           = 'Internal stage for dbt artefacts shared across dev/uat/prod environments';
 
--- Pre-create the env/latest/ folder markers so that UPLOAD_CSTA_DBT_ARTIFACTS
--- can PUT files without needing to create the path on first run.
--- Snowflake stages are flat (no real directories) but the / delimiter is
--- honoured by LIST and COPY commands and by the Streamlit lineage page.
-
--- dev
-COPY FILES
-    INTO   @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/dev/latest/
-    FROM   @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/dev/latest/
-    FILES  = ('.keep');    -- no-op placeholder; path is created on first PUT
-
--- uat
-COPY FILES
-    INTO   @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/uat/latest/
-    FROM   @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/uat/latest/
-    FILES  = ('.keep');
-
--- prod
-COPY FILES
-    INTO   @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/prod/latest/
-    FROM   @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/prod/latest/
-    FILES  = ('.keep');
+-- Snowflake stages are flat — there are no real subdirectories.
+-- The slash delimiter in path strings (e.g. dev/latest/) is honoured by LIST,
+-- COPY INTO, and the Streamlit lineage view, but paths do not need to be
+-- pre-created.  The UPLOAD_CSTA_DBT_ARTIFACTS stored procedure (Phase 9)
+-- creates each env/latest/ path on its first PUT.
+-- No SQL is needed here; any COPY FILES attempt referencing non-existent files
+-- would fail on a fresh account.
 
 -- Grant read access so that every CSTA_DBT_*_ROLE can fetch artefacts for --defer.
 -- Write access is already granted via CSTA_MARKETING_SHARED_ARTIFACTS_READ_WRITE
