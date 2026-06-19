@@ -69,6 +69,77 @@ ALTER SECRET CSTA_MARKETING_SHARED.ARTIFACTS.PROFILES_YML_PROD SET SECRET_STRING
 
 ---
 
+## Seed Data + MMM Synthetic Generator (Phase 2)
+
+Run `dbt seed --target dev` to load both seed files into Snowflake after infrastructure is provisioned (Phase 1).
+
+To regenerate `olist_mmm_weekly_spend.csv` from real Olist data, place `olist_orders_dataset.csv` and `olist_order_items_dataset.csv` in `data/` then run:
+```bash
+python seeds/generate_mmm_spend.py
+```
+
+| # | File | Type | Description | Key details |
+|---|------|------|-------------|-------------|
+| 1 | [seeds/generate_mmm_spend.py](seeds/generate_mmm_spend.py) | Python script | Reproducible MMM spend generator. Reads Olist orders + order_items CSVs when available; falls back to calibrated synthetic revenue. Fixed `numpy.random.default_rng(42)` seed ensures idempotent output. | Outputs `seeds/olist_mmm_weekly_spend.csv`. Place raw Olist CSVs in `data/` for real revenue. |
+| 2 | [seeds/sample_feedback.csv](seeds/sample_feedback.csv) | dbt seed | 500 English-language customer reviews. | Columns: `feedback_id`, `customer_id`, `product`, `review_text`, `review_date`, `language`, `channel`. Date range: 2016-01-01 – 2018-08-31. |
+| 3 | [seeds/olist_mmm_weekly_spend.csv](seeds/olist_mmm_weekly_spend.csv) | dbt seed | 138 ISO-week rows (2016-W01 → 2018-W34). Synthetic revenue with adstock-transformed spend for 5 channels + control variables. | Columns: `iso_week`, `week_start_date`, `weekly_revenue`, `tv_spend`, `paid_search_spend`, `social_spend`, `email_spend`, `display_spend`, `holiday_flag`, `black_friday_flag`, `competitor_index`, `avg_temperature`. |
+| 4 | [docs/mmm_synthetic_data_assumptions.md](docs/mmm_synthetic_data_assumptions.md) | Documentation | Calibration choices, adstock parameters, seasonality adjustments, noise levels, and reproducibility notes. | Includes holiday logic (Brazilian calendar), temperature source (INMET), adstock half-lives, and known limitations. |
+| 5 | [dbt_project.yml](dbt_project.yml) | dbt config | Added `seeds.cortex_signal_to_action.sample_feedback` and `olist_mmm_weekly_spend` column type blocks. | Explicit `varchar`/`date`/`float`/`integer` types prevent Snowflake type inference errors on `dbt seed`. |
+
+---
+
+## Bronze Layer (Phase 3)
+
+Run `dbt run --select bronze` then `dbt test --select bronze` after loading raw Olist CSVs into Snowflake.
+
+**Loading raw Olist tables:**
+```sql
+-- Load each CSV from the internal stage into the BRONZE schema (dev example):
+COPY INTO CSTA_MARKETING_DEV.BRONZE.OLIST_ORDERS
+FROM @CSTA_MARKETING_SHARED.ARTIFACTS.CSTA_DBT_ARTIFACTS/data/olist_orders_dataset.csv
+FILE_FORMAT = (TYPE = CSV FIELD_OPTIONALLY_ENCLOSED_BY = '"' SKIP_HEADER = 1);
+-- Repeat for each table.
+```
+
+| # | File | Type | Description | Key details |
+|---|------|------|-------------|-------------|
+| 1 | [models/bronze/sources.yml](models/bronze/sources.yml) | dbt source definition | Declares `olist` source pointing to raw Olist tables in the BRONZE schema. Includes `env_var('SNOWFLAKE_DATABASE')` for multi-env support. | 9 source tables defined. No `loaded_at_field` freshness on static Olist data. |
+| 2 | [models/bronze/brz_olist_orders.sql](models/bronze/brz_olist_orders.sql) | dbt model (table) | Typed order headers. Casts nullable timestamps with `TRY_CAST`. | `order_approved_at`, `order_delivered_*` use `TRY_CAST` — these are NULL for non-delivered orders. |
+| 3 | [models/bronze/brz_olist_order_items.sql](models/bronze/brz_olist_order_items.sql) | dbt model (table) | Typed order line items. Grain: `(order_id, order_item_id)`. | `price` and `freight_value` cast to float. |
+| 4 | [models/bronze/brz_olist_order_reviews.sql](models/bronze/brz_olist_order_reviews.sql) | dbt model (table) | Typed customer reviews. `review_comment_title` and `_message` use `TRY_CAST` — many rows are NULL. | Grain: `review_id` (unique). ~100k rows expected. |
+| 5 | [models/bronze/brz_olist_customers.sql](models/bronze/brz_olist_customers.sql) | dbt model (table) | Typed customer master. | `customer_id` is order-scoped; `customer_unique_id` is the de-duplicated customer key. |
+| 6 | [models/bronze/brz_olist_order_payments.sql](models/bronze/brz_olist_order_payments.sql) | dbt model (table) | Typed payment records. Grain: `(order_id, payment_sequential)`. | Supports split payments (multiple rows per order). |
+| 7 | [models/bronze/brz_olist_products.sql](models/bronze/brz_olist_products.sql) | dbt model (table) | Typed product catalogue. Dimension columns use `TRY_CAST` — sparse data in the Olist dataset. | Grain: `product_id` (unique). ~33k rows. |
+| 8 | [models/bronze/brz_olist_geolocation.sql](models/bronze/brz_olist_geolocation.sql) | dbt model (table) | Typed zip-code geolocation. NOT unique by zip alone — grain is `(zip, city, state)`. | ~1M rows; duplicates by design in the Olist dataset. |
+| 9 | [models/bronze/brz_olist_sellers.sql](models/bronze/brz_olist_sellers.sql) | dbt model (table) | Typed seller master. Grain: `seller_id` (unique). | ~3k rows. |
+| 10 | [models/bronze/brz_olist_mql.sql](models/bronze/brz_olist_mql.sql) | dbt model (table) | Typed marketing qualified leads (seller acquisition). Grain: `mql_id` (unique). | `landing_page_id` and `origin` use `TRY_CAST` — some NULLs in source. |
+| 11 | [models/bronze/brz_mmm_weekly_spend.sql](models/bronze/brz_mmm_weekly_spend.sql) | dbt model (table) | Typed MMM spend promoted from seed via `ref('olist_mmm_weekly_spend')`. Adds `_loaded_at`. | Grain: `iso_week` (unique). 138 rows. |
+| 12 | [models/bronze/schema.yml](models/bronze/schema.yml) | dbt schema | Tier 1 tests across all 10 bronze models. | `unique` + `not_null` on all PKs; `accepted_values` on `order_status` (8 values) and `payment_type` (5 values); `accepted_values` on `review_score` (1–5). |
+| 13 | [analyses/row_count_audit.sql](analyses/row_count_audit.sql) | dbt analysis | UNION ALL sanity query comparing actual vs expected row counts for all 10 bronze tables. | Compile with `dbt compile --select analyses/row_count_audit` then run the output SQL in Snowflake. |
+
+---
+
+## Silver Layer — non-Cortex (Phase 4)
+
+Run `dbt run --select slv_customer_rfm slv_customer_profile slv_mmm_weekly` then the corresponding tests.
+
+**Acceptance checks:**
+```bash
+dbt run  --select slv_customer_rfm slv_customer_profile slv_mmm_weekly --target dev
+dbt test --select slv_customer_rfm slv_customer_profile slv_mmm_weekly --target dev
+```
+
+| # | File | Type | Description | Key details |
+|---|------|------|-------------|-------------|
+| 1 | [models/silver/slv_customer_rfm.sql](models/silver/slv_customer_rfm.sql) | dbt model (table) | RFM scores per `customer_unique_id` from delivered orders. Five CTEs: `delivered_orders`, `order_revenue`, `order_payment_type`, `product_diversity`, `preferred_payment`, then `rfm_raw` → `rfm_scored`. | `NTILE(5)` applied independently per dimension. Recency inverted: lower `recency_days` → higher score. Excludes customers with `monetary_value = 0`. ~100k rows. |
+| 2 | [models/silver/slv_customer_profile.sql](models/silver/slv_customer_profile.sql) | dbt model (table) | Enriched customer profile: RFM + MQL acquisition channel + rule-based `churn_risk_score` + `predicted_ltv` placeholder. | MQL join is best-effort (`seller_id = mql_id` UUID match); most rows will have `acquisition_channel = 'unknown'` until closed_deals table is loaded. `predicted_ltv` is NULL until Phase 6. |
+| 3 | [models/silver/slv_mmm_weekly.sql](models/silver/slv_mmm_weekly.sql) | dbt model (table) | ISO-week revenue (Olist COALESCE synthetic) joined with MMM spend + single-period adstock transforms. | Adstock α values: TV=0.50, paid_search=0.30, social=0.40, email=0.20, display=0.35. 138 rows. `ORDER BY iso_week` ensures deterministic `LAG()` windows. |
+| 4 | [models/silver/schema.yml](models/silver/schema.yml) | dbt schema | Tier 1 + Tier 2 tests for all three silver models. | `unique` + `not_null` on `customer_unique_id` / `iso_week`; `dbt_expectations.expect_column_values_to_be_between` for `rfm_score` (1–5), `recency_days` (≥0), `monetary_value` (>0), `weekly_revenue` (>0), all spend and adstock columns (≥0). `accepted_values` on `churn_risk_score`, `holiday_flag`, `black_friday_flag`. |
+| 5 | [tests/singular/assert_rfm_score_distribution.sql](tests/singular/assert_rfm_score_distribution.sql) | singular test | Checks that each NTILE(5) bucket for recency, frequency, and monetary dimensions contains 15–25% of customers. | Fails if any bucket falls outside the 15–25% band across all three dimensions. Uses `UNION ALL` to test all three scores in one query. |
+| 6 | [tests/singular/assert_mmm_revenue_positive.sql](tests/singular/assert_mmm_revenue_positive.sql) | singular test | Asserts `weekly_revenue > 0` for every row in `slv_mmm_weekly`. | Returns offending rows — zero rows = pass. |
+
+---
+
 ## dbt scaffold (Phase 1)
 
 Run `dbt deps` after copying `profiles.yml.example` → `~/.dbt/profiles.yml` and populating env vars.

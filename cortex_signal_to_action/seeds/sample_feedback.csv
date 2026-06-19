@@ -1,0 +1,501 @@
+feedback_id,customer_id,product,review_text,review_date,language,channel
+FB-00001,bdd640fb-0667-4ad1-9c80-317fa3b1799d,watches_gifts,Really happy with this purchase. Great quality for the price,2016-08-16,en,social
+FB-00002,bd9c66b3-ad3c-4d6d-9a3d-1fa7bc8960a9,electronics,Product looks even better in person. Very happy with the purchase,2017-08-27,en,tv
+FB-00003,37f8a88b-17fc-495a-87a0-ca6e0822e8f3,housewares,Satisfactory purchase. The product is functional as described,2017-09-08,en,email
+FB-00004,a65ed389-b74d-4fb1-b2e7-06298fadc1a6,electronics,Five stars! The product is even better than I expected,2016-08-13,en,tv
+FB-00005,de8a774b-cf36-458b-8737-819096da1dac,health_beauty,Product arrived quickly and is exactly as described. Love it,2017-12-15,en,tv
+FB-00006,371ecd7b-27cd-4130-8722-9389571aa876,telephony,Seller communicated well and shipping was faster than expected,2016-04-04,en,tv
+FB-00007,580d7b71-d8f5-4413-9be6-128e18c26797,office_furniture,Very satisfied and would definitely buy again from this seller,2018-04-06,en,email
+FB-00008,1ff49b78-8946-4e85-b59c-de66bacfb3d0,books_general_interest,Absolutely love it. Perfect size and excellent materials,2017-07-19,en,paid_search
+FB-00009,e2acf72f-9e57-4f7a-a0ee-89aed453dd32,garden_tools,Satisfactory purchase. The product is functional as described,2016-07-15,en,email
+FB-00010,c5e7ce8a-3a57-4a8e-a948-8d990bbb2599,toys,Absolutely love it. Perfect size and excellent materials,2018-05-25,en,social
+FB-00011,47294739-614f-43d7-99db-3ad0ddd1dfb2,bed_bath_table,Not as described in the listing. Expected much better quality,2018-05-04,en,paid_search
+FB-00012,35a240ae-5af3-4553-9ec4-2e0829a3b2e9,watches_gifts,Awful experience. Seller was unresponsive and product is defective,2016-03-14,en,display
+FB-00013,baa80dd4-88bd-4407-abcf-be01a28defe3,housewares,Product arrived quickly and is exactly as described. Love it,2017-04-18,en,tv
+FB-00014,a3d70628-ece6-4fa2-bd51-66e6451b4cf3,electronics,Seller communicated well and shipping was faster than expected,2017-12-02,en,paid_search
+FB-00015,0e51f30d-c6a7-4e39-84b0-32ccd7c524a5,housewares,Amazing quality! Exceeded my expectations completely,2018-04-04,en,paid_search
+FB-00016,3602f8ac-10f1-4c81-848a-aa9e66b2bc5b,food_drink,Absolutely love it. Perfect size and excellent materials,2016-08-05,en,tv
+FB-00017,a491f0b2-ea1f-4a65-a27a-984d654821d0,bed_bath_table,Very satisfied and would definitely buy again from this seller,2016-09-28,en,social
+FB-00018,89fa6a68-8fb5-427b-beb7-99193f22faf8,watches_gifts,Neither impressed nor disappointed. Standard quality and average shipping,2017-03-14,en,display
+FB-00019,ff50bde4-3825-47b8-9cab-cc97663f1c97,fashion_bags_accessories,Neither impressed nor disappointed. Standard quality and average shipping,2017-05-20,en,email
+FB-00020,1c11f735-dc71-4d96-8c0f-d195c17af08a,fashion_bags_accessories,Terrible packaging and item arrived damaged. Very unhappy,2016-06-12,en,tv
+FB-00021,61b1cd22-6280-4c45-9043-5a1098ae4334,office_furniture,Everything is perfect. Packaging was careful and item undamaged,2017-06-25,en,paid_search
+FB-00022,f143262f-dc5c-4eed-8da0-365bf89897b9,health_beauty,Everything is perfect. Packaging was careful and item undamaged,2017-11-29,en,display
+FB-00023,a4161293-c4c2-42e3-844e-a7c8c0398710,telephony,Everything is perfect. Packaging was careful and item undamaged,2016-10-27,en,tv
+FB-00024,f42d47cc-00d4-4f59-b427-3ca3287d06ca,watches_gifts,Satisfactory purchase. The product is functional as described,2018-02-19,en,social
+FB-00025,deda4e16-1b3d-4d5c-a9a1-fa6f81f76d1c,toys,Not as described in the listing. Expected much better quality,2017-06-03,en,display
+FB-00026,c333e861-5fb8-416c-a720-797d32ebd689,sports_leisure,Product is okay. Took longer to arrive than expected but works fine,2018-03-08,en,display
+FB-00027,52fbe43b-9954-4eb4-8025-7ad1eb2263dd,cool_stuff,Fast delivery and the item matches the description perfectly,2016-04-24,en,paid_search
+FB-00028,ce88cb2d-d4e8-4839-bc3e-058be0f3eab0,toys,Excellent product arrived on time and in perfect condition,2016-02-29,en,social
+FB-00029,14296c07-f26b-4776-913e-4de2e0c53cb8,auto,Average product. Packaging could be better but item is undamaged,2018-04-15,en,email
+FB-00030,c40db9b4-885f-4e66-82b6-d2c5fa5d3100,fashion_bags_accessories,Really happy with this purchase. Great quality for the price,2017-11-06,en,tv
+FB-00031,43dac043-2a45-42ab-8cbf-edb0f264accc,musical_instruments,Works as expected. Nothing special but no complaints either,2017-03-09,en,social
+FB-00032,badcc32a-c159-4f53-8a0f-4efbedcd465e,furniture_decor,Wonderful experience. Very professional seller and quick shipping,2017-02-12,en,paid_search
+FB-00033,7394988f-847f-49b4-a64d-1bcb702753a1,baby,Really happy with this purchase. Great quality for the price,2016-08-18,en,email
+FB-00034,8dcdcd03-969b-4662-8562-8059568cc69b,housewares,Acceptable product for everyday use. Delivery time was reasonable,2016-08-13,en,email
+FB-00035,0f1259e0-a18f-46b6-b535-106e122c9a56,housewares,Five stars! The product is even better than I expected,2018-07-16,en,email
+FB-00036,839fbc50-1223-4513-9496-f63cdc1110c1,housewares,Product arrived quickly and is exactly as described. Love it,2017-11-16,en,tv
+FB-00037,b92da22b-21df-406f-8a0b-3c3336d8393a,food_drink,Satisfactory purchase. The product is functional as described,2017-04-29,en,social
+FB-00038,683514f2-ceb8-4f9d-b914-c120c8dcd19f,furniture_decor,Impressive quality at this price point. Will buy again,2016-04-09,en,tv
+FB-00039,778eedb3-693d-4fbc-ac6f-a6115ab33edf,computers_accessories,Do not buy this. Quality is dreadful and support is non-existent,2017-10-31,en,email
+FB-00040,56dc8907-ba6c-44ab-a712-303a0f844fef,baby,Really happy with this purchase. Great quality for the price,2016-07-15,en,social
+FB-00041,6c006f61-23e2-4cb4-b2d8-567d894a05e4,sports_leisure,Product arrived quickly and is exactly as described. Love it,2017-04-18,en,social
+FB-00042,71710434-134c-4c92-ac5b-227cdfde4fbf,electronics,Impressive quality at this price point. Will buy again,2016-02-21,en,display
+FB-00043,17e011b7-f810-4383-83c7-2ba8d605e770,housewares,Great experience from start to finish. Highly recommended,2017-02-20,en,tv
+FB-00044,66aa9385-dd59-4a71-b6b8-24817b3a4e3e,computers_accessories,Great experience from start to finish. Highly recommended,2017-01-23,en,email
+FB-00045,ed3049cf-43e4-48fc-a3f2-ae24fc3d3348,bed_bath_table,Great experience from start to finish. Highly recommended,2017-03-09,en,display
+FB-00046,27a0c3d7-7c96-4f79-b7e9-9acaa97065e1,furniture_decor,Outstanding build quality. Well packaged and delivered on time,2016-08-10,en,email
+FB-00047,0f9aea4b-8acd-4e10-bc59-4585944528c0,telephony,Outstanding build quality. Well packaged and delivered on time,2016-02-21,en,display
+FB-00048,da4bd9ca-eb5c-4467-80ba-cd647a0ecfea,musical_instruments,Product arrived quickly and is exactly as described. Love it,2016-02-28,en,display
+FB-00049,118a9d29-2f92-4996-99f1-95d014822f53,office_furniture,Five stars! The product is even better than I expected,2017-11-22,en,social
+FB-00050,e3e9de99-f10c-418b-9eb0-e38a675dd5af,food_drink,Really happy with this purchase. Great quality for the price,2017-08-15,en,display
+FB-00051,6b5252e3-14fc-4d54-9e8f-c9650a2c827e,food_drink,It does what it says. Delivery was a bit slow though,2017-06-19,en,paid_search
+FB-00052,ab73295b-344a-44b8-82c1-8a62ef48e8d5,telephony,Excellent product arrived on time and in perfect condition,2016-09-28,en,tv
+FB-00053,4ccc9bc2-a53f-4a28-abf3-e3fc21813d25,bed_bath_table,Absolutely love it. Perfect size and excellent materials,2018-02-08,en,email
+FB-00054,ff9ab5c2-9f04-4aed-b552-332702627f73,food_drink,Impressive quality at this price point. Will buy again,2016-03-16,en,display
+FB-00055,21e8ac68-43e4-4caf-8181-a8cc369147eb,garden_tools,Five stars! The product is even better than I expected,2018-06-19,en,social
+FB-00056,702cdd20-2862-48b8-88f4-ef125e9953d2,electronics,Five stars! The product is even better than I expected,2017-09-18,en,display
+FB-00057,8dfa6a56-d12d-4c9a-aaf9-15310200b1f0,toys,Product does not work as advertised. Very dissatisfied,2016-04-16,en,social
+FB-00058,1b66b5a9-e3c4-4657-9d8c-bbac43b409ef,electronics,Amazing quality! Exceeded my expectations completely,2016-10-05,en,paid_search
+FB-00059,57c700aa-b7b5-4ea7-b5eb-d32d9ad620ab,furniture_decor,Not as described in the listing. Expected much better quality,2018-05-23,en,paid_search
+FB-00060,e7c421c7-4049-4b71-bd10-6c6081627cf1,computers_accessories,Product looks even better in person. Very happy with the purchase,2017-10-11,en,tv
+FB-00061,00e85ece-0b49-452d-86d4-83f3d450281c,telephony,Really happy with this purchase. Great quality for the price,2017-10-14,en,paid_search
+FB-00062,8d3aed99-711c-41c9-bdc1-4f1f295d6fbf,perfumery,Average product. Packaging could be better but item is undamaged,2016-01-10,en,email
+FB-00063,b0e6a969-e213-42b0-b1ee-dba313432e61,fashion_bags_accessories,Product is okay. Took longer to arrive than expected but works fine,2016-02-06,en,paid_search
+FB-00064,6e068097-25e9-4977-8d72-48e2951f58d0,fashion_bags_accessories,Product arrived quickly and is exactly as described. Love it,2016-11-11,en,paid_search
+FB-00065,f8e1daa7-cbce-4bde-aede-db07e623a689,computers_accessories,Excellent product arrived on time and in perfect condition,2016-08-03,en,social
+FB-00066,c7b5b2bc-5a8a-4eca-9a50-aec3aabc25fa,electronics,Outstanding build quality. Well packaged and delivered on time,2017-09-27,en,social
+FB-00067,dd56cc94-3c9a-414c-ae0c-aeb5ecfedb99,sports_leisure,Outstanding build quality. Well packaged and delivered on time,2018-06-21,en,tv
+FB-00068,ecab3301-bc8f-4d29-adea-94930658663a,telephony,Outstanding build quality. Well packaged and delivered on time,2018-04-01,en,social
+FB-00069,b386f7a4-c991-403f-a8c1-3091444d610b,baby,Very satisfied and would definitely buy again from this seller,2018-06-12,en,email
+FB-00070,33173470-38f1-4a81-b87f-2425dbccc477,bed_bath_table,Everything is perfect. Packaging was careful and item undamaged,2016-11-08,en,social
+FB-00071,3170f437-a8f7-4f5a-860e-df5b39118497,books_general_interest,Impressive quality at this price point. Will buy again,2016-10-12,en,email
+FB-00072,59e4b671-4774-4c58-85f8-bc16f7860b50,musical_instruments,Great experience from start to finish. Highly recommended,2017-11-26,en,display
+FB-00073,1d870966-0710-4430-b071-d87954c63cd8,watches_gifts,Outstanding build quality. Well packaged and delivered on time,2017-08-17,en,paid_search
+FB-00074,6f3f920c-98b8-44cc-9bc0-44fc09cb3942,garden_tools,Absolutely love it. Perfect size and excellent materials,2017-03-22,en,display
+FB-00075,629c2ae3-1d9a-4659-82ec-9f2dfbf6e16f,food_drink,Wonderful experience. Very professional seller and quick shipping,2016-09-17,en,email
+FB-00076,85197ff4-006e-46e3-afa1-7735b572f3d0,electronics,The item was the wrong size and returning it is a nightmare,2016-07-20,en,paid_search
+FB-00077,aa0b7b14-f2e9-402d-91e9-cdaa6e6981a3,telephony,Poor quality. Broke on first use. Would not recommend,2016-11-17,en,email
+FB-00078,81d2c7de-4ce1-4b90-a669-7833b841d0a0,toys,The item was the wrong size and returning it is a nightmare,2017-02-22,en,paid_search
+FB-00079,8dedf9fb-4bb0-4f20-b27c-40266703b636,fashion_bags_accessories,Wonderful experience. Very professional seller and quick shipping,2017-03-06,en,tv
+FB-00080,2c8d0e44-e71e-43a6-bf85-bf0ead64b56c,office_furniture,It does what it says. Delivery was a bit slow though,2016-11-04,en,tv
+FB-00081,4dcabfb7-001a-4a8b-956f-03508c459ce2,toys,Product looks even better in person. Very happy with the purchase,2017-03-16,en,display
+FB-00082,77097749-527e-4cfa-a79a-c9aa9b4e2c24,bed_bath_table,Product looks even better in person. Very happy with the purchase,2017-11-22,en,social
+FB-00083,e6b3c944-cb32-4e35-b922-bac282dc4c8e,sports_leisure,Product does not work as advertised. Very dissatisfied,2016-03-27,en,paid_search
+FB-00084,9e87e04c-a208-4977-a9f2-533683f4a9a9,telephony,Product looks even better in person. Very happy with the purchase,2018-04-18,en,social
+FB-00085,ce7ae7f6-3982-4cff-8f77-a665ac3c5640,furniture_decor,Very satisfied and would definitely buy again from this seller,2016-01-26,en,email
+FB-00086,9c7c7377-79a2-4903-bbe3-3b243eae0032,auto,Seller communicated well and shipping was faster than expected,2017-02-28,en,display
+FB-00087,624c69b6-b244-45a7-b7e5-848131c681ec,cool_stuff,Great experience from start to finish. Highly recommended,2016-09-06,en,social
+FB-00088,e4855aa1-016b-4287-b008-05cca7f36ae9,baby,Wonderful experience. Very professional seller and quick shipping,2016-08-12,en,social
+FB-00089,8498e113-b227-462c-b53d-4330cdda24ba,bed_bath_table,Great experience from start to finish. Highly recommended,2017-07-24,en,social
+FB-00090,74daaebf-1f11-4b76-992c-9227eadf5085,fashion_bags_accessories,Everything is perfect. Packaging was careful and item undamaged,2017-11-14,en,display
+FB-00091,513a7052-986f-4025-8f15-ba58fce68504,bed_bath_table,Very disappointed. The product stopped working after two days,2018-04-14,en,display
+FB-00092,8c41561b-e827-41b9-94a0-2e536d3ee1dc,bed_bath_table,Product arrived quickly and is exactly as described. Love it,2018-01-31,en,tv
+FB-00093,3f4b1a70-c074-418e-825a-609f7337c599,watches_gifts,Acceptable product for everyday use. Delivery time was reasonable,2017-05-11,en,social
+FB-00094,b6aae05b-13d5-42f7-b09b-7d97464c04af,toys,Excellent product arrived on time and in perfect condition,2016-10-05,en,paid_search
+FB-00095,14a0bccb-8a47-4a87-a49d-681d51d87c64,fashion_bags_accessories,Amazing quality! Exceeded my expectations completely,2016-08-24,en,tv
+FB-00096,36c59dac-b4d7-428e-a71e-3ee2b1a6b1f1,auto,Five stars! The product is even better than I expected,2017-02-21,en,paid_search
+FB-00097,0ff0a55c-6a70-4e2f-b746-d0ba8ae8905b,furniture_decor,Five stars! The product is even better than I expected,2017-02-02,en,display
+FB-00098,db52ca58-0500-4bc6-b20d-cb6ef2311f17,food_drink,Very satisfied and would definitely buy again from this seller,2017-05-03,en,email
+FB-00099,c0e3befd-4c71-40fe-9a0c-dd7cf1578470,books_general_interest,Five stars! The product is even better than I expected,2017-07-05,en,display
+FB-00100,3875394c-e5d6-46e6-9a6e-c2f5ccc42903,cool_stuff,Seller communicated well and shipping was faster than expected,2016-10-06,en,tv
+FB-00101,560c95ee-638c-454c-876e-2bba7c5308bf,books_general_interest,Great experience from start to finish. Highly recommended,2018-05-10,en,tv
+FB-00102,9f4c3b79-fb10-487f-a0ac-3703eb67146a,electronics,Very satisfied and would definitely buy again from this seller,2018-07-17,en,tv
+FB-00103,06f028ff-a9ba-4a27-907b-fe36978648f8,auto,Awful experience. Seller was unresponsive and product is defective,2017-03-14,en,social
+FB-00104,0cdf742b-2e85-4b21-b631-de9ddde9f863,watches_gifts,Very satisfied and would definitely buy again from this seller,2016-12-01,en,social
+FB-00105,c2dff335-5666-4f9f-93ac-2ab974672cd9,books_general_interest,Product arrived quickly and is exactly as described. Love it,2018-02-09,en,tv
+FB-00106,78660765-14f7-4e8d-95bc-b8d04094dded,health_beauty,Product is okay. Took longer to arrive than expected but works fine,2016-02-23,en,paid_search
+FB-00107,c7fee39f-1190-4938-a66f-d7f739669fa7,computers_accessories,Very satisfied and would definitely buy again from this seller,2016-09-10,en,social
+FB-00108,2702878b-9f0f-4a8d-8537-9ff6d6d7b3b8,housewares,Really happy with this purchase. Great quality for the price,2017-04-29,en,email
+FB-00109,770c7798-37cc-463b-b2a0-345990604f62,watches_gifts,Fast delivery and the item matches the description perfectly,2016-06-20,en,display
+FB-00110,b7e6427c-bf78-4e3f-b6b7-51f79b749245,baby,Product arrived quickly and is exactly as described. Love it,2016-11-14,en,email
+FB-00111,4fdc6e1b-edcb-4cb6-8692-dc639424aed5,food_drink,Do not buy this. Quality is dreadful and support is non-existent,2018-07-18,en,tv
+FB-00112,32c5bd89-b70b-4420-b104-3785658b2523,auto,Acceptable product for everyday use. Delivery time was reasonable,2017-12-08,en,social
+FB-00113,4d3485c5-c5c1-4eb4-b27b-3d901a16342c,office_furniture,Excellent product arrived on time and in perfect condition,2018-03-26,en,display
+FB-00114,8861fe18-58e2-4888-8a83-81bec85aca46,perfumery,Product does not work as advertised. Very dissatisfied,2017-01-14,en,email
+FB-00115,033d2bce-575a-4d2c-a5c5-650c8186a576,perfumery,Average product. Packaging could be better but item is undamaged,2016-04-18,en,tv
+FB-00116,e43e4288-a2b5-4498-9cb8-5aedf5f62c97,bed_bath_table,Amazing quality! Exceeded my expectations completely,2017-03-21,en,social
+FB-00117,a6846099-f729-4951-8591-31d2bbda0242,watches_gifts,Very disappointed. The product stopped working after two days,2018-04-07,en,display
+FB-00118,6f81cf4f-7701-47bb-bbc6-7e1fc64ee6e3,food_drink,Amazing quality! Exceeded my expectations completely,2016-11-26,en,social
+FB-00119,4767d76c-162f-4a24-af43-613cd4aac9a3,bed_bath_table,Really happy with this purchase. Great quality for the price,2018-02-07,en,tv
+FB-00120,6105716b-ab0e-464e-9c3e-b2d591e1aa96,telephony,Very satisfied and would definitely buy again from this seller,2017-05-21,en,paid_search
+FB-00121,5ad5cf06-364d-4c87-bcd0-129d2e8d0e87,watches_gifts,Seller communicated well and shipping was faster than expected,2016-10-13,en,display
+FB-00122,8e485223-46b9-4991-a14e-b70db380c73a,health_beauty,Acceptable product for everyday use. Delivery time was reasonable,2016-07-14,en,email
+FB-00123,7d137018-680b-4c63-b856-d0353dc98290,electronics,Excellent product arrived on time and in perfect condition,2017-12-08,en,tv
+FB-00124,72bb912d-7da6-4785-b63b-4dc3a559e463,health_beauty,Product looks even better in person. Very happy with the purchase,2016-10-28,en,social
+FB-00125,4e6384bb-3e49-4f43-b118-f68d6786d506,food_drink,Fast delivery and the item matches the description perfectly,2017-04-29,en,display
+FB-00126,ff233d5f-6ced-415d-9800-7c0287ea7ff5,electronics,Impressive quality at this price point. Will buy again,2016-12-26,en,tv
+FB-00127,3b048a8b-405b-4dc9-8e7e-d827455ac762,baby,Wonderful experience. Very professional seller and quick shipping,2016-11-19,en,email
+FB-00128,c31edbbc-f36c-462b-892e-6161be2d740a,sports_leisure,Wonderful experience. Very professional seller and quick shipping,2016-08-09,en,tv
+FB-00129,fa02eaec-96ef-4ad6-b97e-670346c8adfe,musical_instruments,Item matches the photos. Packaging was minimal but contents were fine,2016-10-16,en,email
+FB-00130,3a3c563e-4bd6-4ee6-b1b1-b099d52721e7,garden_tools,Outstanding build quality. Well packaged and delivered on time,2016-11-05,en,email
+FB-00131,4639447b-2067-4dac-88bd-13d1b540b30e,computers_accessories,Great experience from start to finish. Highly recommended,2017-07-20,en,paid_search
+FB-00132,a34b6cf6-2053-4a42-b1af-db65b289f224,cool_stuff,Seller communicated well and shipping was faster than expected,2018-06-12,en,email
+FB-00133,7a8d03aa-782a-45e0-88ca-765192f5df7b,bed_bath_table,Seller communicated well and shipping was faster than expected,2016-07-07,en,email
+FB-00134,7a4c75d4-dc99-404c-b0e9-8b3b40a26c60,baby,Five stars! The product is even better than I expected,2017-02-14,en,tv
+FB-00135,afbb411a-a123-4a8c-93b7-a88612f70c97,computers_accessories,Amazing quality! Exceeded my expectations completely,2016-06-01,en,display
+FB-00136,fe716b14-15ce-4a66-8dc8-2a1ef2f9e5fa,housewares,Excellent product arrived on time and in perfect condition,2017-07-25,en,tv
+FB-00137,9e50aa42-ca6d-4da1-989b-c4da9b37a22b,housewares,Acceptable product for everyday use. Delivery time was reasonable,2017-01-24,en,tv
+FB-00138,dc33e1f9-4c1f-45ab-b156-29eee893be3d,food_drink,Wonderful experience. Very professional seller and quick shipping,2016-11-08,en,display
+FB-00139,f5c9b047-9c10-4572-8f6b-40d09efba58b,baby,Product looks even better in person. Very happy with the purchase,2017-10-02,en,social
+FB-00140,2834e4c0-14c8-43b4-a911-d19243bfd931,housewares,Outstanding build quality. Well packaged and delivered on time,2017-07-19,en,email
+FB-00141,735435ea-6894-4b8d-80af-5b3a2812859a,office_furniture,Product is okay. Took longer to arrive than expected but works fine,2016-10-25,en,email
+FB-00142,48603b32-b4fb-4eb9-89c1-3de73b4206c5,bed_bath_table,Wonderful experience. Very professional seller and quick shipping,2017-12-04,en,social
+FB-00143,ca8f3653-c9af-48f8-83b9-da13ec856f37,food_drink,Product does not work as advertised. Very dissatisfied,2018-04-03,en,social
+FB-00144,398d1ca6-8b68-40b5-9d61-fac36cd5e859,fashion_bags_accessories,Amazing quality! Exceeded my expectations completely,2018-04-26,en,social
+FB-00145,cae9b4a7-2a79-4a68-8f44-704f1247ea4e,toys,Item matches the photos. Packaging was minimal but contents were fine,2018-02-05,en,display
+FB-00146,1fd5a423-706c-4c56-89e2-623debd34616,bed_bath_table,Five stars! The product is even better than I expected,2017-12-17,en,tv
+FB-00147,8a3c3b5e-801e-41da-85b1-ed25f1533ae8,cool_stuff,Product looks even better in person. Very happy with the purchase,2016-03-23,en,display
+FB-00148,bc0a6a5d-6e99-4e3e-a3b1-37fc0a3450fc,telephony,Works as expected. Nothing special but no complaints either,2016-09-13,en,email
+FB-00149,ac9ed156-f63f-4e41-ba9a-ca5e176132ed,food_drink,Acceptable product for everyday use. Delivery time was reasonable,2016-01-22,en,paid_search
+FB-00150,c19ad58c-c35b-4c8c-8a4c-9f7f9384ec2b,sports_leisure,Product is okay. Took longer to arrive than expected but works fine,2017-06-15,en,tv
+FB-00151,ff37d19c-2e76-428b-8735-44f9ea83bf00,food_drink,Absolutely love it. Perfect size and excellent materials,2017-10-12,en,tv
+FB-00152,5913f9d3-7852-49f4-975b-a98df8140102,perfumery,Impressive quality at this price point. Will buy again,2016-11-24,en,email
+FB-00153,6961929e-546e-435a-a92b-d156db946570,cool_stuff,Great experience from start to finish. Highly recommended,2017-11-09,en,tv
+FB-00154,0964fbbf-8cd3-41b0-82b0-1cfdd045dd1c,bed_bath_table,Product looks even better in person. Very happy with the purchase,2016-11-18,en,paid_search
+FB-00155,c5c5b37a-f85e-46a1-9dad-09b252c21221,books_general_interest,Neither impressed nor disappointed. Standard quality and average shipping,2018-04-24,en,email
+FB-00156,764414fd-8ae7-49ed-9e8e-de0ba85c6e4a,perfumery,Great experience from start to finish. Highly recommended,2016-07-11,en,display
+FB-00157,7f9d3e64-c1a6-423b-9f64-eeed5c9d927d,bed_bath_table,Great experience from start to finish. Highly recommended,2016-07-27,en,paid_search
+FB-00158,49bc473f-ed7b-4656-a18a-15368c99a894,bed_bath_table,Average product. Packaging could be better but item is undamaged,2016-05-04,en,email
+FB-00159,cc9fd334-9bdf-4377-a149-23c2f920264c,housewares,Product arrived quickly and is exactly as described. Love it,2016-11-14,en,display
+FB-00160,17dc8eff-6872-43f9-8d60-593603802b70,housewares,Everything is perfect. Packaging was careful and item undamaged,2017-04-17,en,email
+FB-00161,7f95897c-276a-46ce-9507-55d9a5d04d53,toys,Neither impressed nor disappointed. Standard quality and average shipping,2017-12-23,en,paid_search
+FB-00162,faf14ff0-7b85-479a-95b0-77e06a5d932b,cool_stuff,Really happy with this purchase. Great quality for the price,2017-04-12,en,display
+FB-00163,ebff8d15-30cb-4755-a232-b17a25074181,office_furniture,Neither impressed nor disappointed. Standard quality and average shipping,2018-02-03,en,social
+FB-00164,c5ce099c-46b8-4659-91df-12d7dd30de89,perfumery,Seller communicated well and shipping was faster than expected,2018-03-17,en,display
+FB-00165,486822b9-00a8-4de9-920f-87d044656d6b,toys,Acceptable product for everyday use. Delivery time was reasonable,2017-08-16,en,tv
+FB-00166,89e06ab3-7250-4e18-a60a-5962dd81b7f5,cool_stuff,Everything is perfect. Packaging was careful and item undamaged,2016-12-06,en,display
+FB-00167,749176f4-6090-4697-8b1e-3b9dc34b9fbb,telephony,Wonderful experience. Very professional seller and quick shipping,2017-12-15,en,social
+FB-00168,db23aa8c-3bca-4f85-a20a-60ac9261549d,perfumery,Product arrived quickly and is exactly as described. Love it,2016-11-21,en,tv
+FB-00169,61985d54-cfb8-4e6f-a9d6-8f23b489d070,books_general_interest,Product does not work as advertised. Very dissatisfied,2018-03-22,en,social
+FB-00170,2051acef-097a-4e10-b6fe-bc0e7ecddbaf,musical_instruments,Acceptable product for everyday use. Delivery time was reasonable,2016-12-05,en,email
+FB-00171,1986b4b2-70b7-4868-9854-80f0dfcaf0b7,musical_instruments,Seller communicated well and shipping was faster than expected,2016-01-16,en,social
+FB-00172,f84f16b3-a79f-4faf-9ef5-768968f45bce,fashion_bags_accessories,Wonderful experience. Very professional seller and quick shipping,2017-04-25,en,paid_search
+FB-00173,65c17795-b155-46bc-9f8d-ed9756abf2f1,auto,Impressive quality at this price point. Will buy again,2018-05-22,en,display
+FB-00174,a075e927-5110-4492-b442-7e0b61484bb3,cool_stuff,Product is okay. Took longer to arrive than expected but works fine,2016-02-06,en,display
+FB-00175,af34cf65-a193-44b2-bc19-e71d118405ad,toys,Everything is perfect. Packaging was careful and item undamaged,2018-02-03,en,email
+FB-00176,c2a79689-1933-418c-ba74-57616f18c108,baby,Product looks even better in person. Very happy with the purchase,2016-06-19,en,paid_search
+FB-00177,530a37df-0bc6-4066-8769-165fe746ccb9,computers_accessories,Outstanding build quality. Well packaged and delivered on time,2017-01-02,en,paid_search
+FB-00178,87fa841a-3e83-491f-a544-0fe06e417d47,perfumery,It does what it says. Delivery was a bit slow though,2017-11-29,en,social
+FB-00179,9c07a751-1437-4509-acd1-586a2b840c67,books_general_interest,Poor quality. Broke on first use. Would not recommend,2017-11-30,en,social
+FB-00180,24a35cf2-9549-4931-a9af-299d7f671eec,housewares,Everything is perfect. Packaging was careful and item undamaged,2017-10-15,en,paid_search
+FB-00181,0267deb3-aab6-42c9-815d-174a75a66981,bed_bath_table,Great experience from start to finish. Highly recommended,2017-11-24,en,display
+FB-00182,f1faf665-7115-43f3-92e8-9d1028711733,garden_tools,Acceptable product for everyday use. Delivery time was reasonable,2016-11-02,en,tv
+FB-00183,d865d69a-74f3-4103-8006-6ff2b0b862ef,toys,Absolutely love it. Perfect size and excellent materials,2017-01-28,en,tv
+FB-00184,92698698-61a1-4729-bcb9-83501b4da0fe,garden_tools,Satisfactory purchase. The product is functional as described,2016-10-29,en,paid_search
+FB-00185,a881bfd3-d47d-477b-ba5a-91ca059dd55d,books_general_interest,Product arrived quickly and is exactly as described. Love it,2016-01-09,en,display
+FB-00186,bea29dfe-c73f-4e1b-af90-8e3cdd750e98,computers_accessories,Works as expected. Nothing special but no complaints either,2018-02-02,en,tv
+FB-00187,4944051b-e726-4e23-a776-b886d534ee1d,housewares,Works as expected. Nothing special but no complaints either,2018-04-01,en,paid_search
+FB-00188,9ef2b93e-30ac-4d7b-a2f9-63a33810ae66,watches_gifts,Do not buy this. Quality is dreadful and support is non-existent,2018-02-12,en,social
+FB-00189,a0a11839-e745-4704-98df-bc3ca0d4de3d,computers_accessories,Wonderful experience. Very professional seller and quick shipping,2018-03-18,en,tv
+FB-00190,bb7bee03-5d67-4bb1-945e-f2e4088a93ec,fashion_bags_accessories,Product looks even better in person. Very happy with the purchase,2018-07-20,en,paid_search
+FB-00191,2cf6bf75-6a5e-4920-bf5a-e7e653a3dd5a,furniture_decor,Really happy with this purchase. Great quality for the price,2018-03-16,en,display
+FB-00192,87e5f0fe-5da8-46d2-b8b3-8a8be05fb8bc,musical_instruments,Amazing quality! Exceeded my expectations completely,2018-04-30,en,social
+FB-00193,f1b64afe-d31e-4f1a-a9ff-1cae41c8ca8c,cool_stuff,Outstanding build quality. Well packaged and delivered on time,2018-02-03,en,paid_search
+FB-00194,f6802cdb-77e4-40c7-9d7b-c313cde22f1c,auto,Very satisfied and would definitely buy again from this seller,2018-02-11,en,social
+FB-00195,aca5e2fd-b966-442a-ad23-8d36dc322c97,books_general_interest,Average product. Packaging could be better but item is undamaged,2017-01-09,en,email
+FB-00196,43b38eb4-0390-4c5d-a502-d6a2ca6a2224,electronics,Excellent product arrived on time and in perfect condition,2017-04-10,en,paid_search
+FB-00197,431d029f-ac1e-46d8-bfbf-397bac3e7b0d,food_drink,Very satisfied and would definitely buy again from this seller,2018-04-22,en,paid_search
+FB-00198,78b2b549-3bdb-409e-acc2-16a01bbc91f7,health_beauty,Poor quality. Broke on first use. Would not recommend,2018-06-24,en,display
+FB-00199,38ab854c-9c2e-48de-aa4e-361753f8382b,auto,Not as described in the listing. Expected much better quality,2018-04-23,en,tv
+FB-00200,a6348e78-4d5c-45c7-b379-cb1ee8cda0cc,perfumery,Everything is perfect. Packaging was careful and item undamaged,2016-05-23,en,email
+FB-00201,fef518a6-4dea-4645-8986-bbebf23e323d,cool_stuff,Everything is perfect. Packaging was careful and item undamaged,2016-04-09,en,social
+FB-00202,637e4b01-22ba-410e-899c-a782e3236d1a,bed_bath_table,Fast delivery and the item matches the description perfectly,2017-11-17,en,display
+FB-00203,ba0266ef-be05-4787-965b-efdf6b4be411,fashion_bags_accessories,Five stars! The product is even better than I expected,2017-11-01,en,email
+FB-00204,687a4850-9d9b-4231-bd45-d8efd56ce8ea,watches_gifts,Amazing quality! Exceeded my expectations completely,2017-12-07,en,paid_search
+FB-00205,f3579560-71d7-4665-b181-8dcf379efc6e,housewares,Really happy with this purchase. Great quality for the price,2016-04-11,en,paid_search
+FB-00206,a5135ea0-fa53-434d-a6d5-901d8b621d41,garden_tools,Outstanding build quality. Well packaged and delivered on time,2017-02-11,en,paid_search
+FB-00207,f2f25eef-1f45-4bfd-b7dc-67e030974b2b,bed_bath_table,Product looks even better in person. Very happy with the purchase,2017-11-09,en,social
+FB-00208,f8999246-98de-4ebb-a3b5-cecea446be72,health_beauty,Great experience from start to finish. Highly recommended,2018-03-16,en,paid_search
+FB-00209,c9776598-203c-4c25-bd23-5def3e5a87e3,food_drink,Product looks even better in person. Very happy with the purchase,2016-03-11,en,display
+FB-00210,d0243d72-3748-467f-961d-33ba350843f0,housewares,Impressive quality at this price point. Will buy again,2018-03-03,en,social
+FB-00211,00b9d4a3-9892-40ac-a689-33a9c9e48e8c,watches_gifts,Very satisfied and would definitely buy again from this seller,2016-05-13,en,display
+FB-00212,1c24220e-2cab-47e7-8c6b-66e5402adf9c,health_beauty,Really happy with this purchase. Great quality for the price,2016-01-16,en,paid_search
+FB-00213,96bf10ab-3ce9-45e7-89d6-a63bca3c6f5f,telephony,Fast delivery and the item matches the description perfectly,2016-06-27,en,paid_search
+FB-00214,6bc4123e-bde1-4c1b-a073-3f6d0d6a05b3,musical_instruments,Everything is perfect. Packaging was careful and item undamaged,2018-02-02,en,email
+FB-00215,5cae9610-c72c-4fe3-b2c2-2a1679eb4168,musical_instruments,Acceptable product for everyday use. Delivery time was reasonable,2016-04-21,en,tv
+FB-00216,9d77a45e-f206-4269-b8b7-7c0780fb9296,computers_accessories,Product does not work as advertised. Very dissatisfied,2017-06-17,en,paid_search
+FB-00217,07f97d05-f6ca-4b8b-a4b1-f99175424646,computers_accessories,Decent quality for the price. Nothing extraordinary but does the job,2018-05-17,en,tv
+FB-00218,7d824264-1ba3-42e7-afa4-15e56d204496,bed_bath_table,Wonderful experience. Very professional seller and quick shipping,2018-07-09,en,email
+FB-00219,10d08d11-25f9-44bf-9bb9-61555275eb94,fashion_bags_accessories,Product arrived quickly and is exactly as described. Love it,2017-10-01,en,display
+FB-00220,6182f347-533f-4a72-b64f-a54a8c611654,office_furniture,Item matches the photos. Packaging was minimal but contents were fine,2016-10-28,en,tv
+FB-00221,1963c26d-6e21-4b09-9afd-4015816bcb9f,baby,Cheap material and nothing like the photos. Complete waste of money,2017-10-28,en,display
+FB-00222,6e191042-370b-4063-9d90-e79eb888f6ed,bed_bath_table,Everything is perfect. Packaging was careful and item undamaged,2017-02-27,en,paid_search
+FB-00223,6a7e4c36-6613-4e69-b418-8109d3d1bf0f,baby,Absolutely love it. Perfect size and excellent materials,2017-03-13,en,paid_search
+FB-00224,f41ea3ac-5fd2-4109-8140-752caa448259,fashion_bags_accessories,Product is okay. Took longer to arrive than expected but works fine,2016-03-09,en,email
+FB-00225,6e8f75a1-17dd-4d81-95da-705cd4ef00aa,baby,Fast delivery and the item matches the description perfectly,2018-04-11,en,social
+FB-00226,f4e559e5-9622-4348-8f5a-e9d38e6e5003,electronics,Average product. Packaging could be better but item is undamaged,2016-12-03,en,email
+FB-00227,aa53c19c-dfa4-4b9f-9a85-6750692ac139,perfumery,Great experience from start to finish. Highly recommended,2016-10-21,en,display
+FB-00228,93f277cc-1a85-410d-9a05-7c114ffca6b1,musical_instruments,Impressive quality at this price point. Will buy again,2016-06-07,en,tv
+FB-00229,59a1120e-1bb4-4332-98e7-012f39681c81,electronics,Fast delivery and the item matches the description perfectly,2016-04-27,en,paid_search
+FB-00230,6dda4f8d-cea6-4f4c-b9e5-8ff092f837d4,electronics,Poor quality. Broke on first use. Would not recommend,2017-09-20,en,display
+FB-00231,a867a096-edd8-47c8-9be7-173706b89231,watches_gifts,Very satisfied and would definitely buy again from this seller,2016-07-03,en,paid_search
+FB-00232,ebe9e207-4f19-4ec0-832d-4526b3e4110a,telephony,Everything is perfect. Packaging was careful and item undamaged,2016-01-07,en,social
+FB-00233,a847bce7-90fa-4b57-a4ac-2130deaf528d,books_general_interest,Five stars! The product is even better than I expected,2016-05-25,en,email
+FB-00234,3712f2d1-87cd-46a1-bf01-2e32177d6e7e,books_general_interest,Five stars! The product is even better than I expected,2017-04-09,en,paid_search
+FB-00235,b8ba8368-4fc7-4768-9ebb-cca5284bf962,telephony,It does what it says. Delivery was a bit slow though,2017-09-02,en,email
+FB-00236,284c03d2-27d4-45b6-8d77-c5a0e222b6a6,office_furniture,Great experience from start to finish. Highly recommended,2017-11-21,en,email
+FB-00237,6c8c3b6a-a974-4079-b16f-da0a45a88829,cool_stuff,Works as expected. Nothing special but no complaints either,2017-03-28,en,tv
+FB-00238,832920b7-c143-4426-b72f-871a45ee432d,baby,Everything is perfect. Packaging was careful and item undamaged,2017-03-16,en,email
+FB-00239,97d7a560-adb1-4670-ad9f-b00d4882d73c,cool_stuff,Item matches the photos. Packaging was minimal but contents were fine,2017-11-14,en,paid_search
+FB-00240,fc04a168-652f-4b49-b873-e57f0ba078e8,office_furniture,Outstanding build quality. Well packaged and delivered on time,2016-01-08,en,social
+FB-00241,c47104c0-3613-4e15-b200-c2614d29d1ab,fashion_bags_accessories,Fast delivery and the item matches the description perfectly,2016-10-23,en,paid_search
+FB-00242,bf3c5140-7f54-4511-81fa-964e1eb74b56,perfumery,Outstanding build quality. Well packaged and delivered on time,2016-05-12,en,tv
+FB-00243,8011316b-3ae8-4926-b423-ccde88575117,electronics,The item was the wrong size and returning it is a nightmare,2018-04-05,en,paid_search
+FB-00244,bdf66ba5-dc9c-46de-a5a6-74c212738a23,computers_accessories,Absolutely love it. Perfect size and excellent materials,2016-01-20,en,tv
+FB-00245,5024bdc6-dcb3-4df3-93ee-cdc6ebd14d2c,food_drink,Wonderful experience. Very professional seller and quick shipping,2017-08-10,en,tv
+FB-00246,4a1dab32-6aed-4dc7-a3e0-5309b5a1b949,baby,Great experience from start to finish. Highly recommended,2016-01-22,en,paid_search
+FB-00247,9e3d750d-f296-49f0-8d23-72c22bffe17b,bed_bath_table,Really happy with this purchase. Great quality for the price,2016-03-31,en,tv
+FB-00248,6f887f28-3e49-4d09-9b19-d8b8d8302081,food_drink,Great experience from start to finish. Highly recommended,2017-06-20,en,email
+FB-00249,beed10b6-4f6e-474b-9eda-b0276550f74a,telephony,Seller communicated well and shipping was faster than expected,2016-12-07,en,social
+FB-00250,1d30d990-a21b-4307-82af-085c138d994c,musical_instruments,Neither impressed nor disappointed. Standard quality and average shipping,2016-07-17,en,paid_search
+FB-00251,d1a69d87-f54e-4019-ba35-844e59e1ac09,fashion_bags_accessories,Excellent product arrived on time and in perfect condition,2016-04-15,en,social
+FB-00252,9a36d1ec-2c6a-4e9a-b280-67a14187222b,fashion_bags_accessories,Cheap material and nothing like the photos. Complete waste of money,2016-03-18,en,social
+FB-00253,7e7e7419-a0c1-4035-85d9-5f51f387e1bd,bed_bath_table,It does what it says. Delivery was a bit slow though,2018-02-17,en,display
+FB-00254,e1cde87f-ec95-4f87-ae5e-c36572eb7474,food_drink,Awful experience. Seller was unresponsive and product is defective,2017-10-12,en,display
+FB-00255,a09151e0-f891-40c3-9d3f-487e52bdc661,telephony,Amazing quality! Exceeded my expectations completely,2017-03-26,en,email
+FB-00256,4d85a3d2-a1a2-4485-b134-8c2a780b3657,watches_gifts,Acceptable product for everyday use. Delivery time was reasonable,2016-02-27,en,paid_search
+FB-00257,7634c169-4f76-4388-92fe-28bf81e0d489,bed_bath_table,Amazing quality! Exceeded my expectations completely,2016-02-28,en,paid_search
+FB-00258,a508dc95-13a4-4492-897d-e16dd4ea120a,auto,Very disappointed. The product stopped working after two days,2017-08-31,en,display
+FB-00259,8de7ad6c-9490-47c2-b674-456f626d719d,computers_accessories,Impressive quality at this price point. Will buy again,2018-07-19,en,display
+FB-00260,9ae1a991-524f-43ff-b030-7633a6ded1d8,cool_stuff,Satisfactory purchase. The product is functional as described,2016-06-03,en,email
+FB-00261,e62d2d06-cf9b-4558-9a7f-195b73557b9d,telephony,Absolutely love it. Perfect size and excellent materials,2017-05-31,en,social
+FB-00262,7010ed13-b526-422d-bf6c-21f70a0537f0,bed_bath_table,Item matches the photos. Packaging was minimal but contents were fine,2017-06-19,en,display
+FB-00263,eafde7d9-5f73-4a3e-9d28-6aa428a39779,toys,Amazing quality! Exceeded my expectations completely,2017-02-22,en,paid_search
+FB-00264,ca0ac6ac-0d67-438e-990f-0c5badcc3daf,telephony,Five stars! The product is even better than I expected,2016-12-03,en,email
+FB-00265,48bddb3e-62f5-4f2b-adaa-44ca8ed6ad5e,watches_gifts,Product does not work as advertised. Very dissatisfied,2018-07-17,en,display
+FB-00266,14dd5061-5557-46f8-a67e-ddcedf8f4197,food_drink,Product does not work as advertised. Very dissatisfied,2016-05-24,en,paid_search
+FB-00267,b2cf952d-a7f3-43b3-b7ba-f55e4f6b58c8,books_general_interest,Really happy with this purchase. Great quality for the price,2017-09-01,en,email
+FB-00268,a4bbf962-606e-4e1c-8f15-84494f40c22f,telephony,Really happy with this purchase. Great quality for the price,2017-11-17,en,display
+FB-00269,6c645c15-aba3-41cb-a561-e1e917ec889c,musical_instruments,Really happy with this purchase. Great quality for the price,2016-01-19,en,paid_search
+FB-00270,36d55494-f37f-450d-ae25-b5ee4f11d8dc,telephony,Average product. Packaging could be better but item is undamaged,2016-07-15,en,social
+FB-00271,13c11754-27aa-4cbc-a337-7bbcfffe77c8,toys,Impressive quality at this price point. Will buy again,2017-06-03,en,display
+FB-00272,86cac6f4-e238-4e93-bd17-c5e8d5ca69ab,computers_accessories,Product does not work as advertised. Very dissatisfied,2016-12-10,en,display
+FB-00273,277d1be9-6070-46a1-98e5-2499218c6e1c,sports_leisure,Five stars! The product is even better than I expected,2018-05-01,en,display
+FB-00274,b89f72f3-2a60-4652-a714-7668cf1d7d3a,bed_bath_table,Product arrived quickly and is exactly as described. Love it,2017-02-24,en,paid_search
+FB-00275,f836f571-3cce-476c-b836-c448ad261ec5,bed_bath_table,Very disappointed. The product stopped working after two days,2016-10-18,en,tv
+FB-00276,4f3949a8-3d3a-4582-88b4-f4743be79df4,cool_stuff,Wonderful experience. Very professional seller and quick shipping,2017-01-11,en,display
+FB-00277,c4f9eccd-7630-48a7-b0ca-fdd8fc043f08,toys,Very satisfied and would definitely buy again from this seller,2017-05-29,en,display
+FB-00278,d11fc8c0-297c-44ff-b75d-599f6b2d5b09,furniture_decor,Works as expected. Nothing special but no complaints either,2016-05-21,en,paid_search
+FB-00279,dfc620ce-7b07-4d31-a424-4f230d5ba7cd,garden_tools,Decent quality for the price. Nothing extraordinary but does the job,2016-04-15,en,display
+FB-00280,1578d709-48f9-43d0-9fea-e1e0d9e604b3,sports_leisure,Amazing quality! Exceeded my expectations completely,2017-04-05,en,display
+FB-00281,177a8a5f-6ffe-43b3-94bf-7a4b25b8a42f,housewares,Impressive quality at this price point. Will buy again,2018-06-24,en,paid_search
+FB-00282,0da23e5c-6a36-4f18-86d3-db93ee33688d,books_general_interest,Satisfactory purchase. The product is functional as described,2017-01-17,en,social
+FB-00283,5ffa46ef-14e4-480c-be99-36a362dbc850,housewares,Very satisfied and would definitely buy again from this seller,2016-11-22,en,email
+FB-00284,55d596af-a663-42cd-b6f6-dbf1d6d441cc,fashion_bags_accessories,Fast delivery and the item matches the description perfectly,2016-02-09,en,paid_search
+FB-00285,b231c60b-78f2-4e6b-946b-415deada79a3,fashion_bags_accessories,Product is okay. Took longer to arrive than expected but works fine,2017-04-04,en,display
+FB-00286,04dd7054-1448-43f7-a7e6-46c701582463,watches_gifts,Impressive quality at this price point. Will buy again,2018-05-05,en,social
+FB-00287,9bdf90f2-ba2c-4f19-b0b2-a5d18c7e6f42,musical_instruments,Wonderful experience. Very professional seller and quick shipping,2016-04-23,en,paid_search
+FB-00288,0c394ec7-1f31-4405-8d18-3eba3cd5fd7f,housewares,Five stars! The product is even better than I expected,2017-10-16,en,display
+FB-00289,d6312a80-1c61-4ec2-9014-2131750565f5,cool_stuff,Item matches the photos. Packaging was minimal but contents were fine,2017-07-02,en,email
+FB-00290,3defa849-9336-4f7e-83ef-a9f3a1c7cc8a,fashion_bags_accessories,Outstanding build quality. Well packaged and delivered on time,2017-03-15,en,email
+FB-00291,92170475-3d95-4e3f-9a52-26e69d642932,perfumery,Five stars! The product is even better than I expected,2017-11-11,en,email
+FB-00292,11536e99-5c50-4720-b982-f4e08603156a,musical_instruments,Product is okay. Took longer to arrive than expected but works fine,2017-06-03,en,display
+FB-00293,df92a621-63f4-469d-8534-a1018ddce719,cool_stuff,Product arrived quickly and is exactly as described. Love it,2017-10-12,en,tv
+FB-00294,bf5023f4-40ef-4935-9f90-bed6fb25664d,health_beauty,Excellent product arrived on time and in perfect condition,2018-03-18,en,email
+FB-00295,a837fe68-bba2-45ca-bdba-6da85844f9fc,baby,Neither impressed nor disappointed. Standard quality and average shipping,2018-01-22,en,paid_search
+FB-00296,8bc78e81-5a30-4528-8b59-95622227219f,telephony,Awful experience. Seller was unresponsive and product is defective,2016-06-28,en,tv
+FB-00297,a1b970d0-7a81-44de-b205-07bbfb16f757,sports_leisure,Fast delivery and the item matches the description perfectly,2016-03-05,en,tv
+FB-00298,0b36e356-339b-47a8-8b1f-0d7b0977c513,furniture_decor,Product arrived quickly and is exactly as described. Love it,2016-11-19,en,paid_search
+FB-00299,d0be73ee-fd37-4539-a5f2-02f983f02dc7,electronics,Product is okay. Took longer to arrive than expected but works fine,2016-09-16,en,email
+FB-00300,493e904d-30ec-4796-a59b-457fc0d7ac73,garden_tools,Great experience from start to finish. Highly recommended,2018-06-05,en,paid_search
+FB-00301,5e368127-cca1-445c-9fdd-980a45f18619,perfumery,Great experience from start to finish. Highly recommended,2018-01-31,en,tv
+FB-00302,56cb1ab0-62fb-46d7-b4db-ca07e506f670,sports_leisure,It does what it says. Delivery was a bit slow though,2017-12-09,en,tv
+FB-00303,84ef4324-cc1b-4157-ac9f-9c545e0a72ab,watches_gifts,Absolutely love it. Perfect size and excellent materials,2018-01-14,en,tv
+FB-00304,febec0db-9a3a-4103-ae3c-453214348f62,sports_leisure,Product is okay. Took longer to arrive than expected but works fine,2016-10-27,en,paid_search
+FB-00305,a9320094-53f2-4f11-947f-65701a43db54,toys,Wonderful experience. Very professional seller and quick shipping,2017-04-01,en,display
+FB-00306,b0946d2a-2aa9-4b43-ad15-f16fb7b8c1a5,bed_bath_table,Everything is perfect. Packaging was careful and item undamaged,2017-04-02,en,email
+FB-00307,5a4153b3-e95f-476c-9eba-c186ba108217,office_furniture,Absolutely love it. Perfect size and excellent materials,2016-10-08,en,email
+FB-00308,67fd64c4-a334-458a-abd2-b5121335e5db,garden_tools,Neither impressed nor disappointed. Standard quality and average shipping,2018-03-31,en,social
+FB-00309,d942644c-248d-41ec-87f8-d4f0f3ea0184,office_furniture,Do not buy this. Quality is dreadful and support is non-existent,2018-03-11,en,tv
+FB-00310,3c6a3174-1136-44a5-a050-9c6208e895d7,garden_tools,Really happy with this purchase. Great quality for the price,2017-01-27,en,display
+FB-00311,add702c9-2747-493c-9ae7-7eab084a6780,bed_bath_table,Fast delivery and the item matches the description perfectly,2017-01-15,en,tv
+FB-00312,233ffc82-92ec-49af-93ae-c376c359810a,musical_instruments,Really happy with this purchase. Great quality for the price,2017-02-11,en,paid_search
+FB-00313,f5e4a471-3fe6-4c9c-8758-367ba6499cdc,baby,Very satisfied and would definitely buy again from this seller,2018-01-23,en,social
+FB-00314,e9ddebf5-6311-4aca-848a-f4407fc15858,electronics,Excellent product arrived on time and in perfect condition,2016-09-25,en,paid_search
+FB-00315,ff11c8ba-36ee-4640-b23e-f466b43bd27f,office_furniture,Great experience from start to finish. Highly recommended,2017-12-11,en,tv
+FB-00316,da52d2ee-22bf-48f5-9f65-2a87333ee344,auto,Impressive quality at this price point. Will buy again,2016-06-25,en,tv
+FB-00317,ae92ea71-cf7d-4b43-9679-742fff4c96d6,telephony,The item was the wrong size and returning it is a nightmare,2016-12-21,en,email
+FB-00318,e42e5037-4a55-4ea0-8acb-be098ccc9cea,toys,Product arrived quickly and is exactly as described. Love it,2017-12-29,en,social
+FB-00319,3967e60a-823d-4107-9c8a-c066cb2fafa3,baby,Absolutely love it. Perfect size and excellent materials,2018-03-22,en,social
+FB-00320,06ba8cd3-7e78-48c9-8a55-e38b3c9abe10,garden_tools,Decent quality for the price. Nothing extraordinary but does the job,2017-08-09,en,paid_search
+FB-00321,8d38bbd8-fba6-4bf7-8dbc-c65377a7e8b7,fashion_bags_accessories,Very disappointed. The product stopped working after two days,2018-06-24,en,email
+FB-00322,ffe575f6-65ed-4fe3-8f2d-ad3f10d4de39,cool_stuff,Item matches the photos. Packaging was minimal but contents were fine,2017-02-24,en,tv
+FB-00323,20156a72-12e1-43a6-932c-ae01d2c65ee4,telephony,Awful experience. Seller was unresponsive and product is defective,2016-03-16,en,tv
+FB-00324,58321ee4-8471-44b0-ae1b-9f697740d831,fashion_bags_accessories,Decent quality for the price. Nothing extraordinary but does the job,2017-10-17,en,display
+FB-00325,21084dd9-f75d-4e3c-848d-56502e9522d6,perfumery,Satisfactory purchase. The product is functional as described,2018-07-21,en,email
+FB-00326,272c0588-84a2-476c-9fc9-05f8d4d60735,toys,Great experience from start to finish. Highly recommended,2016-06-14,en,paid_search
+FB-00327,5894f7f1-39b8-4bb2-b596-ca7cef4afa88,musical_instruments,Great experience from start to finish. Highly recommended,2018-05-16,en,email
+FB-00328,f4d375c1-a293-49fa-b240-d7a14027ab7d,electronics,Product arrived quickly and is exactly as described. Love it,2016-05-08,en,paid_search
+FB-00329,80a8a23d-17ea-4c83-8892-042f9d4b2bf9,sports_leisure,Acceptable product for everyday use. Delivery time was reasonable,2017-08-17,en,social
+FB-00330,b87b6384-9fdd-4e2e-a8a2-b7ad2bd3cdcd,office_furniture,Seller communicated well and shipping was faster than expected,2018-05-12,en,display
+FB-00331,07437c3b-dd20-43bf-9342-af080a8bb5b4,auto,Product arrived quickly and is exactly as described. Love it,2017-10-18,en,display
+FB-00332,c4576cc3-35f7-49bc-a6b0-745843c07d43,food_drink,Five stars! The product is even better than I expected,2017-09-24,en,email
+FB-00333,8baaf744-a08d-421b-a395-4cb17f7f6c0a,toys,Awful experience. Seller was unresponsive and product is defective,2016-11-05,en,tv
+FB-00334,af5b8f47-ceae-41cf-8e00-0af03eb05181,books_general_interest,Five stars! The product is even better than I expected,2017-04-09,en,email
+FB-00335,7089fc6d-2877-45d9-8f56-75f8b048faa1,perfumery,Decent quality for the price. Nothing extraordinary but does the job,2017-04-20,en,social
+FB-00336,5005680f-24c7-48a5-9b4e-164b5716dc2e,telephony,Everything is perfect. Packaging was careful and item undamaged,2017-02-12,en,social
+FB-00337,8fc85fc0-83d5-4ceb-9edb-b8eec2baf0e0,baby,Absolutely love it. Perfect size and excellent materials,2016-09-04,en,tv
+FB-00338,3f779cae-7318-496d-8479-06121f5d988f,fashion_bags_accessories,Impressive quality at this price point. Will buy again,2016-02-21,en,paid_search
+FB-00339,9d896047-dd39-4793-a257-a4a2f204be89,perfumery,Really happy with this purchase. Great quality for the price,2018-06-05,en,social
+FB-00340,93e34c35-ef0a-473d-93d2-d56dd0401587,telephony,Wonderful experience. Very professional seller and quick shipping,2018-02-20,en,social
+FB-00341,7781321e-83c5-41cb-bef7-d9ea7f8e5483,cool_stuff,Wonderful experience. Very professional seller and quick shipping,2017-05-24,en,email
+FB-00342,8164ceec-64ab-451b-b1fa-c6e7170d7507,bed_bath_table,Excellent product arrived on time and in perfect condition,2016-08-08,en,display
+FB-00343,4806f804-0cf0-474c-8c74-dc0f5a575539,cool_stuff,Item matches the photos. Packaging was minimal but contents were fine,2018-06-22,en,tv
+FB-00344,d8e049de-0217-4a0e-8964-90ab4926ce5f,baby,Absolutely love it. Perfect size and excellent materials,2016-05-17,en,paid_search
+FB-00345,673ba8bd-c38c-4dec-9da3-9a73ba3df7ff,garden_tools,Product arrived quickly and is exactly as described. Love it,2017-02-14,en,email
+FB-00346,5cce5ba9-31d4-4e09-8fd3-3afc91fdfa4f,electronics,Great experience from start to finish. Highly recommended,2016-03-16,en,tv
+FB-00347,8cc36f3b-c3af-4cfe-b34a-6ca38116e3fc,watches_gifts,Poor quality. Broke on first use. Would not recommend,2017-11-27,en,display
+FB-00348,18c01e2b-f99f-4704-a0f0-156a1e6a6628,books_general_interest,Fast delivery and the item matches the description perfectly,2018-03-24,en,paid_search
+FB-00349,c14565c7-5d98-4115-b05e-eefe8ece1128,fashion_bags_accessories,Absolutely love it. Perfect size and excellent materials,2017-09-08,en,display
+FB-00350,0b990034-0a4e-4552-8005-1b1066c14dca,computers_accessories,Fast delivery and the item matches the description perfectly,2017-12-31,en,paid_search
+FB-00351,74fd33d1-84f2-4d0f-b947-4bfacdd0b4d4,fashion_bags_accessories,Works as expected. Nothing special but no complaints either,2018-07-03,en,display
+FB-00352,9cf20859-ee6e-4e72-93f5-91dc23c8afdb,telephony,Product arrived quickly and is exactly as described. Love it,2017-02-06,en,display
+FB-00353,97fe56c5-4c9a-4f24-97b4-c294bd44089d,telephony,Satisfactory purchase. The product is functional as described,2018-04-28,en,display
+FB-00354,901bcdef-b56f-48ce-bd66-971e88476c56,toys,Product is okay. Took longer to arrive than expected but works fine,2018-04-15,en,email
+FB-00355,1c0f0bdc-ac7e-437c-94cc-1e2a5e4cb287,perfumery,Neither impressed nor disappointed. Standard quality and average shipping,2016-11-11,en,email
+FB-00356,f791f1e5-43f9-4d6b-b97e-be8798cf1188,food_drink,Satisfactory purchase. The product is functional as described,2016-08-21,en,email
+FB-00357,86341718-2ba6-4db3-bafe-b1149561c813,office_furniture,Very satisfied and would definitely buy again from this seller,2016-05-31,en,social
+FB-00358,b35556a5-f2bd-42f2-9293-f70508150147,baby,Wonderful experience. Very professional seller and quick shipping,2016-01-20,en,tv
+FB-00359,69b7c0fa-26c4-42f6-ab35-2f85504e2687,furniture_decor,Outstanding build quality. Well packaged and delivered on time,2017-05-28,en,display
+FB-00360,d92f3c1e-df70-4b2a-b8bb-22a5eba742d2,computers_accessories,Fast delivery and the item matches the description perfectly,2017-06-15,en,social
+FB-00361,a987b218-ff84-4aef-9336-723b8f964685,cool_stuff,Item matches the photos. Packaging was minimal but contents were fine,2017-01-20,en,paid_search
+FB-00362,e980f808-75ac-424c-ac55-aef7f4e95734,electronics,Seller communicated well and shipping was faster than expected,2017-07-13,en,paid_search
+FB-00363,b88e830f-de1e-494a-85a1-1f5cad05b912,watches_gifts,Very disappointed. The product stopped working after two days,2017-05-10,en,social
+FB-00364,8edec44d-476c-468c-bf1b-e0d0f5141058,toys,Seller communicated well and shipping was faster than expected,2016-10-31,en,paid_search
+FB-00365,b47a1c5b-b0b3-4015-b510-2852b4746349,cool_stuff,Absolutely love it. Perfect size and excellent materials,2017-05-06,en,paid_search
+FB-00366,cb9faf6d-ef3a-4f27-af06-fccb8f7c1d59,watches_gifts,Great experience from start to finish. Highly recommended,2016-05-04,en,display
+FB-00367,e5508ea2-6133-434d-8b0e-8eb1ad371d9e,books_general_interest,Everything is perfect. Packaging was careful and item undamaged,2018-03-02,en,social
+FB-00368,f48f709c-49a2-4441-8ac4-de854a5b1aff,auto,Everything is perfect. Packaging was careful and item undamaged,2017-03-28,en,paid_search
+FB-00369,33baba88-36c7-46fa-baa4-f052bf519362,electronics,Amazing quality! Exceeded my expectations completely,2017-07-29,en,paid_search
+FB-00370,bdab07e7-9d9d-428e-9bf6-45f623245211,food_drink,Excellent product arrived on time and in perfect condition,2016-09-05,en,email
+FB-00371,39c59df9-87f2-45d6-a7ba-26acab7a3d1c,housewares,Great experience from start to finish. Highly recommended,2016-04-12,en,tv
+FB-00372,19bd4f93-78ef-4666-b7a4-c719548e1f6b,fashion_bags_accessories,Excellent product arrived on time and in perfect condition,2017-07-17,en,social
+FB-00373,e1721c83-ef5e-4376-a723-fb72682b163a,cool_stuff,Decent quality for the price. Nothing extraordinary but does the job,2017-10-28,en,social
+FB-00374,52380bf2-4988-4418-b6c3-1218c1836315,toys,Awful experience. Seller was unresponsive and product is defective,2016-03-01,en,email
+FB-00375,88ffbd40-3b72-486d-92fa-675fa6fd0cb1,computers_accessories,Outstanding build quality. Well packaged and delivered on time,2017-03-03,en,social
+FB-00376,ff46a6bf-094d-416d-ab6d-2fedef158d5b,books_general_interest,It does what it says. Delivery was a bit slow though,2016-07-09,en,paid_search
+FB-00377,4c636e95-025f-4543-8997-623ae0723d96,food_drink,Works as expected. Nothing special but no complaints either,2016-04-19,en,paid_search
+FB-00378,a42d0cd7-fd35-4f6a-b450-388748d90846,electronics,Item matches the photos. Packaging was minimal but contents were fine,2017-05-20,en,social
+FB-00379,45d8a6ad-77d0-459e-8114-14f8d9df0d0e,furniture_decor,Everything is perfect. Packaging was careful and item undamaged,2016-12-04,en,social
+FB-00380,41dc1c60-a5f6-4735-b57b-6b29bb2aa146,sports_leisure,Really happy with this purchase. Great quality for the price,2018-01-24,en,paid_search
+FB-00381,aca58d95-915a-4c30-8b86-b5a1ca6fbff8,furniture_decor,Outstanding build quality. Well packaged and delivered on time,2017-09-17,en,tv
+FB-00382,53f30073-83e9-4ef4-ad7d-f5d0d3b59af7,auto,Great experience from start to finish. Highly recommended,2017-11-16,en,email
+FB-00383,7a3a6e96-23ff-43d3-bb4f-b88a2f4dd219,telephony,Really happy with this purchase. Great quality for the price,2016-01-07,en,paid_search
+FB-00384,c0f63229-725d-4259-bc4b-1eec6231ee73,watches_gifts,Impressive quality at this price point. Will buy again,2016-11-05,en,display
+FB-00385,42f525b9-02ed-43ce-92a8-1713b90ed44b,garden_tools,Excellent product arrived on time and in perfect condition,2016-03-04,en,email
+FB-00386,67c96204-28e3-43b6-8e8a-dc4b77242041,musical_instruments,Wonderful experience. Very professional seller and quick shipping,2017-12-07,en,email
+FB-00387,4b87959f-f0cd-4f05-aa87-855ea38295d3,garden_tools,Very disappointed. The product stopped working after two days,2016-08-14,en,social
+FB-00388,27372b52-7a6a-4107-a231-9050f5159494,bed_bath_table,Works as expected. Nothing special but no complaints either,2017-01-17,en,tv
+FB-00389,78883058-e9ad-4e9b-8c9a-a1e9b3b26337,electronics,The item was the wrong size and returning it is a nightmare,2018-04-25,en,social
+FB-00390,c1369c65-ae2a-4341-bf59-e4f2c3093b6e,office_furniture,Absolutely love it. Perfect size and excellent materials,2017-06-22,en,tv
+FB-00391,13fe8a29-5c9d-4ee0-b42a-045687365a84,food_drink,Everything is perfect. Packaging was careful and item undamaged,2016-03-04,en,display
+FB-00392,929c93b3-33c0-4bf1-8167-999fe723ada3,electronics,Amazing quality! Exceeded my expectations completely,2016-06-17,en,paid_search
+FB-00393,1dc1e7eb-711c-4673-8535-1a69dabf984e,furniture_decor,Neither impressed nor disappointed. Standard quality and average shipping,2017-05-15,en,email
+FB-00394,cf0671c7-720b-474b-82a7-f586e61d9cde,computers_accessories,Seller communicated well and shipping was faster than expected,2016-05-15,en,display
+FB-00395,0ec7d662-905c-4bdd-b4f0-beae6a5943ce,electronics,Everything is perfect. Packaging was careful and item undamaged,2017-11-19,en,paid_search
+FB-00396,41241bb4-655c-4508-8592-bfa5b928e23f,health_beauty,Impressive quality at this price point. Will buy again,2017-08-15,en,email
+FB-00397,b34c6c73-5833-4b30-ac77-6e950b981ccd,auto,Product is okay. Took longer to arrive than expected but works fine,2016-03-02,en,email
+FB-00398,081fc6dc-78d9-488a-af0b-ea4ffc737d92,toys,Outstanding build quality. Well packaged and delivered on time,2016-07-03,en,social
+FB-00399,bab2b77d-fa74-4cc8-a43a-fb7ac40d4874,perfumery,Fast delivery and the item matches the description perfectly,2018-07-01,en,tv
+FB-00400,e821e716-eac8-4da1-9e9f-6f5b72d35458,books_general_interest,Very satisfied and would definitely buy again from this seller,2016-03-23,en,display
+FB-00401,59077299-dc3b-4dd8-a74e-02a9220b9ea9,baby,Outstanding build quality. Well packaged and delivered on time,2017-07-04,en,tv
+FB-00402,fa8dae42-ba54-4920-a099-d18087623997,housewares,Excellent product arrived on time and in perfect condition,2018-02-13,en,email
+FB-00403,ac6a7c85-7687-4c62-8c61-845efa7e5d94,electronics,Wonderful experience. Very professional seller and quick shipping,2017-06-28,en,tv
+FB-00404,75eb89c2-3f5c-42f3-bacb-43a3d2c7bffb,garden_tools,Amazing quality! Exceeded my expectations completely,2016-10-09,en,social
+FB-00405,c3f725fe-b99b-4b5a-a00d-a49deffa2002,baby,Amazing quality! Exceeded my expectations completely,2018-04-08,en,tv
+FB-00406,e23ddfaa-efad-49e9-841c-147e9d6b9b62,health_beauty,Excellent product arrived on time and in perfect condition,2016-07-30,en,email
+FB-00407,7249f62c-0898-4462-980c-b95c19d45deb,office_furniture,Do not buy this. Quality is dreadful and support is non-existent,2017-12-21,en,email
+FB-00408,66fadca0-0b53-4932-bd94-19aa3ea6e5b2,bed_bath_table,Everything is perfect. Packaging was careful and item undamaged,2017-07-06,en,social
+FB-00409,0e731dd7-c6ac-4b04-9d1d-6cd1c11f6bf5,fashion_bags_accessories,Satisfactory purchase. The product is functional as described,2016-10-23,en,social
+FB-00410,937bf79b-bb44-4adc-aa98-fef8d0d75e37,telephony,Satisfactory purchase. The product is functional as described,2017-09-04,en,paid_search
+FB-00411,24acb722-e052-4739-8d40-6f1b3ca5be29,musical_instruments,Seller communicated well and shipping was faster than expected,2017-02-27,en,paid_search
+FB-00412,f2d2393f-8e85-440d-8f9a-eb7046707cd6,food_drink,Outstanding build quality. Well packaged and delivered on time,2017-10-03,en,tv
+FB-00413,f8e8035b-0c00-488a-bee1-011a8e4c3ab5,garden_tools,Awful experience. Seller was unresponsive and product is defective,2017-11-18,en,tv
+FB-00414,b2414482-5198-44d8-8643-3603c92a7d7c,perfumery,Outstanding build quality. Well packaged and delivered on time,2016-06-01,en,paid_search
+FB-00415,89b5aab0-c121-49db-af12-b150605fb1eb,cool_stuff,Excellent product arrived on time and in perfect condition,2018-05-19,en,social
+FB-00416,24f43c62-b523-40de-9b87-d29c4cfd0fc1,bed_bath_table,Outstanding build quality. Well packaged and delivered on time,2017-07-29,en,tv
+FB-00417,87ad8b26-8eaa-4841-aaa0-426df7c0d5f7,fashion_bags_accessories,Amazing quality! Exceeded my expectations completely,2016-09-05,en,paid_search
+FB-00418,143df5b3-a58e-43dd-948c-1d84340de049,bed_bath_table,Fast delivery and the item matches the description perfectly,2016-04-04,en,display
+FB-00419,0d31812e-30c3-4756-9453-f867b97e6224,watches_gifts,Very satisfied and would definitely buy again from this seller,2017-11-20,en,display
+FB-00420,12a1fe7d-dfa5-4722-8a1f-c9df9a591974,furniture_decor,Acceptable product for everyday use. Delivery time was reasonable,2018-01-11,en,display
+FB-00421,de95d695-3579-4143-bab9-9428378e6510,telephony,Five stars! The product is even better than I expected,2018-07-19,en,email
+FB-00422,f64ab6ec-30a5-448e-afe9-b3d0363908bf,baby,Decent quality for the price. Nothing extraordinary but does the job,2018-07-25,en,social
+FB-00423,345af934-b42a-4d93-9aba-0f15b2149062,books_general_interest,Excellent product arrived on time and in perfect condition,2017-07-19,en,paid_search
+FB-00424,775c30b5-6173-4c48-8876-9153c68813fe,electronics,Cheap material and nothing like the photos. Complete waste of money,2017-01-02,en,paid_search
+FB-00425,e1fff6c0-8347-41da-9c11-ab6d42f5b3f5,cool_stuff,Everything is perfect. Packaging was careful and item undamaged,2016-04-10,en,tv
+FB-00426,ea11905b-51fa-4efa-96f8-9f7ac2fa1da8,furniture_decor,Fast delivery and the item matches the description perfectly,2016-11-16,en,tv
+FB-00427,38a56b49-dd34-4a18-9001-9ed40bb401e7,fashion_bags_accessories,Fast delivery and the item matches the description perfectly,2016-09-24,en,display
+FB-00428,b852b3cd-9442-45e6-9583-1d58ef4c5119,perfumery,Outstanding build quality. Well packaged and delivered on time,2016-06-05,en,social
+FB-00429,91ddb9bf-613d-4de9-bae2-802354720d2d,housewares,It does what it says. Delivery was a bit slow though,2017-07-17,en,paid_search
+FB-00430,7d1645a0-d253-4966-836b-9a0a41e02a89,cool_stuff,Seller communicated well and shipping was faster than expected,2016-06-21,en,paid_search
+FB-00431,8bea75c1-b866-47aa-a3d4-526b2b54ff7a,cool_stuff,Five stars! The product is even better than I expected,2018-07-27,en,display
+FB-00432,0f09105c-f50d-4a37-a44d-9fecfd85d7fa,musical_instruments,Amazing quality! Exceeded my expectations completely,2018-05-09,en,email
+FB-00433,0c6b7074-ab10-4c9b-9168-2e09f1f7d904,health_beauty,Outstanding build quality. Well packaged and delivered on time,2016-05-20,en,social
+FB-00434,02571851-26a9-4100-b509-109b116658ce,furniture_decor,Satisfactory purchase. The product is functional as described,2017-04-11,en,paid_search
+FB-00435,aab07015-a342-4e50-9e2a-73240f79a8a7,office_furniture,Decent quality for the price. Nothing extraordinary but does the job,2017-11-06,en,tv
+FB-00436,8d388327-883f-43c6-81b1-58e90406ff44,perfumery,Really happy with this purchase. Great quality for the price,2016-01-18,en,display
+FB-00437,fa3c1628-8926-41df-8655-68b7b8e19f56,toys,Fast delivery and the item matches the description perfectly,2017-05-29,en,tv
+FB-00438,2de46e91-e8e6-4840-b090-f5a0ce610199,baby,Impressive quality at this price point. Will buy again,2017-06-20,en,social
+FB-00439,86c5d1d6-9ea9-4508-b122-75923db02235,watches_gifts,Excellent product arrived on time and in perfect condition,2016-09-30,en,tv
+FB-00440,67f1698c-f594-4a54-9f80-4eeb143a9aff,bed_bath_table,It does what it says. Delivery was a bit slow though,2016-09-06,en,social
+FB-00441,d90dd19b-d3fb-4043-af1d-5a1a4ccb2355,auto,Cheap material and nothing like the photos. Complete waste of money,2018-05-28,en,email
+FB-00442,608e2f5c-6117-4270-a7c0-518b17efa621,electronics,Product is okay. Took longer to arrive than expected but works fine,2016-02-27,en,email
+FB-00443,7ff6b824-152a-4aec-abdf-cb41b3eda8f1,perfumery,Awful experience. Seller was unresponsive and product is defective,2018-03-14,en,paid_search
+FB-00444,f94d8fcb-dba3-496f-ba32-3f6990dbfad6,baby,Item matches the photos. Packaging was minimal but contents were fine,2018-07-30,en,email
+FB-00445,de3ce88b-e6b9-431a-b61f-6d903ad1fa33,food_drink,Product is okay. Took longer to arrive than expected but works fine,2016-10-04,en,email
+FB-00446,ecf32053-af36-48cc-9308-7974ec95b3ac,watches_gifts,Product is okay. Took longer to arrive than expected but works fine,2017-07-31,en,email
+FB-00447,508211a5-d9b5-4f84-adc3-a1c32dea2d2d,health_beauty,Product looks even better in person. Very happy with the purchase,2017-08-24,en,social
+FB-00448,d226a8b3-b674-410d-9218-c9d6c093bfb0,books_general_interest,Wonderful experience. Very professional seller and quick shipping,2016-11-02,en,social
+FB-00449,d5aba8ae-9112-4bc0-bd8f-95f4905f9096,books_general_interest,Do not buy this. Quality is dreadful and support is non-existent,2018-07-07,en,display
+FB-00450,bd5ff093-c16f-4bcc-a243-bed754ec3f33,fashion_bags_accessories,Absolutely love it. Perfect size and excellent materials,2017-05-27,en,paid_search
+FB-00451,3b6dca0d-6fe5-440b-9901-ef870dbf0caf,auto,Seller communicated well and shipping was faster than expected,2017-09-11,en,display
+FB-00452,f80b2cea-658e-44a2-9879-cf35f4719986,telephony,Very satisfied and would definitely buy again from this seller,2017-10-11,en,paid_search
+FB-00453,7d98302f-7357-41e5-be1a-1ba9c8969c5b,housewares,Excellent product arrived on time and in perfect condition,2017-07-20,en,tv
+FB-00454,95fbe976-ae00-4b7e-af8c-83e56e8d9644,books_general_interest,Absolutely love it. Perfect size and excellent materials,2018-03-01,en,display
+FB-00455,b68e47fa-3f17-4534-8c4d-58194b9dfd58,auto,Absolutely love it. Perfect size and excellent materials,2016-10-01,en,social
+FB-00456,a247541d-c8ad-4899-b630-794d6147adeb,fashion_bags_accessories,Amazing quality! Exceeded my expectations completely,2016-11-20,en,paid_search
+FB-00457,f165d779-0154-4950-976d-e21f1b46ebdc,toys,Product looks even better in person. Very happy with the purchase,2017-01-03,en,paid_search
+FB-00458,2ff8e87e-1659-4c89-a1eb-faa91a2bd69c,perfumery,Impressive quality at this price point. Will buy again,2017-07-24,en,display
+FB-00459,06b919aa-1a71-47c7-a875-9545832f52c4,auto,Excellent product arrived on time and in perfect condition,2017-07-21,en,email
+FB-00460,530ddda6-c8d0-49e5-9919-65ea98d00c2c,books_general_interest,Really happy with this purchase. Great quality for the price,2016-10-25,en,tv
+FB-00461,b98f5dbe-15ae-4e0f-8777-a07f6346d4ef,electronics,Really happy with this purchase. Great quality for the price,2017-08-08,en,display
+FB-00462,2b64777c-6177-4771-af70-de702b69c95e,fashion_bags_accessories,Amazing quality! Exceeded my expectations completely,2016-11-04,en,paid_search
+FB-00463,2ace1aa9-1032-46b3-a55b-fc1c7e3d5ee4,perfumery,Product arrived quickly and is exactly as described. Love it,2017-03-07,en,paid_search
+FB-00464,5c72aebd-13b1-4e59-885c-d7147bf69552,watches_gifts,Really happy with this purchase. Great quality for the price,2018-01-08,en,tv
+FB-00465,75366b9f-320f-42c0-9dde-01889803b22e,baby,Fast delivery and the item matches the description perfectly,2016-11-07,en,email
+FB-00466,d773f98d-550c-4fe9-a54c-11d9f2e61828,office_furniture,Very satisfied and would definitely buy again from this seller,2018-04-03,en,paid_search
+FB-00467,d0c30018-6e3c-4d4f-95b1-45e470b27304,office_furniture,Fast delivery and the item matches the description perfectly,2016-11-03,en,paid_search
+FB-00468,336b00cb-b1fe-4d13-b280-df1d9a6c0db9,cool_stuff,Absolutely love it. Perfect size and excellent materials,2016-06-30,en,tv
+FB-00469,bc20b9f2-4a9c-489e-91b3-0182f7fe604f,cool_stuff,Satisfactory purchase. The product is functional as described,2018-03-11,en,social
+FB-00470,d105c8d6-47c1-4017-a045-2909536d47d7,books_general_interest,Really happy with this purchase. Great quality for the price,2016-04-26,en,display
+FB-00471,8bae591e-ff4c-410f-979c-30cf33261887,sports_leisure,Decent quality for the price. Nothing extraordinary but does the job,2016-01-28,en,tv
+FB-00472,703e957f-35ab-4466-b557-8b00f166cdcf,toys,Five stars! The product is even better than I expected,2018-04-18,en,tv
+FB-00473,a2224f96-23a1-4e20-bfd2-55eeac484366,toys,Excellent product arrived on time and in perfect condition,2016-09-15,en,social
+FB-00474,6082786f-ca00-4f58-ac52-1d13b719bb68,auto,Impressive quality at this price point. Will buy again,2017-09-04,en,tv
+FB-00475,81b15db9-88cc-4d49-a69b-29b8950df1a0,perfumery,Product is okay. Took longer to arrive than expected but works fine,2016-02-07,en,paid_search
+FB-00476,8972abbd-cff2-41c4-a53f-9644b39e4df2,office_furniture,Not as described in the listing. Expected much better quality,2018-07-25,en,email
+FB-00477,a85894df-3f8c-4097-84da-2c2e1bffa279,garden_tools,Great experience from start to finish. Highly recommended,2017-10-24,en,display
+FB-00478,a520c3d0-fbcd-4f5e-902f-34650b570720,books_general_interest,Impressive quality at this price point. Will buy again,2018-03-26,en,tv
+FB-00479,423cad9d-193e-4783-82b3-42541b1f2eb1,housewares,Neither impressed nor disappointed. Standard quality and average shipping,2018-02-03,en,display
+FB-00480,9342a09f-b00a-464c-949c-d8d48ed8a80d,housewares,Impressive quality at this price point. Will buy again,2017-01-18,en,tv
+FB-00481,96add4df-adf7-4924-85b8-386b768b4f7e,musical_instruments,Amazing quality! Exceeded my expectations completely,2016-12-19,en,email
+FB-00482,6a7d5d96-4ba1-4233-9ac3-bf317b96e2d1,auto,Everything is perfect. Packaging was careful and item undamaged,2018-05-01,en,social
+FB-00483,7490adeb-57d3-47d3-8fd8-0bbb592c1107,furniture_decor,Acceptable product for everyday use. Delivery time was reasonable,2017-05-09,en,paid_search
+FB-00484,b8d49848-702b-449f-98fd-d2b979e5c9aa,bed_bath_table,Absolutely love it. Perfect size and excellent materials,2016-03-09,en,paid_search
+FB-00485,1d763a66-b5f5-4cb0-8f68-58780b705933,health_beauty,Seller communicated well and shipping was faster than expected,2017-10-25,en,email
+FB-00486,ee0f65a8-2a13-4c1f-8cd0-15c1ad5900dd,housewares,Acceptable product for everyday use. Delivery time was reasonable,2016-06-27,en,display
+FB-00487,6d268b37-8f52-42d3-94bb-bcf828fea761,bed_bath_table,Everything is perfect. Packaging was careful and item undamaged,2018-03-27,en,tv
+FB-00488,a3f66c61-2fb7-4dab-af38-3b43a137f8e4,perfumery,Product arrived quickly and is exactly as described. Love it,2016-01-30,en,display
+FB-00489,979aa051-7317-491a-b283-daa4e212ab7c,perfumery,Amazing quality! Exceeded my expectations completely,2016-01-05,en,social
+FB-00490,b4299924-c098-4750-8741-9b4834ae4abd,auto,Satisfactory purchase. The product is functional as described,2016-04-14,en,display
+FB-00491,327375bf-5373-4f4d-9da4-9cb92fdc9992,bed_bath_table,Everything is perfect. Packaging was careful and item undamaged,2016-09-25,en,tv
+FB-00492,503b4078-a39c-4ec6-b746-4c02871854c1,office_furniture,Amazing quality! Exceeded my expectations completely,2017-09-17,en,tv
+FB-00493,5a1baf0e-5911-46dc-9d3e-503a9645f0e4,bed_bath_table,Poor quality. Broke on first use. Would not recommend,2016-06-25,en,paid_search
+FB-00494,15b24e1d-9715-4633-9d4e-db71eb2ec80e,fashion_bags_accessories,Absolutely love it. Perfect size and excellent materials,2016-04-30,en,social
+FB-00495,5f90fc87-2edc-417e-9df0-5d184e2d6255,fashion_bags_accessories,Neither impressed nor disappointed. Standard quality and average shipping,2017-02-01,en,tv
+FB-00496,623ad0fc-9326-4d25-a34b-456298af5cca,perfumery,Five stars! The product is even better than I expected,2017-05-13,en,display
+FB-00497,ee4205ee-a52f-43ec-ab4e-2281b184d1fc,sports_leisure,Average product. Packaging could be better but item is undamaged,2016-06-19,en,tv
+FB-00498,508850d3-2fe5-4140-a3ea-795649f1137d,bed_bath_table,Poor quality. Broke on first use. Would not recommend,2016-02-24,en,paid_search
+FB-00499,22f3f068-7c0f-449d-8274-0f73f3abea0d,furniture_decor,Amazing quality! Exceeded my expectations completely,2017-07-29,en,display
+FB-00500,af4847f0-68bd-475b-beb6-581ea72f947d,cool_stuff,Five stars! The product is even better than I expected,2017-12-28,en,tv

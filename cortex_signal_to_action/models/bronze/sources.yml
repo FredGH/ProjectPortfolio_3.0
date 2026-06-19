@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: olist
+    description: >
+      Raw Olist e-commerce tables loaded from CSV via COPY INTO from the internal
+      stage into the BRONZE schema. These tables are untyped source-of-truth;
+      all type casting happens in the brz_* bronze models.
+    database: "{{ env_var('SNOWFLAKE_DATABASE', 'CSTA_MARKETING_DEV') }}"
+    schema: bronze
+    freshness:
+      warn_after: {count: 30, period: day}
+      error_after: {count: 90, period: day}
+    loaded_at_field: _sdc_received_at
+    tables:
+      - name: olist_orders
+        description: "Raw order header records from the Olist marketplace."
+      - name: olist_order_items
+        description: "Raw order line items — one row per product within an order."
+      - name: olist_order_reviews
+        description: "Customer review submissions against delivered orders."
+      - name: olist_customers
+        description: "Customer master with zip code and state."
+      - name: olist_order_payments
+        description: "Payment records — one row per payment installment type per order."
+      - name: olist_products
+        description: "Product catalogue with category, dimensions, and weight."
+      - name: olist_geolocation
+        description: "Brazilian zip-code geolocation lookup (lat/lng, city, state)."
+      - name: olist_sellers
+        description: "Seller master with zip code and state."
+      - name: olist_mql
+        description: >
+          Marketing qualified leads — seller acquisition channel data from the
+          Olist business dataset (olist_marketing_qualified_leads_dataset.csv).

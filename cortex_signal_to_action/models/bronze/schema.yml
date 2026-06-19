@@ -1,0 +1,254 @@
+version: 2
+
+models:
+  - name: brz_olist_orders
+    description: "Typed raw order headers from Olist. Grain: order_id (unique)."
+    columns:
+      - name: order_id
+        description: "Primary key. Unique order identifier."
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        description: "Foreign key to brz_olist_customers.customer_id."
+        tests:
+          - not_null
+      - name: order_status
+        description: "Current lifecycle status of the order."
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - created
+                - approved
+                - invoiced
+                - processing
+                - shipped
+                - delivered
+                - unavailable
+                - canceled
+      - name: order_purchase_timestamp
+        description: "UTC timestamp when the customer placed the order."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_order_items
+    description: "Typed raw order line items. Grain: (order_id, order_item_id)."
+    columns:
+      - name: order_id
+        description: "Foreign key to brz_olist_orders.order_id."
+        tests:
+          - not_null
+      - name: order_item_id
+        description: "Sequential item number within the order. Part of composite PK."
+        tests:
+          - not_null
+      - name: product_id
+        description: "Foreign key to brz_olist_products.product_id."
+        tests:
+          - not_null
+      - name: seller_id
+        description: "Foreign key to brz_olist_sellers.seller_id."
+        tests:
+          - not_null
+      - name: price
+        description: "Item price in BRL."
+        tests:
+          - not_null
+      - name: freight_value
+        description: "Freight charge for this item in BRL."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_order_reviews
+    description: "Typed customer review submissions. Grain: review_id (unique)."
+    columns:
+      - name: review_id
+        description: "Primary key. Unique review identifier."
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: "Foreign key to brz_olist_orders.order_id."
+        tests:
+          - not_null
+      - name: review_score
+        description: "Star rating from 1 (worst) to 5 (best)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5]
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_customers
+    description: "Typed customer master. Grain: customer_id (unique)."
+    columns:
+      - name: customer_id
+        description: "Primary key. Order-scoped customer identifier (one row per order)."
+        tests:
+          - unique
+          - not_null
+      - name: customer_unique_id
+        description: "De-duplicated customer identifier across multiple orders."
+        tests:
+          - not_null
+      - name: customer_state
+        description: "Brazilian state abbreviation (2-char)."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_order_payments
+    description: "Typed payment records. Grain: (order_id, payment_sequential)."
+    columns:
+      - name: order_id
+        description: "Foreign key to brz_olist_orders.order_id."
+        tests:
+          - not_null
+      - name: payment_sequential
+        description: "Payment number within the order (for split payments). Part of composite PK."
+        tests:
+          - not_null
+      - name: payment_type
+        description: "Payment instrument used."
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - credit_card
+                - boleto
+                - voucher
+                - debit_card
+                - not_defined
+      - name: payment_value
+        description: "Amount paid in BRL for this payment record."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_products
+    description: "Typed product catalogue. Grain: product_id (unique)."
+    columns:
+      - name: product_id
+        description: "Primary key. Unique product identifier."
+        tests:
+          - unique
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_geolocation
+    description: >
+      Typed zip-code geolocation lookup. Grain: (geolocation_zip_code_prefix, geolocation_city,
+      geolocation_state) — zip prefix alone is not unique in the Olist dataset.
+    columns:
+      - name: geolocation_zip_code_prefix
+        description: "Brazilian 5-digit zip code prefix."
+        tests:
+          - not_null
+      - name: geolocation_lat
+        description: "Latitude coordinate."
+        tests:
+          - not_null
+      - name: geolocation_lng
+        description: "Longitude coordinate."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_sellers
+    description: "Typed seller master. Grain: seller_id (unique)."
+    columns:
+      - name: seller_id
+        description: "Primary key. Unique seller identifier."
+        tests:
+          - unique
+          - not_null
+      - name: seller_state
+        description: "Brazilian state abbreviation where the seller is located."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_olist_mql
+    description: "Typed marketing qualified leads (seller acquisition channel data). Grain: mql_id (unique)."
+    columns:
+      - name: mql_id
+        description: "Primary key. Unique lead identifier."
+        tests:
+          - unique
+          - not_null
+      - name: first_contact_date
+        description: "Date of first marketing contact with the prospective seller."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: brz_mmm_weekly_spend
+    description: "Typed MMM synthetic weekly spend from seed. Grain: iso_week (unique)."
+    columns:
+      - name: iso_week
+        description: "Primary key. ISO 8601 week identifier (YYYY-WNN)."
+        tests:
+          - unique
+          - not_null
+      - name: week_start_date
+        description: "Monday date of the ISO week."
+        tests:
+          - not_null
+      - name: weekly_revenue
+        description: "Synthetic or Olist-derived weekly revenue in BRL."
+        tests:
+          - not_null
+      - name: tv_spend
+        description: "TV channel spend in BRL for the week."
+        tests:
+          - not_null
+      - name: paid_search_spend
+        description: "Paid search channel spend in BRL."
+        tests:
+          - not_null
+      - name: social_spend
+        description: "Social media channel spend in BRL."
+        tests:
+          - not_null
+      - name: email_spend
+        description: "Email channel spend in BRL."
+        tests:
+          - not_null
+      - name: display_spend
+        description: "Display advertising spend in BRL."
+        tests:
+          - not_null
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
