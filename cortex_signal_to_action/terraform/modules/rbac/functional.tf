@@ -18,12 +18,11 @@ resource "snowflake_grant_account_role" "functional_access_role_grants" {
 }
 
 # ── CSTA_CORTEX_ROLE wraps the SNOWFLAKE.CORTEX_USER database role ──
-# Mirrors: GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE CSTA_CORTEX_ROLE
-
-resource "snowflake_grant_database_role" "cortex_user" {
-  database_role_name = "SNOWFLAKE.CORTEX_USER"
-  parent_role_name   = snowflake_account_role.functional_roles["CSTA_CORTEX_ROLE"].name
-}
+# NOT managed by Terraform: snowflake_grant_database_role produces a provider bug
+# ("Root object was present, but now absent") when the source database is the
+# SNOWFLAKE system database, because the provider's read-back call returns nothing
+# after a successful apply. The grant is applied once by snowflake/setup/03_roles.sql:
+#   GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE CSTA_CORTEX_ROLE;
 
 # ── Grant CSTA_CORTEX_ROLE to each dbt functional role ──
 # Mirrors: GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DBT_*_ROLE

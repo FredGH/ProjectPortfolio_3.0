@@ -1,0 +1,89 @@
+-- Bootstrap script: run ONCE manually as ACCOUNTADMIN on a fresh Snowflake account.
+-- Creates TERRAFORM_SVC with key-pair auth and SYSADMIN/ACCOUNTADMIN grants,
+-- then provisions all four databases and their schemas.
+--
+-- BEFORE RUNNING:
+--   1. Fill in config/dev.yaml → rsa_public_keys.terraform_svc
+--   2. Render: python scripts/render.py dev 01_databases
+--   3. Run:    snowflake/setup/rendered/01_databases.sql  (in Snowflake worksheet)
+--
+-- After this script runs, import the databases into Terraform state:
+--   bash terraform/scripts/import_databases.sh
+
+USE ROLE ACCOUNTADMIN;
+
+-- ---------------------------------------------------------------------------
+-- 1. Terraform service account
+--    RSA_PUBLIC_KEY value comes from config/<env>.yaml → rsa_public_keys.terraform_svc
+--    Extract with: grep -v "BEGIN\|END\|^$" terraform_svc.pub | tr -d '\n'
+-- ---------------------------------------------------------------------------
+CREATE USER IF NOT EXISTS {{ config.service_accounts.terraform }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.terraform_svc }}'
+    DEFAULT_ROLE         = SYSADMIN
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'Terraform service account — key-pair auth only; never used for dbt';
+
+-- SYSADMIN grants full control over databases, schemas, warehouses, and stages.
+GRANT ROLE SYSADMIN     TO USER {{ config.service_accounts.terraform }};
+
+-- ACCOUNTADMIN is needed during bootstrap to import existing objects into
+-- Terraform state and for the provider to grant SNOWFLAKE database roles
+-- (e.g., CORTEX_USER).  The Terraform provider is configured to run as
+-- ACCOUNTADMIN (see terraform/versions.tf).
+--
+-- POST-BOOTSTRAP: once `terraform import` is complete and you have confirmed
+-- that all objects are tracked in state, revoke ACCOUNTADMIN and leave only
+-- SYSADMIN to reduce the blast radius of a compromised key:
+--   REVOKE ROLE ACCOUNTADMIN FROM USER {{ config.service_accounts.terraform }};
+GRANT ROLE ACCOUNTADMIN TO USER {{ config.service_accounts.terraform }};
+
+USE ROLE SYSADMIN;
+
+-- ---------------------------------------------------------------------------
+-- 2. Databases
+--    Three environment databases with identical layer structure,
+--    plus a shared database for cross-environment artefacts.
+-- ---------------------------------------------------------------------------
+CREATE DATABASE IF NOT EXISTS {{ config.databases.dev }}
+    DATA_RETENTION_TIME_IN_DAYS = 1
+    COMMENT = 'Development environment — feature branches and dev branch';
+
+CREATE DATABASE IF NOT EXISTS {{ config.databases.uat }}
+    DATA_RETENTION_TIME_IN_DAYS = 7
+    COMMENT = 'UAT environment — uat branch; staging for prod promotion';
+
+CREATE DATABASE IF NOT EXISTS {{ config.databases.prod }}
+    DATA_RETENTION_TIME_IN_DAYS = 14
+    COMMENT = 'Production environment — main branch; source of truth';
+
+CREATE DATABASE IF NOT EXISTS {{ config.databases.shared }}
+    DATA_RETENTION_TIME_IN_DAYS = 14
+    COMMENT = 'Shared artefact stage and observability schema — accessible to all envs';
+
+-- ---------------------------------------------------------------------------
+-- 3. Schemas — environment databases
+--    Each env database has four layers: bronze (raw), silver (enriched),
+--    gold (aggregated marts), orchestration (tasks and stored procedures).
+-- ---------------------------------------------------------------------------
+{% for db in [config.databases.dev, config.databases.uat, config.databases.prod] %}
+CREATE SCHEMA IF NOT EXISTS {{ db }}.BRONZE
+    COMMENT = 'Raw typed tables sourced from Olist CSVs and synthetic seed data';
+
+CREATE SCHEMA IF NOT EXISTS {{ db }}.SILVER
+    COMMENT = 'Enriched and joined tables including Cortex NLP outputs';
+
+CREATE SCHEMA IF NOT EXISTS {{ db }}.GOLD
+    COMMENT = 'Consumption-ready mart tables — segments, MMM attribution, NBA actions';
+
+CREATE SCHEMA IF NOT EXISTS {{ db }}.ORCHESTRATION
+    COMMENT = 'Snowflake Task DAG definitions and dbt stored procedure';
+
+{% endfor %}
+-- ---------------------------------------------------------------------------
+-- 4. Schemas — shared database
+-- ---------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS {{ config.databases.shared }}.OBSERVABILITY
+    COMMENT = 'Pipeline run log, model health, Cortex usage, data quality, and cost tables';
+
+CREATE SCHEMA IF NOT EXISTS {{ config.databases.shared }}.ARTIFACTS
+    COMMENT = 'Internal stage for dbt artefacts (manifest.json, run_results.json) shared across envs';

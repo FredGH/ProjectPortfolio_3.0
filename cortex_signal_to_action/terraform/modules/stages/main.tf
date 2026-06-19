@@ -14,6 +14,13 @@ resource "snowflake_stage" "dbt_artifacts" {
   encryption  = "TYPE = 'SNOWFLAKE_SSE'"
   directory   = "ENABLE = TRUE"
   comment     = "Internal stage for dbt artefacts shared across dev/uat/prod environments"
+
+  lifecycle {
+    # The provider normalises encryption/directory strings differently on read-back,
+    # causing a perpetual destroy+recreate diff. These are set at creation time only.
+    ignore_changes  = [encryption, directory]
+    prevent_destroy = true
+  }
 }
 
 # Stage access grants — READ for all dbt and observer roles, WRITE for dbt roles.
@@ -39,7 +46,7 @@ resource "snowflake_grant_privileges_to_account_role" "stage_read" {
   account_role_name = each.value
   privileges        = ["READ"]
 
-  on_account_object {
+  on_schema_object {
     object_type = "STAGE"
     object_name = "${snowflake_stage.dbt_artifacts.database}.${snowflake_stage.dbt_artifacts.schema}.${snowflake_stage.dbt_artifacts.name}"
   }
@@ -50,10 +57,13 @@ resource "snowflake_grant_privileges_to_account_role" "stage_write" {
   account_role_name = each.value
   privileges        = ["WRITE"]
 
-  on_account_object {
+  on_schema_object {
     object_type = "STAGE"
     object_name = "${snowflake_stage.dbt_artifacts.database}.${snowflake_stage.dbt_artifacts.schema}.${snowflake_stage.dbt_artifacts.name}"
   }
+
+  # Snowflake requires READ to exist before WRITE can be granted on an internal stage.
+  depends_on = [snowflake_grant_privileges_to_account_role.stage_read]
 }
 
 # ── Snowflake Secrets for dbt profiles.yml (one per environment) ──

@@ -1,0 +1,32 @@
+-- Bootstrap script: create the internal dbt artefact stage.
+-- Run once manually as SYSADMIN after 03_roles.sql.
+-- Terraform (terraform/modules/stages/) is the source of truth after bootstrap.
+--
+-- BEFORE RUNNING:
+--   1. Render: python scripts/render.py dev 04_stages
+--   2. Run:    snowflake/setup/rendered/04_stages.sql  (in Snowflake worksheet)
+--
+-- Stage path convention used across all environments:
+--   @{{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }}/<env>/latest/
+--   @{{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }}/<env>/<run_id>/
+--
+-- Files uploaded after every dbt run (by UPLOAD_CSTA_DBT_ARTIFACTS stored procedure):
+--   manifest.json       — model graph; used for --defer slim CI and lineage view
+--   run_results.json    — pass/fail per node; parsed into PIPELINE_RUN_LOG
+--   catalog.json        — column-level metadata; served by Observability Streamlit
+
+USE ROLE SYSADMIN;
+
+CREATE STAGE IF NOT EXISTS {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }}
+    ENCRYPTION        = (TYPE = 'SNOWFLAKE_SSE')
+    DIRECTORY         = (ENABLE = TRUE)
+    COMMENT           = 'Internal stage for dbt artefacts shared across dev/uat/prod environments';
+
+-- Grant read access so that every dbt role and the observer role can fetch artefacts for --defer.
+GRANT READ  ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_DBT_DEV_ROLE;
+GRANT READ  ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_DBT_UAT_ROLE;
+GRANT READ  ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_DBT_PROD_ROLE;
+GRANT READ  ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_OBSERVER_ROLE;
+GRANT WRITE ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_DBT_DEV_ROLE;
+GRANT WRITE ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_DBT_UAT_ROLE;
+GRANT WRITE ON STAGE {{ config.databases.shared }}.{{ config.stage.schema }}.{{ config.stage.name }} TO ROLE CSTA_DBT_PROD_ROLE;

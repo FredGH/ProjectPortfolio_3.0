@@ -1,0 +1,38 @@
+-- Bootstrap script: provision compute warehouses for each environment.
+-- Run once manually as SYSADMIN after 01_databases.sql.
+-- Terraform (terraform/modules/warehouses/) is the source of truth after bootstrap.
+--
+-- BEFORE RUNNING:
+--   1. Render: python scripts/render.py dev 02_warehouses
+--   2. Run:    snowflake/setup/rendered/02_warehouses.sql  (in Snowflake worksheet)
+--
+-- Sizing rationale (from config/<env>.yaml → warehouses):
+--   {{ config.warehouses.dev.name }}   {{ config.warehouses.dev.size }}  — developer runs; low concurrency, cost-sensitive
+--   {{ config.warehouses.uat.name }}   {{ config.warehouses.uat.size }} — UAT full pipeline; slightly higher throughput
+--   {{ config.warehouses.prod.name }}  {{ config.warehouses.prod.size }} — production + Cortex workload; scheduled nightly
+--
+-- auto_suspend = 60s to minimise idle credit burn.
+-- INITIALLY_SUSPENDED avoids consuming credits before the first query.
+
+USE ROLE SYSADMIN;
+
+CREATE WAREHOUSE IF NOT EXISTS {{ config.warehouses.dev.name }}
+    WAREHOUSE_SIZE      = '{{ config.warehouses.dev.size }}'
+    AUTO_SUSPEND        = 60
+    AUTO_RESUME         = TRUE
+    INITIALLY_SUSPENDED = TRUE
+    COMMENT             = 'Dev environment — feature branch dbt runs and ad-hoc analyst queries';
+
+CREATE WAREHOUSE IF NOT EXISTS {{ config.warehouses.uat.name }}
+    WAREHOUSE_SIZE      = '{{ config.warehouses.uat.size }}'
+    AUTO_SUSPEND        = 60
+    AUTO_RESUME         = TRUE
+    INITIALLY_SUSPENDED = TRUE
+    COMMENT             = 'UAT environment — scheduled uat branch pipeline (cron 02:00 UTC)';
+
+CREATE WAREHOUSE IF NOT EXISTS {{ config.warehouses.prod.name }}
+    WAREHOUSE_SIZE      = '{{ config.warehouses.prod.size }}'
+    AUTO_SUSPEND        = 60
+    AUTO_RESUME         = TRUE
+    INITIALLY_SUSPENDED = TRUE
+    COMMENT             = 'Prod environment — scheduled prod pipeline (cron 04:00 UTC) and TASK_COST_REPORT';
