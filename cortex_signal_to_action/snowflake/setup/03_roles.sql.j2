@@ -1,0 +1,287 @@
+{#
+  Bootstrap script: two-layer RBAC for all four databases.
+  Run once manually as ACCOUNTADMIN after 02_warehouses.sql.
+  Terraform (terraform/modules/rbac/) is the source of truth after bootstrap.
+
+  BEFORE RUNNING:
+    1. Fill in config/dev.yaml → rsa_public_keys.* for all service accounts
+    2. Render: python scripts/render.py dev 03_roles
+    3. Run:    snowflake/setup/rendered/03_roles.sql  (in Snowflake worksheet)
+
+  Config-driven values (from config/<env>.yaml):
+    - databases.*         → {{ config.databases.dev }}, {{ config.databases.uat }}, etc.
+    - warehouses.*        → {{ config.warehouses.dev.name }}, etc.
+    - service_accounts.*  → {{ config.service_accounts.dbt_dev }}, etc.
+    - rsa_public_keys.*   → base64 public key bodies (no PEM headers)
+#}
+
+{# ── Macro: schema-level privilege grants for one schema × three tiers ───── #}
+{% macro schema_grants(db, schema) -%}
+{% set role_prefix = db ~ "_" ~ schema %}
+-- {{ db }}.{{ schema }}
+GRANT USAGE                        ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ;
+GRANT SELECT ON ALL TABLES         IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ;
+GRANT SELECT ON FUTURE TABLES      IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ;
+GRANT SELECT ON ALL VIEWS          IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ;
+GRANT SELECT ON FUTURE VIEWS       IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ;
+
+GRANT USAGE                                    ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+GRANT SELECT ON ALL TABLES                     IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+GRANT SELECT ON FUTURE TABLES                  IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+GRANT SELECT ON ALL VIEWS                      IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+GRANT SELECT ON FUTURE VIEWS                   IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+GRANT INSERT, UPDATE, DELETE ON ALL TABLES     IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+GRANT INSERT, UPDATE, DELETE ON FUTURE TABLES  IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE;
+
+GRANT USAGE                                    ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT SELECT ON ALL TABLES                     IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT SELECT ON FUTURE TABLES                  IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT SELECT ON ALL VIEWS                      IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT SELECT ON FUTURE VIEWS                   IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT INSERT, UPDATE, DELETE ON ALL TABLES     IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT INSERT, UPDATE, DELETE ON FUTURE TABLES  IN SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT CREATE TABLE     ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT CREATE VIEW      ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT CREATE STAGE     ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT CREATE PROCEDURE ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+GRANT CREATE TASK      ON SCHEMA {{ db }}.{{ schema }} TO ROLE {{ role_prefix }}_READ_WRITE_CREATE;
+{%- endmacro %}
+
+USE ROLE SECURITYADMIN;
+
+-- ===========================================================================
+-- SECTION 1 — DB-LEVEL ACCESS ROLES (one READ/MODIFY pair per database)
+-- READ   → USAGE on the database
+-- MODIFY → USAGE + CREATE SCHEMA (enables per-developer schema namespacing)
+-- ===========================================================================
+{% for db in [config.databases.dev, config.databases.uat, config.databases.prod, config.databases.shared] %}
+CREATE ROLE IF NOT EXISTS {{ db }}_DB_READ   COMMENT = 'USAGE on {{ db }} database';
+CREATE ROLE IF NOT EXISTS {{ db }}_DB_MODIFY COMMENT = 'USAGE + CREATE SCHEMA on {{ db }}';
+{% endfor %}
+
+-- ===========================================================================
+-- SECTION 2 — SCHEMA-LEVEL ACCESS ROLES (three tiers × 14 schemas = 42 roles)
+--   READ              → USAGE + SELECT on all/future tables and views
+--   READ_WRITE        → READ + INSERT/UPDATE/DELETE
+--   READ_WRITE_CREATE → READ_WRITE + CREATE TABLE/VIEW/STAGE/PROCEDURE/TASK
+-- ===========================================================================
+{% for db in [config.databases.dev, config.databases.uat, config.databases.prod] %}
+{% for schema in config.schemas.env_layers %}
+{% set rp = db ~ "_" ~ schema %}
+CREATE ROLE IF NOT EXISTS {{ rp }}_READ               COMMENT = 'SELECT on {{ db }}.{{ schema }}';
+CREATE ROLE IF NOT EXISTS {{ rp }}_READ_WRITE         COMMENT = 'SELECT + DML on {{ db }}.{{ schema }}';
+CREATE ROLE IF NOT EXISTS {{ rp }}_READ_WRITE_CREATE  COMMENT = 'SELECT + DML + DDL on {{ db }}.{{ schema }}';
+{% endfor %}
+{% endfor %}
+{% for schema in config.schemas.shared_layers %}
+{% set rp = config.databases.shared ~ "_" ~ schema %}
+CREATE ROLE IF NOT EXISTS {{ rp }}_READ               COMMENT = 'SELECT on {{ config.databases.shared }}.{{ schema }}';
+CREATE ROLE IF NOT EXISTS {{ rp }}_READ_WRITE         COMMENT = 'SELECT + DML on {{ config.databases.shared }}.{{ schema }}';
+CREATE ROLE IF NOT EXISTS {{ rp }}_READ_WRITE_CREATE  COMMENT = 'SELECT + DML + DDL on {{ config.databases.shared }}.{{ schema }}';
+{% endfor %}
+
+-- ===========================================================================
+-- SECTION 3 — FUNCTIONAL ROLES (assembled from access roles per job function)
+-- ===========================================================================
+CREATE ROLE IF NOT EXISTS CSTA_DBT_DEV_ROLE
+    COMMENT = 'Full access to {{ config.databases.dev }} + shared observability/artefacts; used by {{ config.service_accounts.dbt_dev }} and {{ config.service_accounts.ci_dev }}';
+CREATE ROLE IF NOT EXISTS CSTA_DBT_UAT_ROLE
+    COMMENT = 'Full access to {{ config.databases.uat }} + shared observability/artefacts; used by {{ config.service_accounts.dbt_uat }} and {{ config.service_accounts.ci_uat }}';
+CREATE ROLE IF NOT EXISTS CSTA_DBT_PROD_ROLE
+    COMMENT = 'Full access to {{ config.databases.prod }} + shared observability/artefacts; used by {{ config.service_accounts.dbt_prod }} and {{ config.service_accounts.ci_prod }}';
+CREATE ROLE IF NOT EXISTS CSTA_CORTEX_ROLE
+    COMMENT = 'Wraps SNOWFLAKE.CORTEX_USER database role; granted to all CSTA_DBT_*_ROLEs';
+CREATE ROLE IF NOT EXISTS CSTA_OBSERVER_ROLE
+    COMMENT = 'Read-only access to {{ config.databases.shared }}.OBSERVABILITY + {{ config.databases.prod }}.GOLD; for analysts';
+CREATE ROLE IF NOT EXISTS CSTA_STREAMLIT_ROLE
+    COMMENT = 'Service identity for the Observability Streamlit app; inherits CSTA_OBSERVER_ROLE';
+CREATE ROLE IF NOT EXISTS CSTA_ANALYST_ROLE
+    COMMENT = 'Read-only access to UAT and PROD GOLD schemas only; for business analysts querying mart tables';
+CREATE ROLE IF NOT EXISTS CSTA_DEV_ROLE
+    COMMENT = 'Full read/write/create on all DEV database objects; assigned to named human developers';
+CREATE ROLE IF NOT EXISTS CSTA_UAT_DEV_ROLE
+    COMMENT = 'Full read/write/create on all UAT database objects; assigned to human developers and QA engineers';
+
+-- ===========================================================================
+-- SECTION 4 — PRIVILEGE GRANTS TO DB-LEVEL ACCESS ROLES
+-- ===========================================================================
+
+USE ROLE SYSADMIN;
+
+{% for db in [config.databases.dev, config.databases.uat, config.databases.prod, config.databases.shared] %}
+GRANT USAGE            ON DATABASE {{ db }} TO ROLE {{ db }}_DB_READ;
+GRANT USAGE            ON DATABASE {{ db }} TO ROLE {{ db }}_DB_MODIFY;
+GRANT CREATE SCHEMA    ON DATABASE {{ db }} TO ROLE {{ db }}_DB_MODIFY;
+{% endfor %}
+
+-- ===========================================================================
+-- SECTION 5 — PRIVILEGE GRANTS TO SCHEMA-LEVEL ACCESS ROLES
+-- ===========================================================================
+{% for db in [config.databases.dev, config.databases.uat, config.databases.prod] %}
+{% for schema in config.schemas.env_layers %}
+{{ schema_grants(db, schema) }}
+{% endfor %}
+{% endfor %}
+{% for schema in config.schemas.shared_layers %}
+{{ schema_grants(config.databases.shared, schema) }}
+{% endfor %}
+
+-- ===========================================================================
+-- SECTION 6 — FUNCTIONAL ROLE ASSEMBLY
+-- Each functional role receives the access roles that match its job function.
+-- ===========================================================================
+
+-- CSTA_DBT_DEV_ROLE — full dev + shared read/write
+GRANT ROLE {{ config.databases.dev }}_DB_MODIFY TO ROLE CSTA_DBT_DEV_ROLE;
+{% for schema in config.schemas.env_layers %}
+GRANT ROLE {{ config.databases.dev }}_{{ schema }}_READ_WRITE_CREATE TO ROLE CSTA_DBT_DEV_ROLE;
+{% endfor %}
+GRANT ROLE {{ config.databases.shared }}_DB_READ TO ROLE CSTA_DBT_DEV_ROLE;
+{% for schema in config.schemas.shared_layers %}
+GRANT ROLE {{ config.databases.shared }}_{{ schema }}_READ_WRITE TO ROLE CSTA_DBT_DEV_ROLE;
+{% endfor %}
+
+-- CSTA_DBT_UAT_ROLE — full uat + shared read/write
+GRANT ROLE {{ config.databases.uat }}_DB_READ TO ROLE CSTA_DBT_UAT_ROLE;
+{% for schema in config.schemas.env_layers %}
+GRANT ROLE {{ config.databases.uat }}_{{ schema }}_READ_WRITE_CREATE TO ROLE CSTA_DBT_UAT_ROLE;
+{% endfor %}
+GRANT ROLE {{ config.databases.shared }}_DB_READ TO ROLE CSTA_DBT_UAT_ROLE;
+{% for schema in config.schemas.shared_layers %}
+GRANT ROLE {{ config.databases.shared }}_{{ schema }}_READ_WRITE TO ROLE CSTA_DBT_UAT_ROLE;
+{% endfor %}
+
+-- CSTA_DBT_PROD_ROLE — full prod + shared read/write
+GRANT ROLE {{ config.databases.prod }}_DB_READ TO ROLE CSTA_DBT_PROD_ROLE;
+{% for schema in config.schemas.env_layers %}
+GRANT ROLE {{ config.databases.prod }}_{{ schema }}_READ_WRITE_CREATE TO ROLE CSTA_DBT_PROD_ROLE;
+{% endfor %}
+GRANT ROLE {{ config.databases.shared }}_DB_READ TO ROLE CSTA_DBT_PROD_ROLE;
+{% for schema in config.schemas.shared_layers %}
+GRANT ROLE {{ config.databases.shared }}_{{ schema }}_READ_WRITE TO ROLE CSTA_DBT_PROD_ROLE;
+{% endfor %}
+
+-- CSTA_OBSERVER_ROLE — shared observability read + prod gold read
+GRANT ROLE {{ config.databases.shared }}_DB_READ              TO ROLE CSTA_OBSERVER_ROLE;
+GRANT ROLE {{ config.databases.shared }}_OBSERVABILITY_READ   TO ROLE CSTA_OBSERVER_ROLE;
+GRANT ROLE {{ config.databases.prod }}_DB_READ                TO ROLE CSTA_OBSERVER_ROLE;
+GRANT ROLE {{ config.databases.prod }}_GOLD_READ              TO ROLE CSTA_OBSERVER_ROLE;
+
+-- CSTA_ANALYST_ROLE — uat + prod gold read only
+GRANT ROLE {{ config.databases.uat }}_DB_READ  TO ROLE CSTA_ANALYST_ROLE;
+GRANT ROLE {{ config.databases.uat }}_GOLD_READ  TO ROLE CSTA_ANALYST_ROLE;
+GRANT ROLE {{ config.databases.prod }}_DB_READ TO ROLE CSTA_ANALYST_ROLE;
+GRANT ROLE {{ config.databases.prod }}_GOLD_READ TO ROLE CSTA_ANALYST_ROLE;
+
+-- CSTA_DEV_ROLE — same scope as CSTA_DBT_DEV_ROLE (assigned to human devs)
+GRANT ROLE {{ config.databases.dev }}_DB_MODIFY TO ROLE CSTA_DEV_ROLE;
+{% for schema in config.schemas.env_layers %}
+GRANT ROLE {{ config.databases.dev }}_{{ schema }}_READ_WRITE_CREATE TO ROLE CSTA_DEV_ROLE;
+{% endfor %}
+GRANT ROLE {{ config.databases.shared }}_DB_READ TO ROLE CSTA_DEV_ROLE;
+{% for schema in config.schemas.shared_layers %}
+GRANT ROLE {{ config.databases.shared }}_{{ schema }}_READ_WRITE TO ROLE CSTA_DEV_ROLE;
+{% endfor %}
+
+-- CSTA_UAT_DEV_ROLE — same scope as CSTA_DBT_UAT_ROLE (assigned to QA / human devs)
+GRANT ROLE {{ config.databases.uat }}_DB_READ TO ROLE CSTA_UAT_DEV_ROLE;
+{% for schema in config.schemas.env_layers %}
+GRANT ROLE {{ config.databases.uat }}_{{ schema }}_READ_WRITE_CREATE TO ROLE CSTA_UAT_DEV_ROLE;
+{% endfor %}
+GRANT ROLE {{ config.databases.shared }}_DB_READ TO ROLE CSTA_UAT_DEV_ROLE;
+{% for schema in config.schemas.shared_layers %}
+GRANT ROLE {{ config.databases.shared }}_{{ schema }}_READ_WRITE TO ROLE CSTA_UAT_DEV_ROLE;
+{% endfor %}
+
+-- CSTA_STREAMLIT_ROLE inherits CSTA_OBSERVER_ROLE
+GRANT ROLE CSTA_OBSERVER_ROLE TO ROLE CSTA_STREAMLIT_ROLE;
+
+-- CSTA_CORTEX_ROLE granted to every dbt functional role and human dev roles
+-- (the SNOWFLAKE.CORTEX_USER database role grant is NOT managed here — see functional.tf comment)
+GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DBT_DEV_ROLE;
+GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DBT_UAT_ROLE;
+GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DBT_PROD_ROLE;
+GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_DEV_ROLE;
+GRANT ROLE CSTA_CORTEX_ROLE TO ROLE CSTA_UAT_DEV_ROLE;
+
+-- Warehouse USAGE grants
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.dev.name }}  TO ROLE CSTA_DBT_DEV_ROLE;
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.uat.name }}  TO ROLE CSTA_DBT_UAT_ROLE;
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.prod.name }} TO ROLE CSTA_DBT_PROD_ROLE;
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.dev.name }}  TO ROLE CSTA_OBSERVER_ROLE;
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.dev.name }}  TO ROLE CSTA_ANALYST_ROLE;
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.dev.name }}  TO ROLE CSTA_DEV_ROLE;
+GRANT USAGE ON WAREHOUSE {{ config.warehouses.uat.name }}  TO ROLE CSTA_UAT_DEV_ROLE;
+
+-- EXECUTE TASK
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE CSTA_DBT_DEV_ROLE;
+GRANT EXECUTE TASK ON ACCOUNT TO ROLE CSTA_DEV_ROLE;
+
+-- Anchor all functional roles under SYSADMIN
+{% for role in config.roles.functional %}
+GRANT ROLE {{ role }} TO ROLE SYSADMIN;
+{% endfor %}
+
+-- SNOWFLAKE.CORTEX_USER database role grant
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER TO ROLE CSTA_CORTEX_ROLE;
+
+-- ===========================================================================
+-- SECTION 7 — SERVICE ACCOUNT USERS AND ROLE MAPPINGS
+-- Each account authenticates via key-pair only (no password).
+-- RSA key bodies come from config/<env>.yaml → rsa_public_keys.*
+-- Extract with: grep -v "BEGIN\|END\|^$" <name>.pub | tr -d '\n'
+-- ===========================================================================
+
+USE ROLE ACCOUNTADMIN;
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.dbt_dev }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_dbt_dev }}'
+    DEFAULT_ROLE         = CSTA_DBT_DEV_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'dbt dev service account — used by developers and {{ config.service_accounts.ci_dev }}';
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.dbt_uat }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_dbt_uat }}'
+    DEFAULT_ROLE         = CSTA_DBT_UAT_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'dbt UAT service account — used by CI and UAT Task DAG';
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.dbt_prod }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_dbt_prod }}'
+    DEFAULT_ROLE         = CSTA_DBT_PROD_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'dbt prod service account — used by CI and prod Task DAG';
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.streamlit }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_streamlit }}'
+    DEFAULT_ROLE         = CSTA_STREAMLIT_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'Observability Streamlit app service account';
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.ci_dev }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_ci_dev }}'
+    DEFAULT_ROLE         = CSTA_DBT_DEV_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'GitHub Actions CI service account for dev environment';
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.ci_uat }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_ci_uat }}'
+    DEFAULT_ROLE         = CSTA_DBT_UAT_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'GitHub Actions CI service account for UAT environment';
+
+CREATE USER IF NOT EXISTS {{ config.service_accounts.ci_prod }}
+    RSA_PUBLIC_KEY       = '{{ config.rsa_public_keys.svc_ci_prod }}'
+    DEFAULT_ROLE         = CSTA_DBT_PROD_ROLE
+    MUST_CHANGE_PASSWORD = FALSE
+    COMMENT              = 'GitHub Actions CI service account for prod environment';
+
+USE ROLE SECURITYADMIN;
+
+GRANT ROLE CSTA_DBT_DEV_ROLE   TO USER {{ config.service_accounts.dbt_dev }};
+GRANT ROLE CSTA_DBT_UAT_ROLE   TO USER {{ config.service_accounts.dbt_uat }};
+GRANT ROLE CSTA_DBT_PROD_ROLE  TO USER {{ config.service_accounts.dbt_prod }};
+GRANT ROLE CSTA_STREAMLIT_ROLE TO USER {{ config.service_accounts.streamlit }};
+GRANT ROLE CSTA_DBT_DEV_ROLE   TO USER {{ config.service_accounts.ci_dev }};
+GRANT ROLE CSTA_DBT_UAT_ROLE   TO USER {{ config.service_accounts.ci_uat }};
+GRANT ROLE CSTA_DBT_PROD_ROLE  TO USER {{ config.service_accounts.ci_prod }};

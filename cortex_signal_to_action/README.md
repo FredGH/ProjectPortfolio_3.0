@@ -22,15 +22,17 @@ A production-grade Snowflake-native pipeline for customer voice analytics: senti
    - [2d. First terraform apply](#2d-first-terraform-apply)
    - [2e. Configure GitHub Actions secrets](#2e-configure-github-actions-secrets)
    - [2f. Validate CI/CD](#2f-validate-cicd)
-3. [Required Variables & Secrets](#3-required-variables--secrets)
-   - [3a. Local bootstrap values](#3a-local-bootstrap)
-   - [3b. Terraform variables](#3b-terraform-variables)
-   - [3c. GitHub Actions secrets](#3c-github-actions-secrets)
-   - [3d. Snowflake Secrets](#3d-snowflake-secrets)
-   - [3e. dbt profiles](#3e-dbt-profiles)
-   - [3f. SQL bootstrap placeholders](#3f-sql-bootstrap-placeholders)
-4. [Running dbt Locally](#4-running-dbt-locally)
-5. [Cost Notes](#5-cost-notes)
+3. [Configuration System](#3-configuration-system)
+   - [3a. Config files per system](#3a-config-files-per-system)
+   - [3b. What to edit for a new deployment](#3b-what-to-edit-for-a-new-deployment)
+4. [Required Variables & Secrets](#4-required-variables--secrets)
+   - [4a. Local bootstrap values](#4a-local-bootstrap)
+   - [4b. Terraform variables](#4b-terraform-variables)
+   - [4c. GitHub Actions secrets](#4c-github-actions-secrets)
+   - [4d. Snowflake Secrets](#4d-snowflake-secrets)
+   - [4e. dbt profiles](#4e-dbt-profiles)
+5. [Running dbt Locally](#5-running-dbt-locally)
+6. [Cost Notes](#6-cost-notes)
 
 ---
 
@@ -247,25 +249,31 @@ grep -v "BEGIN\|END\|^$" <name>.pub | tr -d '\n'
 
 ### 2b. Bootstrap Snowflake
 
-Run each script once, in order, using Snowflake's SQL worksheet or SnowSQL. The required role is noted at the top of each file.
+SQL bootstrap scripts live as Jinja2 templates (`snowflake/setup/*.sql.j2`). Render them against your config YAML before running — this substitutes all database names, role names, service account names, and RSA public keys from a single source of truth.
 
-| Step | Script | Role | Objects created |
+**Step 1 — fill in RSA public keys in `config/dev.yaml`:**
+
+For each service account key generated in step 2a, paste the base64 body into `config/dev.yaml → rsa_public_keys.*`:
+```bash
+grep -v "BEGIN\|END\|^$" terraform_svc.pub | tr -d '\n'  # → paste into rsa_public_keys.terraform_svc
+grep -v "BEGIN\|END\|^$" svc_dbt_dev.pub   | tr -d '\n'  # → paste into rsa_public_keys.svc_dbt_dev
+# ... repeat for all eight service accounts
+```
+
+**Step 2 — render the templates:**
+```bash
+pip install -r scripts/requirements.txt   # one-time
+python scripts/render.py dev              # writes to snowflake/setup/rendered/
+```
+
+**Step 3 — run each rendered script in order** in a Snowflake worksheet or SnowSQL:
+
+| Step | Rendered script | Role | Objects created |
 |---|---|---|---|
-| 1 | [snowflake/setup/01_databases.sql](snowflake/setup/01_databases.sql) | `ACCOUNTADMIN` → `SYSADMIN` | `TERRAFORM_SVC` user · 4 databases · all schemas |
-| 2 | [snowflake/setup/02_warehouses.sql](snowflake/setup/02_warehouses.sql) | `SYSADMIN` | 3 warehouses (`DEV_WH` / `UAT_WH` / `PROD_WH`) |
-| 3 | [snowflake/setup/03_roles.sql](snowflake/setup/03_roles.sql) | `SECURITYADMIN` → `SYSADMIN` → `ACCOUNTADMIN` | 50 access roles · functional roles · 7 service account users |
-| 4 | [snowflake/setup/04_stages.sql](snowflake/setup/04_stages.sql) | `SYSADMIN` | dbt artefact internal stage |
-
-**Before running `01_databases.sql`:**
-- Complete step 2a for `terraform_svc`
-- Replace `<RSA_PUBLIC_KEY>` with:
-  ```bash
-  grep -v "BEGIN\|END\|^$" terraform_svc.pub | tr -d '\n'
-  ```
-
-**Before running `03_roles.sql`:**
-- Complete step 2a for all remaining service accounts
-- Replace all `<RSA_PUBLIC_KEY_*>` placeholders
+| 1 | `snowflake/setup/rendered/01_databases.sql` | `ACCOUNTADMIN` → `SYSADMIN` | `TERRAFORM_SVC` user · 4 databases · all schemas |
+| 2 | `snowflake/setup/rendered/02_warehouses.sql` | `SYSADMIN` | 3 warehouses (`DEV_WH` / `UAT_WH` / `PROD_WH`) |
+| 3 | `snowflake/setup/rendered/03_roles.sql` | `SECURITYADMIN` → `SYSADMIN` → `ACCOUNTADMIN` | 59 access roles · functional roles · 7 service account users |
+| 4 | `snowflake/setup/rendered/04_stages.sql` | `SYSADMIN` | dbt artefact internal stage |
 
 After all four scripts have run, the four databases and their schemas exist in Snowflake. They need to be imported into Terraform state in step 2d (after `terraform init`) so Terraform does not try to recreate them.
 
@@ -307,14 +315,15 @@ terraform init -backend-config=environments/dev.backend
 
 > **Re-run `terraform init` whenever you:** change the provider source or version in `versions.tf`, add or remove a module, or change the backend configuration. Running `plan` or `import` without a current init will fail with "Backend initialization required".
 
-**Import the bootstrapped databases** into Terraform state so Terraform does not try to recreate them:
+**Import all bootstrapped objects** into Terraform state. Three scripts handle the 3 warehouses, 4 databases + 14 schemas, and 59 RBAC roles created by the setup SQL scripts:
 
 ```bash
-terraform import -var-file=environments/dev.tfvars 'module.databases.snowflake_database.this["dev"]' CSTA_MARKETING_DEV
-terraform import -var-file=environments/dev.tfvars 'module.databases.snowflake_database.this["uat"]' CSTA_MARKETING_UAT
-terraform import -var-file=environments/dev.tfvars 'module.databases.snowflake_database.this["prod"]' CSTA_MARKETING_PROD
-terraform import -var-file=environments/dev.tfvars 'module.databases.snowflake_database.this["shared"]' CSTA_MARKETING_SHARED
+bash scripts/import_warehouses.sh   # 3 warehouses
+bash scripts/import_databases.sh    # 4 databases + 14 schemas
+bash scripts/import_roles.sh        # 59 RBAC roles (8 DB-level, 42 schema-level, 9 functional)
 ```
+
+> **Note — opportunity to simplify:** The current approach bootstraps objects via SQL scripts and then imports them into Terraform state. This is intentional for the initial setup (SQL scripts provide a clear, self-contained record of what Snowflake resources exist), but it introduces redundancy: every object is defined twice — once in the SQL script and once in the Terraform HCL. A future improvement would be to remove the SQL bootstrap scripts entirely and let Terraform create all objects from scratch on a clean account. That would eliminate the import step and make the SQL scripts the single source of truth only during initial onboarding.
 
 **Apply** to provision all remaining objects (warehouses, RBAC, stage, secrets):
 
@@ -378,23 +387,53 @@ In your repository at **Settings → Secrets and variables → Actions**, create
 
 ---
 
-## 3. Required Variables & Secrets
+## 3. Configuration System
 
-### 3a. Local Bootstrap
+All project values (database names, role names, service account names, RSA public keys) are centralised in one YAML file per environment. **Never hardcode these values** in SQL scripts or Terraform modules — always reference the config file.
+
+### 3a. Config files per system
+
+| System | Config location | How values get there |
+|---|---|---|
+| Snowflake SQL | `config/<env>.yaml` | Jinja2 templates rendered by `scripts/render.py` |
+| Terraform | `terraform/environments/<env>.tfvars` | Edit directly (auth/connection values only) |
+| dbt | `~/.dbt/profiles.yml` (local) · Snowflake Secret (CI) | See [section 4e](#4e-dbt-profiles) |
+| GitHub Actions | Repository secrets (Settings → Secrets) | Key contents only |
+
+### 3b. What to edit for a new deployment
+
+1. **`config/dev.yaml`** — the primary config file. Contains every object name and RSA public key used across all SQL templates. Edit once; all four SQL scripts are rendered from it.
+
+   Key sections to fill in:
+   - `snowflake.organization` + `snowflake.account` — from `SELECT CURRENT_ORGANIZATION_NAME(), CURRENT_ACCOUNT_NAME()`
+   - `rsa_public_keys.*` — base64 body of each `.pub` file (8 values, see step 2a)
+
+2. **`terraform/environments/dev.tfvars`** — Terraform connection values only:
+   - `snowflake_organization_name`, `snowflake_account_name`, `snowflake_user`, `snowflake_private_key_path`
+
+3. **`config/uat.yaml`** and **`config/prod.yaml`** — identical structure to `dev.yaml`; only `project.environment` differs. Update if environment-specific values change in future phases.
+
+> **Adding values for a new phase:** Add keys to `config/dev.yaml` (and uat/prod), reference them in your `.sql.j2` template as `{{ config.<section>.<key> }}`, then re-render. See `CLAUDE.md` for the full convention.
+
+---
+
+## 4. Required Variables & Secrets
+
+### 4a. Local Bootstrap
 
 Values you look up once before anything else runs.
 
 | Variable | Where used | What to put |
 |---|---|---|
-| `SNOWFLAKE_ACCOUNT` | All Snowflake connections | Account identifier, e.g. `xy12345.eu-west-1.aws` (Settings → Account in the UI) |
-| `SNOWFLAKE_ORG` | Snowflake org name | Organisation identifier shown alongside the account in the UI |
-| RSA key pairs | `snowflake/setup/` SQL files | See [section 2a](#2a-generate-rsa-key-pairs-local-one-time) |
+| `snowflake.organization` | `config/<env>.yaml` | From `SELECT CURRENT_ORGANIZATION_NAME()` |
+| `snowflake.account` | `config/<env>.yaml` | From `SELECT CURRENT_ACCOUNT_NAME()` |
+| RSA key pairs | `config/<env>.yaml → rsa_public_keys.*` | See [section 2a](#2a-generate-rsa-key-pairs-local-one-time) |
 
 ---
 
-### 3b. Terraform Variables
+### 4b. Terraform Variables
 
-Stored in `terraform/environments/<env>.tfvars` (one file per environment).
+Stored in `terraform/environments/<env>.tfvars` (one file per environment). These are the only values Terraform needs — all structural names are defined in the Terraform modules themselves (matching `config/<env>.yaml`).
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
@@ -408,7 +447,7 @@ Terraform state is stored **locally** in `terraform/environments/<env>.tfstate` 
 
 ---
 
-### 3c. GitHub Actions Secrets
+### 4c. GitHub Actions Secrets
 
 Set in your repository at **Settings → Secrets and variables → Actions**.
 
@@ -418,11 +457,10 @@ Set in your repository at **Settings → Secrets and variables → Actions**.
 | `SNOWFLAKE_PRIVATE_KEY_CI_DEV` | `ci_dev.yml` | PEM contents of `svc_ci_dev.p8` |
 | `SNOWFLAKE_PRIVATE_KEY_CI_UAT` | `ci_uat.yml` | PEM contents of `svc_ci_uat.p8` |
 | `SNOWFLAKE_PRIVATE_KEY_CI_PROD` | `ci_prod.yml` | PEM contents of `svc_ci_prod.p8` |
-| `NOTIFICATION_EMAIL` | Snowflake tasks | Recipient for pipeline alert emails |
 
 ---
 
-### 3d. Snowflake Secrets
+### 4d. Snowflake Secrets
 
 Created by Terraform (`terraform/modules/stages/main.tf`) and injected into the dbt Python stored procedure at runtime. You supply the raw `profiles.yml` content as a Terraform variable before the first pipeline run.
 
@@ -434,15 +472,15 @@ Created by Terraform (`terraform/modules/stages/main.tf`) and injected into the 
 
 ---
 
-### 3e. dbt Profiles
+### 4e. dbt Profiles
 
-Key fields per target. See `profiles.yml.example` for the full YAML template.
+Key fields per target. See `profiles.yml.example` for the full YAML template. All values below are derived from `config/<env>.yaml`.
 
 | Field | dev | uat | prod |
 |---|---|---|---|
-| `account` | `<SNOWFLAKE_ACCOUNT>` | `<SNOWFLAKE_ACCOUNT>` | `<SNOWFLAKE_ACCOUNT>` |
+| `account` | `UFNDSPC-GJ37236` | same | same |
 | `user` | `SVC_CSTA_DBT_DEV` | `SVC_CSTA_DBT_UAT` | `SVC_CSTA_DBT_PROD` |
-| `private_key_path` | `/run/secrets/dev.p8` | `/run/secrets/uat.p8` | `/run/secrets/prod.p8` |
+| `private_key_path` | `~/.ssh/svc_dbt_dev.p8` | `~/.ssh/svc_dbt_uat.p8` | `~/.ssh/svc_dbt_prod.p8` |
 | `role` | `CSTA_DBT_DEV_ROLE` | `CSTA_DBT_UAT_ROLE` | `CSTA_DBT_PROD_ROLE` |
 | `warehouse` | `CSTA_DBT_DEV_WH` | `CSTA_DBT_UAT_WH` | `CSTA_DBT_PROD_WH` |
 | `database` | `CSTA_MARKETING_DEV` | `CSTA_MARKETING_UAT` | `CSTA_MARKETING_PROD` |
@@ -450,24 +488,7 @@ Key fields per target. See `profiles.yml.example` for the full YAML template.
 
 ---
 
-### 3f. SQL Bootstrap Placeholders
-
-The setup SQL scripts contain placeholders for RSA public keys. Replace each one before running the corresponding script.
-
-| Placeholder | Script | Service account |
-|---|---|---|
-| `<RSA_PUBLIC_KEY>` | `01_databases.sql` | `TERRAFORM_SVC` |
-| `<RSA_PUBLIC_KEY_SVC_DBT_DEV>` | `03_roles.sql` | `SVC_CSTA_DBT_DEV` |
-| `<RSA_PUBLIC_KEY_SVC_DBT_UAT>` | `03_roles.sql` | `SVC_CSTA_DBT_UAT` |
-| `<RSA_PUBLIC_KEY_SVC_DBT_PROD>` | `03_roles.sql` | `SVC_CSTA_DBT_PROD` |
-| `<RSA_PUBLIC_KEY_SVC_CI_DEV>` | `03_roles.sql` | `SVC_GITHUB_CI_DEV` |
-| `<RSA_PUBLIC_KEY_SVC_CI_UAT>` | `03_roles.sql` | `SVC_GITHUB_CI_UAT` |
-| `<RSA_PUBLIC_KEY_SVC_CI_PROD>` | `03_roles.sql` | `SVC_GITHUB_CI_PROD` |
-| `<RSA_PUBLIC_KEY_SVC_STREAMLIT>` | `03_roles.sql` | `SVC_STREAMLIT` |
-
----
-
-## 4. Running dbt Locally
+## 5. Running dbt Locally
 
 ```bash
 python3.11 -m venv venv && source venv/bin/activate
@@ -496,7 +517,7 @@ dbt test --select state:modified+ \
 
 ---
 
-## 5. Cost Notes
+## 6. Cost Notes
 
 Warehouses are created `INITIALLY_SUSPENDED` with `AUTO_SUSPEND = 60` seconds to minimise idle spend.
 

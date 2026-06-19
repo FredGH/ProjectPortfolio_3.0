@@ -1,0 +1,69 @@
+project:
+  prefix: CSTA              # Used in all object names: CSTA_MARKETING_*, CSTA_DBT_*
+  environment: dev          # dev | uat | prod
+
+snowflake:
+  organization: UFNDSPC    # SELECT CURRENT_ORGANIZATION_NAME()
+  account: GJ37236         # SELECT CURRENT_ACCOUNT_NAME()
+  private_key_path: ~/.ssh/terraform_svc.p8
+
+databases:
+  dev: CSTA_MARKETING_DEV
+  uat: CSTA_MARKETING_UAT
+  prod: CSTA_MARKETING_PROD
+  shared: CSTA_MARKETING_SHARED
+
+schemas:
+  env_layers: [BRONZE, SILVER, GOLD, ORCHESTRATION]
+  shared_layers: [OBSERVABILITY, ARTIFACTS]
+
+warehouses:
+  dev:
+    name: CSTA_DBT_DEV_WH
+    size: XSMALL
+  uat:
+    name: CSTA_DBT_UAT_WH
+    size: SMALL
+  prod:
+    name: CSTA_DBT_PROD_WH
+    size: MEDIUM
+
+stage:
+  database: CSTA_MARKETING_SHARED
+  schema: ARTIFACTS
+  name: CSTA_DBT_ARTIFACTS
+
+roles:
+  functional:
+    - CSTA_DBT_DEV_ROLE
+    - CSTA_DBT_UAT_ROLE
+    - CSTA_DBT_PROD_ROLE
+    - CSTA_CORTEX_ROLE
+    - CSTA_OBSERVER_ROLE
+    - CSTA_STREAMLIT_ROLE
+    - CSTA_ANALYST_ROLE
+    - CSTA_DEV_ROLE
+    - CSTA_UAT_DEV_ROLE
+
+service_accounts:
+  terraform: TERRAFORM_SVC
+  dbt_dev: SVC_CSTA_DBT_DEV
+  dbt_uat: SVC_CSTA_DBT_UAT
+  dbt_prod: SVC_CSTA_DBT_PROD
+  streamlit: SVC_STREAMLIT
+  ci_dev: SVC_GITHUB_CI_DEV
+  ci_uat: SVC_GITHUB_CI_UAT
+  ci_prod: SVC_GITHUB_CI_PROD
+
+# RSA public key bodies — base64, no PEM headers/footers.
+# Extract with: grep -v "BEGIN\|END\|^$" <name>.pub | tr -d '\n'
+# Public keys are safe to commit; never commit *.p8 private keys.
+rsa_public_keys:
+  terraform_svc: "REPLACE_WITH_terraform_svc_pub_body"
+  svc_dbt_dev:   "REPLACE_WITH_svc_dbt_dev_pub_body"
+  svc_dbt_uat:   "REPLACE_WITH_svc_dbt_uat_pub_body"
+  svc_dbt_prod:  "REPLACE_WITH_svc_dbt_prod_pub_body"
+  svc_streamlit: "REPLACE_WITH_svc_streamlit_pub_body"
+  svc_ci_dev:    "REPLACE_WITH_svc_ci_dev_pub_body"
+  svc_ci_uat:    "REPLACE_WITH_svc_ci_uat_pub_body"
+  svc_ci_prod:   "REPLACE_WITH_svc_ci_prod_pub_body"
