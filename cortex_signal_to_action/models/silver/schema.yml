@@ -1,0 +1,216 @@
+version: 2
+
+models:
+  - name: slv_customer_rfm
+    description: >
+      RFM (Recency, Frequency, Monetary) scores per unique customer, calculated
+      from delivered orders only. Grain: customer_unique_id (unique).
+    columns:
+      - name: customer_unique_id
+        description: "Primary key. De-duplicated customer identifier."
+        tests:
+          - unique
+          - not_null
+      - name: customer_state
+        description: "Brazilian state abbreviation."
+        tests:
+          - not_null
+      - name: recency_days
+        description: "Days since the customer's most recent delivered order."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              severity: error
+      - name: frequency
+        description: "Total count of distinct delivered orders placed by this customer."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              severity: error
+      - name: monetary_value
+        description: "Total spend (price + freight) across all delivered orders in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              strictly: true
+              severity: error
+      - name: recency_score
+        description: "NTILE(5) recency bucket; 5 = most recent."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 5
+      - name: frequency_score
+        description: "NTILE(5) frequency bucket; 5 = most frequent."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 5
+      - name: monetary_score
+        description: "NTILE(5) monetary bucket; 5 = highest spender."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 5
+      - name: rfm_score
+        description: "Composite RFM score — mean of the three dimension scores; range 1.0 – 5.0."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1.0
+              max_value: 5.0
+      - name: preferred_payment
+        description: "Most frequently used payment type; 'unknown' when not determinable."
+        tests:
+          - not_null
+      - name: product_diversity
+        description: "Count of distinct product_ids purchased by this customer."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: slv_customer_profile
+    description: >
+      Enriched customer profile combining RFM scores, acquisition channel from MQL,
+      a rule-based churn_risk_score, and a predicted_ltv placeholder (NULL until Phase 6).
+      Grain: customer_unique_id (unique).
+    columns:
+      - name: customer_unique_id
+        description: "Primary key. De-duplicated customer identifier."
+        tests:
+          - unique
+          - not_null
+      - name: rfm_score
+        description: "Composite RFM score from slv_customer_rfm; range 1.0 – 5.0."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1.0
+              max_value: 5.0
+      - name: churn_risk_score
+        description: "Rule-based churn risk; 0.1 (low) to 1.0 (high)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0.1, 0.3, 0.6, 1.0]
+      - name: acquisition_channel
+        description: "Seller acquisition channel from MQL data; 'unknown' when not linked."
+        tests:
+          - not_null
+      - name: predicted_ltv
+        description: "Predicted customer lifetime value in BRL. NULL until Phase 6 gold segmentation."
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: slv_mmm_weekly
+    description: >
+      ISO-week marketing mix modelling table. Joins Olist delivered revenue with synthetic
+      channel spend and adds single-period adstock-transformed spend columns.
+      Grain: iso_week (unique).
+    columns:
+      - name: iso_week
+        description: "Primary key. ISO 8601 week identifier (YYYY-WNN)."
+        tests:
+          - unique
+          - not_null
+      - name: week_start_date
+        description: "Monday date opening the ISO week."
+        tests:
+          - not_null
+      - name: weekly_revenue
+        description: "Actual or synthetic weekly revenue in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              strictly: true
+              severity: error
+      - name: tv_spend
+        description: "TV channel spend in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: paid_search_spend
+        description: "Paid search channel spend in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: social_spend
+        description: "Social media channel spend in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: email_spend
+        description: "Email channel spend in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: display_spend
+        description: "Display advertising spend in BRL."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: tv_spend_adstock
+        description: "TV spend with single-period geometric adstock (α=0.50) applied."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: paid_search_spend_adstock
+        description: "Paid search spend with adstock (α=0.30)."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: social_spend_adstock
+        description: "Social spend with adstock (α=0.40)."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: email_spend_adstock
+        description: "Email spend with adstock (α=0.20)."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: display_spend_adstock
+        description: "Display spend with adstock (α=0.35)."
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+      - name: holiday_flag
+        description: "1 if a Brazilian public holiday falls within the week, 0 otherwise."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: black_friday_flag
+        description: "1 if the week contains Black Friday, 0 otherwise."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null

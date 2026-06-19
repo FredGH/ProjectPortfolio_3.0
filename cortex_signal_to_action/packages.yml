@@ -1,9 +1,9 @@
 packages:
   - package: dbt-labs/dbt_utils
-    version: ">=1.1.0,<2.0.0"
+    version: [">=1.1.0", "<2.0.0"]
 
   - package: calogica/dbt_expectations
-    version: ">=0.10.0,<0.11.0"
+    version: [">=0.10.0", "<0.11.0"]
 
 # MetricFlow is NOT a dbt Hub package.  It ships with dbt-core >= 1.6 and is
 # installed at the Python environment level:

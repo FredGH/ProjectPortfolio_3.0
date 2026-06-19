@@ -43,6 +43,29 @@ models:
 seeds:
   cortex_signal_to_action:
     +schema: bronze
+    sample_feedback:
+      +column_types:
+        feedback_id: varchar(20)
+        customer_id: varchar(36)
+        product: varchar(100)
+        review_text: varchar(500)
+        review_date: date
+        language: varchar(5)
+        channel: varchar(20)
+    olist_mmm_weekly_spend:
+      +column_types:
+        iso_week: varchar(10)
+        week_start_date: date
+        weekly_revenue: float
+        tv_spend: float
+        paid_search_spend: float
+        social_spend: float
+        email_spend: float
+        display_spend: float
+        holiday_flag: integer
+        black_friday_flag: integer
+        competitor_index: float
+        avg_temperature: float
 
 snapshots:
   cortex_signal_to_action:
