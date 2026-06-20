@@ -13,6 +13,9 @@ models:
         description: "Foreign key to brz_olist_customers.customer_id."
         tests:
           - not_null
+          - relationships:
+              to: ref('brz_olist_customers')
+              field: customer_id
       - name: order_status
         description: "Current lifecycle status of the order."
         tests:
@@ -38,11 +41,19 @@ models:
 
   - name: brz_olist_order_items
     description: "Typed raw order line items. Grain: (order_id, order_item_id)."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - order_id
+            - order_item_id
     columns:
       - name: order_id
-        description: "Foreign key to brz_olist_orders.order_id."
+        description: "Part of composite PK. Foreign key to brz_olist_orders.order_id."
         tests:
           - not_null
+          - relationships:
+              to: ref('brz_olist_orders')
+              field: order_id
       - name: order_item_id
         description: "Sequential item number within the order. Part of composite PK."
         tests:
@@ -51,10 +62,16 @@ models:
         description: "Foreign key to brz_olist_products.product_id."
         tests:
           - not_null
+          - relationships:
+              to: ref('brz_olist_products')
+              field: product_id
       - name: seller_id
         description: "Foreign key to brz_olist_sellers.seller_id."
         tests:
           - not_null
+          - relationships:
+              to: ref('brz_olist_sellers')
+              field: seller_id
       - name: price
         description: "Item price in BRL."
         tests:
@@ -80,6 +97,9 @@ models:
         description: "Foreign key to brz_olist_orders.order_id."
         tests:
           - not_null
+          - relationships:
+              to: ref('brz_olist_orders')
+              field: order_id
       - name: review_score
         description: "Star rating from 1 (worst) to 5 (best)."
         tests:
@@ -114,11 +134,19 @@ models:
 
   - name: brz_olist_order_payments
     description: "Typed payment records. Grain: (order_id, payment_sequential)."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - order_id
+            - payment_sequential
     columns:
       - name: order_id
-        description: "Foreign key to brz_olist_orders.order_id."
+        description: "Part of composite PK. Foreign key to brz_olist_orders.order_id."
         tests:
           - not_null
+          - relationships:
+              to: ref('brz_olist_orders')
+              field: order_id
       - name: payment_sequential
         description: "Payment number within the order (for split payments). Part of composite PK."
         tests:

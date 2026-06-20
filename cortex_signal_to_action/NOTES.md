@@ -140,6 +140,30 @@ dbt test --select slv_customer_rfm slv_customer_profile slv_mmm_weekly --target 
 
 ---
 
+## Cortex Integration — slv_feedback_enriched (Phase 5)
+
+Run after Phase 4. The model is incremental — subsequent runs only process review_ids not yet in the table.
+
+**Prerequisite:** `CSTA_CORTEX_ROLE` must be granted `SNOWFLAKE.CORTEX_USER` (provisioned in Phase 1). The service account running dbt must have this role active.
+
+**Acceptance check:**
+```bash
+dbt run  --select slv_feedback_enriched --target dev
+dbt test --select slv_feedback_enriched --target dev
+```
+
+| # | File | Type | Description | Key details |
+|---|------|------|-------------|-------------|
+| 1 | [macros/cortex_sentiment.sql](macros/cortex_sentiment.sql) | dbt macro | Null-safe wrapper around `AI_SENTIMENT`. Guards against NULL / blank input before calling Cortex. | Returns NULL when `text_col` is NULL or blank; otherwise returns `AI_SENTIMENT(text_col, aspects_array)` VARIANT. Two parameters: `text_col` (column expression), `aspects` (SQL ARRAY expression). |
+| 2 | [models/silver/slv_feedback_enriched.sql](models/silver/slv_feedback_enriched.sql) | dbt model (incremental) | Translates Olist reviews to English, scores sentiment, extracts themes — all via Snowflake Cortex. | Incremental strategy: merge on `review_id`. Four CTEs: `source_reviews` (incremental filter), `translated` (CORTEX.TRANSLATE auto-detect → en), `sentiment_raw_scored` (AI_SENTIMENT × 4 aspects), `theme_raw_extracted` (CORTEX.COMPLETE → JSON). Output: `translated_review`, `sentiment_score`, `sentiment_label`, `aspect_product_quality/delivery/customer_service/price_value`, `theme_json`, `theme`, `key_phrase`, `churn_risk_flag`. |
+| 3 | [models/silver/schema.yml](models/silver/schema.yml) | dbt schema | Added `slv_feedback_enriched` model entry with Tier 1 + Tier 3 tests. | Tier 1: `unique` + `not_null` on `review_id`, `not_null` on `order_id`/`review_score`/`churn_risk_flag`/`_loaded_at`. Tier 3: `assert_sentiment_range` on all five score columns; `assert_cortex_not_null` on `sentiment_label` and `theme` (filtered to rows where `translated_review IS NOT NULL`); `accepted_values` on `sentiment_label`, `theme`, `review_score`, `churn_risk_flag`. |
+| 4 | [tests/generic/assert_cortex_not_null.sql](tests/generic/assert_cortex_not_null.sql) | dbt generic test | Fails when any Cortex output column is NULL, empty string, or the literal string `'null'`. | Parameterised: `{% test assert_cortex_not_null(model, column_name) %}`. Use in `schema.yml` as `- assert_cortex_not_null`. Combine with `config.where` to scope to non-null source rows. |
+| 5 | [tests/generic/assert_sentiment_range.sql](tests/generic/assert_sentiment_range.sql) | dbt generic test | Fails when a sentiment or aspect score falls outside `[min_value, max_value]`. NULL values pass. | Parameterised: `min_value` (default -1.0), `max_value` (default 1.0). Applied to `sentiment_score` and all four `aspect_*` columns. |
+| 6 | [tests/singular/assert_no_untranslated.sql](tests/singular/assert_no_untranslated.sql) | singular test | Checks that fewer than 2% of non-null `translated_review` rows contain Portuguese stopwords. | Stopwords: `não`, `que`, `para`, `com`, `uma`, `por`, `mas`. Returns a summary row if rate ≥ 2% — zero rows = pass. |
+| 7 | [dbt_project.yml](dbt_project.yml) | dbt config | Added `tests/generic` to `macro-paths` so generic test macros in that directory are auto-discovered. | `macro-paths: ["macros", "tests/generic"]`. Required for `assert_cortex_not_null` and `assert_sentiment_range` to be recognised as generic tests by dbt. |
+
+---
+
 ## dbt scaffold (Phase 1)
 
 Run `dbt deps` after copying `profiles.yml.example` → `~/.dbt/profiles.yml` and populating env vars.
