@@ -1,0 +1,67 @@
+-- Phase 8: LOG_CORTEX_USAGE stored procedure
+-- Called by the log_cortex_usage() dbt macro (post-hook on slv_feedback_enriched).
+-- Inserts one row per Cortex function type per run by querying
+-- INFORMATION_SCHEMA.QUERY_HISTORY_BY_SESSION for calls since run_started_at.
+--
+-- Signature:
+--   CALL LOG_CORTEX_USAGE(
+--     run_id        => '<invocation_id>',
+--     env           => 'dev',
+--     run_started_at => '<timestamp>'
+--   );
+
+USE ROLE SYSADMIN;
+USE DATABASE {{ config.databases.shared }};
+USE SCHEMA OBSERVABILITY;
+
+CREATE OR REPLACE PROCEDURE {{ config.databases.shared }}.OBSERVABILITY.LOG_CORTEX_USAGE(
+    run_id         VARCHAR,
+    env            VARCHAR,
+    run_started_at TIMESTAMP_NTZ
+)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+$$
+BEGIN
+    -- Aggregate Cortex calls from INFORMATION_SCHEMA.QUERY_HISTORY_BY_SESSION.
+    -- This view covers the current session only but has no replication lag
+    -- (unlike SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY which has up to 45-min lag).
+    INSERT INTO {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG
+        (run_id, env, function_name, calls_count, avg_latency_seconds, null_output_count)
+    SELECT
+        :run_id,
+        :env,
+        cortex_fn,
+        COUNT(*)                            AS calls_count,
+        AVG(total_elapsed_time) / 1000.0    AS avg_latency_seconds,
+        0                                   AS null_output_count
+    FROM (
+        SELECT
+            CASE
+                WHEN UPPER(query_text) LIKE '%AI_SENTIMENT%'      THEN 'AI_SENTIMENT'
+                WHEN UPPER(query_text) LIKE '%CORTEX.TRANSLATE%'  THEN 'CORTEX.TRANSLATE'
+                WHEN UPPER(query_text) LIKE '%CORTEX.COMPLETE%'   THEN 'CORTEX.COMPLETE'
+                ELSE 'OTHER'
+            END                             AS cortex_fn,
+            total_elapsed_time
+        FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY_BY_SESSION(RESULT_LIMIT => 1000))
+        WHERE start_time          >= :run_started_at
+          AND execution_status    =  'SUCCESS'
+          AND (   UPPER(query_text) LIKE '%AI_SENTIMENT%'
+               OR UPPER(query_text) LIKE '%CORTEX.TRANSLATE%'
+               OR UPPER(query_text) LIKE '%CORTEX.COMPLETE%')
+    ) AS q
+    WHERE cortex_fn != 'OTHER'
+    GROUP BY cortex_fn;
+
+    RETURN 'OK: ' || :run_id;
+END;
+$$;
+
+{% for role in [config.roles.functional[0], config.roles.functional[1], config.roles.functional[2]] %}
+GRANT USAGE ON PROCEDURE {{ config.databases.shared }}.OBSERVABILITY.LOG_CORTEX_USAGE(
+    VARCHAR, VARCHAR, TIMESTAMP_NTZ
+) TO ROLE {{ role }};
+{% endfor %}

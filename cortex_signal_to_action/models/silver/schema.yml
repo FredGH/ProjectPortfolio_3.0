@@ -144,12 +144,30 @@ models:
               min_value: 0
               strictly: true
               severity: error
+          - assert_column_drift:
+              baseline_mean: 150000
+              baseline_stddev: 50000
+              z_threshold: 3.0
+              config:
+                severity: warn
+          - assert_metric_anomaly:
+              date_column: iso_week
+              lookback_weeks: 8
+              threshold_pct: 75
+              config:
+                severity: warn
       - name: tv_spend
         description: "TV channel spend in BRL."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
+          - assert_column_drift:
+              baseline_mean: 25000
+              baseline_stddev: 8000
+              z_threshold: 3.0
+              config:
+                severity: warn
       - name: paid_search_spend
         description: "Paid search channel spend in BRL."
         tests:
@@ -248,6 +266,20 @@ models:
         description: "Overall sentiment score from AI_SENTIMENT. NULL when translated_review is NULL."
         tests:
           - assert_sentiment_range
+          - dbt_expectations.expect_column_mean_to_be_between:
+              min_value: -0.5
+              max_value: 0.5
+              severity: warn
+          - dbt_expectations.expect_column_stdev_to_be_between:
+              min_value: 0.1
+              max_value: 0.9
+              severity: warn
+          - assert_column_drift:
+              baseline_mean: 0.05
+              baseline_stddev: 0.45
+              z_threshold: 3.0
+              config:
+                severity: warn
       - name: sentiment_label
         description: "Categorical sentiment from AI_SENTIMENT: POSITIVE, NEGATIVE, NEUTRAL, MIXED, or UNKNOWN."
         tests:
@@ -256,6 +288,10 @@ models:
           - assert_cortex_not_null:
               config:
                 where: "translated_review IS NOT NULL"
+          - assert_kl_divergence:
+              max_kl_divergence: 0.5
+              config:
+                severity: warn
       - name: aspect_product_quality
         description: "AI_SENTIMENT aspect score for product quality. NULL when aspect not returned."
         tests:
@@ -282,6 +318,11 @@ models:
           - assert_cortex_not_null:
               config:
                 where: "translated_review IS NOT NULL"
+          - dbt_expectations.expect_column_proportion_of_unique_values_to_be_between:
+              min_value: 0.5
+              max_value: 1.0
+              config:
+                severity: warn
       - name: key_phrase
         description: "Short 3-7 word key phrase extracted by CORTEX.COMPLETE. NULL when translated_review is NULL."
       - name: churn_risk_flag

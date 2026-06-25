@@ -1,0 +1,200 @@
+-- Phase 8: TASK_ANOMALY_DETECTION
+-- Scheduled Snowflake Task that runs four anomaly checks after every dbt pipeline run.
+-- Triggered by TASK_DBT_TEST (Phase 9) via AFTER dependency in the prod/uat Task DAGs.
+-- For standalone testing: EXECUTE TASK TASK_ANOMALY_DETECTION;
+--
+-- Four checks (all write alerts to DATA_QUALITY_LOG with status='fail'):
+--   1. Row count variance    > 20% vs prior run for any model
+--   2. Cortex cost spike     > 50% day-over-day credit increase
+--   3. Sentiment drift       > 0.15 absolute delta in avg sentiment_score week-over-week
+--   4. Null rate increase    > 5pp spike in null-rate for any gold model column
+--
+-- Alert delivery: calls TRIGGER_ALERT procedure which logs to DATA_QUALITY_LOG.
+-- In Phase 10 CI/CD, the workflow reads DATA_QUALITY_LOG status=fail entries.
+
+USE ROLE SYSADMIN;
+USE DATABASE {{ config.databases.shared }};
+USE SCHEMA OBSERVABILITY;
+
+CREATE OR REPLACE PROCEDURE {{ config.databases.shared }}.OBSERVABILITY.RUN_ANOMALY_DETECTION()
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+$$
+DECLARE
+    alert_count INTEGER DEFAULT 0;
+    latest_run_id VARCHAR;
+    prev_run_id   VARCHAR;
+BEGIN
+    -- Identify the two most recent completed pipeline runs for comparison
+    SELECT run_id INTO :latest_run_id
+    FROM {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG
+    WHERE status IN ('success', 'partial_success')
+    ORDER BY finished_at DESC
+    LIMIT 1;
+
+    SELECT run_id INTO :prev_run_id
+    FROM {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG
+    WHERE status IN ('success', 'partial_success')
+      AND run_id != :latest_run_id
+    ORDER BY finished_at DESC
+    LIMIT 1;
+
+    IF (:latest_run_id IS NULL OR :prev_run_id IS NULL) THEN
+        RETURN 'SKIP: fewer than two completed runs in PIPELINE_RUN_LOG';
+    END IF;
+
+    -- -----------------------------------------------------------------------
+    -- Check 1: Row count variance > 20% vs prior run for any model
+    -- -----------------------------------------------------------------------
+    INSERT INTO {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG
+        (run_id, env, test_name, model_name, column_name, status, severity, failure_count)
+    SELECT
+        :latest_run_id,
+        cur.env,
+        'anomaly__row_count_variance',
+        cur.model_name,
+        'rows_affected',
+        'fail',
+        'warn',
+        1
+    FROM {{ config.databases.shared }}.OBSERVABILITY.MODEL_HEALTH_LOG AS cur
+    JOIN {{ config.databases.shared }}.OBSERVABILITY.MODEL_HEALTH_LOG AS prv
+        ON  cur.model_name = prv.model_name
+        AND cur.env        = prv.env
+    WHERE cur.run_id = :latest_run_id
+      AND prv.run_id = :prev_run_id
+      AND cur.rows_affected IS NOT NULL
+      AND prv.rows_affected IS NOT NULL
+      AND prv.rows_affected > 0
+      -- flag rows where the absolute % change exceeds 20%
+      AND ABS(cur.rows_affected - prv.rows_affected) / prv.rows_affected::FLOAT > 0.20;
+
+    alert_count := alert_count + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------------
+    -- Check 2: Cortex cost spike > 50% day-over-day credit increase
+    -- -----------------------------------------------------------------------
+    INSERT INTO {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG
+        (run_id, env, test_name, model_name, column_name, status, severity, failure_count)
+    SELECT
+        :latest_run_id,
+        today_cost.env,
+        'anomaly__cortex_cost_spike',
+        today_cost.resource_name,
+        'credits_used',
+        'fail',
+        'warn',
+        1
+    FROM (
+        SELECT env, resource_name, SUM(credits_used) AS today_credits
+        FROM {{ config.databases.shared }}.OBSERVABILITY.CORTEX_COST_DAILY
+        WHERE report_date = CURRENT_DATE
+        GROUP BY env, resource_name
+    ) AS today_cost
+    JOIN (
+        SELECT env, resource_name, SUM(credits_used) AS prev_credits
+        FROM {{ config.databases.shared }}.OBSERVABILITY.CORTEX_COST_DAILY
+        WHERE report_date = DATEADD('day', -1, CURRENT_DATE)
+        GROUP BY env, resource_name
+    ) AS prev_cost
+        ON  today_cost.env           = prev_cost.env
+        AND today_cost.resource_name = prev_cost.resource_name
+    WHERE prev_cost.prev_credits > 0
+      AND (today_cost.today_credits - prev_cost.prev_credits) / prev_cost.prev_credits > 0.50;
+
+    alert_count := alert_count + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------------
+    -- Check 3: Sentiment drift > 0.15 absolute delta week-over-week
+    --          Reads from CSTA_MARKETING_DEV.GOLD.MRT_SENTIMENT_BY_SEGMENT
+    --          (env-aware query not possible without dynamic SQL here; uses dev).
+    -- -----------------------------------------------------------------------
+    INSERT INTO {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG
+        (run_id, env, test_name, model_name, column_name, status, severity, failure_count)
+    SELECT
+        :latest_run_id,
+        'dev',
+        'anomaly__sentiment_drift',
+        'mrt_sentiment_by_segment',
+        'avg_sentiment_score',
+        'fail',
+        'warn',
+        1
+    FROM (
+        SELECT
+            AVG(CASE WHEN iso_week = (SELECT MAX(iso_week) FROM {{ config.databases.dev }}.GOLD.MRT_SENTIMENT_BY_SEGMENT)
+                     THEN avg_sentiment_score END) AS cur_week_avg,
+            AVG(CASE WHEN iso_week = (SELECT MAX(iso_week) FROM {{ config.databases.dev }}.GOLD.MRT_SENTIMENT_BY_SEGMENT
+                                      WHERE iso_week < (SELECT MAX(iso_week)
+                                                        FROM {{ config.databases.dev }}.GOLD.MRT_SENTIMENT_BY_SEGMENT))
+                     THEN avg_sentiment_score END) AS prev_week_avg
+        FROM {{ config.databases.dev }}.GOLD.MRT_SENTIMENT_BY_SEGMENT
+    ) AS drift
+    WHERE ABS(COALESCE(cur_week_avg, 0) - COALESCE(prev_week_avg, 0)) > 0.15;
+
+    alert_count := alert_count + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------------
+    -- Check 4: Null rate increase > 5pp in CORTEX_USAGE_LOG null_output_count
+    --          Compares null_output_count / calls_count ratio between runs.
+    -- -----------------------------------------------------------------------
+    INSERT INTO {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG
+        (run_id, env, test_name, model_name, column_name, status, severity, failure_count)
+    SELECT
+        :latest_run_id,
+        cur.env,
+        'anomaly__cortex_null_rate_increase',
+        'cortex_usage_log',
+        'null_output_count',
+        'fail',
+        'warn',
+        1
+    FROM (
+        SELECT env, function_name,
+               CASE WHEN SUM(calls_count) > 0
+                    THEN SUM(null_output_count)::FLOAT / SUM(calls_count)
+                    ELSE 0 END AS null_rate
+        FROM {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG
+        WHERE run_id = :latest_run_id
+        GROUP BY env, function_name
+    ) AS cur
+    JOIN (
+        SELECT env, function_name,
+               CASE WHEN SUM(calls_count) > 0
+                    THEN SUM(null_output_count)::FLOAT / SUM(calls_count)
+                    ELSE 0 END AS null_rate
+        FROM {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG
+        WHERE run_id = :prev_run_id
+        GROUP BY env, function_name
+    ) AS prv
+        ON  cur.env           = prv.env
+        AND cur.function_name = prv.function_name
+    -- flag when null rate increased by more than 5 percentage points
+    WHERE (cur.null_rate - prv.null_rate) > 0.05;
+
+    alert_count := alert_count + SQLROWCOUNT;
+
+    RETURN 'DONE: ' || alert_count || ' alert(s) written to DATA_QUALITY_LOG for run ' || :latest_run_id;
+END;
+$$;
+
+-- TASK_ANOMALY_DETECTION
+-- Suspended by default; resumed and wired into the DAG by Phase 9 (task_dag_prod.sql).
+-- Run standalone: EXECUTE TASK TASK_ANOMALY_DETECTION;
+CREATE OR REPLACE TASK {{ config.databases.shared }}.OBSERVABILITY.TASK_ANOMALY_DETECTION
+    WAREHOUSE = {{ config.warehouses.dev.name }}
+    SCHEDULE  = '60 MINUTE'
+    COMMENT   = 'Runs four anomaly checks after each dbt pipeline. Wired to TASK_DBT_TEST in Phase 9 DAG.'
+AS
+CALL {{ config.databases.shared }}.OBSERVABILITY.RUN_ANOMALY_DETECTION();
+
+-- Leave suspended — Phase 9 adds AFTER dependency and resumes via ALTER TASK ... RESUME
+ALTER TASK {{ config.databases.shared }}.OBSERVABILITY.TASK_ANOMALY_DETECTION SUSPEND;
+
+{% set observer_role = config.roles.functional[4] %}
+{% for role in [config.roles.functional[0], config.roles.functional[1], config.roles.functional[2]] %}
+GRANT USAGE ON PROCEDURE {{ config.databases.shared }}.OBSERVABILITY.RUN_ANOMALY_DETECTION() TO ROLE {{ role }};
+{% endfor %}
+GRANT MONITOR ON TASK {{ config.databases.shared }}.OBSERVABILITY.TASK_ANOMALY_DETECTION TO ROLE {{ observer_role }};

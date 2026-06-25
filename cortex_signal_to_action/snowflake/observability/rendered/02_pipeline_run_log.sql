@@ -1,0 +1,105 @@
+-- Phase 8: LOG_PIPELINE_RUN stored procedure
+-- MERGE-based upsert — idempotent: can be called at run start (INSERT) and
+-- run end (UPDATE with final status, duration, and counts).
+--
+-- Signature:
+--   CALL LOG_PIPELINE_RUN(
+--     run_id        => '<invocation_id>',
+--     env           => 'dev',
+--     command       => 'run',
+--     status        => 'success',
+--     started_at    => '<timestamp>',
+--     finished_at   => '<timestamp>',        -- NULL at run start
+--     models_run    => 12,
+--     tests_run     => 48,
+--     models_failed => 0,
+--     tests_failed  => 0,
+--     git_sha       => '<sha>'               -- NULL if not in CI
+--   );
+
+USE ROLE SYSADMIN;
+USE DATABASE CSTA_MARKETING_SHARED;
+USE SCHEMA OBSERVABILITY;
+
+CREATE OR REPLACE PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.LOG_PIPELINE_RUN(
+    run_id        VARCHAR,
+    env           VARCHAR,
+    command       VARCHAR,
+    status        VARCHAR,
+    started_at    TIMESTAMP_NTZ,
+    finished_at   TIMESTAMP_NTZ,
+    models_run    INTEGER,
+    tests_run     INTEGER,
+    models_failed INTEGER,
+    tests_failed  INTEGER,
+    git_sha       VARCHAR
+)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+$$
+DECLARE
+    duration_sec FLOAT;
+BEGIN
+    -- Compute duration only when finished_at is supplied
+    IF (finished_at IS NOT NULL) THEN
+        duration_sec := DATEDIFF('second', started_at, finished_at);
+    END IF;
+
+    MERGE INTO CSTA_MARKETING_SHARED.OBSERVABILITY.PIPELINE_RUN_LOG AS tgt
+    USING (
+        SELECT
+            :run_id        AS run_id,
+            :env           AS env,
+            :command       AS command,
+            :status        AS status,
+            :started_at    AS started_at,
+            :finished_at   AS finished_at,
+            duration_sec   AS duration_seconds,
+            :models_run    AS models_run,
+            :tests_run     AS tests_run,
+            :models_failed AS models_failed,
+            :tests_failed  AS tests_failed,
+            :git_sha       AS git_sha
+    ) AS src ON tgt.run_id = src.run_id
+    WHEN MATCHED THEN UPDATE SET
+        status           = src.status,
+        finished_at      = src.finished_at,
+        duration_seconds = src.duration_seconds,
+        models_run       = src.models_run,
+        tests_run        = src.tests_run,
+        models_failed    = src.models_failed,
+        tests_failed     = src.tests_failed,
+        git_sha          = COALESCE(src.git_sha, tgt.git_sha)
+    WHEN NOT MATCHED THEN INSERT (
+        run_id, env, command, status, started_at, finished_at,
+        duration_seconds, models_run, tests_run, models_failed, tests_failed,
+        git_sha, invocation_id
+    ) VALUES (
+        src.run_id, src.env, src.command, src.status, src.started_at, src.finished_at,
+        src.duration_seconds, src.models_run, src.tests_run, src.models_failed, src.tests_failed,
+        src.git_sha, src.run_id
+    );
+
+    RETURN 'OK: ' || :run_id || ' → ' || :status;
+END;
+$$;
+
+
+
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.LOG_PIPELINE_RUN(
+    VARCHAR, VARCHAR, VARCHAR, VARCHAR, TIMESTAMP_NTZ, TIMESTAMP_NTZ,
+    INTEGER, INTEGER, INTEGER, INTEGER, VARCHAR
+) TO ROLE CSTA_DBT_DEV_ROLE;
+
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.LOG_PIPELINE_RUN(
+    VARCHAR, VARCHAR, VARCHAR, VARCHAR, TIMESTAMP_NTZ, TIMESTAMP_NTZ,
+    INTEGER, INTEGER, INTEGER, INTEGER, VARCHAR
+) TO ROLE CSTA_DBT_UAT_ROLE;
+
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.LOG_PIPELINE_RUN(
+    VARCHAR, VARCHAR, VARCHAR, VARCHAR, TIMESTAMP_NTZ, TIMESTAMP_NTZ,
+    INTEGER, INTEGER, INTEGER, INTEGER, VARCHAR
+) TO ROLE CSTA_DBT_PROD_ROLE;
+
