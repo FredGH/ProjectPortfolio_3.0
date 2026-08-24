@@ -80,3 +80,7 @@ Follow the conventions in `.claude/rules/`:
 | `python-testing.md` | pytest conventions, test structure |
 | `etl-pipeline.md` | dlt 1.x patterns, load modes, composite keys |
 | `sql-style.md` | DuckDB query conventions |
+
+## Context Management
+
+When compacting, preserve: file paths touched, pytest commands run, and any pending decisions or TODOs.

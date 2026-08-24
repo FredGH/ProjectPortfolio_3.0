@@ -14,18 +14,17 @@ The local git object store is corrupted. **Never commit or push directly from th
 Always push via the clean clone at `/tmp/fresh_portfolio`:
 
 ```bash
-PROJECT="$(basename "$PWD")"
-LOCAL_DIR="$PWD"
+LOCAL_DIR="/Users/fredericmarechal/Documents/GitHub/courses/data-eng-courses/ai-engineering-courses/ai-agentic-eng-course/projects/agents/projects/ProjectPortfolio_3.0/claude_project_template"
 FRESH="/tmp/fresh_portfolio"
 
 rsync -av \
   --exclude='venv/' --exclude='.venv/' --exclude='*.egg-info/' \
   --exclude='__pycache__/' --exclude='*.pyc' \
   --exclude='.coverage' --exclude='dist/' --exclude='.ruff_cache/' \
-  "$LOCAL_DIR/" "$FRESH/$PROJECT/"
+  "$LOCAL_DIR/" "$FRESH/claude_project_template/"
 
 cd /tmp/fresh_portfolio
-git add "$PROJECT/"
+git add claude_project_template/
 git commit -m "..."
 git fetch origin && git rebase origin/main && git push origin main
 ```

@@ -146,3 +146,7 @@ coverage report -m
 - Python tests follow `.claude/rules/python-testing.md`
 - Never commit `*.p8` private keys, `profiles.yml`, or `snowflake/setup/rendered/`
 - RSA **public** key bodies (base64) in `config/*.yaml` are safe to commit
+
+## Context Management
+
+When compacting, preserve: config keys touched (`config/<env>.yaml`), rendered template names, Terraform plan/apply output, and any pending phase/config decisions.
