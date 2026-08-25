@@ -14,10 +14,10 @@ Describe your project purpose, architecture, and key conventions here.
 
 ## Development Workflow
 
-1. Create a feature branch from `main`
+1. **Before starting a non-trivial change**, ask once, in a single question: is this a `feat` / `fix` / `chore` / `docs` / `refactor` / `test`, or should it just be made directly without a branch? Skip asking for docs/comment/config-only edits, if already on a non-main branch, or if already answered earlier in this conversation. Branch as `<type>/<slug>` (see the `commit-push` skill).
 2. Implement changes following the rules in `.claude/rules/`
 3. Run tests before committing
-4. Open a pull request for review
+4. Use the `commit`, `commit-push`, `pr`, or `commit-push-pr` skills to commit/branch/push/open a PR
 
 ## Key Commands
 
