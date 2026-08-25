@@ -36,6 +36,9 @@ ruff check . && isort . && black .
 ## Important Notes
 
 - Follow the Python style rules in `.claude/rules/python-style.md` and SQL style rules in `.claude/rules/sql-style.md`
-- All API endpoints must comply with `.claude/rules/api-conventions.md`
 - Python tests must follow `.claude/rules/python-testing.md`
 - SQL/dbt tests must follow `.claude/rules/sql-testing.md`
+
+## Context Management
+
+When compacting, preserve: file paths touched, test/lint commands run, and any pending decisions or TODOs.

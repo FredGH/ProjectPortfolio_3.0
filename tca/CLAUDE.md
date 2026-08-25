@@ -425,3 +425,7 @@ ruff check . && isort . && black .
 - **JWT RS256** — not HS256, not simple Bearer token; RS256 key pair generated at startup
 - **No DB mocking** — all integration tests use a real Postgres connection
 - **If any requirement is ambiguous** — stop and ask; do not guess or invent behaviour
+
+## Context Management
+
+When compacting, preserve: file paths touched, migration/dbt phase reached (see Build SOP), test commands run, and any pending decisions or TODOs.

@@ -87,10 +87,13 @@ models:
       Grain: customer_unique_id (unique).
     columns:
       - name: customer_unique_id
-        description: "Primary key. De-duplicated customer identifier."
+        description: "Primary key. De-duplicated customer identifier. Foreign key to slv_customer_rfm."
         tests:
           - unique
           - not_null
+          - relationships:
+              to: ref('slv_customer_rfm')
+              field: customer_unique_id
       - name: rfm_score
         description: "Composite RFM score from slv_customer_rfm; range 1.0 – 5.0."
         tests:
@@ -122,10 +125,13 @@ models:
       Grain: iso_week (unique).
     columns:
       - name: iso_week
-        description: "Primary key. ISO 8601 week identifier (YYYY-WNN)."
+        description: "Primary key. ISO 8601 week identifier (YYYY-WNN). Foreign key to brz_mmm_weekly_spend."
         tests:
           - unique
           - not_null
+          - relationships:
+              to: ref('brz_mmm_weekly_spend')
+              field: iso_week
       - name: week_start_date
         description: "Monday date opening the ISO week."
         tests:
@@ -138,12 +144,30 @@ models:
               min_value: 0
               strictly: true
               severity: error
+          - assert_column_drift:
+              baseline_mean: 150000
+              baseline_stddev: 50000
+              z_threshold: 3.0
+              config:
+                severity: warn
+          - assert_metric_anomaly:
+              date_column: iso_week
+              lookback_weeks: 8
+              threshold_pct: 75
+              config:
+                severity: warn
       - name: tv_spend
         description: "TV channel spend in BRL."
         tests:
           - not_null
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
+          - assert_column_drift:
+              baseline_mean: 25000
+              baseline_stddev: 8000
+              z_threshold: 3.0
+              config:
+                severity: warn
       - name: paid_search_spend
         description: "Paid search channel spend in BRL."
         tests:
@@ -206,6 +230,103 @@ models:
               values: [0, 1]
       - name: black_friday_flag
         description: "1 if the week contains Black Friday, 0 otherwise."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+      - name: _loaded_at
+        description: "Pipeline ingestion timestamp (UTC)."
+        tests:
+          - not_null
+
+  - name: slv_feedback_enriched
+    description: >
+      Olist order reviews translated to English, sentiment-scored via AI_SENTIMENT, and
+      theme-extracted via CORTEX.COMPLETE. Incremental — new review_ids merged each run.
+      Grain: review_id (unique).
+    columns:
+      - name: review_id
+        description: "Primary key. Unique review identifier."
+        tests:
+          - unique
+          - not_null
+      - name: order_id
+        description: "Foreign key to brz_olist_order_reviews."
+        tests:
+          - not_null
+      - name: review_score
+        description: "Star rating from 1 (lowest) to 5 (highest)."
+        tests:
+          - not_null
+          - accepted_values:
+              values: [1, 2, 3, 4, 5]
+      - name: translated_review
+        description: "Review text translated to English by CORTEX.TRANSLATE. NULL when source comment was NULL."
+      - name: sentiment_score
+        description: "Overall sentiment score from AI_SENTIMENT. NULL when translated_review is NULL."
+        tests:
+          - assert_sentiment_range
+          - dbt_expectations.expect_column_mean_to_be_between:
+              min_value: -0.5
+              max_value: 0.5
+              severity: warn
+          - dbt_expectations.expect_column_stdev_to_be_between:
+              min_value: 0.1
+              max_value: 0.9
+              severity: warn
+          - assert_column_drift:
+              baseline_mean: 0.05
+              baseline_stddev: 0.45
+              z_threshold: 3.0
+              config:
+                severity: warn
+      - name: sentiment_label
+        description: "Categorical sentiment from AI_SENTIMENT: POSITIVE, NEGATIVE, NEUTRAL, MIXED, or UNKNOWN."
+        tests:
+          - accepted_values:
+              values: ['POSITIVE', 'NEGATIVE', 'NEUTRAL', 'MIXED', 'UNKNOWN']
+          - assert_cortex_not_null:
+              config:
+                where: "translated_review IS NOT NULL"
+          - assert_kl_divergence:
+              max_kl_divergence: 0.5
+              config:
+                severity: warn
+      - name: aspect_product_quality
+        description: "AI_SENTIMENT aspect score for product quality. NULL when aspect not returned."
+        tests:
+          - assert_sentiment_range
+      - name: aspect_delivery
+        description: "AI_SENTIMENT aspect score for delivery speed / experience."
+        tests:
+          - assert_sentiment_range
+      - name: aspect_customer_service
+        description: "AI_SENTIMENT aspect score for customer service."
+        tests:
+          - assert_sentiment_range
+      - name: aspect_price_value
+        description: "AI_SENTIMENT aspect score for price / value for money."
+        tests:
+          - assert_sentiment_range
+      - name: theme_json
+        description: "Raw VARIANT parsed from CORTEX.COMPLETE theme extraction response. NULL when translated_review is NULL."
+      - name: theme
+        description: "Primary theme: product_quality, delivery, customer_service, price_value, packaging, or other."
+        tests:
+          - accepted_values:
+              values: ['product_quality', 'delivery', 'customer_service', 'price_value', 'packaging', 'other']
+          - assert_cortex_not_null:
+              config:
+                where: "translated_review IS NOT NULL"
+          - dbt_expectations.expect_column_proportion_of_unique_values_to_be_between:
+              min_value: 0.5
+              max_value: 1.0
+              config:
+                severity: warn
+      - name: key_phrase
+        description: "Short 3-7 word key phrase extracted by CORTEX.COMPLETE. NULL when translated_review is NULL."
+      - name: churn_risk_flag
+        description: "1 when review_score <= 2 (dissatisfied customer); 0 otherwise."
         tests:
           - not_null
           - accepted_values:

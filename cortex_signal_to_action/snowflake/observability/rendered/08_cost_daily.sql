@@ -1,0 +1,297 @@
+-- Phase 8: COST_DAILY table + POPULATE_COST_DAILY procedure + TASK_COST_REPORT
+-- COST_DAILY is defined in 01_observability_schema.sql; this file adds the stored
+-- procedure that populates it and the independent daily Task that drives it.
+--
+-- Four ACCOUNT_USAGE sources merged via MERGE ON (report_date, env, component, resource_name):
+--   1. SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY  → warehouse_compute
+--   2. SNOWFLAKE.ACCOUNT_USAGE.SERVERLESS_TASK_HISTORY     → serverless_tasks
+--   3. CSTA_MARKETING_SHARED.OBSERVABILITY.CORTEX_COST_DAILY (view) → cortex_ai
+--   4. SNOWFLAKE.ACCOUNT_USAGE.STORAGE_USAGE               → storage
+--
+-- Unit price default: $3.00 / credit (configurable via MTD_UNIT_PRICE_USD parameter).
+-- TASK_COST_REPORT runs at 06:00 UTC daily, independent of the pipeline DAG.
+--
+-- Test MTD budget alert:
+--   CALL POPULATE_COST_DAILY(
+--     report_date          => CURRENT_DATE,
+--     env_filter           => 'dev',
+--     mtd_budget_usd       => 1.0,     -- intentionally low to trigger alert
+--     mtd_unit_price_usd   => 3.0
+--   );
+
+USE ROLE SYSADMIN;
+USE DATABASE CSTA_MARKETING_SHARED;
+USE SCHEMA OBSERVABILITY;
+
+-- TRIGGER_ALERT: lightweight alert dispatcher
+-- Logs an alert entry to DATA_QUALITY_LOG and (in Phase 10) posts to Slack via
+-- the Snowflake External Access Integration. For now it logs and returns.
+CREATE OR REPLACE PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.TRIGGER_ALERT(
+    alert_type    VARCHAR,
+    alert_message VARCHAR,
+    env           VARCHAR
+)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+$$
+BEGIN
+    INSERT INTO CSTA_MARKETING_SHARED.OBSERVABILITY.DATA_QUALITY_LOG
+        (run_id, env, test_name, model_name, column_name, status, severity, failure_count)
+    VALUES (
+        'ALERT_' || TO_CHAR(SYSDATE(), 'YYYYMMDD_HH24MISS'),
+        :env,
+        :alert_type,
+        'COST_DAILY',
+        'estimated_usd_cost',
+        'fail',
+        'error',
+        1
+    );
+
+    RETURN 'ALERT triggered: ' || :alert_type || ' — ' || :alert_message;
+END;
+$$;
+
+-- POPULATE_COST_DAILY: merge all four cost sources into COST_DAILY for a given date
+CREATE OR REPLACE PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.POPULATE_COST_DAILY(
+    report_date        DATE,
+    env_filter         VARCHAR,   -- 'dev' | 'uat' | 'prod' | 'all'
+    mtd_budget_usd     FLOAT,     -- monthly budget threshold; 0 = no alert
+    mtd_unit_price_usd FLOAT      -- credits → USD conversion rate (default 3.0)
+)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+$$
+DECLARE
+    unit_price FLOAT;
+    rows_merged INTEGER DEFAULT 0;
+    mtd_actual_usd FLOAT DEFAULT 0;
+BEGIN
+    unit_price := COALESCE(:mtd_unit_price_usd, 3.0);
+
+    -- -----------------------------------------------------------------
+    -- Source 1: warehouse compute — WAREHOUSE_METERING_HISTORY
+    -- -----------------------------------------------------------------
+    MERGE INTO CSTA_MARKETING_SHARED.OBSERVABILITY.COST_DAILY AS tgt
+    USING (
+        SELECT
+            :report_date                                        AS report_date,
+            -- Map warehouse name prefix to env
+            CASE
+                WHEN UPPER(warehouse_name) LIKE '%DEV%'  THEN 'dev'
+                WHEN UPPER(warehouse_name) LIKE '%UAT%'  THEN 'uat'
+                WHEN UPPER(warehouse_name) LIKE '%PROD%' THEN 'prod'
+                ELSE 'shared'
+            END                                                 AS env,
+            'warehouse_compute'                                 AS component,
+            warehouse_name                                      AS resource_name,
+            SUM(credits_used)                                   AS credits_used,
+            SUM(credits_used) * unit_price                      AS estimated_usd_cost,
+            COUNT(*)                                            AS query_count,
+            NULL::FLOAT                                         AS storage_tb
+        FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
+        WHERE START_TIME::DATE = :report_date
+        GROUP BY 2, 3, 4
+        HAVING (:env_filter = 'all' OR env = :env_filter)
+    ) AS src
+    ON  tgt.report_date  = src.report_date
+    AND tgt.env          = src.env
+    AND tgt.component    = src.component
+    AND tgt.resource_name = src.resource_name
+    WHEN MATCHED THEN UPDATE SET
+        credits_used       = src.credits_used,
+        estimated_usd_cost = src.estimated_usd_cost,
+        query_count        = src.query_count,
+        measured_at        = SYSDATE()
+    WHEN NOT MATCHED THEN INSERT
+        (report_date, env, component, resource_name, credits_used, estimated_usd_cost, query_count, storage_tb)
+    VALUES
+        (src.report_date, src.env, src.component, src.resource_name,
+         src.credits_used, src.estimated_usd_cost, src.query_count, src.storage_tb);
+
+    rows_merged := rows_merged + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------
+    -- Source 2: serverless tasks — SERVERLESS_TASK_HISTORY
+    -- -----------------------------------------------------------------
+    MERGE INTO CSTA_MARKETING_SHARED.OBSERVABILITY.COST_DAILY AS tgt
+    USING (
+        SELECT
+            :report_date                                        AS report_date,
+            CASE
+                WHEN UPPER(database_name) LIKE '%DEV%'  THEN 'dev'
+                WHEN UPPER(database_name) LIKE '%UAT%'  THEN 'uat'
+                WHEN UPPER(database_name) LIKE '%PROD%' THEN 'prod'
+                ELSE 'shared'
+            END                                                 AS env,
+            'serverless_tasks'                                  AS component,
+            name                                                AS resource_name,
+            SUM(credits_used)                                   AS credits_used,
+            SUM(credits_used) * unit_price                      AS estimated_usd_cost,
+            COUNT(*)                                            AS query_count,
+            NULL::FLOAT                                         AS storage_tb
+        FROM SNOWFLAKE.ACCOUNT_USAGE.SERVERLESS_TASK_HISTORY
+        WHERE COMPLETED_TIME::DATE = :report_date
+        GROUP BY 2, 3, 4
+        HAVING (:env_filter = 'all' OR env = :env_filter)
+    ) AS src
+    ON  tgt.report_date   = src.report_date
+    AND tgt.env           = src.env
+    AND tgt.component     = src.component
+    AND tgt.resource_name = src.resource_name
+    WHEN MATCHED THEN UPDATE SET
+        credits_used       = src.credits_used,
+        estimated_usd_cost = src.estimated_usd_cost,
+        query_count        = src.query_count,
+        measured_at        = SYSDATE()
+    WHEN NOT MATCHED THEN INSERT
+        (report_date, env, component, resource_name, credits_used, estimated_usd_cost, query_count, storage_tb)
+    VALUES
+        (src.report_date, src.env, src.component, src.resource_name,
+         src.credits_used, src.estimated_usd_cost, src.query_count, src.storage_tb);
+
+    rows_merged := rows_merged + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------
+    -- Source 3: Cortex AI — CORTEX_COST_DAILY view
+    -- -----------------------------------------------------------------
+    MERGE INTO CSTA_MARKETING_SHARED.OBSERVABILITY.COST_DAILY AS tgt
+    USING (
+        SELECT
+            report_date,
+            env,
+            component,
+            resource_name,
+            SUM(credits_used)               AS credits_used,
+            SUM(estimated_usd_cost)         AS estimated_usd_cost,
+            SUM(calls_count)                AS query_count,
+            NULL::FLOAT                     AS storage_tb
+        FROM CSTA_MARKETING_SHARED.OBSERVABILITY.CORTEX_COST_DAILY
+        WHERE report_date = :report_date
+          AND (:env_filter = 'all' OR env = :env_filter)
+        GROUP BY 1, 2, 3, 4
+    ) AS src
+    ON  tgt.report_date   = src.report_date
+    AND tgt.env           = src.env
+    AND tgt.component     = src.component
+    AND tgt.resource_name = src.resource_name
+    WHEN MATCHED THEN UPDATE SET
+        credits_used       = src.credits_used,
+        estimated_usd_cost = src.estimated_usd_cost,
+        query_count        = src.query_count,
+        measured_at        = SYSDATE()
+    WHEN NOT MATCHED THEN INSERT
+        (report_date, env, component, resource_name, credits_used, estimated_usd_cost, query_count, storage_tb)
+    VALUES
+        (src.report_date, src.env, src.component, src.resource_name,
+         src.credits_used, src.estimated_usd_cost, src.query_count, src.storage_tb);
+
+    rows_merged := rows_merged + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------
+    -- Source 4: Storage — STORAGE_USAGE (account-level; no per-env breakdown)
+    -- -----------------------------------------------------------------
+    MERGE INTO CSTA_MARKETING_SHARED.OBSERVABILITY.COST_DAILY AS tgt
+    USING (
+        SELECT
+            :report_date                                AS report_date,
+            'shared'                                    AS env,
+            'storage'                                   AS component,
+            'account'                                   AS resource_name,
+            -- Storage pricing: ~$23 / TB / month = $0.75/TB/day ≈ 0.00025 credits/TB/day (rough equiv)
+            STORAGE_BYTES / 1e12 * 0.00025             AS credits_used,
+            STORAGE_BYTES / 1e12 * 23.0 / 30.0        AS estimated_usd_cost,
+            NULL::INTEGER                               AS query_count,
+            STORAGE_BYTES / 1e12                       AS storage_tb
+        FROM SNOWFLAKE.ACCOUNT_USAGE.STORAGE_USAGE
+        WHERE USAGE_DATE = :report_date
+        LIMIT 1
+    ) AS src
+    ON  tgt.report_date   = src.report_date
+    AND tgt.env           = src.env
+    AND tgt.component     = src.component
+    AND tgt.resource_name = src.resource_name
+    WHEN MATCHED THEN UPDATE SET
+        credits_used       = src.credits_used,
+        estimated_usd_cost = src.estimated_usd_cost,
+        storage_tb         = src.storage_tb,
+        measured_at        = SYSDATE()
+    WHEN NOT MATCHED THEN INSERT
+        (report_date, env, component, resource_name, credits_used, estimated_usd_cost, query_count, storage_tb)
+    VALUES
+        (src.report_date, src.env, src.component, src.resource_name,
+         src.credits_used, src.estimated_usd_cost, src.query_count, src.storage_tb);
+
+    rows_merged := rows_merged + SQLROWCOUNT;
+
+    -- -----------------------------------------------------------------
+    -- MTD budget alert check
+    -- -----------------------------------------------------------------
+    IF (:mtd_budget_usd > 0) THEN
+        SELECT SUM(estimated_usd_cost) INTO :mtd_actual_usd
+        FROM CSTA_MARKETING_SHARED.OBSERVABILITY.COST_DAILY
+        WHERE report_date >= DATE_TRUNC('month', :report_date)
+          AND report_date <= :report_date;
+
+        IF (:mtd_actual_usd > :mtd_budget_usd) THEN
+            CALL CSTA_MARKETING_SHARED.OBSERVABILITY.TRIGGER_ALERT(
+                'cost__mtd_budget_breach',
+                'MTD cost $' || ROUND(:mtd_actual_usd, 2)::VARCHAR
+                    || ' exceeds budget $' || :mtd_budget_usd::VARCHAR,
+                :env_filter
+            );
+        END IF;
+    END IF;
+
+    RETURN 'OK: ' || rows_merged || ' row(s) merged into COST_DAILY for ' || :report_date::VARCHAR;
+END;
+$$;
+
+-- TASK_COST_REPORT — independent daily task, NOT chained to the pipeline DAG
+-- Runs at 06:00 UTC after ACCOUNT_USAGE replication (45-min lag) has settled.
+-- Uses a dedicated compute context to avoid impacting pipeline runs.
+CREATE OR REPLACE TASK CSTA_MARKETING_SHARED.OBSERVABILITY.TASK_COST_REPORT
+    WAREHOUSE = CSTA_DBT_DEV_WH
+    SCHEDULE  = 'USING CRON 0 6 * * * UTC'
+    COMMENT   = 'Daily cost roll-up from four ACCOUNT_USAGE sources. Independent of pipeline DAG.'
+AS
+CALL CSTA_MARKETING_SHARED.OBSERVABILITY.POPULATE_COST_DAILY(
+    DATEADD('day', -1, CURRENT_DATE),  -- yesterday's costs (fully settled in ACCOUNT_USAGE)
+    'all',                              -- all environments
+    0,                                  -- budget = 0 → no alert (set per-account after go-live)
+    3.0                                 -- $3.00 / credit default
+);
+
+ALTER TASK CSTA_MARKETING_SHARED.OBSERVABILITY.TASK_COST_REPORT RESUME;
+
+-- Grants
+
+GRANT SELECT ON TABLE CSTA_MARKETING_SHARED.OBSERVABILITY.COST_DAILY TO ROLE CSTA_OBSERVER_ROLE;
+GRANT MONITOR ON TASK CSTA_MARKETING_SHARED.OBSERVABILITY.TASK_COST_REPORT TO ROLE CSTA_OBSERVER_ROLE;
+
+
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.POPULATE_COST_DAILY(
+    DATE, VARCHAR, FLOAT, FLOAT
+) TO ROLE CSTA_DBT_DEV_ROLE;
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.TRIGGER_ALERT(
+    VARCHAR, VARCHAR, VARCHAR
+) TO ROLE CSTA_DBT_DEV_ROLE;
+
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.POPULATE_COST_DAILY(
+    DATE, VARCHAR, FLOAT, FLOAT
+) TO ROLE CSTA_DBT_UAT_ROLE;
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.TRIGGER_ALERT(
+    VARCHAR, VARCHAR, VARCHAR
+) TO ROLE CSTA_DBT_UAT_ROLE;
+
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.POPULATE_COST_DAILY(
+    DATE, VARCHAR, FLOAT, FLOAT
+) TO ROLE CSTA_DBT_PROD_ROLE;
+GRANT USAGE ON PROCEDURE CSTA_MARKETING_SHARED.OBSERVABILITY.TRIGGER_ALERT(
+    VARCHAR, VARCHAR, VARCHAR
+) TO ROLE CSTA_DBT_PROD_ROLE;
+

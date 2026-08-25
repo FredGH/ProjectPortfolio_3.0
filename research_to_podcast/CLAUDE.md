@@ -65,3 +65,7 @@ ruff check . && isort . && black .
 ## Output Locations
 - `logs/pipeline_<timestamp>.log` — JSON-lines execution log (viewable in the Log tab)
 - `output/podcast_<timestamp>.mp3` — generated podcast audio
+
+## Context Management
+
+When compacting, preserve: file paths touched, test/lint commands run, and any pending decisions or TODOs.

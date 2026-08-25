@@ -4,14 +4,16 @@ Render Jinja2 SQL templates against a per-environment config YAML.
 
 Usage:
     pip install -r scripts/requirements.txt
-    python scripts/render.py dev              # render all templates for dev
-    python scripts/render.py dev 01_databases # render a specific template
+    python scripts/render.py dev                                    # render all setup templates
+    python scripts/render.py dev 01_databases                       # render one setup template
+    python scripts/render.py dev --subdir observability             # render all observability templates
+    python scripts/render.py dev 01_observability --subdir observability  # render one observability template
 
 Output:
-    snowflake/setup/rendered/<template>.sql   (gitignored)
+    snowflake/<subdir>/rendered/<template>.sql   (gitignored)
 
 Convention:
-    All Snowflake bootstrap SQL lives as *.sql.j2 templates in snowflake/setup/.
+    All Snowflake SQL lives as *.sql.j2 templates in snowflake/<subdir>/.
     Never edit the rendered/ output directly — edit the .j2 template and re-render.
     Config values (database names, role names, RSA keys) all come from config/<env>.yaml.
 """
@@ -36,12 +38,22 @@ def load_config(env: str) -> dict:
         return yaml.safe_load(f)
 
 
-def render(env: str, template_filter: str | None = None) -> None:
-    """Render matching .sql.j2 templates and write to snowflake/setup/rendered/."""
+def render(env: str, template_filter: str | None = None, subdir: str = "setup") -> None:
+    """Render matching .sql.j2 templates and write to snowflake/<subdir>/rendered/.
+
+    Args:
+        env: Target environment — dev, uat, or prod.
+        template_filter: Optional substring filter on template file name.
+        subdir: Subdirectory under snowflake/ containing the templates (default: setup).
+    """
     root = Path(__file__).parent.parent
     config = load_config(env)
 
-    template_dir = root / "snowflake" / "setup"
+    template_dir = root / "snowflake" / subdir
+    if not template_dir.is_dir():
+        print(f"Error: template directory {template_dir} not found", file=sys.stderr)
+        sys.exit(1)
+
     rendered_dir = template_dir / "rendered"
     rendered_dir.mkdir(exist_ok=True)
 
@@ -66,7 +78,7 @@ def render(env: str, template_filter: str | None = None) -> None:
             output = template.render(config=config)
         except UndefinedError as exc:
             print(f"  ERROR in {template_path.name}: {exc}", file=sys.stderr)
-            print("  Check that all template variables exist in config/{env}.yaml", file=sys.stderr)
+            print(f"  Check that all template variables exist in config/{env}.yaml", file=sys.stderr)
             sys.exit(1)
 
         output_path = rendered_dir / template_path.stem  # strips .j2 → keeps .sql
@@ -74,11 +86,11 @@ def render(env: str, template_filter: str | None = None) -> None:
         print(f"  {template_path.name:40s} → rendered/{template_path.stem}")
         rendered_count += 1
 
-    print(f"\n{rendered_count} template(s) rendered for environment '{env}'.")
+    print(f"\n{rendered_count} template(s) rendered for environment '{env}' (subdir: {subdir}).")
     print(f"Output: {rendered_dir}")
     if any("REPLACE_WITH_" in v for v in _flatten_values(config)):
         print("\nWARNING: config contains unfilled REPLACE_WITH_* placeholders.")
-        print("         Fill in config/{env}.yaml before running the rendered SQL.")
+        print(f"         Fill in config/{env}.yaml before running the rendered SQL.")
 
 
 def _flatten_values(obj: object) -> list[str]:
@@ -98,8 +110,13 @@ def main() -> None:
     )
     parser.add_argument("env", choices=["dev", "uat", "prod"], help="Target environment")
     parser.add_argument("template", nargs="?", help="Template name filter (optional)")
+    parser.add_argument(
+        "--subdir",
+        default="setup",
+        help="Subdirectory under snowflake/ containing *.sql.j2 templates (default: setup)",
+    )
     args = parser.parse_args()
-    render(args.env, args.template)
+    render(args.env, args.template, args.subdir)
 
 
 if __name__ == "__main__":

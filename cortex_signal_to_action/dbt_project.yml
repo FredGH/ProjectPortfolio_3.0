@@ -8,7 +8,7 @@ model-paths: ["models"]
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]
-macro-paths: ["macros"]
+macro-paths: ["macros", "tests/generic"]
 snapshot-paths: ["snapshots"]
 docs-paths: ["docs"]
 
@@ -17,9 +17,12 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
-# Populated in Phase 8 — Observability.
-# Final hooks: {{ log_test_results() }} + CALL UPLOAD_DBT_ARTIFACTS(...)
-on-run-end: []
+# Phase 8 — Observability hooks.
+# log_test_results() merges the pipeline run summary into PIPELINE_RUN_LOG,
+# calls UPLOAD_DBT_ARTIFACTS, and bulk-inserts all test results into DATA_QUALITY_LOG.
+# Both are no-ops when observability_enabled = false (default for local dev).
+on-run-end:
+  - "{{ log_test_results() }}"
 
 vars:
   observability_enabled: false
@@ -27,6 +30,7 @@ vars:
 
 models:
   cortex_signal_to_action:
+    +post-hook: "{{ log_model_health() }}"
     bronze:
       +materialized: table
       +schema: bronze
@@ -35,6 +39,10 @@ models:
       +materialized: table
       +schema: silver
       +tags: ['silver']
+      slv_feedback_enriched:
+        +post-hook:
+          - "{{ log_model_health() }}"
+          - "{{ log_cortex_usage() }}"
     gold:
       +materialized: table
       +schema: gold

@@ -1,0 +1,159 @@
+-- Phase 8: Observability Schema + Log Tables
+-- Run as SYSADMIN. The OBSERVABILITY schema is already provisioned (Phase 1 bootstrap).
+-- This script creates all five log tables and the CORTEX_COST_DAILY view.
+--
+-- RENDER: python scripts/render.py dev --subdir observability
+-- RUN:    snowflake/observability/rendered/01_observability_schema.sql
+
+USE ROLE SYSADMIN;
+USE DATABASE {{ config.databases.shared }};
+USE SCHEMA OBSERVABILITY;
+
+-- ---------------------------------------------------------------------------
+-- 1. PIPELINE_RUN_LOG — one row per dbt invocation
+--    Primary identifier: invocation_id (UUID emitted by dbt at run start)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG (
+    run_id               VARCHAR(36)   NOT NULL    COMMENT 'dbt invocation_id (UUID)',
+    env                  VARCHAR(10)   NOT NULL    COMMENT 'dev | uat | prod',
+    command              VARCHAR(50)   NOT NULL    COMMENT 'run | test | seed | full',
+    status               VARCHAR(20)   NOT NULL    COMMENT 'success | partial_success | error',
+    started_at           TIMESTAMP_NTZ NOT NULL,
+    finished_at          TIMESTAMP_NTZ,
+    duration_seconds     FLOAT,
+    models_run           INTEGER       DEFAULT 0,
+    tests_run            INTEGER       DEFAULT 0,
+    models_failed        INTEGER       DEFAULT 0,
+    tests_failed         INTEGER       DEFAULT 0,
+    git_sha              VARCHAR(40)   COMMENT 'git commit SHA from CI env var or manual run',
+    invocation_id        VARCHAR(36)   COMMENT 'cross-reference alias for run_id',
+    CONSTRAINT pk_pipeline_run_log PRIMARY KEY (run_id)
+)
+COMMENT = 'One row per dbt invocation. Populated by log_test_results() on-run-end macro.';
+
+-- ---------------------------------------------------------------------------
+-- 2. MODEL_HEALTH_LOG — one row per model per dbt run
+--    FK to PIPELINE_RUN_LOG is informational only (Snowflake does not enforce FKs).
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS {{ config.databases.shared }}.OBSERVABILITY.MODEL_HEALTH_LOG (
+    log_id               NUMBER        AUTOINCREMENT PRIMARY KEY,
+    run_id               VARCHAR(36)   NOT NULL    COMMENT 'dbt invocation_id',
+    env                  VARCHAR(10)   NOT NULL,
+    model_name           VARCHAR(200)  NOT NULL,
+    schema_name          VARCHAR(200)  NOT NULL,
+    status               VARCHAR(20)   NOT NULL    COMMENT 'success | error | skipped',
+    rows_affected        INTEGER,
+    execution_time_seconds FLOAT,
+    logged_at            TIMESTAMP_NTZ DEFAULT SYSDATE(),
+    CONSTRAINT fk_model_health_run FOREIGN KEY (run_id)
+        REFERENCES {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG (run_id)
+        NOT ENFORCED RELY
+)
+COMMENT = 'One row per model per run. Populated by log_model_health() post-hook macro.';
+
+-- ---------------------------------------------------------------------------
+-- 3. CORTEX_USAGE_LOG — one row per Cortex function type per dbt run
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG (
+    log_id               NUMBER        AUTOINCREMENT PRIMARY KEY,
+    run_id               VARCHAR(36)   NOT NULL    COMMENT 'dbt invocation_id',
+    env                  VARCHAR(10)   NOT NULL,
+    function_name        VARCHAR(100)  NOT NULL    COMMENT 'TRANSLATE | AI_SENTIMENT | COMPLETE',
+    input_tokens         INTEGER,
+    output_tokens        INTEGER,
+    calls_count          INTEGER       DEFAULT 0,
+    avg_latency_seconds  FLOAT,
+    null_output_count    INTEGER       DEFAULT 0,
+    logged_at            TIMESTAMP_NTZ DEFAULT SYSDATE(),
+    CONSTRAINT fk_cortex_usage_run FOREIGN KEY (run_id)
+        REFERENCES {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG (run_id)
+        NOT ENFORCED RELY
+)
+COMMENT = 'Cortex call telemetry per run. Populated by log_cortex_usage() post-hook on slv_feedback_enriched.';
+
+-- ---------------------------------------------------------------------------
+-- 4. DATA_QUALITY_LOG — one row per dbt test result per run
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG (
+    log_id               NUMBER        AUTOINCREMENT PRIMARY KEY,
+    run_id               VARCHAR(36)   NOT NULL    COMMENT 'dbt invocation_id',
+    env                  VARCHAR(10)   NOT NULL,
+    test_name            VARCHAR(200)  NOT NULL,
+    model_name           VARCHAR(200),
+    column_name          VARCHAR(200),
+    status               VARCHAR(20)   NOT NULL    COMMENT 'pass | fail | warn | error',
+    severity             VARCHAR(20)   NOT NULL    COMMENT 'error | warn',
+    failure_count        INTEGER       DEFAULT 0,
+    logged_at            TIMESTAMP_NTZ DEFAULT SYSDATE(),
+    CONSTRAINT fk_dq_log_run FOREIGN KEY (run_id)
+        REFERENCES {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG (run_id)
+        NOT ENFORCED RELY
+)
+COMMENT = 'dbt test results per run. Populated by log_test_results() on-run-end macro.';
+
+-- ---------------------------------------------------------------------------
+-- 5. COST_DAILY — daily cost roll-up from four sources
+--    Populated by POPULATE_COST_DAILY stored procedure (08_cost_daily.sql).
+--    PK: (report_date, env, component, resource_name)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS {{ config.databases.shared }}.OBSERVABILITY.COST_DAILY (
+    report_date          DATE          NOT NULL,
+    env                  VARCHAR(10)   NOT NULL    COMMENT 'dev | uat | prod | shared',
+    component            VARCHAR(50)   NOT NULL    COMMENT 'warehouse_compute | serverless_tasks | cortex_ai | storage',
+    resource_name        VARCHAR(200)  NOT NULL    COMMENT 'warehouse name, task name, Cortex function, or ''account''',
+    credits_used         FLOAT         NOT NULL DEFAULT 0,
+    estimated_usd_cost   FLOAT         NOT NULL DEFAULT 0    COMMENT 'credits * configurable unit price (default $3.00)',
+    query_count          INTEGER,
+    storage_tb           FLOAT,
+    measured_at          TIMESTAMP_NTZ DEFAULT SYSDATE(),
+    CONSTRAINT pk_cost_daily PRIMARY KEY (report_date, env, component, resource_name)
+)
+COMMENT = 'Daily cost roll-up. Populated by TASK_COST_REPORT (independent of pipeline DAG).';
+
+-- ---------------------------------------------------------------------------
+-- 6. CORTEX_COST_DAILY — view aggregating CORTEX_USAGE_LOG by day
+--    Used by POPULATE_COST_DAILY as the cortex_ai component source.
+--    Token cost: ~0.04 credits per 1k tokens (COMPLETE); flat rate for TRANSLATE/SENTIMENT.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE VIEW {{ config.databases.shared }}.OBSERVABILITY.CORTEX_COST_DAILY AS
+SELECT
+    logged_at::DATE                                                             AS report_date,
+    env,
+    'cortex_ai'                                                                 AS component,
+    function_name                                                               AS resource_name,
+    SUM(calls_count)                                                            AS calls_count,
+    SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) / 1000.0 * 0.04
+                                                                                AS credits_used,
+    SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) / 1000.0 * 0.04 * 3.0
+                                                                                AS estimated_usd_cost
+FROM {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG
+GROUP BY 1, 2, 3, 4;
+
+-- ---------------------------------------------------------------------------
+-- 7. Grants — OBSERVER_ROLE gets SELECT on all observability objects
+-- ---------------------------------------------------------------------------
+{% set observer_role = config.roles.functional[4] %}
+{% set streamlit_role = config.roles.functional[5] %}
+
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG  TO ROLE {{ observer_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.MODEL_HEALTH_LOG  TO ROLE {{ observer_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG  TO ROLE {{ observer_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG  TO ROLE {{ observer_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.COST_DAILY        TO ROLE {{ observer_role }};
+GRANT SELECT ON VIEW  {{ config.databases.shared }}.OBSERVABILITY.CORTEX_COST_DAILY TO ROLE {{ observer_role }};
+
+-- STREAMLIT_ROLE reads observability tables for the dashboard
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG  TO ROLE {{ streamlit_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.MODEL_HEALTH_LOG  TO ROLE {{ streamlit_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG  TO ROLE {{ streamlit_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG  TO ROLE {{ streamlit_role }};
+GRANT SELECT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.COST_DAILY        TO ROLE {{ streamlit_role }};
+GRANT SELECT ON VIEW  {{ config.databases.shared }}.OBSERVABILITY.CORTEX_COST_DAILY TO ROLE {{ streamlit_role }};
+
+-- dbt roles need INSERT/MERGE to write log entries
+{% for role in [config.roles.functional[0], config.roles.functional[1], config.roles.functional[2]] %}
+GRANT INSERT, UPDATE, MERGE ON TABLE {{ config.databases.shared }}.OBSERVABILITY.PIPELINE_RUN_LOG TO ROLE {{ role }};
+GRANT INSERT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.MODEL_HEALTH_LOG  TO ROLE {{ role }};
+GRANT INSERT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.CORTEX_USAGE_LOG  TO ROLE {{ role }};
+GRANT INSERT ON TABLE {{ config.databases.shared }}.OBSERVABILITY.DATA_QUALITY_LOG  TO ROLE {{ role }};
+{% endfor %}
