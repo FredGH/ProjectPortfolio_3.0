@@ -52,6 +52,7 @@ Skills auto-invoke based on what you ask for — no slash command needed.
 - **`deploy`** — structured pre-deploy gates → build → stage → promote → verify checklist
 - **`docker-deploy`** — builds a Docker image and deploys to Hugging Face Spaces or AWS ECS/Fargate
 - **`security-review`** — routes changed files to the right security-auditor agent by file type
+- **`jira-log`** — drafts a Bug (on `fix`) or Story/Task (on `feat`), and on your confirmation creates it via the installed `jira_sync_kit` package — see `.claude/rules/jira-conventions.md`
 - **`commit`** — stages relevant files, drafts a Conventional Commits message, commits
 - **`commit-push`** — GitHub Flow: branches off `main` automatically (`<type>/<slug>`) if needed, then commits and pushes
 - **`pr`** — opens a PR from an already-pushed branch, with a drafted title/body
@@ -68,6 +69,15 @@ To start a new project from this template:
 2. Update `CLAUDE.md`'s Project Overview, Tech Stack, and Key Commands sections for the new project.
 3. Fill in `CLAUDE.local.md` with the new project's local setup details.
 4. Adjust `.claude/settings.json` permissions if the new project needs Bash access beyond `git`/`python`/`pip`/`ruff`/`black`/`isort`/`coverage`.
+
+## Optional: Jira tracking
+
+Projects that want epic/story/subtask/bug tracking in Jira:
+
+1. Add `git+https://github.com/FredGH/jira_sync_kit.git@0.1.0` as a line in your project's `requirements.txt` (create one if it doesn't exist), then `pip install -r requirements.txt`. Note: `jira_sync_kit` is a private repo — this requires git credentials with access to it, same as any other private dependency.
+2. `python -m jira_sync_kit init` to scaffold `plan/backlog.yml`, then fill it in
+3. Copy `JIRA_SITE_URL` / `JIRA_EMAIL` / `JIRA_API_TOKEN` from `.env.example` into `.env` with real values
+4. `python -m jira_sync_kit sync` — creates the Jira project (if missing) and the full backlog; safe to re-run
 
 ## Keeping sibling projects in sync
 
