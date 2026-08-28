@@ -19,8 +19,13 @@ Check the current branch: `git rev-parse --abbrev-ref HEAD`.
 
 **If on `main`/`master`:**
 1. Sync main first so the new branch isn't based on stale history: `git fetch origin`, then fast-forward if behind (`git status -sb` shows `behind`) — `git merge --ff-only origin/main`. If it can't fast-forward (diverged), stop and ask the user how to reconcile before branching.
-2. Pick a branch name: `<type>/<slug>` — `type` is a Conventional-Commit-style prefix (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`) matching the change; `slug` is a short kebab-case description (3-5 words) inferred from the task or the diff. Example: `feat/add-retry-logic`.
-3. Create and switch to it: `git checkout -b <type>/<slug>`.
+2. Pick a branch name. If `plan/backlog.yml` exists in this project and the `jira-log` skill resolved a `jira_key` for this change earlier in the workflow, use `<type>/<JIRA-KEY>-<slug>` (e.g. `feat/JOB-16-repo-scaffold`). Otherwise — no `plan/backlog.yml`, or no resolved key (e.g. a `chore`/`docs` change with no ticket) — use `<type>/<slug>` as before. `type` is a Conventional-Commit-style prefix (`feat`, `fix`, `chore`, `docs`, `refactor`, `test`) matching the change; `slug` is a short kebab-case description (3-5 words) inferred from the task or the diff.
+3. Create and switch to it: `git checkout -b <branch-name>`.
+4. If `plan/backlog.yml` exists in this project and the branch name matches `<type>/<JIRA-KEY>-<slug>`, silently run:
+   ```bash
+   python -m jira_sync_kit start-story --branch <branch-name>
+   ```
+   Swallow a "No Jira key in branch ... — nothing to do" result silently (expected for branches without a resolved key). If the command exits non-zero for any other reason, report the failure to the user as a warning — do not undo the branch creation, it already succeeded. (To preview what this would do without writing anything, run the same command with `--dry-run` first.)
 
 ### Step 2 — Commit
 

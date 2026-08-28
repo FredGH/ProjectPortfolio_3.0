@@ -14,7 +14,7 @@ Describe your project purpose, architecture, and key conventions here.
 
 ## Development Workflow
 
-1. **Before starting a non-trivial change**, ask once, in a single question: is this a `feat` / `fix` / `chore` / `docs` / `refactor` / `test`, or should it just be made directly without a branch? Skip asking for docs/comment/config-only edits, if already on a non-main branch, or if already answered earlier in this conversation. Branch as `<type>/<slug>` (see the `commit-push` skill).
+1. **Before starting a non-trivial change**, ask once, in a single question: is this a `feat` / `fix` / `chore` / `docs` / `refactor` / `test`, or should it just be made directly without a branch? Skip asking for docs/comment/config-only edits, if already on a non-main branch, or if already answered earlier in this conversation. Branch as `<type>/<slug>`, or `<type>/<JIRA-KEY>-<slug>` if `plan/backlog.yml` exists and `jira-log` resolved a key (see the `commit-push` skill).
 2. **If `plan/backlog.yml` exists**, use the `jira-log` skill to record the confirmed fix/feature as a Jira ticket.
 3. Implement changes following the rules in `.claude/rules/`
 4. Run tests before committing

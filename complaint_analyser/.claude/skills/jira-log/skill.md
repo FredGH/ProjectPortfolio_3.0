@@ -45,7 +45,7 @@ project hasn't adopted Jira tracking. Don't mention it unless asked.
      following the existing file's structure exactly — do not reformat
      unrelated parts of the file.
    - Run `python -m jira_sync_kit sync` to push it to Jira.
-4. Report the created issue key(s) back to the user.
+4. Report the created issue key(s) back to the user, and keep the story's `jira_key` available for this session — if a branch for this work hasn't been created yet, `commit-push`'s branch-naming step reuses it rather than re-deriving which story this is.
 
 ## On `chore` / `refactor` / `test`
 
