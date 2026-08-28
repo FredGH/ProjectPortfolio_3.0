@@ -29,7 +29,9 @@ Separate each group with a blank line.
 
 ## Docstrings
 
-Use Google-style docstrings for public functions and classes:
+Use Google-style docstrings for **all** functions and classes — public and private:
+
+**Functions and methods** — include `Args`, `Returns`, and `Raises` whenever relevant:
 
 ```python
 def process_data(records: list[dict]) -> list[dict]:
@@ -45,6 +47,44 @@ def process_data(records: list[dict]) -> list[dict]:
         ValueError: If any record is missing a required field.
     """
 ```
+
+Private methods follow the same format:
+
+```python
+def _validate_record(self, record: dict) -> bool:
+    """Check that a record contains all required fields.
+
+    Args:
+        record: A single raw data dict to validate.
+
+    Returns:
+        True if the record is valid, False otherwise.
+    """
+```
+
+**Classes** — include a class-level docstring and document all public attributes under `Attributes`:
+
+```python
+class DataProcessor:
+    """Normalise and validate raw records from the source API.
+
+    Attributes:
+        batch_size: Number of records processed per batch.
+        strict_mode: If True, raises on the first invalid record instead of skipping it.
+    """
+
+    def __init__(self, batch_size: int = 100, strict_mode: bool = False) -> None:
+        """Initialise the processor.
+
+        Args:
+            batch_size: Number of records to process per batch.
+            strict_mode: Whether to raise on invalid records instead of skipping.
+        """
+        self.batch_size = batch_size
+        self.strict_mode = strict_mode
+```
+
+**Parameters summary** — every parameter in every function/method signature must be described in `Args`. Omit `Args` only when the function takes no parameters.
 
 ## Type Hints
 

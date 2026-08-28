@@ -414,9 +414,18 @@ ruff check . && isort . && black .
 
 ---
 
+## Development Workflow
+
+1. **Before starting a non-trivial change**, ask once, in a single question: is this a `feat` / `fix` / `chore` / `docs` / `refactor` / `test`, or should it just be made directly without a branch? Skip asking for docs/comment/config-only edits, if already on a non-main branch, or if already answered earlier in this conversation. Branch as `<type>/<slug>`, or `<type>/<JIRA-KEY>-<slug>` if `plan/backlog.yml` exists and `jira-log` resolved a key (see the `commit-push` skill).
+2. **If `plan/backlog.yml` exists**, use the `jira-log` skill to record the confirmed fix/feature as a Jira ticket.
+3. Implement changes following the rules in `.claude/rules/` (see Rules table above)
+4. Run `dbt build` and/or `coverage run -m unittest discover` as relevant before committing
+5. Use the `commit`, `commit-push`, `pr`, or `commit-push-pr` skills to commit/branch/push/open a PR
+
+---
+
 ## Constraints
 
-- **No Git operations** — local-only; no `git pull`, `git push`, no remote interaction
 - **Python 3.11 only** — not 3.12, not 3.13 (dlt 1.5.0 incompatibility with 3.13)
 - **Spot FX permanently excluded** — not a MiFID II instrument for PrivateBank
 - **dlt == 1.5.0** for all batch EL pipelines
@@ -425,6 +434,7 @@ ruff check . && isort . && black .
 - **JWT RS256** — not HS256, not simple Bearer token; RS256 key pair generated at startup
 - **No DB mocking** — all integration tests use a real Postgres connection
 - **If any requirement is ambiguous** — stop and ask; do not guess or invent behaviour
+
 
 ## Context Management
 

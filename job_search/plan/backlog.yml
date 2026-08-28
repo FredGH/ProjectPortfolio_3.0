@@ -1,0 +1,1522 @@
+# =============================================================================
+# Job Search Platform — canonical delivery backlog
+# =============================================================================
+# This file is the source of truth for the project plan.
+# `python -m jira_sync_kit sync` (see the jira_sync_kit package) reads it
+# and creates/updates Jira issues one-way.
+#
+# CONTRACT WITH JIRA
+#   The sync script WRITES : summary, description, acceptance criteria,
+#                            labels, story points, issue links, subtasks
+#   The sync script NEVER  : status, assignee, comments, worklog, sprint
+#
+#   Those fields are owned by Jira alone. This disjoint ownership is what
+#   makes the integration safe to re-run and removes any need for two-way
+#   sync or conflict resolution.
+#
+# IDEMPOTENCY
+#   On first creation the script writes the returned key back into this file
+#   as `jira_key:`. On subsequent runs, a story with a `jira_key` is updated
+#   in place, never recreated. Do not edit `jira_key` by hand.
+#
+# BUGS
+#   Bugs are raised directly in Jira, never generated from this file.
+#   Use labels below so bugs sort alongside the story they came from.
+# =============================================================================
+
+meta:
+  project_key: JOB
+  project_name: Job Search Platform
+  issue_types:
+    epic: Epic
+    story: Story
+    subtask: Sub-task
+    bug: Bug
+  default_labels: [jobsearch]
+  # Labels used across the backlog — keep this list authoritative so the
+  # sync script can validate rather than silently create typo labels.
+  label_vocabulary:
+  - infra
+  - docker
+  - gcp
+  - ingestion
+  - connector
+  - dbt
+  - dedup
+  - calibration
+  - llm
+  - cv
+  - artefacts
+  - qa-bank
+  - ui
+  - orchestration
+  - security
+  - emergent
+  - evals
+  - uk-contracting
+  - outcomes
+  - llm-gateway
+  - retrieval
+  - extraction
+  - tenancy
+  - gdpr
+  point_scale: [1, 2, 3, 5, 8]
+
+# =============================================================================
+
+epics:
+
+  # ---------------------------------------------------------------------------
+- key: PHASE0
+  summary: "Phase 0 — Skeleton and vertical slice"
+  description: >
+    Establish the containerised skeleton and prove one job flows end to end
+    from manual paste through to the bronze layer. Breadth of sources is
+    explicitly out of scope here; the goal is a working spine.
+  labels: [infra, ingestion]
+
+  stories:
+
+  - id: STEP-00
+    summary: "Step 0 — Backlog and Jira sync"
+    description: >
+      Create the canonical plan file and the one-way Jira sync script so
+      the backlog is version-controlled alongside the code it describes.
+    acceptance: >
+      Running `python plan/sync_jira.py` twice creates the full backlog on
+      the first run and produces zero duplicates on the second.
+    labels: [infra]
+    points: 3
+    blocks: [STEP-01]
+    subtasks:
+    - "Create Jira Free site and JOB project (Scrum template)"
+    - "Generate API token, store in .env, add to .gitignore"
+    - "Write plan/backlog.yml"
+    - "Write plan/sync_jira.py using the python-jira client"
+    - "Implement idempotency: write jira_key back into the YAML"
+    - "Implement dependency links from the `blocks` field"
+    - "Verify a second run updates rather than duplicates"
+
+    jira_key: JOB-8
+  - id: STEP-01
+    summary: "Step 1 — Repository and container scaffold"
+    description: >
+      Monorepo layout and three Dockerfiles written BEFORE any application
+      code, so the GCP path is never a retrofit.
+    acceptance: >
+      `docker compose up` yields a hello-world FastAPI on :8000, a
+      Streamlit page on :8501, and a psql-reachable Postgres with the
+      pgvector extension available.
+    labels: [infra, docker]
+    points: 5
+    blocks: [STEP-01A]
+    subtasks:
+    - "Create monorepo layout: apps/{api,ui,pipeline}, dbt/, infra/, plan/, data/landing"
+    - "Write apps/api/Dockerfile (FastAPI, uvicorn)"
+    - "Write apps/ui/Dockerfile (Streamlit)"
+    - "Write apps/pipeline/Dockerfile (dlt + dbt + dedup, batch entrypoint)"
+    - "Write docker-compose.yml: postgres (pgvector/pgvector:pg16), api, ui, ollama"
+    - "Add pipeline service under profiles: [cli] so it does not auto-start"
+    - "Add n8n service under profiles: [orchestration]"
+    - "Write config module using pydantic-settings, all values from env"
+    - "Create .env.example with every variable, commit it; .env stays ignored"
+    - "Set up pre-commit: ruff, ruff-format, mypy"
+    - "Bind-mount ./data/landing into api and pipeline containers"
+    - "LLM gateway module: llm.complete(task=..., ...) resolving model PER TASK from
+      config"
+    - "Never a single global LLM_PROVIDER switch — per-task routing is what avoids
+      an all-or-nothing migration"
+    - "Provider adapters: ollama and anthropic, identical call signature and response
+      shape"
+    - "Config table mapping task -> (provider, model, prompt_family) with local defaults"
+    - "Log provider, model, prompt_version, token counts and cost on every call from
+      day one"
+
+
+    jira_key: JOB-16
+  - id: STEP-01A
+    summary: "Step 1a — Tenancy model and row-level isolation"
+    description: >
+      Multi-user is not a feature you add later — it is a property of every
+      table you create. Retrofitting tenancy across 30+ tables is a rewrite,
+      so the scoping convention and RLS go in before the first table exists.
+      The core design is a two-zone split: job data is SHARED (collected
+      once, identical for everyone), everything derived from a person is
+      PER-USER.
+    acceptance: >
+      A query run as user A cannot return user B's truth base, scores,
+      artefacts or applications even when the WHERE clause is omitted, and
+      a test proves it.
+    labels: [tenancy, infra, security]
+    points: 8
+    blocks: [STEP-02, STEP-03]
+    subtasks:
+    - "Define the two-zone rule and document it: SHARED = job postings, dedup, company
+      intel, market marts, taxonomy, question text. PER-USER = truth base, scores,
+      artefacts, applications, review progress, preferences"
+    - "app_user table: id, email, display_name, created_at, status, locale"
+    - "Every per-user table carries user_id NOT NULL with an FK and an index leading
+      on user_id"
+    - "Enable Postgres row-level security on every per-user table — primarily a CORRECTNESS
+      guard: it catches the query that forgets WHERE user_id and would otherwise blend
+      two users' scores"
+    - "Set the session user context per request in FastAPI; never trust a client-supplied
+      user_id"
+    - "Separate DB roles: app role (RLS enforced) vs migration role (RLS bypass).
+      The app never runs as owner"
+    - "Write a negative test per per-user table: query without a WHERE clause as user
+      A, assert zero rows of user B"
+    - "Shared tables explicitly marked as such in the model layer so no one adds user_id
+      by reflex"
+    - "dbt: shared marts build once; per-user models take user_id as a grain, never
+      a var"
+    - "Per-user resource quotas table: monthly LLM spend cap, artefact generation
+      cap, alert cap"
+    - "Fair-use guard on shared API quotas so one user cannot exhaust the Adzuna allowance
+      for everyone"
+
+    jira_key: JOB-33
+  - id: STEP-02
+    summary: "Step 2 — Manual job entry, end to end"
+    description: >
+      Build the paste form first. It has no API keys, no rate limits and no
+      external dependency, so it isolates pipeline mechanics from network
+      flakiness. This is the vertical slice.
+    acceptance: >
+      Pasting a real LinkedIn posting produces a row in bronze.raw_jobs with
+      correct source_name, job_url_canonical, payload.raw_text and
+      payload_sha256.
+    labels: [ingestion, ui]
+    points: 8
+    blocks: [STEP-03]
+    subtasks:
+    - "Streamlit form: source name (autocomplete + free text), job URL, job spec textarea"
+    - "Streamlit form: optional posted date, company, title, location, notes"
+    - "Implement canonicalise_url: lowercase host, strip utm_*/ref/src/trk/aff, trailing
+      slash, one redirect hop"
+    - "Extract source_job_id from known URL patterns (LinkedIn /jobs/view/{id}); fallback
+      sha256(canonical_url)"
+    - "FastAPI POST /ingest/manual accepting the payload"
+    - "Write JSONL to landing/source=manual/dt=.../run_id=... via fsspec"
+    - "Store raw pasted text verbatim in payload.raw_text — never overwritten"
+    - "LLM structured extraction to the shared field contract (title, company, location,
+      contract, salary, seniority, body)"
+    - "Mark user-supplied overrides with field_source='user' so they win over the
+      parser"
+    - "Create bronze.raw_jobs DDL with unique (source_name, source_job_id, payload_sha256)"
+    - "dlt pipeline loading landing JSONL into bronze.raw_jobs"
+    - "Add entry_method column (api | manual | scraped) to bronze"
+
+    jira_key: JOB-45
+  - id: STEP-03
+    summary: "Step 3 — Connector contract and shared runner"
+    description: >
+      Define the RawJob envelope and fetch() protocol, plus the shared
+      runner that owns rate limiting, retries, run_id and landing writes.
+      Retrofit the manual entry as a connector.
+    acceptance: >
+      Adding a new connector requires exactly one new file plus one block
+      in sources.yml — no changes to the runner.
+    labels: [ingestion, connector]
+    points: 5
+    blocks: [STEP-04]
+    subtasks:
+    - "Define RawJob envelope: source_name, source_job_id, job_url, job_url_canonical,
+      payload, fetched_at, run_id, request_params, payload_sha256"
+    - "Define connector protocol: fetch(query, since) -> Iterator[RawJob]"
+    - "Write sources.yml schema: enabled, auth, calls_per_hour, concurrency, backoff,
+      regions"
+    - "Implement central token-bucket rate limiter driven by sources.yml"
+    - "Implement retry with exponential backoff and jitter"
+    - "Implement landing writer via fsspec (file:// and gs:// identical)"
+    - "Emit run metadata: run_id, source, query, records, started_at, finished_at,
+      status"
+    - "Refactor manual entry to implement the connector protocol"
+    - "CLI entrypoint: ingest --source X --query Y --region Z"
+
+    jira_key: JOB-58
+  - id: STEP-04
+    summary: "Step 4 — First three API connectors"
+    description: >
+      Adzuna, Reed and Greenhouse — three deliberately different shapes:
+      keyed REST with pagination, keyed REST with different pagination, and
+      keyless per-company JSON.
+    acceptance: >
+      `docker compose run --rm pipeline ingest --source adzuna --query "data engineer"
+      --region gb`
+      lands files and loads bronze for all three sources.
+    labels: [ingestion, connector]
+    points: 8
+    blocks: [STEP-04A]
+    subtasks:
+    - "Register for Adzuna app_id/app_key; implement connector with pagination"
+    - "Register for Reed API key; implement connector"
+    - "Implement Greenhouse connector against per-company board endpoints"
+    - "Create target_company registry table (name, ats_provider, board_slug, active)"
+    - "Seed registry with 20 companies by hand"
+    - "Add all three to sources.yml with conservative rate limits"
+    - "Verify every landed record carries source_name and job_url"
+
+    jira_key: JOB-68
+  - id: STEP-04A
+    summary: "Step 4a — Discovery corpus (unbounded collection channel)"
+    description: >
+      A second collection channel that is NOT bound by the frozen keyword
+      matrix. The targeted channel can only ever return roles you already
+      thought to search for, which makes emergent-role detection
+      structurally impossible against it. The discovery channel sweeps
+      wide and shallow so unknown titles can surface at all.
+    acceptance: >
+      Discovery runs return titles that appear nowhere in the targeted
+      keyword matrix, and every record carries collection_channel so the
+      two corpora never contaminate each other's metrics.
+    labels: [ingestion, connector, emergent]
+    points: 5
+    blocks: [STEP-05]
+    subtasks:
+    - "Add collection_channel column (targeted | discovery) to the RawJob envelope
+      and bronze"
+    - "Full ATS board dumps: pull EVERY role from target-company Greenhouse/Lever/Ashby
+      boards, not just keyword matches"
+    - "Adzuna category-level sweeps (IT jobs, engineering) rather than keyword sweeps"
+    - "Broad seniority-agnostic queries across the target regions"
+    - "Lower frequency than targeted collection (weekly, not daily) to stay inside
+      free tiers"
+    - "Cap discovery volume per run; log the title-diversity yield per run"
+    - "Exclude discovery records from all targeted-channel trend metrics by default"
+    - "Grow the target-company registry aggressively — board dumps are the richest
+      emergent-title source"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-76
+  jira_key: JOB-1
+- key: PHASE1
+  summary: "Phase 1 — Silver layer"
+  description: >
+    Conform every source into a single column contract, and build the
+    normalisation functions that dedup depends on.
+  labels: [dbt]
+
+  stories:
+
+  - id: STEP-05
+    summary: "Step 5 — dbt project and staging models"
+    description: >
+      One staging model per connector, each producing an identical column
+      contract. All source quirks are isolated here and nowhere else.
+    acceptance: >
+      int_jobs__unioned returns rows from all four sources with no nulls in
+      any required column, and `dbt test` passes.
+    labels: [dbt]
+    points: 5
+    blocks: [STEP-05A]
+    subtasks:
+    - "Initialise dbt project with local and gcp targets in profiles.yml"
+    - "Write stg_adzuna__jobs"
+    - "Write stg_reed__jobs"
+    - "Write stg_greenhouse__jobs"
+    - "Write stg_manual__jobs"
+    - "Define the shared column contract in schema.yml with model contracts enforced"
+    - "Write int_jobs__unioned taking latest version per (source_name, source_job_id)"
+    - "Add not_null / accepted_values tests on required columns"
+    - "Add a source freshness check on bronze.raw_jobs"
+
+    jira_key: JOB-85
+  - id: STEP-05A
+    summary: "Step 5a — IR35, contract terms and day-rate modelling"
+    description: >
+      UK contract engagement terms are the single most decisive filter for
+      this market and they are NOT retrofittable: the fields must be in
+      the staging contract from the start or months of collected data lack
+      them. Also fixes the salary comparability problem — comparing a day
+      rate against an annual figure as if they were the same number wrecks
+      every salary mart downstream.
+    acceptance: >
+      Every silver__job_posting row carries engagement_type, ir35_status
+      and a rate normalised to a comparable basis, with an explicit
+      'unknown' rather than a null-as-guess.
+    labels: [dbt, uk-contracting]
+    points: 5
+    blocks: [STEP-06]
+    subtasks:
+    - "Add engagement_type to the staging contract: permanent | contract | ftc | interim
+      | unknown"
+    - "Add ir35_status: inside | outside | not_applicable | undetermined | unknown"
+    - "Add engagement_vehicle: umbrella | limited | paye | agency_paye | unknown"
+    - "Extract IR35 and vehicle signals from job spec text (phrase rules first, LLM
+      for the residual)"
+    - "Add rate_basis: annual | daily | hourly, and rate_currency"
+    - "Normalise to BOTH annualised and day-rate-equivalent, with a documented assumed
+      working-days constant"
+    - "Never coerce unknown to a default — 'unknown' is a value, not a null"
+    - "Add contract_length_months and extension_likelihood signals where stated"
+    - "Add ir35 and engagement filters to the hard-filter stage spec for Step 15"
+    - "dbt tests: rate_basis always populated; annualised and daily figures never
+      both null when a rate is stated"
+
+    jira_key: JOB-95
+  - id: STEP-06
+    summary: "Step 6 — Normalisation functions"
+    description: >
+      Unglamorous and decisive. These pure functions determine whether the
+      dedup engine works. Test them against real rows from your own bronze
+      data, never invented examples.
+    acceptance: >
+      Pytest suite covers ~40 real examples pulled from bronze and passes.
+    labels: [dbt, dedup]
+    points: 5
+    blocks: [STEP-07]
+    subtasks:
+    - "normalise_company: strip Ltd/Inc/GmbH/PLC/SA, punctuation, casing"
+    - "Build company alias table (Meta/Facebook, Google/Alphabet, etc.)"
+    - "strip_title: remove seniority prefixes, (m/f/d), req IDs, '- Remote', location
+      suffixes — FOR MATCHING ONLY, never for display"
+    - "title_raw: preserve the source title verbatim, always"
+    - "title_for_display: strip only decoration (req IDs, (m/f/d), | Company, - Remote,
+      location suffixes) and KEEP seniority and qualifiers"
+    - "Three title fields, three purposes — never reuse the matching title in a generated
+      document"
+    - "normalise_location: to ISO country + NUTS region"
+    - "parse_salary: to annualised GBP band with currency conversion"
+    - "Extract 40 real examples from bronze into a fixtures file"
+    - "Write the pytest suite against those fixtures"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-106
+  jira_key: JOB-2
+- key: PHASE2
+  summary: "Phase 2 — Deduplication engine"
+  description: >
+    The phase that determines whether every downstream count is correct.
+    Do not defer it. Includes the first GCP deploy to prove the path early.
+  labels: [dedup]
+
+  stories:
+
+  - id: STEP-07
+    summary: "Step 7 — Exact match and blocking"
+    description: >
+      Cheap matches first, then blocking to keep pairwise comparison out of
+      O(n squared).
+    acceptance: >
+      Candidate pair generation across the full bronze table completes in
+      seconds, and no block exceeds a few hundred records.
+    labels: [dedup]
+    points: 5
+    blocks: [STEP-08]
+    subtasks:
+    - "Exact match on job_url_canonical"
+    - "Compute content_sha256 over normalise(company||title||location||left(description,1000))"
+    - "Define block key: normalise_company || left(strip_title,12) || country"
+    - "Add soft block on company alone for divergent titles"
+    - "Create Postgres index on the block key"
+    - "Measure and log block size distribution"
+
+    jira_key: JOB-117
+  - id: STEP-08
+    summary: "Step 8 — Similarity scoring"
+    description: >
+      Weighted multi-signal score across every candidate pair within a
+      block.
+    acceptance: >
+      Scores computed and persisted for all candidate pairs, with each
+      component signal stored separately for later tuning.
+    labels: [dedup]
+    points: 8
+    blocks: [STEP-09]
+    subtasks:
+    - "Enable pg_trgm and pgvector extensions"
+    - "Company similarity: trigram + alias table lookup"
+    - "Title similarity: token-set ratio"
+    - "Description SimHash 64-bit with Hamming distance"
+    - "Description embedding cosine via pgvector"
+    - "Location match after geo-normalisation"
+    - "Posted date proximity, with hard veto beyond +/- 45 days"
+    - "Salary band overlap signal"
+    - "Persist all component scores alongside the blend, not just the blend"
+
+    jira_key: JOB-124
+  - id: STEP-09
+    summary: "Step 9 — Calibration and review queue"
+    description: >
+      Pick thresholds from a precision-recall curve, not from intuition.
+      A false merge silently loses a job, so precision matters more than
+      recall here.
+    acceptance: >
+      Measured precision at the chosen auto-match threshold exceeds 0.95,
+      and the review queue is usable in Streamlit.
+    labels: [dedup, calibration]
+    points: 5
+    blocks: [STEP-10]
+    subtasks:
+    - "Hand-label 50 candidate pairs as match / not-match"
+    - "Plot precision-recall across the threshold range"
+    - "Set auto-match and auto-reject cutoffs in config"
+    - "Build the Streamlit review queue for the middle band"
+    - "Record manual decisions with is_manual_override flag"
+    - "Document the measured precision figure in the repo"
+
+    jira_key: JOB-134
+  - id: STEP-10
+    summary: "Step 10 — Clustering, identity map and survivorship"
+    description: >
+      Union-find over matched pairs, stable job_group_id assignment, and
+      field-level survivorship rules.
+    acceptance: >
+      Running the full pipeline twice produces byte-identical job_group_id
+      assignments.
+    labels: [dedup]
+    points: 8
+    blocks: [STEP-11]
+    subtasks:
+    - "Union-find clustering over matched pairs (transitive groups)"
+    - "Create silver.job_identity_map DDL"
+    - "Incremental matching: new postings matched against cluster representatives,
+      never full re-cluster"
+    - "Guarantee job_group_id never changes once assigned"
+    - "Make manual overrides sticky across runs"
+    - "Survivorship: source rank ATS > Reed/Adzuna > aggregator > scraped"
+    - "Resolve description and apply_url by SEPARATE field-level rules"
+    - "title_for_display survives from the SAME source as apply_url — you must mirror
+      the posting you actually apply to"
+    - "Preserve every source URL in a sources[] array"
+    - "Regression test: run pipeline twice, assert identical group IDs"
+
+    jira_key: JOB-141
+  - id: STEP-11
+    summary: "Step 11 — Gold layer"
+    description: >
+      One row per real job, plus the market demand fact table with the
+      selection-bias filter applied.
+    acceptance: >
+      dim_job has a unique job_group_id, and fct_market_demand excludes
+      manual entries.
+    labels: [dbt]
+    points: 5
+    blocks: [STEP-11A]
+    subtasks:
+    - "Build dim_job with job_group_id PK and sources[] array"
+    - "Build dim_company"
+    - "Build fct_market_demand (category x region x week) filtered to entry_method='api'"
+    - "Document why manual entries are excluded from demand metrics"
+    - "Add uniqueness and relationship tests across gold"
+
+    jira_key: JOB-152
+  - id: STEP-11A
+    summary: "Step 11a — Job categorisation and seniority banding"
+    description: >
+      Classify every dim_job into a category and seniority band. Categories
+      are the grain of every downstream chart, the skill gap analysis and
+      the Q&A bank, so they are currently assumed everywhere and specified
+      nowhere. Hybrid classifier: rules on normalised title first, then
+      embedding nearest-centroid, LLM only for the residual.
+    acceptance: >
+      Hand-checking 100 classifications yields agreement above 90 percent,
+      and every dim_job row has category, category_confidence and
+      category_method populated.
+    labels: [dbt, llm]
+    points: 3
+    blocks: [STEP-12]
+    subtasks:
+    - "Define the CLASSIFICATION taxonomy (7): software engineer, data engineer, data
+      scientist, AI/ML engineer, analytics engineer, platform/DevOps, other"
+    - "Define a separate QA_CATEGORY mapping (4 active): software engineer, data engineer,
+      data scientist, AI engineer"
+    - "Map analytics engineer -> data engineer; platform/DevOps -> software engineer;
+      AI/ML engineer -> AI engineer"
+    - "Store the mapping in config (category_map.yml), NOT hardcoded — it must be
+      extendable without a code change"
+    - "Persist qa_category on dim_job alongside category so the question bank lookup
+      is a join, not a lookup table in code"
+    - "Two taxonomies, two purposes: classification is analytical grain, qa_category
+      is question-bank grain"
+    - "Rules-based classifier on normalised title (target ~70% coverage, deterministic)"
+    - "Build category centroids from labelled examples; embedding nearest-centroid
+      for the remainder"
+    - "LLM classification for the residual only, with confidence returned"
+    - "Derive seniority_band: junior / mid / senior / lead / principal"
+    - "Persist category, category_confidence, category_method, seniority_band on dim_job"
+    - "Hand-check 100 classifications and record the agreement figure"
+    - "Route low-confidence classifications to a review list rather than guessing"
+
+    jira_key: JOB-158
+  - id: STEP-12
+    summary: "Step 12 — First GCP deployment"
+    description: >
+      Prove the cloud path now, while there is little to break. Deploy
+      once, confirm, then return to local development.
+    acceptance: >
+      The same git commit runs locally and in GCP with only environment
+      variables differing, and an ingestion run in GCP lands rows in the
+      managed database.
+    labels: [gcp, infra]
+    points: 8
+    blocks: [STEP-12A]
+    subtasks:
+    - "Terraform: Artifact Registry in europe-west2"
+    - "Terraform: GCS landing bucket with the same path convention as local"
+    - "Provision Neon Postgres, enable pgvector, store DSN in Secret Manager"
+    - "Terraform: Cloud Run service for the API"
+    - "Terraform: Cloud Run Job for the pipeline"
+    - "Terraform: one least-privilege service account per workload"
+    - "Cloud Build trigger from GitHub"
+    - "Run the ingestion job in GCP and verify rows land"
+    - "Document the local vs gcp env var matrix in README"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-172
+  jira_key: JOB-3
+- key: PHASE3
+  summary: "Phase 3 — CV truth base and relevance scoring"
+  description: >
+    Decompose the CV into a constrained truth base, then build and calibrate
+    the four-stage ranking funnel.
+  labels: [cv, llm]
+
+  stories:
+
+  - id: STEP-12A
+    summary: "Step 12a — LLM eval harness and prompt versioning"
+    description: >
+      The largest robustness gap in the plan. Every dbt model has tests;
+      every LLM component currently has none, which means each prompt edit
+      is an unverifiable change to a system you cannot regression-test.
+      Build this BEFORE the first real LLM feature (Step 13), not after,
+      so every subsequent LLM step ships with evals from day one.
+    acceptance: >
+      Changing any prompt runs the golden set and reports pass/fail per
+      case, and every generated artefact in the database carries the
+      prompt_version that produced it.
+    labels: [llm, evals, llm-gateway]
+    points: 8
+    blocks: [STEP-13]
+    subtasks:
+    - "Create a golden set: hand-curated (input, expected output) cases per LLM component"
+    - "Cover CV extraction, JD skill extraction, categorisation, scoring rationale,
+      tailoring, letter, Q&A"
+    - "Define per-component metrics: exact match, field-level F1, LLM-as-judge with
+      a rubric where exact match is wrong"
+    - "Use RAGAS faithfulness for the tailoring evals: decompose output into atomic
+      claims, verify each against the truth base"
+    - "Faithfulness is a more principled form of the evidence_ref check — use the
+      library, do not reinvent it"
+    - "Prompt registry keyed on (task, model_family) — prompts/<task>/<family>.v<N>.md"
+    - "Never convert a prompt between families: write the target-family variant, keep
+      both"
+    - "Store prompts as versioned files in the repo, never inline in code"
+    - "Eval runner takes a provider argument; same golden set runs against local and
+      target"
+    - "Definition of done for every LLM step: passes evals on the TARGET provider,
+      not only local"
+    - "Report side-by-side local vs target scores per component so the quality gap
+      is visible, not assumed"
+    - "Record per-provider calibration values (thresholds, weights) rather than one
+      global set"
+    - "Weekly target-provider eval run in CI — roughly $1 per full run, cheap insurance"
+    - "Stamp prompt_version and model_id on every generated artefact row"
+    - "CLI: run evals for one component or all, report pass/fail and score deltas
+      vs the previous version"
+    - "Fail the run on regression beyond a per-component threshold"
+    - "Record fixed model temperature and seed where supported for reproducibility"
+    - "Add an eval case for every bug found in an LLM component — the golden set grows
+      from real failures"
+    - "Document the minimum golden-set size below which results are not meaningful"
+
+    jira_key: JOB-182
+  - id: STEP-13
+    summary: "Step 13 — CV truth base"
+    description: >
+      LLM structured extraction into a Pydantic schema with stable bullet
+      IDs. The manual correction pass matters: extraction gets ~85% right
+      and you want the rest fixed once, permanently.
+    acceptance: >
+      The CV round-trips to JSON and back, and every bullet carries a
+      stable ID that survives re-extraction.
+    labels: [cv, llm]
+    points: 5
+    blocks: [STEP-14]
+    subtasks:
+    - "Define the Pydantic truth-base schema (identity, skills, experience, education,
+      certifications)"
+    - "Use Docling for CV extraction — layout-aware, handles multi-column and tables,
+      outputs structured markdown"
+    - "Do NOT use naive PDF text extraction: a mangled CV corrupts the truth base
+      and every artefact downstream"
+    - "Fall back to a second extractor and diff the two when confidence is low"
+    - "Store the extracted markdown alongside the parsed JSON so re-parsing needs
+      no re-extraction"
+    - "LLM structured extraction against the schema"
+    - "Assign stable IDs to every bullet and evidence item"
+    - "Build the Streamlit correction pass UI"
+    - "cv_truth_base carries user_id with a UNIQUE constraint on user_id — exactly
+      one base CV per user, enforced by the database not by code"
+    - "Replacing the base CV is an explicit versioned update, never a second row"
+    - "Persist the corrected truth base as the canonical version"
+    - "Version the truth base so CV edits are traceable"
+
+    jira_key: JOB-202
+  - id: STEP-14
+    summary: "Step 14 — Skill normalisation via ESCO"
+    description: >
+      A shared skill vocabulary between CV and job specs. Without it, gap
+      analysis is impossible.
+    acceptance: >
+      'GCP', 'Google Cloud' and 'Google Cloud Platform' all resolve to a
+      single ESCO identifier.
+    labels: [cv, dbt]
+    points: 5
+    blocks: [STEP-15]
+    subtasks:
+    - "Load the ESCO skills and occupations dataset into Postgres"
+    - "Map truth-base skills to ESCO IDs"
+    - "Extract skills from job descriptions and map to ESCO IDs"
+    - "Classify extracted skills as must-have vs nice-to-have"
+    - "Build silver__bridge_job_skill"
+    - "Handle unmapped skills with a review list rather than silent drops"
+
+    jira_key: JOB-215
+  - id: STEP-15
+    summary: "Step 15 — Scoring funnel"
+    description: >
+      Four stages, cost-controlled: hard filters, vector similarity, skill
+      coverage, then LLM re-rank of the top 50 only.
+    acceptance: >
+      Every job has a score with all component scores persisted separately,
+      and the LLM stage never sees more than 50 jobs per run.
+    labels: [llm, cv, retrieval]
+    points: 8
+    blocks: [STEP-16]
+    subtasks:
+    - "Hard filters: location, remote, contract type, seniority, salary floor, posting
+      age"
+    - "STRUCTURAL chunking of job specs by section (company blurb, responsibilities,
+      requirements, nice-to-haves, benefits) — never fixed-size windows"
+    - "Use LlamaIndex node-parser utilities as a LIBRARY for chunking; no framework
+      adoption"
+    - "Compare like sections only: experience vs responsibilities, skills vs requirements"
+    - "Decide embedding dimension NOW — it is baked in at first embedding and changing
+      it means re-embedding everything"
+    - "Decide pgvector index type (HNSW vs IVFFlat) at the same time, not later"
+    - "Local embeddings via Ollama into pgvector; store embedding_model with every
+      vector"
+    - "Cross-encoder reranker (bge-reranker class, local) over the top ~200 before
+      the LLM stage"
+    - "Cross-encoders read CV and JD together and beat bi-encoder cosine on pairwise
+      relevance; costs nothing and runs in seconds"
+    - "Persist reranker score as its own component alongside the others"
+    - "Section-pair cosine similarity between CV sections and JD chunks"
+    - "Skill coverage weighted by must-have vs nice-to-have"
+    - "Recency decay on skills not used in 5+ years"
+    - "LLM re-rank top 50: fit_score, rationale, missing_skills[], stretch_flag"
+    - "fct_job_score grain is (user_id, job_group_id) — every user scores the same
+      shared job pool independently"
+    - "CV embeddings are per-user and never shared; job embeddings are shared and
+      computed once"
+    - "Persist all component scores in fct_job_score"
+    - "Make blend weights config-driven, not hardcoded"
+
+    jira_key: JOB-222
+  - id: STEP-16
+    summary: "Step 16 — Calibrate the scoring"
+    description: >
+      The most commonly skipped step and the one that decides whether the
+      ranking is useful or decorative.
+    acceptance: >
+      Top 10 by computed score substantially matches top 10 by hand
+      ranking on a held-out set.
+    labels: [calibration, cv]
+    points: 5
+    blocks: [STEP-17]
+    subtasks:
+    - "Hand-label 30 jobs as strong / maybe / no"
+    - "Fit component weights against the labels"
+    - "Hold out 10 jobs to validate rather than fit"
+    - "Record the agreement figure in the repo"
+    - "Calibration weights are PER USER — one person's fitted weights say nothing
+      about another's"
+    - "Re-check calibration after any change to the embedding model"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-241
+  jira_key: JOB-4
+- key: PHASE4
+  summary: "Phase 4 — Generated artefacts"
+  description: >
+    Tailored CV, cover letter and elevator pitch, all constrained to the
+    truth base and all keyed on job_group_id.
+  labels: [artefacts, llm]
+
+  stories:
+
+  - id: STEP-17
+    summary: "Step 17 — Generation with the fabrication guard"
+    description: >
+      Tailor agent constrained to the truth base, Critic agent verifying
+      that every generated bullet maps to a source evidence_ref. Orphan
+      bullets surface for review; they never pass silently.
+    acceptance: >
+      A deliberate prompt toward exaggeration is caught by the critic and
+      surfaced rather than emitted.
+    labels: [artefacts, llm]
+    points: 8
+    blocks: [STEP-18]
+    subtasks:
+    - "Tailor agent: reorder, reframe and re-weight truth-base content only"
+    - "Critic agent: ATS rule check"
+    - "Critic agent: keyword coverage against the job spec"
+    - "Critic agent: evidence_ref validation on every generated bullet"
+    - "HARD RULE: the CV headline/target title is dim_job.title_for_display verbatim,
+      injected as a template field — never generated"
+    - "IMMUTABLE: past job titles in the experience section come from the truth base
+      and are NEVER altered to match the spec"
+    - "Critic asserts the exact title string is present in the headline and that no
+      experience-section title differs from the truth base"
+    - "Flag as stretch (not fabrication) when the target title implies seniority or
+      scope the truth base does not evidence"
+    - "Run the critic on the TARGET provider from day one — a guard validated on a
+      weaker model is worse than no guard"
+    - "Tailor may run local during development; the critic may not"
+    - "Assert in tests that the critic's configured provider is the target, not the
+      dev default"
+    - "Loop Tailor->Critic a maximum of two times"
+    - "Surface orphan bullets in the UI for explicit user decision"
+    - "Key all artefacts on (user_id, job_group_id) — one tailored CV per user per
+      job, not per source posting"
+    - "Truth base retrieval is scoped to the requesting user; a cross-user evidence_ref
+      is a hard failure, not a warning"
+    - "Adversarial test: prompt toward exaggeration, assert the critic catches it"
+
+    jira_key: JOB-248
+  - id: STEP-18
+    summary: "Step 18 — ATS-compliant docx output"
+    description: >
+      Enforce ATS rules mechanically in a locked template, not by prompting.
+    acceptance: >
+      Text extracted from the generated docx reads in the correct order and
+      matches the intended section sequence.
+    labels: [artefacts]
+    points: 5
+    blocks: [STEP-19]
+    subtasks:
+    - "Build the locked python-docx template: single column, no tables, no text boxes,
+      no headers/footers, no images"
+    - "Standard section headings only (Experience, Education, Skills)"
+    - "Dates rendered as MM/YYYY - MM/YYYY"
+    - "Acronym plus expansion on first use"
+    - "Job title mirroring: title_for_display injected as a template field at the
+      top of the document, not prompted for"
+    - "Automated assertion that the exact title string appears in the rendered .docx
+      text, not just in the source data"
+    - "Filename convention: <surname>_<title_for_display>_<company>.docx — recruiters
+      sort by filename"
+    - "Emit .txt alongside .docx and diff to verify parse order"
+    - "Automated test asserting extraction order"
+
+    jira_key: JOB-265
+  - id: STEP-19
+    summary: "Step 19 — Cover letter and elevator pitch"
+    description: >
+      Same constrained pipeline with an added company-research retrieval
+      step.
+    acceptance: >
+      Both artefacts generate per job_group_id and pass the same
+      fabrication guard as the CV.
+    labels: [artefacts, llm]
+    points: 5
+    blocks: [STEP-19A]
+    subtasks:
+    - "Researcher agent: company site, recent news, Companies House for UK"
+    - "Cover letter names the exact title_for_display in the opening line and the
+      subject/reference line"
+    - "Elevator pitch opens with the exact target title"
+    - "Same immutability rule: past titles in any generated document match the truth
+      base, never the spec"
+    - "Critic asserts exact title presence across every generated artefact, not only
+      the CV"
+    - "Apply the same filename convention to letters and pitches"
+    - "Cover letter generation with evidence-led structure"
+    - "Elevator pitch in 30s / 60s / 90s variants"
+    - "Apply the fabrication guard to both"
+    - "Store as artefact_cover_letter and artefact_pitch keyed on job_group_id"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-275
+  jira_key: JOB-5
+- key: PHASE5
+  summary: "Phase 5 — Question bank and dashboard"
+  description: >
+    Batch-generated interview preparation, and the Streamlit interface that
+    makes the whole thing usable.
+  labels: [qa-bank, ui]
+
+  stories:
+
+  - id: STEP-19A
+    summary: "Step 19a — Persisted company intelligence"
+    description: >
+      Step 19 researches a company for the cover letter and then discards
+      it. Persist it instead: reused across every application to the same
+      employer, and it is exactly the material you want again three weeks
+      later at interview stage.
+    acceptance: >
+      A second application to the same company reuses stored intel rather
+      than re-researching, and the interview prep view surfaces it.
+    labels: [artefacts, llm]
+    points: 5
+    blocks: [STEP-20]
+    subtasks:
+    - "Create dim_company_intel keyed on the dim_company key"
+    - "Capture: business model, funding stage, recent news, tech stack signals, glassdoor-style
+      sentiment where available"
+    - "Capture Companies House data for UK entities: incorporation, accounts, officers,
+      filing history"
+    - "Capture engineering blog and public repo signals as a stack indicator"
+    - "Add researched_at and a staleness threshold; refresh rather than re-research
+      from scratch"
+    - "Version intel so old cover letters remain explicable"
+    - "Distinguish agency from end client — intel should attach to the end client"
+    - "Surface intel in the interview prep view, not only in letter generation"
+
+    jira_key: JOB-286
+  - id: STEP-20
+    summary: "Step 20 — Interview question bank"
+    description: >
+      Batch generation, not a runtime feature. Behavioural answers built
+      from the truth base so they are personal rather than generic.
+    acceptance: >
+      30 questions per topic per category exist, behavioural answers cite
+      real experience from the truth base, and Anki export works.
+    labels: [qa-bank, llm]
+    points: 8
+    blocks: [STEP-20A]
+    subtasks:
+    - "Create question_bank DDL with SM-2 fields (ease_factor, next_review)"
+    - "Generate banks for the four ACTIVE qa_categories only: software engineer, data
+      engineer, data scientist, AI engineer"
+    - "Read the active list from category_map.yml — never hardcode it"
+    - "question_bank keyed on qa_category so a newly promoted category needs no schema
+      change"
+    - "Generation is idempotent per qa_category: adding one generates only that bank,
+      never regenerates existing ones"
+    - "Define topics: behavioural and collaboration, plus per-category technical topics"
+    - "Generate behavioural Q&A grounded in the truth base, not generic STAR"
+    - "Generate technical Q&A per category"
+    - "Critic pass for technical correctness"
+    - "Score each question against the CV so weak areas surface first"
+    - "SPLIT the bank: question text and model answers are SHARED per qa_category;
+      personal_answer and SM-2 state are PER USER"
+    - "user_question_progress table: (user_id, question_id, ease_factor, next_review,
+      personal_answer)"
+    - "Generation cost amortises across users — never regenerate a shared bank per
+      user"
+    - "Implement SM-2 review scheduling"
+    - "Anki export"
+
+
+    jira_key: JOB-295
+  - id: STEP-20A
+    summary: "Step 20a — Interview pipeline beyond 'applied'"
+    description: >
+      The application record currently stops at submission. Model the
+      stages that follow, and — most valuable of all — capture the
+      questions actually asked, which is the highest-quality training data
+      the whole system can produce.
+    acceptance: >
+      A multi-stage process is fully trackable end to end, and questions
+      captured from a real interview appear in the question bank tagged to
+      their source.
+    labels: [qa-bank, ui]
+    points: 5
+    blocks: [STEP-21A]
+    subtasks:
+    - "fct_application grain is (user_id, job_group_id) with RLS enforced"
+    - "Questions captured from a real interview: the question text may be promoted
+      to the shared bank; the answer and notes stay per-user"
+    - "Extend fct_application into a stage model: applied, screen, tech, panel, final,
+      offer, rejected, withdrawn"
+    - "Capture stage date, format, duration, interviewer names and roles"
+    - "Per-stage prep artefact generation drawing on dim_company_intel and the question
+      bank"
+    - "Post-interview notes capture with a structured debrief prompt"
+    - "Capture questions ACTUALLY ASKED and write them back into question_bank with
+      source tagging"
+    - "Weight the review scheduler toward real-world-asked questions over generated
+      ones"
+    - "Track rejection stage and stated reason where given"
+    - "Surface time-in-stage so stalled processes are visible"
+
+    jira_key: JOB-311
+  - id: STEP-21A
+    summary: "Step 21a — Market intelligence marts"
+    description: >
+      dbt models, one per analytical grain, so the dashboard is a thin
+      rendering layer rather than a pile of ad-hoc queries. Includes the
+      two guards that stop your own collection schedule masquerading as
+      market signal.
+    acceptance: >
+      All eight marts build and pass tests; every trend metric is computed
+      over the stable source panel only, and every salary figure carries
+      its n and disclosure rate.
+    labels: [dbt]
+    points: 8
+    blocks: [STEP-21B]
+    subtasks:
+    - "Add source_active_from per source; implement the stable source panel filter"
+    - "Freeze and version the keyword x region query matrix; stamp matrix_version
+      on runs"
+    - "Ingest Adzuna historical salary endpoint as a reference fact for back-history"
+    - "fct_market_volume: category x region x week x seniority x work_model, with
+      WoW/MoM change and share of category"
+    - "fct_market_salary: category x region x month — median, P25, P75, IQR, contract
+      vs day rate, with n_disclosed and disclosure_rate"
+    - "fct_skill_demand: category x region x month x esco_skill_id — frequency, share,
+      rank, rank delta vs 90 days"
+    - "fct_skill_salary_premium: median salary with skill minus median without, per
+      category"
+    - "fct_skill_cooccurrence: skill pairs within category with lift score"
+    - "fct_employer_activity: company x category x month, agency vs direct ratio,
+      new entrants"
+    - "fct_posting_lifecycle: days live before disappearing from all sources, using
+      last_seen_at"
+    - "fct_market_composition: remote/hybrid/onsite, contract/permanent, seniority
+      mix trends"
+    - "Feed fct_employer_activity back into the ATS target_company registry"
+    - "dbt tests on all marts; assert no trend metric bypasses the source panel filter"
+
+    jira_key: JOB-322
+  - id: STEP-21B
+    summary: "Step 21b — Emergent role and macro trend detection"
+    description: >
+      Detect job titles and functions emerging from, and across, the
+      supported categories (the Forward Deployed Engineer pattern), plus
+      the macro direction the AI transformation is pushing the market in.
+      Deliberately reaches beyond the project's own taxonomy: the `other`
+      bucket and the discovery corpus are the primary inputs, not noise to
+      be cleaned. Output is HYPOTHESES for human judgement, never
+      conclusions.
+    acceptance: >
+      The system independently surfaces at least three candidate emergent
+      roles that are not in the taxonomy, each with employer breadth,
+      growth velocity and a skill signature — and each is either
+      corroborated or dismissed by explicit human review.
+    labels: [dbt, llm, emergent]
+    points: 8
+    blocks: [STEP-21C]
+    subtasks:
+    - "Reframe the `other` category as a signal source: never discard, always cluster"
+    - "Title phrase extraction: canonical title n-grams with modifier stripping"
+    - "dim_title_canonical with first_seen_at, last_seen_at, distinct_employer_count,
+      distinct_source_count"
+    - "Embed canonical titles; HDBSCAN clustering independent of the existing taxonomy"
+    - "Flag clusters with no taxonomy centroid within threshold as emergent candidates"
+    - "fct_title_novelty: novelty index = recency of first_seen x employer breadth
+      x growth velocity"
+    - "Enforce employer-breadth floor (min distinct non-agency employers) before anything
+      is called a trend"
+    - "Filter agency and reposted listings out of novelty scoring"
+    - "Filter title inflation noise (Ninja, Rockstar, Guru, Wizard) via a stoplist"
+    - "fct_role_hybridity: distance to nearest single category centroid vs best two-centroid
+      blend"
+    - "Surface cross-category hybrids explicitly (the Forward Deployed Engineer pattern)"
+    - "fct_role_drift: Jensen-Shannon divergence of a category's skill distribution
+      vs 6 and 12 months prior"
+    - "Track responsibility drift inside stable titles — same title, changing job
+      spec content"
+    - "fct_ai_penetration: share of postings per category mentioning agents, RAG,
+      evals, MCP, fine-tuning, vector stores"
+    - "Track AI-adjacent skill migration INTO non-AI categories as the macro signal"
+    - "Track displacement language: postings describing oversight of automated work
+      vs performing it"
+    - "LLM naming and characterisation pass over each emergent cluster, with web-search
+      corroboration"
+    - "Mark every LLM-named cluster as hypothesis; require explicit human confirm/dismiss"
+    - "emergent_role_review table capturing the human verdict and rationale"
+    - "Statistical confirmation gate BEFORE prompting: employer-breadth floor met,
+      sustained over N consecutive periods, growth non-negative, agency-filtered"
+    - "PROMPT THE USER on a confirmed candidate: add as a new classification category,
+      add as a new qa_category, both, or dismiss"
+    - "Never auto-promote — a taxonomy that changes without consent invalidates every
+      historical chart silently"
+    - "On accept: append to category_map.yml with valid_from stamped, so historical
+      classification stays reproducible"
+    - "On accept as qa_category: enqueue on-demand question bank generation for that
+      category only"
+    - "On dismiss: record the verdict and suppress re-prompting for that cluster for
+      a configurable period"
+    - "Record which classification categories existed at each point in time; never
+      retro-classify without an explicit backfill decision"
+    - "Map confirmed emergent roles back to the CV truth base for a forward-looking
+      gap view"
+    - "Document the minimum history window below which novelty output is not trustworthy"
+
+    jira_key: JOB-336
+  - id: STEP-21C
+    summary: "Step 21c — Salary and rate negotiation support"
+    description: >
+      You will already have the salary marts. Point them at the single
+      moment where a small feature has outsized leverage: an offer on the
+      table and a number to respond to.
+    acceptance: >
+      Given an offer, the system returns its percentile position within
+      the correct category, region, seniority and engagement type, with
+      the disclosure-rate caveat stated explicitly.
+    labels: [ui, uk-contracting]
+    points: 3
+    blocks: [STEP-21]
+    subtasks:
+    - "Offer input: amount, rate_basis, engagement_type, ir35_status, category, region,
+      seniority"
+    - "Percentile position against fct_market_salary on the matching slice"
+    - "Always state n_disclosed and disclosure_rate alongside the percentile — never
+      a bare number"
+    - "Comparable roles list: similar postings with disclosed rates"
+    - "Inside vs outside IR35 net-position comparison to make offers genuinely comparable"
+    - "Day-rate to annual-equivalent conversion with the assumed working-days constant
+      shown"
+    - "Trend context: is this slice rising or falling over the last 6 months"
+    - "Warn when the matching slice has too few disclosed observations to be meaningful"
+    - "Offers and salary expectations are per-user and never surface in shared marts"
+    - "Record offers received against fct_application for later outcome analysis"
+
+    jira_key: JOB-365
+  - id: STEP-21
+    summary: "Step 21 — Streamlit dashboard"
+    description: >
+      The single UI for the system, rendering over the marts from Step 21a.
+      Market and personal views stay in separate tabs: the market tab is
+      filtered to entry_method='api' and the stable source panel, the
+      personal tab has no such constraint. Mixing them is how selection
+      bias leaks back in.
+    acceptance: >
+      All tabs render against real data, the application kanban persists
+      status changes, and no market chart includes manual entries.
+    labels: [ui]
+    points: 8
+    blocks: [STEP-22]
+    subtasks:
+    - "All Pipeline, Me and Admin views scoped to the signed-in user; Market and Horizon
+      are shared and identical for everyone"
+    - "Show the shared/personal boundary in the UI so users understand what is and
+      is not private"
+    - "Tab Pipeline: ranked jobs with score breakdown and artefact generation"
+    - "Tab Pipeline: application status kanban writing to fct_application"
+    - "Tab Market: volume trend by category with region and seniority filters"
+    - "Tab Market: salary distribution box plots by category x region, n and disclosure
+      rate always visible"
+    - "Tab Market: top 30 skills by category sorted by rank delta (rising and falling)"
+    - "Tab Market: skill salary premium ranked"
+    - "Tab Market: skill co-occurrence heatmap"
+    - "Tab Market: work model and contract mix trends"
+    - "Tab Market: top hiring employers, agency vs direct"
+    - "Tab Market: posting lifecycle distribution"
+    - "Tab Me: skill quadrant — market demand vs own proficiency"
+    - "Tab Me: same quadrant weighted by salary premium rather than frequency"
+    - "Tab Me: course recommendations against top-right gaps"
+    - "Tab Horizon: emergent title candidates with novelty index, employer breadth
+      and first-seen date"
+    - "Tab Horizon: cross-category hybridity scatter — where new functions are forming
+      between categories"
+    - "Tab Horizon: role drift — how each category's skill signature has shifted over
+      6 and 12 months"
+    - "Tab Horizon: AI penetration by category, as the macro transformation signal"
+    - "Tab Horizon: hypothesis review queue — confirm or dismiss each candidate emergent
+      role"
+    - "Tab Horizon: taxonomy promotion prompt — show the statistical evidence, then
+      offer add-as-category / add-as-qa-category / both / dismiss"
+    - "Tab Horizon: show current active taxonomy and qa_category mapping, with valid_from
+      dates"
+    - "Tab Me: forward-looking gap — proficiency against confirmed emergent roles,
+      not just current ones"
+    - "Tab Admin: dedup review queue"
+    - "Tab Admin: manual job entry form"
+    - "Curated skill -> course YAML mapping (~100 entries)"
+    - "LLM course suggestion pass for unmapped gap skills"
+    - "Footnote every trend chart with the active source panel"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-376
+  jira_key: JOB-6
+- key: PHASE6
+  summary: "Phase 6 — Orchestration and production"
+  description: >
+    Scheduled ingestion in GCP, secured UI, and n8n for approval gates and
+    notifications only.
+  labels: [orchestration, gcp]
+
+  stories:
+
+  - id: STEP-22
+    summary: "Step 22 — Cloud Scheduler fan-out and production hardening"
+    description: >
+      Source x keyword x region matrix firing Cloud Run Jobs, with the UI
+      protected behind IAP.
+    acceptance: >
+      Scheduled ingestion runs unattended for a week without manual
+      intervention, and the Streamlit UI is not reachable without
+      authentication.
+    labels: [gcp, orchestration, security]
+    points: 5
+    blocks: [STEP-22A]
+    subtasks:
+    - "Define the source x keyword x region matrix in config"
+    - "Cloud Scheduler jobs firing Cloud Run Jobs"
+    - "Deploy Streamlit as a Cloud Run service behind IAP"
+    - "Move all secrets to Secret Manager, none in env files"
+    - "Alerting on failed pipeline runs"
+    - "Decide Neon vs Cloud SQL based on observed volume and cost"
+    - "Document rollback procedure"
+
+
+    jira_key: JOB-405
+  - id: STEP-22A
+    summary: "Step 22a — Sign-in and identity"
+    description: >
+      Two trusted users, personal use. Identity exists so the app knows
+      whose truth base and whose scores to load — not as a compliance
+      control. IAP already fronts Streamlit from Step 22, so allowlisting
+      two Google accounts and reading the identity it provides is
+      sufficient; no OIDC implementation needed.
+      Statutory data-protection obligations are deliberately OUT OF SCOPE
+      under the personal/household use assumption — see the LATER backlog
+      for the trigger that changes that.
+    acceptance: >
+      Each of the two users signs in, the app resolves their user_id from
+      the identity provided by IAP, and neither can see the other's truth
+      base, scores or artefacts.
+    labels: [security, tenancy]
+    points: 3
+    blocks: [STEP-23]
+    subtasks:
+    - "Allowlist the two Google accounts on the IAP-protected Cloud Run services"
+    - "Read the verified identity from the IAP-provided header in FastAPI; map to
+      app_user.id"
+    - "Never derive identity from a client-supplied field — only from the verified
+      header"
+    - "Local development: an env-var user override, explicitly disabled when ENV=gcp"
+    - "Authenticate at the API layer; Streamlit session state is not an auth boundary"
+    - "Cheap hygiene worth doing regardless: no personal data in application logs"
+    - "Cheap hygiene worth doing regardless: confirm encryption at rest is on (free
+      on managed Postgres)"
+    - "Decide and document whether recruiter and interviewer NAMES are stored at all
+      — roles and dates may be sufficient and are simpler"
+
+    jira_key: JOB-413
+  - id: STEP-23
+    summary: "Step 23 — n8n approval gates and digest"
+    description: >
+      Webhook-triggered only, no cron. n8n calls FastAPI and holds no
+      business logic.
+    acceptance: >
+      A new 85+ scored job triggers a digest, and artefact generation waits
+      for explicit approval before running.
+    labels: [orchestration]
+    points: 5
+    blocks: [STEP-23A]
+    subtasks:
+    - "Deploy n8n (GCE e2-small or local, not Cloud Run)"
+    - "Webhook endpoint on FastAPI to trigger n8n workflows"
+    - "Daily digest workflow: new jobs scoring 85+"
+    - "Approval gate workflow before artefact generation"
+    - "Digest and approval workflows are per-user; never fan out one user's jobs to
+      another"
+    - "Verify n8n holds zero business logic — endpoints only"
+
+    jira_key: JOB-422
+  - id: STEP-23A
+    summary: "Step 23a — Near-real-time alerting on top-percentile jobs"
+    description: >
+      The daily digest is right for most volume, but early applicants get
+      read. A top-percentile fit should reach you within minutes, not
+      tomorrow morning. Deliberately narrow: a channel that fires often
+      stops being an alert.
+    acceptance: >
+      A newly ingested job in the top percentile band produces a
+      notification within minutes of ingestion, and the alert rate stays
+      within the configured daily cap.
+    labels: [orchestration]
+    points: 3
+    subtasks:
+    - "High-frequency ingestion tier for the highest-yield sources only"
+    - "Score newly ingested jobs immediately rather than waiting for the batch"
+    - "Percentile-based threshold against your own score distribution, not a fixed
+      number"
+    - "Hard daily alert cap — an alert that fires often is not an alert"
+    - "Push channel: Telegram or mobile push, with the apply URL and score rationale
+      in the message"
+    - "Suppress alerts for jobs already deduplicated into a known job_group_id"
+    - "Quiet hours honouring each user's own timezone and notification preferences"
+    - "Alert threshold is per-user, computed against that user's own score distribution"
+    - "Respect the per-user alert cap from the quotas table"
+    - "Log alert-to-application conversion so the threshold can be tuned against outcomes"
+
+# =============================================================================
+# NICE TO HAVE — unscheduled, ordered most to least important
+# =============================================================================
+# These do NOT sync as scheduled work. Create them in Jira as a separate
+# "Backlog / Later" epic with no sprint and no dependency links, so they sit
+# visible but do not distort velocity on the scheduled plan.
+#
+# `priority` is the implementation order. `trigger` states the condition that
+# should promote an item into the scheduled plan — several of these are
+# cheap now and expensive later.
+# =============================================================================
+
+    jira_key: JOB-429
+  jira_key: JOB-7
+nice_to_have:
+  epic:
+    key: LATER
+    summary: "Later — unscheduled improvements"
+    labels: [jobsearch]
+
+  items:
+
+  - priority: 1
+    summary: "Data protection compliance (UK GDPR)"
+    why: >
+      DELIBERATELY OUT OF SCOPE for the current design. Two users, trusted,
+      personal job hunting, not published and not commercial — that sits
+      within the UK GDPR household/personal-use exemption, so the statutory
+      machinery is not required. Listed first because the TRIGGER matters
+      more than the priority: the exemption stops applying the moment the
+      scope changes, and by then the data is already collected.
+      Scope when triggered: self-service export; account deletion cascading
+      across every per-user table AND object storage, caches and generated
+      document files; retention policy per data class enforced by a
+      scheduled job; privacy notice naming lawful basis and every processor
+      (LLM provider, cloud, job APIs); DPA review for each; audit log of
+      per-user data access; incident response note.
+    trigger: >
+      ANY of: a third user outside the trusted pair; any commercial or
+      client use; public sign-up including a portfolio demo others can
+      register for; storing third-party contact details at scale.
+    labels: [gdpr, security]
+    points: 8
+
+  - priority: 2
+    summary: "Application outcome loop"
+    why: >
+      The highest-value item not in the scheduled plan. The system generates
+      artefacts and never learns whether they worked. Feed outcomes back into
+      the Step 16 scoring weights so ranking becomes empirical rather than a
+      static heuristic, and A/B the CV variants against real callback rates.
+    trigger: "Once ~30 applications have recorded outcomes"
+    labels: [outcomes, calibration]
+    points: 5
+
+  - priority: 3
+    summary: "Persist rate-limit state in Postgres"
+    why: >
+      Not an enhancement — a defect in the current design. The Step 3 token
+      bucket is in-process, but the GCP pipeline is an ephemeral Cloud Run
+      Job, so state dies with the container and every run starts with a full
+      bucket. Expect 429s or source bans.
+    trigger: "Before the first scheduled unattended run in GCP (Step 22)"
+    labels: [ingestion, infra]
+    points: 2
+
+  - priority: 4
+    summary: "Data quality and anomaly detection"
+    why: >
+      dbt tests catch assertion failures, not a connector quietly returning
+      40 percent fewer rows. Silent connector breakage is the number one
+      failure mode of this class of pipeline and nothing currently detects
+      it. Volume, null rate and distribution drift via Elementary or
+      dbt-expectations.
+    trigger: "Once 4+ sources are live"
+    labels: [dbt, infra]
+    points: 3
+
+  - priority: 5
+    summary: "Job spec snapshot at apply time"
+    why: >
+      Postings vanish. You need the exact text you applied against when
+      prepping four weeks later. Cheap now, impossible to recover later.
+    trigger: "Before the first real application"
+    labels: [artefacts]
+    points: 2
+
+  - priority: 6
+    summary: "CI pipeline"
+    why: >
+      Absent from the plan entirely. GitHub Actions running ruff, mypy,
+      pytest and dbt build against a throwaway Postgres service container —
+      what stops a refactor silently breaking the Step 6 normalisers.
+    trigger: "As soon as the Step 6 test suite exists"
+    labels: [infra]
+    points: 3
+
+  - priority: 7
+    summary: "Double-submission guard"
+    why: >
+      Two agencies submitting you to the same client can get you excluded
+      from the role outright. A real career risk specific to UK contracting.
+      Track company x role x agency x date and warn before authorising.
+    trigger: "Once applying through agencies"
+    labels: [uk-contracting, ui]
+    points: 2
+
+  - priority: 8
+    summary: "Structured output enforcement on all LLM calls"
+    why: "Tool-use / JSON schema rather than parsing free text with a regex fallback."
+    trigger: "Alongside the first eval regression caused by malformed output"
+    labels: [llm]
+    points: 2
+
+  - priority: 9
+    summary: "Embedding cache keyed on content hash"
+    why: >
+      Never re-embed unchanged text. Otherwise every full refresh re-embeds
+      the same tens of thousands of stable job descriptions.
+    trigger: "Once bronze exceeds ~10k postings"
+    labels: [infra]
+    points: 2
+
+  - priority: 10
+    summary: "LLM cost accounting and hard budget caps"
+    why: "Token spend per feature per run in a table you can chart, plus a cap that
+      fails the run rather than surprising you."
+    trigger: "Before the first unattended scheduled generation run"
+    labels: [llm, infra]
+    points: 2
+
+  - priority: 11
+    summary: "pgvector index strategy (HNSW vs IVFFlat)"
+    why: >
+      pgvector degrades badly without an index past a few tens of thousands
+      of rows. Also pick the embedding dimension deliberately — it drives
+      storage and query cost more than expected.
+    trigger: "Once vector search latency is noticeable"
+    labels: [infra]
+    points: 2
+
+  - priority: 12
+    summary: "Schema migrations for non-dbt tables"
+    why: "Alembic or sqitch for bronze DDL, job_identity_map and artefact tables.
+      Currently implicit — 'whatever I ran by hand last time'."
+    trigger: "At the second manual DDL change"
+    labels: [infra]
+    points: 2
+
+  - priority: 13
+    summary: "Per-source circuit breaker"
+    why: "Auto-disable and alert when a source starts returning garbage or 403s, rather
+      than poisoning bronze with junk you then have to identify and purge."
+    trigger: "At the first source outage"
+    labels: [ingestion]
+    points: 2
+
+  - priority: 14
+    summary: "Recorded API fixtures (VCR / pytest-recording)"
+    why: "Connector tests that do not hit live APIs, and a free schema-drift signal
+      when a recording stops matching reality."
+    trigger: "Once connector count exceeds 5"
+    labels: [ingestion, infra]
+    points: 3
+
+  - priority: 15
+    summary: "Backup and restore, tested"
+    why: "Neon free tier has no recovery story you have verified. Nightly pg_dump
+      to GCS, and actually test the restore once."
+    trigger: "Before the truth base and application history become irreplaceable"
+    labels: [infra]
+    points: 2
+
+  - priority: 16
+    summary: "Dead-letter table for failed records"
+    why: "Failed records land somewhere inspectable rather than vanishing into a log
+      line."
+    trigger: "At the first silent parse failure"
+    labels: [ingestion]
+    points: 1
+
+  - priority: 17
+    summary: "Advisory locks on the dedup step"
+    why: "Two overlapping runs clustering simultaneously would corrupt the identity
+      map — the one table with a never-changes guarantee."
+    trigger: "Before any concurrent scheduling of the pipeline"
+    labels: [dedup, infra]
+    points: 1
+
+  - priority: 18
+    summary: "PII posture and retention policy"
+    why: >
+      Your CV is your own PII; recruiter names and contacts in notes are
+      other people's, which brings real GDPR obligations. Document retention,
+      encrypt at rest. Also a credible thing to speak to in an interview
+      about this project.
+    trigger: "Before storing any third-party contact details"
+    labels: [security]
+    points: 2
+
+  - priority: 19
+    summary: "Least-privilege database roles"
+    why: "Streamlit gets read-only plus writes to fct_application. Nothing else."
+    trigger: "At the first internet-exposed deployment"
+    labels: [security]
+    points: 1
+
+  - priority: 20
+    summary: "CV personas — multiple positioning variants"
+    why: >
+      One truth base, several positionings (data engineering, AI
+      engineering, consultancy) with different headline, emphasis order and
+      skill ordering. The plan currently assumes a single canonical
+      presentation.
+    trigger: "Once applying across more than one category in earnest"
+    labels: [cv, artefacts]
+    points: 3
+
+  - priority: 21
+    summary: "Referral path detection"
+    why: >
+      A manual network table matched against dim_company. A referral shifts
+      the outcome distribution more than any CV tailoring does, and the
+      system currently has no concept of it.
+    trigger: "Anytime — value is immediate but effort is manual"
+    labels: [ui]
+    points: 2
+
+  - priority: 22
+    summary: "Incremental dbt models on the marts"
+    why: "Full refresh on fct_skill_demand across category x region x month x skill
+      will get slow."
+    trigger: "Once mart build time exceeds a few minutes"
+    labels: [dbt]
+    points: 2
+
+  - priority: 23
+    summary: "Reverse search — skill-anchored discovery"
+    why: >
+      Everything is job-anchored ('how do I match this?'). The inverse —
+      'which employers are hiring for my exact signature' — falls out of the
+      same embeddings and surfaces roles whose titles you would never have
+      searched.
+    trigger: "Once the truth base embeddings exist"
+    labels: [ui, cv]
+    points: 3
+
+  - priority: 24
+    summary: "Bronze partitioning and cold storage"
+    why: "Partition raw_jobs by fetched_at month, move cold partitions to Parquet
+      on GCS. Append-only with version rows grows faster than expected."
+    trigger: "Once bronze exceeds a few GB"
+    labels: [dbt, infra]
+    points: 3
+
+  - priority: 25
+    summary: "LLM response caching"
+    why: "Regenerating the same artefact for the same job should be free."
+    trigger: "Once regeneration becomes a habit"
+    labels: [llm]
+    points: 1
+
+  - priority: 26
+    summary: "French-market support"
+    why: >
+      ESCO is multilingual and you work in both languages, but French CV
+      conventions differ materially. Currently ambiguous — either scope it
+      in deliberately or scope it out.
+    trigger: "If targeting French-market roles"
+    labels: [cv, artefacts]
+    points: 5

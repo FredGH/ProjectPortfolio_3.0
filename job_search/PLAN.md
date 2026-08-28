@@ -89,7 +89,7 @@ noise you eventually bulk-close.
 
 ### Done when
 
-Running `python plan/sync_jira.py` twice creates the full backlog on the
+Running `python -m jira_sync_kit sync` twice creates the full backlog on the
 first run and produces zero duplicates on the second.
 
 ---
@@ -112,7 +112,7 @@ apps/
   pipeline/   Dockerfile   dlt + dbt + dedup (batch, no server)
 dbt/
 infra/        Terraform
-plan/         backlog.yml, sync_jira.py
+plan/         backlog.yml
 data/landing/ bind-mounted locally, GCS in cloud
 ```
 

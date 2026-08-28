@@ -28,3 +28,4 @@ complaint_analyser/secrets/
 
 # Not ready for publishing
 digital_advertising_performance_intelligence/
+.worktrees/

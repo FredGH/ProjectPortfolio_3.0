@@ -96,6 +96,42 @@ LEFT JOIN customers AS c USING (customer_id)
 FROM orders, customers WHERE orders.customer_id = customers.customer_id
 ```
 
+## Comments
+
+Add a header comment at the top of every model file describing what it produces and its grain:
+
+```sql
+-- fct_orders: one row per order, joined with customer and product dimensions.
+-- Grain: order_id (unique).
+```
+
+Document each CTE with a one-line comment explaining what it produces:
+
+```sql
+-- Active customers who placed at least one order in the last 90 days.
+WITH recent_active_customers AS (
+    ...
+),
+
+-- Aggregate order totals per customer for the same window.
+customer_order_totals AS (
+    ...
+)
+```
+
+Use inline comments to explain non-obvious logic — a filter with a business reason, a workaround for a data quality issue, or a calculation that would surprise a reader:
+
+```sql
+-- Exclude test accounts created by QA; they have no real orders.
+WHERE customer_type != 'internal_test'
+
+-- Use COALESCE here because legacy orders pre-2022 have NULL discount_amount
+-- but should be treated as 0 for margin calculations.
+COALESCE(discount_amount, 0) AS discount_amount
+```
+
+Do **not** comment self-explanatory clauses — a plain `WHERE is_active = TRUE` needs no comment.
+
 ## NULL Handling
 
 - Be explicit: use `IS NULL` / `IS NOT NULL`, never `= NULL`
