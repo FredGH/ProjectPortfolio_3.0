@@ -1,0 +1,12 @@
+# Per-task LLM provider/model routing. See DECISIONS.md §1 — the whole
+# point of this file is that a task's provider moves independently of
+# every other task's, with no global switch anywhere in the code.
+#
+# The task list mirrors the split in DECISIONS.md §1's "task split" table.
+# Populated as each task's producing step (Step 13+) is implemented;
+# entries below are the ones referenced by name elsewhere in this repo.
+tasks:
+  fabrication_critic:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
