@@ -2280,6 +2280,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "api"))
 
 from app.main import app  # noqa: E402
+from core.db.session import get_current_user_id  # noqa: E402
 
 
 class TestWhoamiEndpoint(unittest.TestCase):
@@ -2289,13 +2290,13 @@ class TestWhoamiEndpoint(unittest.TestCase):
         self.assertEqual(response.status_code, 501)
 
     def test_returns_the_user_id_once_request_state_is_set(self) -> None:
-        # Simulates what Step 22a's IAP identity middleware will do.
+        # Simulates what Step 22a's IAP identity middleware will eventually
+        # set on request.state — overriding the dependency directly (rather
+        # than registering real ASGI middleware) is the standard FastAPI
+        # test pattern and avoids leaking state onto the shared `app`
+        # singleton between tests.
         user_id = uuid.uuid4()
-
-        @app.middleware("http")
-        async def _fake_identity_middleware(request, call_next):  # type: ignore[no-untyped-def]
-            request.state.user_id = user_id
-            return await call_next(request)
+        app.dependency_overrides[get_current_user_id] = lambda: user_id
 
         try:
             client = TestClient(app)
@@ -2303,10 +2304,7 @@ class TestWhoamiEndpoint(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), {"user_id": str(user_id)})
         finally:
-            app.user_middleware = [
-                m for m in app.user_middleware if m.cls is not _fake_identity_middleware
-            ]
-            app.middleware_stack = app.build_middleware_stack()
+            del app.dependency_overrides[get_current_user_id]
 
 
 if __name__ == "__main__":
