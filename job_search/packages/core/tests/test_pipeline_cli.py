@@ -8,17 +8,29 @@ from io import StringIO
 from pathlib import Path
 from unittest import mock
 
-# Clean up cached app modules from other test contexts (e.g., apps/api).
-# sys.modules caches by key, so if tests import different app packages
-# within the same process, the first one wins unless we explicitly clear.
-for key in list(sys.modules.keys()):
-    if key == "app" or key.startswith("app."):
-        del sys.modules[key]
+# Snapshot and restore app/* entries in sys.modules to avoid ordering
+# collisions. Two different app packages (apps/api, apps/pipeline) exist.
+# When unittest discover imports this module, whichever app package loads
+# first gets cached in sys.modules. We temporarily clear the cache so the
+# pipeline app imports cleanly, then restore the original cache for tests
+# that sort after us.
+_saved_app_modules = {
+    name: module
+    for name, module in sys.modules.items()
+    if name == "app" or name.startswith("app.")
+}
+for name in list(_saved_app_modules):
+    del sys.modules[name]
 
-# Insert pipeline app path so 'from app.cli import main' resolves to it.
+# Insert pipeline app path and import.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"))
 
 from app.cli import main  # noqa: E402
+
+# Restore api's app package (or any other pre-existing app module) in
+# sys.modules so tests imported after this one resolve app.* correctly.
+for name, module in _saved_app_modules.items():
+    sys.modules[name] = module
 
 
 class TestPipelineCli(unittest.TestCase):
