@@ -1,0 +1,80 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api/app:/app/apps/api/app
+      - ./packages/core:/app/packages/core
+      - ./data/landing:/data/landing
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: .
+      dockerfile: apps/ui/Dockerfile
+    env_file: .env
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./apps/ui/app:/app/apps/ui/app
+      - ./packages/core:/app/packages/core
+    depends_on:
+      - api
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: apps/pipeline/Dockerfile
+    env_file: .env
+    profiles: [cli]
+    volumes:
+      - ./apps/pipeline/app:/app/apps/pipeline/app
+      - ./packages/core:/app/packages/core
+      - ./data/landing:/data/landing
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+  n8n:
+    image: n8nio/n8n
+    profiles: [orchestration]
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  postgres_data:
+  ollama_data:
+  n8n_data:
