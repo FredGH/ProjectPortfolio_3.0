@@ -8,6 +8,9 @@ psycopg[binary]==3.2.3
 httpx==0.27.2
 anthropic==0.39.0
 pyyaml==6.0.2
+python-ulid==1.1.0
+dlt[postgres]==1.5.0
+fsspec==2024.10.0
 coverage==7.6.4
 pre-commit==4.0.1
 ruff==0.8.0
