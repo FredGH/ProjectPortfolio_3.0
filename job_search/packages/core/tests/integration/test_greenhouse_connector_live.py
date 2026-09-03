@@ -19,24 +19,22 @@ class TestGreenhouseConnectorLive(unittest.TestCase):
     def test_fetch_returns_real_jobs_for_a_known_public_board(self) -> None:
         """A well-known public Greenhouse board yields real, well-formed RawJobs."""
         with httpx.Client() as client:
-            connector = GreenhouseConnector(
-                http_client=client, database_url="unused"
-            )
-            try:
-                jobs = list(
-                    connector.fetch(
-                        GreenhouseQuery(board_slugs=["stripe"]),
-                        None,
-                        run_id="live-test-run",
-                    )
+            connector = GreenhouseConnector(http_client=client, database_url="unused")
+            jobs = list(
+                connector.fetch(
+                    GreenhouseQuery(board_slugs=["stripe"]),
+                    None,
+                    run_id="live-test-run",
                 )
-            except httpx.HTTPError as exc:
-                raise unittest.SkipTest(f"Network unreachable: {exc}") from None
+            )
 
         if not jobs:
             raise unittest.SkipTest(
-                "stripe's Greenhouse board returned zero open roles right "
-                "now — inconclusive, not a failure."
+                "stripe's Greenhouse board returned zero jobs — either it "
+                "genuinely has zero open roles right now, or the API call "
+                "failed and GreenhouseConnector's internal per-company error "
+                "handling silently absorbed it (by design). Inconclusive "
+                "either way, not a failure."
             )
         first = jobs[0]
         self.assertEqual(first.source_name, "greenhouse")
