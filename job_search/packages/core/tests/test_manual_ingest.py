@@ -127,6 +127,32 @@ class TestIngestManualJob(unittest.TestCase):
         second = ingest_manual_job(**common_kwargs, extract_fn=self._raising_extract)
         self.assertEqual(first.payload_sha256, second.payload_sha256)
 
+    def test_routes_through_run_connector_with_the_manual_connector_key(self) -> None:
+        """ingest_manual_job genuinely calls run_connector_fn, not ad-hoc logic."""
+        from core.ingestion.runner import run_connector as _real_run_connector
+
+        calls: list[dict[str, object]] = []
+
+        def _capturing_run_connector(**kwargs: object):
+            calls.append(kwargs)
+            return _real_run_connector(**kwargs)
+
+        ingest_manual_job(
+            source_name="linkedin_manual",
+            job_url="https://example.com/job",
+            job_spec="text",
+            landing_uri=self.landing_uri,
+            database_url="unused-in-this-test",
+            http_client=self.http_client,
+            llm_adapters={},
+            load_to_bronze_fn=self._fake_load_to_bronze,
+            extract_fn=self._fake_extract,
+            run_connector_fn=_capturing_run_connector,
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["connector_key"], "manual")
+        self.assertEqual(calls[0]["entry_method"], "manual")
+
 
 def _no_redirect_handler(request: httpx.Request) -> httpx.Response:
     """Every request resolves to a plain 200 — nothing here redirects.

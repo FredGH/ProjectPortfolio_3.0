@@ -1,34 +1,20 @@
-"""Orchestrates the manual job-entry pipeline end to end (PLAN.md Step 2).
-
-canonicalise_url -> extract_source_job_id -> write to landing ->
-best-effort LLM extraction -> load to bronze. Every collaborator is
-injected with a real default, matching the pattern used throughout
-core.llm and core.db — tests never need live network, Ollama, or Postgres.
+"""Orchestrates the manual job-entry pipeline (PLAN.md Step 2), routed
+through the shared runner and ManualConnector (PLAN.md Step 3) — one code
+path into landing and bronze, same as every future connector.
 """
 
 from __future__ import annotations
 
 import datetime
-import hashlib
-import json
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
 
-from core.ingestion.bronze import load_to_bronze
-from core.ingestion.extraction import (
-    ExtractedJobFields,
-    apply_user_overrides,
-    extract_job_fields,
-)
-from core.ingestion.landing import write_landing_record
-from core.ingestion.run_id import generate_run_id
-from core.ingestion.url_utils import canonicalise_url, extract_source_job_id
+from core.ingestion.extraction import ExtractedJobFields, extract_job_fields
+from core.ingestion.manual_connector import ManualConnector, ManualJobQuery
+from core.ingestion.runner import RunResult, run_connector
 from core.llm.types import LLMAdapter
-
-_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -59,21 +45,6 @@ class ManualIngestResult:
     field_source: dict[str, str]
 
 
-def _hash_payload(source_payload: dict[str, object]) -> str:
-    """Hash the dedup-relevant payload, independent of extraction results.
-
-    Args:
-        source_payload: The pre-extraction record content (raw text, user
-            overrides, posted date, notes) — never the parsed fields,
-            which can change between reruns without the source changing.
-
-    Returns:
-        The SHA-256 hex digest of the payload's canonical JSON form.
-    """
-    canonical = json.dumps(source_payload, sort_keys=True)
-    return hashlib.sha256(canonical.encode()).hexdigest()
-
-
 def ingest_manual_job(
     *,
     source_name: str,
@@ -88,16 +59,16 @@ def ingest_manual_job(
     database_url: str,
     http_client: httpx.Client,
     llm_adapters: dict[str, LLMAdapter],
-    load_to_bronze_fn: Callable[..., None] = load_to_bronze,
+    load_to_bronze_fn: Callable[..., None] | None = None,
     extract_fn: Callable[..., ExtractedJobFields] = extract_job_fields,
+    run_connector_fn: Callable[..., RunResult] = run_connector,
 ) -> ManualIngestResult:
     """Run the manual job-entry pipeline end to end.
 
     Args:
         source_name: Where this posting came from, e.g. "linkedin_manual".
         job_url: The raw job URL, as pasted.
-        job_spec: The full posting text, stored verbatim and never
-            overwritten — the parse is a derived field.
+        job_spec: The full posting text, stored verbatim.
         posted_date: When the job was posted, if known.
         company: User-supplied company override.
         title: User-supplied title override.
@@ -107,88 +78,59 @@ def ingest_manual_job(
         database_url: The migration/owner Postgres DSN for the bronze load.
         http_client: Used for the canonical URL's redirect resolution.
         llm_adapters: Every available LLM adapter, keyed by provider.
-        load_to_bronze_fn: Injectable bronze loader — defaults to the real
-            dlt-backed `load_to_bronze`.
-        extract_fn: Injectable extraction function — defaults to the real
-            `extract_job_fields`.
+        load_to_bronze_fn: Injectable bronze loader, threaded through to
+            `run_connector_fn`. `None` (the default) lets `run_connector`
+            use its own real default rather than this function importing
+            `load_to_bronze` itself just to pass it along.
+        extract_fn: Injectable extraction function, threaded through to
+            `ManualConnector`.
+        run_connector_fn: Injectable runner entrypoint — defaults to the
+            real `run_connector`.
 
     Returns:
         The `ManualIngestResult` describing what was ingested.
     """
-    canonical_url = canonicalise_url(job_url, http_client=http_client)
-    source_job_id = extract_source_job_id(canonical_url)
-    run_id = generate_run_id()
-    fetched_at = datetime.datetime.now(datetime.UTC)
-
-    source_payload: dict[str, object] = {
-        "raw_text": job_spec,
-        "posted_date": posted_date.isoformat() if posted_date else None,
-        "notes": notes,
-        "overrides": {"company": company, "title": title, "location": location},
-    }
-    payload_sha256 = _hash_payload(source_payload)
-
-    landing_record = {
-        "_source_name": source_name,
-        "_source_job_id": source_job_id,
-        "_job_url": job_url,
-        "_fetched_at": fetched_at.isoformat(),
-        "_run_id": run_id,
-        "_request_params": {},
-        "_payload_sha256": payload_sha256,
-        **source_payload,
-    }
-    landing_path = write_landing_record(
-        landing_uri,
+    query = ManualJobQuery(
         source_name=source_name,
-        run_id=run_id,
-        record=landing_record,
-        fetched_at=fetched_at,
-    )
-
-    try:
-        extracted = extract_fn(job_spec, adapters=llm_adapters)
-    except Exception:  # noqa: BLE001 — extraction is best-effort by design
-        _logger.warning(
-            "LLM extraction failed for source_name=%s job_url=%s; "
-            "proceeding with an unextracted record (re-runnable from landing)",
-            source_name,
-            job_url,
-            exc_info=True,
-        )
-        extracted = ExtractedJobFields()
-
-    merged, field_source = apply_user_overrides(
-        extracted, {"company": company, "title": title, "location": location}
-    )
-
-    bronze_payload = {
-        **source_payload,
-        "parsed": merged.model_dump(),
-        "field_source": field_source,
-    }
-    load_to_bronze_fn(
-        database_url=database_url,
-        source_name=source_name,
-        source_job_id=source_job_id,
         job_url=job_url,
-        job_url_canonical=canonical_url,
-        entry_method="manual",
-        fetched_at=fetched_at,
-        run_id=run_id,
-        request_params={},
-        payload=bronze_payload,
-        payload_sha256=payload_sha256,
+        job_spec=job_spec,
+        posted_date=posted_date,
+        company=company,
+        title=title,
+        location=location,
+        notes=notes,
     )
+    connector = ManualConnector(
+        http_client=http_client, llm_adapters=llm_adapters, extract_fn=extract_fn
+    )
+
+    kwargs: dict[str, object] = {
+        "connector_key": "manual",
+        "connector": connector,
+        "query": query,
+        "since": None,
+        "entry_method": "manual",
+        "landing_uri": landing_uri,
+        "database_url": database_url,
+    }
+    if load_to_bronze_fn is not None:
+        kwargs["load_to_bronze_fn"] = load_to_bronze_fn
+
+    result = run_connector_fn(**kwargs)
+    raw_job = result.raw_jobs[0]
+    landing_path = result.landing_paths[0]
+
+    extracted = ExtractedJobFields(**raw_job.payload["parsed"])
+    field_source = raw_job.payload["field_source"]
 
     return ManualIngestResult(
-        source_name=source_name,
-        job_url=job_url,
-        job_url_canonical=canonical_url,
-        source_job_id=source_job_id,
-        run_id=run_id,
+        source_name=raw_job.source_name,
+        job_url=raw_job.job_url,
+        job_url_canonical=raw_job.job_url_canonical,
+        source_job_id=raw_job.source_job_id,
+        run_id=raw_job.run_id,
         landing_path=landing_path,
-        payload_sha256=payload_sha256,
-        extracted=merged,
+        payload_sha256=raw_job.payload_sha256,
+        extracted=extracted,
         field_source=field_source,
     )
