@@ -1,0 +1,6 @@
+# Host-only development/tooling dependencies — NOT installed in container
+# images (python:3.11-slim has no git for VCS installs, and none of these
+# are needed at runtime).
+-r requirements.txt
+git+https://github.com/FredGH/jira_sync_kit.git@0.2.0
+types-PyYAML
