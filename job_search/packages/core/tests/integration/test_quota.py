@@ -20,8 +20,8 @@ def _live_migration_engine():
             conn.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001
         raise unittest.SkipTest(
-            "Postgres not reachable ({exc}); run `docker compose up -d postgres`"
-            " first."
+            f"Postgres not reachable ({exc}); run `docker compose up -d"
+            " postgres` first."
         ) from None
     return engine
 
