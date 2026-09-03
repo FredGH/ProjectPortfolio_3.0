@@ -70,6 +70,18 @@ class TestExtractSourceJobId(unittest.TestCase):
         result = extract_source_job_id(url)
         self.assertEqual(result, hashlib.sha256(url.encode()).hexdigest())
 
+    def test_rejects_lookalike_linkedin_domains(self) -> None:
+        """Lookalike domains that contain 'linkedin.com' fall back to hash."""
+        # fakelinkedin.com contains "linkedin.com" as substring but isn't LinkedIn
+        url = "https://fakelinkedin.com/jobs/view/12345"
+        result = extract_source_job_id(url)
+        self.assertEqual(result, hashlib.sha256(url.encode()).hexdigest())
+
+        # notlinkedin.com.evil.net contains "linkedin.com" substring
+        url = "https://notlinkedin.com.evil.net/jobs/view/99999"
+        result = extract_source_job_id(url)
+        self.assertEqual(result, hashlib.sha256(url.encode()).hexdigest())
+
 
 if __name__ == "__main__":
     unittest.main()

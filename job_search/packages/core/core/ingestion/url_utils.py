@@ -20,6 +20,9 @@ _LINKEDIN_JOB_ID = re.compile(r"/jobs/view/(\d+)")
 def _should_strip_param(name: str) -> bool:
     """Decide whether a query parameter is tracking/session noise.
 
+    Strips exact matches (ref, src, trk, aff), utm_* prefixes, and
+    any param name containing 'sess' (session, PHPSESSID, etc).
+
     Args:
         name: The query parameter's name, as parsed from the URL.
 
@@ -31,7 +34,7 @@ def _should_strip_param(name: str) -> bool:
         return True
     if lowered.startswith(_STRIP_PREFIXES):
         return True
-    return "session" in lowered or "sess" in lowered
+    return "sess" in lowered
 
 
 def _resolve_one_redirect(url: str, http_client: httpx.Client) -> str:
@@ -110,7 +113,8 @@ def extract_source_job_id(canonical_url: str) -> str:
         The LinkedIn numeric job id when the URL matches LinkedIn's
         `/jobs/view/{id}` pattern; otherwise `sha256(canonical_url)`.
     """
-    if "linkedin.com" in canonical_url:
+    netloc = urlsplit(canonical_url).netloc.lower()
+    if netloc == "linkedin.com" or netloc.endswith(".linkedin.com"):
         match = _LINKEDIN_JOB_ID.search(canonical_url)
         if match:
             return match.group(1)
