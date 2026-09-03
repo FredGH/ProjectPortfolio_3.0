@@ -245,6 +245,53 @@ class TestRunConnector(unittest.TestCase):
         self.assertEqual(self.metadata_calls[0].status, "success")
         self.assertEqual(self.metadata_calls[0].query, "my query")
 
+    def test_long_query_is_truncated_in_run_metadata(self) -> None:
+        """A query whose str() is long gets capped, not embedded whole."""
+        connector = _FakeConnector([_sample_job()])
+        long_query = "x" * 5000
+        run_connector(
+            connector_key="fake",
+            connector=connector,
+            query=long_query,
+            since=None,
+            entry_method="api",
+            landing_uri="file:///tmp/unused",
+            database_url="unused",
+            load_to_bronze_fn=self._fake_load_to_bronze,
+            write_landing_record_fn=self._fake_write_landing_record,
+            write_run_metadata_fn=self._fake_write_run_metadata,
+            sleep_fn=lambda s: None,
+        )
+        recorded_query = self.metadata_calls[0].query
+        self.assertLess(len(recorded_query), len(long_query))
+        self.assertTrue(recorded_query.endswith("(4800 more chars)"))
+
+    def test_retry_on_scopes_retries_to_given_exception_types(self) -> None:
+        """A retry_on that excludes the raised exception retries zero times."""
+        connector = _FakeConnector([_sample_job()], fail_times=99)
+        sleeps: list[float] = []
+        with self.assertRaises(RuntimeError):
+            run_connector(
+                connector_key="fake",
+                connector=connector,
+                query="q",
+                since=None,
+                entry_method="api",
+                landing_uri="file:///tmp/unused",
+                database_url="unused",
+                retry_base=0.01,
+                retry_max_retries=3,
+                retry_on=(ValueError,),
+                load_to_bronze_fn=self._fake_load_to_bronze,
+                write_landing_record_fn=self._fake_write_landing_record,
+                write_run_metadata_fn=self._fake_write_run_metadata,
+                sleep_fn=sleeps.append,
+                jitter_fn=lambda: 0.0,
+            )
+        self.assertEqual(sleeps, [])
+        self.assertEqual(len(self.metadata_calls), 1)
+        self.assertEqual(self.metadata_calls[0].status, "failed")
+
 
 if __name__ == "__main__":
     unittest.main()

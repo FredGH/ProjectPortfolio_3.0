@@ -1,9 +1,10 @@
 """Pipeline batch entrypoint (PLAN.md Steps 1 and 3).
 
 The `ingest` subcommand runs one connector through the shared runner —
-adding a new connector means adding one entry to `_KNOWN_SOURCES` and
-`_build_connector_factories()` below plus one config/sources.yml block,
-never touching run_connector itself.
+adding a new connector means adding one entry to `_CONNECTOR_BUILDERS`
+below plus one config/sources.yml block, never touching run_connector
+itself. `_KNOWN_SOURCES` is derived from `_CONNECTOR_BUILDERS`, so there
+is exactly one place to edit.
 """
 
 from __future__ import annotations
@@ -53,15 +54,50 @@ def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
     return adapters
 
 
-_KNOWN_SOURCES = frozenset({"manual"})
-"""Every `--source` name the CLI recognises. Checked before touching
-Settings or building any connector, so an unknown/malformed request fails
-with a clean message even with no DSN configured — see
-`_build_connector_factories` for the actual (Settings-dependent)
-construction, which only runs once `args.source` is already known-good.
-Adding a real API connector here (Step 4+) is the "one new file" half of
-the acceptance bar — a one-line addition, not a runner change.
-"""
+def _build_manual_connector(
+    http_client: httpx.Client, llm_adapters: dict[str, LLMAdapter]
+) -> Connector:
+    """Build the manual-entry connector.
+
+    Args:
+        http_client: Shared HTTP client for redirect resolution.
+        llm_adapters: Every available LLM adapter, keyed by provider.
+
+    Returns:
+        A `ManualConnector` instance.
+    """
+    return ManualConnector(http_client=http_client, llm_adapters=llm_adapters)
+
+
+_CONNECTOR_BUILDERS: dict[
+    str, Callable[[httpx.Client, dict[str, LLMAdapter]], Connector]
+] = {
+    "manual": _build_manual_connector,
+}
+
+_KNOWN_SOURCES = frozenset(_CONNECTOR_BUILDERS)
+"""Every `--source` name the CLI recognises — derived from
+`_CONNECTOR_BUILDERS` so the two can never drift apart. Adding a real API
+connector (Step 4+) is one new entry in `_CONNECTOR_BUILDERS`, nothing
+else, and `_KNOWN_SOURCES` picks it up automatically."""
+
+
+def _make_factory(
+    builder: Callable[[httpx.Client, dict[str, LLMAdapter]], Connector],
+    http_client: httpx.Client,
+    llm_adapters: dict[str, LLMAdapter],
+) -> Callable[[], Connector]:
+    """Bind a connector builder's arguments into a zero-argument factory.
+
+    Args:
+        builder: One `_CONNECTOR_BUILDERS` entry.
+        http_client: The shared HTTP client to bind in.
+        llm_adapters: The LLM adapter registry to bind in.
+
+    Returns:
+        A zero-argument callable that builds the connector.
+    """
+    return lambda: builder(http_client, llm_adapters)
 
 
 def _build_connector_factories(
@@ -81,9 +117,8 @@ def _build_connector_factories(
     """
     llm_adapters = _build_llm_adapters(http_client)
     return {
-        "manual": lambda: ManualConnector(
-            http_client=http_client, llm_adapters=llm_adapters
-        ),
+        name: _make_factory(builder, http_client, llm_adapters)
+        for name, builder in _CONNECTOR_BUILDERS.items()
     }
 
 
@@ -106,11 +141,20 @@ def _build_manual_query(raw_query: str) -> ManualJobQuery:
         raise ValueError(
             f"--query must be valid JSON for source=manual: {exc}"
         ) from exc
+    try:
+        source_name = data["source_name"]
+        job_url = data["job_url"]
+        job_spec = data["job_spec"]
+    except KeyError as exc:
+        raise ValueError(
+            f"--query is missing required field {exc} for source=manual"
+        ) from exc
+
     posted_date = data.get("posted_date")
     return ManualJobQuery(
-        source_name=data["source_name"],
-        job_url=data["job_url"],
-        job_spec=data["job_spec"],
+        source_name=source_name,
+        job_url=job_url,
+        job_spec=job_spec,
         posted_date=datetime.date.fromisoformat(posted_date) if posted_date else None,
         company=data.get("company"),
         title=data.get("title"),

@@ -65,6 +65,20 @@ class TestPipelineCli(unittest.TestCase):
         self.assertNotEqual(exit_code, 0)
         self.assertIn("query", stderr.getvalue().lower())
 
+    def test_ingest_subcommand_manual_source_missing_field_fails_cleanly(
+        self,
+    ) -> None:
+        """Valid JSON missing a required field reports ValueError, not a traceback."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(["ingest", "--source", "manual", "--query", "{}"])
+        self.assertEqual(exit_code, 1)
+        stderr_value = stderr.getvalue()
+        self.assertIn("source_name", stderr_value)
+        self.assertNotIn("Traceback", stderr_value)
+
 
 if __name__ == "__main__":
     unittest.main()

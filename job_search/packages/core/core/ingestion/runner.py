@@ -23,6 +23,28 @@ from core.ingestion.retry import retry_with_backoff
 from core.ingestion.run_id import generate_run_id
 from core.ingestion.run_metadata import RunMetadata, write_run_metadata
 
+_MAX_QUERY_SUMMARY_LENGTH = 200
+
+
+def _summarize_query(query: object) -> str:
+    """Render `query` as a short string safe for a run-metadata record.
+
+    Args:
+        query: The connector-specific query object passed to run_connector.
+
+    Returns:
+        `str(query)`, truncated to `_MAX_QUERY_SUMMARY_LENGTH` characters
+        with a `"...(N more chars)"` suffix if truncation occurred — run
+        metadata is a lightweight summary, not a second copy of the
+        connector's full input (e.g. a manual entry's entire pasted job
+        posting).
+    """
+    text = str(query)
+    if len(text) <= _MAX_QUERY_SUMMARY_LENGTH:
+        return text
+    remaining = len(text) - _MAX_QUERY_SUMMARY_LENGTH
+    return f"{text[:_MAX_QUERY_SUMMARY_LENGTH]}...({remaining} more chars)"
+
 
 @dataclass(frozen=True)
 class RunResult:
@@ -52,6 +74,7 @@ def run_connector(
     rate_limiter: TokenBucket | None = None,
     retry_base: float = 2.0,
     retry_max_retries: int = 5,
+    retry_on: tuple[type[Exception], ...] = (Exception,),
     load_to_bronze_fn: Callable[..., None] = load_to_bronze,
     write_landing_record_fn: Callable[..., str] = write_landing_record,
     write_run_metadata_fn: Callable[..., str] = write_run_metadata,
@@ -76,6 +99,10 @@ def run_connector(
             fetch — never per yielded item. `None` means unthrottled.
         retry_base: Base delay in seconds for retrying a failed fetch.
         retry_max_retries: Max retries for a failed fetch.
+        retry_on: Exception types that trigger a retry. Anything else
+            propagates immediately with zero retries — lets a caller scope
+            retries to transient failures instead of retrying every
+            exception, including permanent ones.
         load_to_bronze_fn: Injectable bronze loader.
         write_landing_record_fn: Injectable landing-zone writer.
         write_run_metadata_fn: Injectable run-metadata writer.
@@ -111,6 +138,7 @@ def run_connector(
             max_retries=retry_max_retries,
             sleep=sleep_fn,
             jitter=jitter_fn,
+            retry_on=retry_on,
         )
     except Exception:
         finished_at = datetime.datetime.now(datetime.UTC)
@@ -119,7 +147,7 @@ def run_connector(
             RunMetadata(
                 run_id=run_id,
                 source_name=connector_key,
-                query=str(query),
+                query=_summarize_query(query),
                 records=0,
                 started_at=started_at,
                 finished_at=finished_at,
@@ -167,7 +195,7 @@ def run_connector(
     metadata = RunMetadata(
         run_id=run_id,
         source_name=connector_key,
-        query=str(query),
+        query=_summarize_query(query),
         records=len(raw_jobs),
         started_at=started_at,
         finished_at=finished_at,
