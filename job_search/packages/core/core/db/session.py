@@ -14,6 +14,13 @@ from contextlib import contextmanager
 from fastapi import HTTPException, Request
 from sqlalchemy import Connection, Engine, create_engine, text
 
+# The nil UUID, used to ensure RLS policies return no rows when no user ID is
+# set. Once any SET LOCAL has run on a pooled connection, current_setting()
+# returns empty string (not NULL) in later transactions, causing ''::uuid to
+# error. Setting the GUC to this nil UUID avoids the error and achieves the
+# fail-closed zero-row behavior (matches no real row).
+_NIL_USER_ID = uuid.UUID(int=0)
+
 
 def build_engine(dsn: str) -> Engine:
     """Build a SQLAlchemy engine for the given DSN.
@@ -33,18 +40,25 @@ def build_engine(dsn: str) -> Engine:
 def session_scope(
     engine: Engine, *, user_id: uuid.UUID | None = None
 ) -> Iterator[Connection]:
-    """Open one transaction, optionally scoped to a user via RLS.
+    """Open one transaction, scoped to a user via RLS.
+
+    The `app.current_user_id` GUC is always set: to the given user's ID when
+    provided, or to _NIL_USER_ID (00000000-0000-0000-0000-000000000000) when
+    omitted. The nil UUID matches no real row, achieving the fail-closed
+    zero-row behavior for app-role connections without a user context.
+
+    Why always set (never omit)? Once any SET LOCAL has run on a pooled
+    connection, current_setting(..., true) returns empty string (not NULL) in
+    later transactions within the same session. Trying to cast ''::uuid throws
+    an error in RLS policies. Setting the GUC to a valid UUID sidesteps this.
 
     Args:
         engine: The engine to connect through — the app-role engine for any
             per-user query, the migration/owner engine only for
             administrative work that must see across users.
-        user_id: When given, sets `app.current_user_id` for the lifetime of
-            this transaction via `SET LOCAL`, so every RLS policy in the
-            database scopes to this user. When omitted, no GUC is set, so
-            an app-role connection sees zero rows of any per-user table
-            (fail-closed) and a migration-role connection sees everything
-            (it bypasses RLS as the table owner regardless).
+        user_id: When given, sets `app.current_user_id` to this UUID. When
+            omitted, sets it to _NIL_USER_ID, ensuring every RLS policy
+            returns no rows (fail-closed).
 
     Yields:
         A `Connection` with the transaction open.
@@ -57,15 +71,9 @@ def session_scope(
                 # is a validated UUID literal — safe to interpolate.
                 conn.execute(text(f"SET LOCAL app.current_user_id = '{user_id}'"))
             else:
-                # Set to a nil UUID that will never match real user IDs, ensuring
-                # RLS policies return no rows (fail-closed). The nil UUID was
-                # chosen to avoid an empty string casting error with RLS policies.
-                conn.execute(
-                    text(
-                        "SET LOCAL app.current_user_id = "
-                        "'00000000-0000-0000-0000-000000000000'"
-                    )
-                )
+                # Set to the nil UUID to ensure RLS policies return no rows
+                # (fail-closed). See _NIL_USER_ID and the docstring above.
+                conn.execute(text(f"SET LOCAL app.current_user_id = '{_NIL_USER_ID}'"))
             yield conn
 
 
