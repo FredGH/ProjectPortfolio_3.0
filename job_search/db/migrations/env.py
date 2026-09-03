@@ -25,9 +25,7 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode (emit SQL, no live connection)."""
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(
-        url=url, literal_binds=True, dialect_opts={"paramstyle": "named"}
-    )
+    context.configure(url=url, literal_binds=True, dialect_opts={"paramstyle": "named"})
     with context.begin_transaction():
         context.run_migrations()
 
