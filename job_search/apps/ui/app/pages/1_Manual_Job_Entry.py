@@ -25,21 +25,22 @@ except httpx.HTTPError:
 _NEW_SOURCE_SENTINEL = "+ Add new source"
 _source_options = [*_known_sources, _NEW_SOURCE_SENTINEL]
 
-with st.form("manual_job_entry", clear_on_submit=True):
-    source_choice = st.selectbox(
-        "Source name",
-        options=_source_options,
-        index=len(_source_options) - 1 if _known_sources else 0,
-        help="Pick a prior source, or add a new one below.",
-    )
-    new_source_name = st.text_input(
-        "New source name",
-        placeholder="linkedin_manual, otta, recruiter_email...",
-        disabled=source_choice != _NEW_SOURCE_SENTINEL,
-    )
-    source_name = (
-        new_source_name if source_choice == _NEW_SOURCE_SENTINEL else source_choice
-    )
+source_choice = st.selectbox(
+    "Source name",
+    options=_source_options,
+    index=len(_source_options) - 1 if _known_sources else 0,
+    help="Pick a prior source, or add a new one below.",
+)
+new_source_name = st.text_input(
+    "New source name",
+    placeholder="linkedin_manual, otta, recruiter_email...",
+    disabled=source_choice != _NEW_SOURCE_SENTINEL,
+)
+source_name = (
+    new_source_name if source_choice == _NEW_SOURCE_SENTINEL else source_choice
+)
+
+with st.form("manual_job_entry"):
     job_url = st.text_input("Job URL")
     job_spec = st.text_area("Job spec", height=300, help="Paste the full posting.")
 
