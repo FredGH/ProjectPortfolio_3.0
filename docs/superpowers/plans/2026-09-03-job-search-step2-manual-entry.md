@@ -1337,7 +1337,11 @@ from dataclasses import dataclass
 import httpx
 
 from core.ingestion.bronze import load_to_bronze
-from core.ingestion.extraction import ExtractedJobFields, extract_job_fields
+from core.ingestion.extraction import (
+    ExtractedJobFields,
+    apply_user_overrides,
+    extract_job_fields,
+)
 from core.ingestion.landing import write_landing_record
 from core.ingestion.run_id import generate_run_id
 from core.ingestion.url_utils import canonicalise_url, extract_source_job_id
@@ -1473,8 +1477,6 @@ def ingest_manual_job(
         )
         extracted = ExtractedJobFields()
 
-    from core.ingestion.extraction import apply_user_overrides
-
     merged, field_source = apply_user_overrides(
         extracted, {"company": company, "title": title, "location": location}
     )
@@ -1511,21 +1513,17 @@ def ingest_manual_job(
     )
 ```
 
-- [ ] **Step 4: Move the `apply_user_overrides` import to the top of the file**
-
-The inline `from core.ingestion.extraction import apply_user_overrides` above is written mid-function to keep the Step 3 code block's diff obvious against Task 5. Move it to the top-level imports alongside the existing `from core.ingestion.extraction import ExtractedJobFields, extract_job_fields` line (merge into one import statement) before running tests — a mid-function import is not idiomatic here and there's no circular-import reason for it.
-
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd job_search/packages/core && python3.11 -m unittest tests.test_manual_ingest -v`
 Expected: PASS (5 tests).
 
-- [ ] **Step 6: Run the full unit suite so far**
+- [ ] **Step 5: Run the full unit suite so far**
 
 Run: `cd job_search/packages/core && python3.11 -m unittest discover 2>&1 | tail -10`
 Expected: all non-Postgres-dependent tests pass; integration tests requiring Postgres SKIP cleanly if it isn't running right now (that's fine for this task).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd job_search

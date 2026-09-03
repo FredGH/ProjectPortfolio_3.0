@@ -19,3 +19,11 @@ python_version = "3.11"
 ignore_missing_imports = true
 disallow_untyped_defs = true
 exclude = ["tests/"]
+# Disables mypy's incremental cache. Any module importing `dlt` (e.g.
+# core.ingestion.bronze) crashes mypy 1.13.0's cache writer with
+# "TypeError: Integer exceeds 64-bit range" — reproduced with a
+# single-line `import dlt` file, so this is a dlt/mypy incompatibility,
+# not a defect in this codebase. `--cache-dir=/dev/null` is mypy's
+# documented way to disable caching entirely and sidesteps the crash.
+# Revisit once either project ships a fix.
+cache_dir = "/dev/null"
