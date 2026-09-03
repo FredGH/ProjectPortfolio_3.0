@@ -162,6 +162,71 @@ class TestGreenhouseConnector(unittest.TestCase):
         )[0]
         self.assertNotEqual(job_v1.payload_sha256, job_v2.payload_sha256)
 
+    def test_board_fetch_error_is_skipped_and_run_continues(self) -> None:
+        """When one company's board fetch fails, the run continues to the next."""
+        call_count = {"acme": 0, "beta": 0}
+
+        def fake_fetch_board(_http_client, board_slug):
+            call_count[board_slug] += 1
+            if board_slug == "acme":
+                raise httpx.ConnectError("Connection refused")
+            return [_job(1, "Beta Job", "2026-09-01T00:00:00Z")]
+
+        companies = [_fake_company("Acme", "acme"), _fake_company("Beta", "beta")]
+
+        def fake_list_companies(_database_url, *, ats_provider):
+            return companies
+
+        connector = GreenhouseConnector(
+            http_client=self.http_client,
+            database_url="unused",
+            fetch_board_fn=fake_fetch_board,
+            list_companies_fn=fake_list_companies,
+        )
+        jobs = list(connector.fetch(GreenhouseQuery(), None, run_id="run-1"))
+        # Should yield only Beta's job, not raise, and should have called both boards
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0].payload["_board_slug"], "beta")
+        self.assertEqual(call_count["acme"], 1)
+        self.assertEqual(call_count["beta"], 1)
+
+    def test_malformed_job_record_is_skipped_and_run_continues(self) -> None:
+        """When a job record is missing keys, it is skipped but the run continues."""
+
+        def fake_fetch_board(_http_client, _board_slug):
+            return [
+                {
+                    "id": 1,
+                    "title": "Good Job",
+                    "updated_at": "2026-09-01T00:00:00Z",
+                    "absolute_url": "https://boards.greenhouse.io/acme/jobs/1",
+                },
+                {
+                    "id": 2,
+                    "title": "Broken Job",
+                    "updated_at": "2026-09-01T00:00:00Z",
+                },  # missing absolute_url
+                {
+                    "id": 3,
+                    "title": "Another Good Job",
+                    "updated_at": "2026-09-01T00:00:00Z",
+                    "absolute_url": "https://boards.greenhouse.io/acme/jobs/3",
+                },
+            ]
+
+        connector = GreenhouseConnector(
+            http_client=self.http_client,
+            database_url="unused",
+            fetch_board_fn=fake_fetch_board,
+            list_companies_fn=lambda *_args, **_kwargs: self.fail("unused"),
+        )
+        jobs = list(
+            connector.fetch(GreenhouseQuery(board_slugs=["acme"]), None, run_id="run-1")
+        )
+        # Should yield only the two valid jobs, not raise
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual([j.source_job_id for j in jobs], ["1", "3"])
+
 
 if __name__ == "__main__":
     unittest.main()

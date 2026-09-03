@@ -68,7 +68,8 @@ def _fetch_greenhouse_board(
         Every job dict in the board's `jobs` array (possibly empty).
 
     Raises:
-        httpx.HTTPStatusError: On a non-2xx response.
+        httpx.HTTPError: On any HTTP error, including non-2xx responses,
+            connection errors, timeouts, DNS failures, or pool exhaustion.
     """
     response = http_client.get(
         _GREENHOUSE_BOARD_URL.format(board_slug=board_slug),
@@ -153,7 +154,7 @@ class GreenhouseConnector:
         Yields:
             One `RawJob` per open role, across every resolved company.
         """
-        if query.board_slugs:
+        if query.board_slugs is not None:
             companies = [
                 _Company(name=slug, board_slug=slug) for slug in query.board_slugs
             ]
@@ -168,7 +169,7 @@ class GreenhouseConnector:
         for company in companies:
             try:
                 jobs = self._fetch_board_fn(self._http_client, company.board_slug)
-            except httpx.HTTPStatusError:
+            except httpx.HTTPError:
                 _logger.warning(
                     "Greenhouse board fetch failed for board_slug=%s; skipping "
                     "this company for this run",
@@ -183,24 +184,33 @@ class GreenhouseConnector:
                 if since is not None and updated_at is not None and updated_at < since:
                     continue
 
-                job_url = str(job["absolute_url"])
-                canonical_url = canonicalise_url(job_url)
-                payload = {
-                    **job,
-                    "_company_name": company.name,
-                    "_board_slug": company.board_slug,
-                }
-                yield RawJob(
-                    source_name="greenhouse",
-                    source_job_id=str(job["id"]),
-                    job_url=job_url,
-                    job_url_canonical=canonical_url,
-                    payload=payload,
-                    fetched_at=fetched_at,
-                    run_id=run_id,
-                    request_params={"board_slug": company.board_slug},
-                    payload_sha256=_hash_job(job),
-                )
+                try:
+                    job_url = str(job["absolute_url"])
+                    canonical_url = canonicalise_url(job_url)
+                    payload = {
+                        **job,
+                        "_company_name": company.name,
+                        "_board_slug": company.board_slug,
+                    }
+                    yield RawJob(
+                        source_name="greenhouse",
+                        source_job_id=str(job["id"]),
+                        job_url=job_url,
+                        job_url_canonical=canonical_url,
+                        payload=payload,
+                        fetched_at=fetched_at,
+                        run_id=run_id,
+                        request_params={"board_slug": company.board_slug},
+                        payload_sha256=_hash_job(job),
+                    )
+                except KeyError:
+                    _logger.warning(
+                        "Job record from board_slug=%s is malformed (missing "
+                        "required field); skipping this job",
+                        company.board_slug,
+                        exc_info=True,
+                    )
+                    continue
 
 
 def _parse_updated_at(value: object) -> datetime.datetime | None:
