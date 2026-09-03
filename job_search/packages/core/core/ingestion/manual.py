@@ -8,6 +8,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
 import httpx
 
@@ -120,8 +121,14 @@ def ingest_manual_job(
     raw_job = result.raw_jobs[0]
     landing_path = result.landing_paths[0]
 
-    extracted = ExtractedJobFields(**raw_job.payload["parsed"])
-    field_source = raw_job.payload["field_source"]
+    # raw_job.payload is typed dict[str, object] since it's a generic,
+    # connector-agnostic envelope field — but ManualConnector.fetch()
+    # (Task 7) guarantees "parsed" is exactly merged.model_dump() and
+    # "field_source" is exactly the dict apply_user_overrides returns, so
+    # this narrowing is sound, not a workaround for a real type mismatch.
+    parsed = cast("dict[str, str | None]", raw_job.payload["parsed"])
+    extracted = ExtractedJobFields(**parsed)
+    field_source = cast("dict[str, str]", raw_job.payload["field_source"])
 
     return ManualIngestResult(
         source_name=raw_job.source_name,
