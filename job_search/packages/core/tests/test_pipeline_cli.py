@@ -43,6 +43,42 @@ class TestPipelineCli(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("pipeline scaffold ready", stdout.getvalue())
 
+    def test_ingest_subcommand_unknown_source_reports_an_error_and_exits_nonzero(
+        self,
+    ) -> None:
+        """An unregistered --source name fails clearly, not with a traceback."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(["ingest", "--source", "nonexistent", "--query", "{}"])
+        self.assertNotEqual(exit_code, 0)
+        self.assertIn("nonexistent", stderr.getvalue())
+
+    def test_ingest_subcommand_manual_source_requires_valid_json_query(self) -> None:
+        """A malformed --query for the manual source fails clearly."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(["ingest", "--source", "manual", "--query", "not json"])
+        self.assertNotEqual(exit_code, 0)
+        self.assertIn("query", stderr.getvalue().lower())
+
+    def test_ingest_subcommand_manual_source_missing_field_fails_cleanly(
+        self,
+    ) -> None:
+        """Valid JSON missing a required field reports ValueError, not a traceback."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(["ingest", "--source", "manual", "--query", "{}"])
+        self.assertEqual(exit_code, 1)
+        stderr_value = stderr.getvalue()
+        self.assertIn("source_name", stderr_value)
+        self.assertNotIn("Traceback", stderr_value)
+
 
 if __name__ == "__main__":
     unittest.main()
