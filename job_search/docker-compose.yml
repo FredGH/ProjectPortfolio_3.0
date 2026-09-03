@@ -27,6 +27,7 @@ services:
     volumes:
       - ./apps/api/app:/app/apps/api/app
       - ./packages/core:/app/packages/core
+      - ./config:/app/config
       - ./data/landing:/data/landing
     depends_on:
       postgres:
@@ -54,6 +55,7 @@ services:
     volumes:
       - ./apps/pipeline/app:/app/apps/pipeline/app
       - ./packages/core:/app/packages/core
+      - ./config:/app/config
       - ./data/landing:/data/landing
     depends_on:
       postgres:

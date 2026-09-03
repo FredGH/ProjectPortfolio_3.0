@@ -58,7 +58,8 @@ def session_scope(
             administrative work that must see across users.
         user_id: When given, sets `app.current_user_id` to this UUID. When
             omitted, sets it to _NIL_USER_ID, ensuring every RLS policy
-            returns no rows (fail-closed).
+            returns no rows (fail-closed). Normalized/validated to a
+            `uuid.UUID`; malformed input raises `ValueError`.
 
     Yields:
         A `Connection` with the transaction open.
@@ -66,9 +67,10 @@ def session_scope(
     with engine.connect() as conn:
         with conn.begin():
             if user_id is not None:
-                # `SET LOCAL` does not support bound parameters; `user_id`
-                # is a `uuid.UUID`, not client-supplied text, so its `str()`
-                # is a validated UUID literal — safe to interpolate.
+                # `SET LOCAL` does not support bound parameters. Normalize
+                # to a real UUID (raises ValueError if malformed) so a
+                # tainted string can never reach this f-string.
+                user_id = uuid.UUID(str(user_id))
                 conn.execute(text(f"SET LOCAL app.current_user_id = '{user_id}'"))
             else:
                 # Set to the nil UUID to ensure RLS policies return no rows
