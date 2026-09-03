@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import uuid
 
+from app.routers import ingest
 from fastapi import Depends, FastAPI
 
 from core.db.session import get_current_user_id
 
 app = FastAPI(title="Job Search Platform API")
+app.include_router(ingest.router)
 
 
 @app.get("/health")

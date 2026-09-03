@@ -10,3 +10,7 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  manual_entry_parse:
+    provider: ollama
+    model: llama3.1:8b
+    prompt_family: local

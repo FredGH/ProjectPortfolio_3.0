@@ -4,3 +4,8 @@ venv/
 __pycache__/
 *.pyc
 .coverage
+
+# Landing-zone data is generated at runtime (dlt/ingestion writes here) —
+# never committed. The directory structure itself is kept via .gitkeep.
+data/landing/*
+!data/landing/.gitkeep
