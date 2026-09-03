@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from io import StringIO
 from pathlib import Path
 from unittest import mock
+
+from core.settings import get_settings
 
 # Snapshot and restore app/* entries in sys.modules to avoid ordering
 # collisions. Two different app packages (apps/api, apps/pipeline) exist.
@@ -78,6 +81,71 @@ class TestPipelineCli(unittest.TestCase):
         stderr_value = stderr.getvalue()
         self.assertIn("source_name", stderr_value)
         self.assertNotIn("Traceback", stderr_value)
+
+    def test_ingest_subcommand_adzuna_requires_region(self) -> None:
+        """--source adzuna with no --region reports a clean error."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(
+                ["ingest", "--source", "adzuna", "--query", "data engineer"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn("region", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_adzuna_requires_settings_keys(self) -> None:
+        """--source adzuna with no Adzuna keys configured reports a clean error."""
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"ADZUNA_APP_ID": "", "ADZUNA_APP_KEY": ""},
+                clear=False,
+            ),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(
+                [
+                    "ingest",
+                    "--source",
+                    "adzuna",
+                    "--query",
+                    "data engineer",
+                    "--region",
+                    "gb",
+                ]
+            )
+            get_settings.cache_clear()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("adzuna", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_greenhouse_is_a_known_source(self) -> None:
+        """--source greenhouse is recognised (fails later, on DB/network —
+        not on an 'unknown source' error)."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            main(["ingest", "--source", "greenhouse", "--query", ""])
+        self.assertNotIn("Unknown --source", stderr.getvalue())
+
+    def test_ingest_subcommand_reed_requires_settings_key(self) -> None:
+        """--source reed with no Reed key configured reports a clean error."""
+        with (
+            mock.patch.dict(os.environ, {"REED_API_KEY": ""}, clear=False),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(["ingest", "--source", "reed", "--query", "data engineer"])
+            get_settings.cache_clear()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("reed", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
 
 if __name__ == "__main__":

@@ -6,15 +6,25 @@
 # entry (core.ingestion.manual_connector.ManualConnector), which makes no
 # external API calls and therefore needs neither.
 #
-# Schema, illustrated (not a live entry — Step 4 adds the real one when
-# the AdzunaConnector class actually exists):
-#
-#   adzuna:
-#     enabled: true
-#     auth: {app_id: ${ADZUNA_APP_ID}, app_key: ${ADZUNA_APP_KEY}}
-#     calls_per_hour: 40
-#     concurrency: 2
-#     backoff: {base: 2, max_retries: 5}
-#     regions: [gb, ie, fr, de, us]
+sources:
+  adzuna:
+    enabled: true
+    auth: {app_id: "${ADZUNA_APP_ID}", app_key: "${ADZUNA_APP_KEY}"}
+    calls_per_hour: 40
+    concurrency: 1
+    backoff: {base: 2, max_retries: 5}
+    regions: [gb]
 
-sources: {}
+  reed:
+    enabled: true
+    auth: {api_key: "${REED_API_KEY}"}
+    calls_per_hour: 60
+    concurrency: 1
+    backoff: {base: 2, max_retries: 5}
+    regions: [gb]
+
+  greenhouse:
+    enabled: true
+    calls_per_hour: 120
+    concurrency: 1
+    backoff: {base: 2, max_retries: 5}

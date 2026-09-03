@@ -14,18 +14,22 @@ import datetime
 import json
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import httpx
 
+from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
 from core.ingestion.connector import Connector
+from core.ingestion.greenhouse_connector import GreenhouseConnector, GreenhouseQuery
 from core.ingestion.manual_connector import ManualConnector, ManualJobQuery
 from core.ingestion.rate_limiter import TokenBucket
+from core.ingestion.reed_connector import ReedConnector, ReedQuery
 from core.ingestion.runner import run_connector
 from core.ingestion.sources_config import load_sources_config
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
-from core.settings import get_settings
+from core.settings import Settings, get_settings
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -54,50 +58,116 @@ def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
     return adapters
 
 
-def _build_manual_connector(
-    http_client: httpx.Client, llm_adapters: dict[str, LLMAdapter]
-) -> Connector:
+@dataclass(frozen=True)
+class _ConnectorBuildContext:
+    """Everything a connector builder might need to construct its connector.
+
+    Attributes:
+        http_client: The shared HTTP client.
+        llm_adapters: Every available LLM adapter, keyed by provider.
+        settings: The process-wide Settings instance.
+    """
+
+    http_client: httpx.Client
+    llm_adapters: dict[str, LLMAdapter]
+    settings: Settings
+
+
+def _build_manual_connector(ctx: _ConnectorBuildContext) -> Connector:
     """Build the manual-entry connector.
 
     Args:
-        http_client: Shared HTTP client for redirect resolution.
-        llm_adapters: Every available LLM adapter, keyed by provider.
+        ctx: The shared connector-build context.
 
     Returns:
         A `ManualConnector` instance.
     """
-    return ManualConnector(http_client=http_client, llm_adapters=llm_adapters)
+    return ManualConnector(http_client=ctx.http_client, llm_adapters=ctx.llm_adapters)
 
 
-_CONNECTOR_BUILDERS: dict[
-    str, Callable[[httpx.Client, dict[str, LLMAdapter]], Connector]
-] = {
+def _build_adzuna_connector(ctx: _ConnectorBuildContext) -> Connector:
+    """Build the Adzuna connector.
+
+    Args:
+        ctx: The shared connector-build context.
+
+    Returns:
+        An `AdzunaConnector` instance.
+
+    Raises:
+        ValueError: If `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` aren't configured.
+    """
+    if not ctx.settings.adzuna_app_id or not ctx.settings.adzuna_app_key:
+        raise ValueError(
+            "source=adzuna requires ADZUNA_APP_ID and ADZUNA_APP_KEY to be "
+            "set in .env"
+        )
+    return AdzunaConnector(
+        http_client=ctx.http_client,
+        app_id=ctx.settings.adzuna_app_id,
+        app_key=ctx.settings.adzuna_app_key,
+    )
+
+
+def _build_greenhouse_connector(ctx: _ConnectorBuildContext) -> Connector:
+    """Build the Greenhouse connector.
+
+    Args:
+        ctx: The shared connector-build context.
+
+    Returns:
+        A `GreenhouseConnector` instance.
+    """
+    return GreenhouseConnector(
+        http_client=ctx.http_client, database_url=ctx.settings.database_url
+    )
+
+
+def _build_reed_connector(ctx: _ConnectorBuildContext) -> Connector:
+    """Build the Reed connector.
+
+    Args:
+        ctx: The shared connector-build context.
+
+    Returns:
+        A `ReedConnector` instance.
+
+    Raises:
+        ValueError: If `REED_API_KEY` isn't configured.
+    """
+    if not ctx.settings.reed_api_key:
+        raise ValueError("source=reed requires REED_API_KEY to be set in .env")
+    return ReedConnector(http_client=ctx.http_client, api_key=ctx.settings.reed_api_key)
+
+
+_CONNECTOR_BUILDERS: dict[str, Callable[[_ConnectorBuildContext], Connector]] = {
     "manual": _build_manual_connector,
+    "adzuna": _build_adzuna_connector,
+    "reed": _build_reed_connector,
+    "greenhouse": _build_greenhouse_connector,
 }
 
 _KNOWN_SOURCES = frozenset(_CONNECTOR_BUILDERS)
 """Every `--source` name the CLI recognises — derived from
-`_CONNECTOR_BUILDERS` so the two can never drift apart. Adding a real API
-connector (Step 4+) is one new entry in `_CONNECTOR_BUILDERS`, nothing
-else, and `_KNOWN_SOURCES` picks it up automatically."""
+`_CONNECTOR_BUILDERS` so the two can never drift apart. Adding a new
+connector is one new entry in `_CONNECTOR_BUILDERS`, nothing else, and
+`_KNOWN_SOURCES` picks it up automatically."""
 
 
 def _make_factory(
-    builder: Callable[[httpx.Client, dict[str, LLMAdapter]], Connector],
-    http_client: httpx.Client,
-    llm_adapters: dict[str, LLMAdapter],
+    builder: Callable[[_ConnectorBuildContext], Connector],
+    ctx: _ConnectorBuildContext,
 ) -> Callable[[], Connector]:
-    """Bind a connector builder's arguments into a zero-argument factory.
+    """Bind a connector builder's context into a zero-argument factory.
 
     Args:
         builder: One `_CONNECTOR_BUILDERS` entry.
-        http_client: The shared HTTP client to bind in.
-        llm_adapters: The LLM adapter registry to bind in.
+        ctx: The shared connector-build context to bind in.
 
     Returns:
         A zero-argument callable that builds the connector.
     """
-    return lambda: builder(http_client, llm_adapters)
+    return lambda: builder(ctx)
 
 
 def _build_connector_factories(
@@ -112,12 +182,17 @@ def _build_connector_factories(
     Returns:
         A mapping of `--source` name to a zero-argument factory building
         that connector. Callers only invoke this after confirming
-        `args.source in _KNOWN_SOURCES` — it constructs Settings-dependent
-        LLM adapters eagerly and shouldn't run for an unknown source.
+        `args.source in _KNOWN_SOURCES` — a builder may still raise
+        ValueError for a known-but-misconfigured source (e.g. Adzuna with
+        no API key), which `_cmd_ingest` catches.
     """
-    llm_adapters = _build_llm_adapters(http_client)
+    ctx = _ConnectorBuildContext(
+        http_client=http_client,
+        llm_adapters=_build_llm_adapters(http_client),
+        settings=get_settings(),
+    )
     return {
-        name: _make_factory(builder, http_client, llm_adapters)
+        name: _make_factory(builder, ctx)
         for name, builder in _CONNECTOR_BUILDERS.items()
     }
 
@@ -163,6 +238,55 @@ def _build_manual_query(raw_query: str) -> ManualJobQuery:
     )
 
 
+def _build_adzuna_query(raw_query: str, region: str | None) -> AdzunaQuery:
+    """Build an AdzunaQuery from --query and --region.
+
+    Args:
+        raw_query: The `--query` argument's raw string value (keywords).
+        region: The `--region` argument's raw string value.
+
+    Returns:
+        The `AdzunaQuery`.
+
+    Raises:
+        ValueError: If `region` is not given — Adzuna's search endpoint is
+            country-scoped, unlike manual entry or Greenhouse.
+    """
+    if not region:
+        raise ValueError("--region is required for source=adzuna")
+    return AdzunaQuery(keywords=raw_query, country=region)
+
+
+def _build_reed_query(raw_query: str, region: str | None) -> ReedQuery:
+    """Build a ReedQuery from --query and --region.
+
+    Args:
+        raw_query: The `--query` argument's raw string value (keywords).
+        region: The `--region` argument's raw string value, used as an
+            optional UK location filter — unlike Adzuna, Reed doesn't
+            require one (it's UK-only already).
+
+    Returns:
+        The `ReedQuery`.
+    """
+    return ReedQuery(keywords=raw_query, location=region)
+
+
+def _build_greenhouse_query(raw_query: str) -> GreenhouseQuery:
+    """Build a GreenhouseQuery from --query.
+
+    Args:
+        raw_query: The `--query` argument's raw string value — a
+            comma-separated list of board slugs, or empty to use the
+            active target_company registry.
+
+    Returns:
+        The `GreenhouseQuery`.
+    """
+    slugs = [s.strip() for s in raw_query.split(",") if s.strip()]
+    return GreenhouseQuery(board_slugs=slugs or None)
+
+
 def _cmd_ingest(args: argparse.Namespace) -> int:
     """Run the `ingest` subcommand.
 
@@ -180,14 +304,21 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if args.source == "manual":
-        try:
-            query: object = _build_manual_query(args.query)
-        except ValueError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
-    else:
-        query = args.query
+    try:
+        query: object
+        if args.source == "manual":
+            query = _build_manual_query(args.query)
+        elif args.source == "adzuna":
+            query = _build_adzuna_query(args.query, args.region)
+        elif args.source == "reed":
+            query = _build_reed_query(args.query, args.region)
+        elif args.source == "greenhouse":
+            query = _build_greenhouse_query(args.query)
+        else:
+            query = args.query
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
     since = datetime.datetime.fromisoformat(args.since) if args.since else None
 
@@ -203,9 +334,15 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             )
 
         settings = get_settings()
+        try:
+            connector = factories[args.source]()
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
         result = run_connector(
             connector_key=args.source,
-            connector=factories[args.source](),
+            connector=connector,
             query=query,
             since=since,
             entry_method="manual" if args.source == "manual" else "api",
