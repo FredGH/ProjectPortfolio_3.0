@@ -183,6 +183,21 @@ class JoobleConnector:
                     job_url = str(result["link"])
                     canonical_url = canonicalise_url(job_url)
                     source_job_id = str(result["id"])
+                    yield RawJob(
+                        source_name="jooble",
+                        source_job_id=source_job_id,
+                        job_url=job_url,
+                        job_url_canonical=canonical_url,
+                        payload=dict(result),
+                        fetched_at=fetched_at,
+                        run_id=run_id,
+                        request_params={
+                            "keywords": query.keywords,
+                            "location": query.location,
+                            "page": page,
+                        },
+                        payload_sha256=_hash_result(result),
+                    )
                 except KeyError:
                     _logger.warning(
                         "Jooble result missing a required field (link/id) for "
@@ -192,22 +207,6 @@ class JoobleConnector:
                         exc_info=True,
                     )
                     continue
-
-                yield RawJob(
-                    source_name="jooble",
-                    source_job_id=source_job_id,
-                    job_url=job_url,
-                    job_url_canonical=canonical_url,
-                    payload=dict(result),
-                    fetched_at=fetched_at,
-                    run_id=run_id,
-                    request_params={
-                        "keywords": query.keywords,
-                        "location": query.location,
-                        "page": page,
-                    },
-                    payload_sha256=_hash_result(result),
-                )
 
             if len(results) < _PAGE_SIZE:
                 return
