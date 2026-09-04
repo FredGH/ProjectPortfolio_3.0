@@ -34,13 +34,18 @@ class TestAdzunaConnectorLive(unittest.TestCase):
             connector = AdzunaConnector(
                 http_client=client, app_id=self.app_id, app_key=self.app_key
             )
-            jobs = list(
-                connector.fetch(
-                    AdzunaQuery(keywords="data engineer", country="gb", max_pages=1),
-                    None,
-                    run_id="live-test-run",
+            try:
+                jobs = list(
+                    connector.fetch(
+                        AdzunaQuery(
+                            keywords="data engineer", country="gb", max_pages=1
+                        ),
+                        None,
+                        run_id="live-test-run",
+                    )
                 )
-            )
+            except httpx.HTTPError as exc:
+                raise unittest.SkipTest(f"Network unreachable: {exc}") from None
         self.assertGreater(len(jobs), 0)
         first = jobs[0]
         self.assertEqual(first.source_name, "adzuna")

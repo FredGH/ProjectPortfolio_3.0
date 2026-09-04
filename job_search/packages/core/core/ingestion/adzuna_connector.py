@@ -173,23 +173,32 @@ class AdzunaConnector:
 
             fetched_at = datetime.datetime.now(datetime.UTC)
             for result in results:
-                job_url = str(result["redirect_url"])
-                canonical_url = canonicalise_url(job_url)
-                yield RawJob(
-                    source_name="adzuna",
-                    source_job_id=str(result["id"]),
-                    job_url=job_url,
-                    job_url_canonical=canonical_url,
-                    payload=dict(result),
-                    fetched_at=fetched_at,
-                    run_id=run_id,
-                    request_params={
-                        "what": query.keywords,
-                        "country": query.country,
-                        "page": page,
-                    },
-                    payload_sha256=_hash_result(result),
-                )
+                try:
+                    job_url = str(result["redirect_url"])
+                    canonical_url = canonicalise_url(job_url)
+                    yield RawJob(
+                        source_name="adzuna",
+                        source_job_id=str(result["id"]),
+                        job_url=job_url,
+                        job_url_canonical=canonical_url,
+                        payload=dict(result),
+                        fetched_at=fetched_at,
+                        run_id=run_id,
+                        request_params={
+                            "what": query.keywords,
+                            "country": query.country,
+                            "page": page,
+                        },
+                        payload_sha256=_hash_result(result),
+                    )
+                except KeyError:
+                    _logger.warning(
+                        "Adzuna result on page=%s is malformed (missing "
+                        "required field); skipping this record",
+                        page,
+                        exc_info=True,
+                    )
+                    continue
 
             if len(results) < query.results_per_page:
                 return

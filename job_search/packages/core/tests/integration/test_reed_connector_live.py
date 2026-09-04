@@ -30,13 +30,16 @@ class TestReedConnectorLive(unittest.TestCase):
         """A broad, common query returns at least one real, well-formed RawJob."""
         with httpx.Client() as client:
             connector = ReedConnector(http_client=client, api_key=self.api_key)
-            jobs = list(
-                connector.fetch(
-                    ReedQuery(keywords="data engineer", max_pages=1),
-                    None,
-                    run_id="live-test-run",
+            try:
+                jobs = list(
+                    connector.fetch(
+                        ReedQuery(keywords="data engineer", max_pages=1),
+                        None,
+                        run_id="live-test-run",
+                    )
                 )
-            )
+            except httpx.HTTPError as exc:
+                raise unittest.SkipTest(f"Network unreachable: {exc}") from None
         self.assertGreater(len(jobs), 0)
         first = jobs[0]
         self.assertEqual(first.source_name, "reed")

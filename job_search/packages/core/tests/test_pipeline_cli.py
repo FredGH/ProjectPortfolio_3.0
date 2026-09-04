@@ -28,7 +28,7 @@ for name in list(_saved_app_modules):
 # Insert pipeline app path and import.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"))
 
-from app.cli import main  # noqa: E402
+from app.cli import _KNOWN_SOURCES, main  # noqa: E402
 
 # Restore api's app package (or any other pre-existing app module) in
 # sys.modules so tests imported after this one resolve app.* correctly.
@@ -123,15 +123,15 @@ class TestPipelineCli(unittest.TestCase):
         self.assertIn("adzuna", stderr.getvalue().lower())
         self.assertNotIn("Traceback", stderr.getvalue())
 
-    def test_ingest_subcommand_greenhouse_is_a_known_source(self) -> None:
-        """--source greenhouse is recognised (fails later, on DB/network —
-        not on an 'unknown source' error)."""
-        with (
-            mock.patch("sys.stdout", new_callable=StringIO),
-            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
-        ):
-            main(["ingest", "--source", "greenhouse", "--query", ""])
-        self.assertNotIn("Unknown --source", stderr.getvalue())
+    def test_greenhouse_is_a_known_source(self) -> None:
+        """greenhouse is registered in the CLI's known-source registry.
+
+        Asserts directly against `_KNOWN_SOURCES` rather than calling
+        `main()` end-to-end: an end-to-end call would perform a real
+        Greenhouse ingest (network + DB writes to bronze.raw_jobs) from
+        what is meant to be a fast, isolated unit test.
+        """
+        self.assertIn("greenhouse", _KNOWN_SOURCES)
 
     def test_ingest_subcommand_reed_requires_settings_key(self) -> None:
         """--source reed with no Reed key configured reports a clean error."""

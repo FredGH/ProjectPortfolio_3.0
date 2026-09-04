@@ -2,9 +2,11 @@
 
 The `ingest` subcommand runs one connector through the shared runner —
 adding a new connector means adding one entry to `_CONNECTOR_BUILDERS`
-below plus one config/sources.yml block, never touching run_connector
-itself. `_KNOWN_SOURCES` is derived from `_CONNECTOR_BUILDERS`, so there
-is exactly one place to edit.
+below and one matching entry to `_QUERY_BUILDERS`, plus one
+config/sources.yml block, never touching run_connector itself.
+`_KNOWN_SOURCES` is derived from `_CONNECTOR_BUILDERS`, and an assertion
+at import time guarantees `_QUERY_BUILDERS` registers exactly the same
+set of sources, so the two registries can never silently drift apart.
 """
 
 from __future__ import annotations
@@ -197,11 +199,14 @@ def _build_connector_factories(
     }
 
 
-def _build_manual_query(raw_query: str) -> ManualJobQuery:
+def _build_manual_query(raw_query: str, region: str | None) -> ManualJobQuery:
     """Parse `--query`'s JSON string into a ManualJobQuery.
 
     Args:
         raw_query: The `--query` argument's raw string value.
+        region: Unused — manual entry has no region concept. Present only
+            so this builder's signature matches every `_QUERY_BUILDERS`
+            entry's uniform `(raw_query, region)` shape.
 
     Returns:
         The parsed `ManualJobQuery`.
@@ -272,19 +277,34 @@ def _build_reed_query(raw_query: str, region: str | None) -> ReedQuery:
     return ReedQuery(keywords=raw_query, location=region)
 
 
-def _build_greenhouse_query(raw_query: str) -> GreenhouseQuery:
+def _build_greenhouse_query(raw_query: str, region: str | None) -> GreenhouseQuery:
     """Build a GreenhouseQuery from --query.
 
     Args:
         raw_query: The `--query` argument's raw string value — a
             comma-separated list of board slugs, or empty to use the
             active target_company registry.
+        region: Unused — Greenhouse boards aren't region-scoped. Present
+            only so this builder's signature matches every
+            `_QUERY_BUILDERS` entry's uniform `(raw_query, region)` shape.
 
     Returns:
         The `GreenhouseQuery`.
     """
     slugs = [s.strip() for s in raw_query.split(",") if s.strip()]
     return GreenhouseQuery(board_slugs=slugs or None)
+
+
+_QUERY_BUILDERS: dict[str, Callable[[str, str | None], object]] = {
+    "manual": _build_manual_query,
+    "adzuna": _build_adzuna_query,
+    "reed": _build_reed_query,
+    "greenhouse": _build_greenhouse_query,
+}
+
+assert (
+    _QUERY_BUILDERS.keys() == _CONNECTOR_BUILDERS.keys()
+), "_QUERY_BUILDERS and _CONNECTOR_BUILDERS must register the same sources"
 
 
 def _cmd_ingest(args: argparse.Namespace) -> int:
@@ -305,22 +325,14 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        query: object
-        if args.source == "manual":
-            query = _build_manual_query(args.query)
-        elif args.source == "adzuna":
-            query = _build_adzuna_query(args.query, args.region)
-        elif args.source == "reed":
-            query = _build_reed_query(args.query, args.region)
-        elif args.source == "greenhouse":
-            query = _build_greenhouse_query(args.query)
-        else:
-            query = args.query
+        query = _QUERY_BUILDERS[args.source](args.query, args.region)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     since = datetime.datetime.fromisoformat(args.since) if args.since else None
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=datetime.UTC)
 
     http_client = httpx.Client(timeout=10.0)
     try:
@@ -378,7 +390,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     ingest_parser.add_argument("--source", required=True)
     ingest_parser.add_argument("--query", required=True)
-    ingest_parser.add_argument("--since", default=None)
+    ingest_parser.add_argument(
+        "--since",
+        default=None,
+        help="ISO-8601 datetime, e.g. 2026-09-01 or 2026-09-01T00:00:00+00:00",
+    )
     ingest_parser.add_argument("--region", default=None)
 
     args = parser.parse_args(argv)

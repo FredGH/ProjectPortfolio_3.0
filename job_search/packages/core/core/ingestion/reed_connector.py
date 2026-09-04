@@ -188,23 +188,32 @@ class ReedConnector:
                 ):
                     continue
 
-                job_url = str(result["jobUrl"])
-                canonical_url = canonicalise_url(job_url)
-                yield RawJob(
-                    source_name="reed",
-                    source_job_id=str(result["jobId"]),
-                    job_url=job_url,
-                    job_url_canonical=canonical_url,
-                    payload=dict(result),
-                    fetched_at=fetched_at,
-                    run_id=run_id,
-                    request_params={
-                        "keywords": query.keywords,
-                        "location": query.location,
-                        "results_to_skip": skip,
-                    },
-                    payload_sha256=_hash_result(result),
-                )
+                try:
+                    job_url = str(result["jobUrl"])
+                    canonical_url = canonicalise_url(job_url)
+                    yield RawJob(
+                        source_name="reed",
+                        source_job_id=str(result["jobId"]),
+                        job_url=job_url,
+                        job_url_canonical=canonical_url,
+                        payload=dict(result),
+                        fetched_at=fetched_at,
+                        run_id=run_id,
+                        request_params={
+                            "keywords": query.keywords,
+                            "location": query.location,
+                            "results_to_skip": skip,
+                        },
+                        payload_sha256=_hash_result(result),
+                    )
+                except KeyError:
+                    _logger.warning(
+                        "Reed result at results_to_skip=%s is malformed "
+                        "(missing required field); skipping this record",
+                        skip,
+                        exc_info=True,
+                    )
+                    continue
 
             if len(results) < query.results_per_page:
                 return

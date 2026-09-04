@@ -153,6 +153,19 @@ class TestAdzunaConnector(unittest.TestCase):
         )[0]
         self.assertNotEqual(job_v1.payload_sha256, job_v2.payload_sha256)
 
+    def test_malformed_result_is_skipped_and_fetch_continues(self) -> None:
+        """A result missing a required key is skipped, not raised."""
+        good_1 = _result(1, "Good Job")
+        broken = {"id": 2, "title": "Broken Job"}  # missing redirect_url
+        good_2 = _result(3, "Another Good Job")
+        connector = self._make_connector([[good_1, broken, good_2]])
+        jobs = list(
+            connector.fetch(
+                AdzunaQuery(keywords="x", country="gb"), None, run_id="run-1"
+            )
+        )
+        self.assertEqual([j.source_job_id for j in jobs], ["1", "3"])
+
 
 if __name__ == "__main__":
     unittest.main()

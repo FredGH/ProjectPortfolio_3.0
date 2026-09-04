@@ -5,7 +5,7 @@ Authoritative reference for `user_id` scoping decisions. Full reasoning:
 
 | Zone | Contents | Grain |
 |---|---|---|
-| **Shared** | Job postings, dedup identity map, `dim_job`, `dim_company`, company intel, all market marts, taxonomy, emergent detection, question text, `shared_api_quota` | collected once, identical for everyone |
+| **Shared** | Job postings, dedup identity map, `dim_job`, `dim_company`, company intel, all market marts, taxonomy, emergent detection, question text, `shared_api_quota`, `target_company` | collected once, identical for everyone |
 | **Per-user** | Truth base, scores, artefacts, applications, review progress, offers, preferences, alerts, `app_user`, `user_quota` | scoped to `user_id` |
 
 ## Adding a new per-user table

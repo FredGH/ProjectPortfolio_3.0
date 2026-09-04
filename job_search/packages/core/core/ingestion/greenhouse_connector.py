@@ -201,7 +201,7 @@ class GreenhouseConnector:
                         fetched_at=fetched_at,
                         run_id=run_id,
                         request_params={"board_slug": company.board_slug},
-                        payload_sha256=_hash_job(job),
+                        payload_sha256=_hash_job(payload),
                     )
                 except KeyError:
                     _logger.warning(
@@ -221,14 +221,17 @@ def _parse_updated_at(value: object) -> datetime.datetime | None:
             typically an ISO-8601 string like "2026-09-01T00:00:00Z".
 
     Returns:
-        The parsed datetime, or `None` if `value` is missing or
-        unparseable — treated as "no filter" for that job rather than an
-        error, since a malformed date shouldn't drop an otherwise-valid
-        posting.
+        The parsed datetime (always timezone-aware if not `None`), or
+        `None` if `value` is missing or unparseable — treated as "no
+        filter" for that job rather than an error, since a malformed date
+        shouldn't drop an otherwise-valid posting.
     """
     if not isinstance(value, str):
         return None
     try:
-        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        result = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if result.tzinfo is None:
+        result = result.replace(tzinfo=datetime.UTC)
+    return result
