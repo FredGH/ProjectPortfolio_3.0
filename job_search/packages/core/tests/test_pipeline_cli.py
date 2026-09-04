@@ -166,12 +166,25 @@ class TestPipelineCli(unittest.TestCase):
     def test_ingest_subcommand_defaults_collection_channel_to_targeted(
         self,
     ) -> None:
-        """--collection-channel omitted defaults to 'targeted', accepted cleanly."""
+        """--collection-channel omitted defaults to 'targeted', accepted cleanly.
+
+        Uses --source adzuna with no --region so the run fails at
+        _build_adzuna_query's early, Settings/DB/network-independent
+        ValueError check — never reaching run_connector. This keeps the
+        test fast and isolated (see test_greenhouse_is_a_known_source's
+        docstring for why a real end-to-end connector run is avoided
+        here), while still proving argparse accepted the omitted
+        --collection-channel and threaded its default through cleanly.
+        """
         with (
             mock.patch("sys.stdout", new_callable=StringIO),
             mock.patch("sys.stderr", new_callable=StringIO) as stderr,
         ):
-            main(["ingest", "--source", "greenhouse", "--query", ""])
+            exit_code = main(
+                ["ingest", "--source", "adzuna", "--query", "data engineer"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn("region", stderr.getvalue().lower())
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_ingest_subcommand_rejects_unknown_collection_channel(self) -> None:
