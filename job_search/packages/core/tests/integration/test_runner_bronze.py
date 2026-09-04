@@ -111,6 +111,30 @@ class TestRunConnectorBronzeIntegration(unittest.TestCase):
         self.assertEqual(row.raw_text, "integration test payload")
         self.assertEqual(row.entry_method, "api")
 
+    def test_discovery_collection_channel_lands_in_bronze(self) -> None:
+        """A discovery-channel run's bronze row carries collection_channel."""
+        result = run_connector(
+            connector_key="runner_it_test",
+            connector=_OneJobConnector(self.source_job_id),
+            query="integration-test-query",
+            since=None,
+            entry_method="api",
+            collection_channel="discovery",
+            landing_uri=self.landing_uri,
+            database_url=get_settings().database_url,
+        )
+        self.assertEqual(len(result.raw_jobs), 1)
+
+        with session_scope(self.migration_engine) as conn:
+            row = conn.execute(
+                text(
+                    "SELECT collection_channel FROM bronze.raw_jobs "
+                    "WHERE source_name = 'runner_it_test' AND source_job_id = :sjid"
+                ),
+                {"sjid": self.source_job_id},
+            ).one()
+        self.assertEqual(row.collection_channel, "discovery")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -69,6 +69,7 @@ def run_connector(
     query: object,
     since: datetime.datetime | None,
     entry_method: str,
+    collection_channel: str = "targeted",
     landing_uri: str,
     database_url: str,
     rate_limiter: TokenBucket | None = None,
@@ -93,6 +94,9 @@ def run_connector(
         since: Passed through to `connector.fetch()` untouched.
         entry_method: "api", "manual", or "scraped" — stamped onto every
             bronze row this run produces.
+        collection_channel: "targeted" (default) or "discovery" — stamped
+            onto every bronze row this run produces, alongside
+            entry_method. See PLAN.md Step 4a.
         landing_uri: Root URI of the landing zone.
         database_url: The migration/owner Postgres DSN for bronze loads.
         rate_limiter: When given, `acquire()` is called once before the
@@ -184,6 +188,7 @@ def run_connector(
             job_url=raw_job.job_url,
             job_url_canonical=raw_job.job_url_canonical,
             entry_method=entry_method,
+            collection_channel=collection_channel,
             fetched_at=raw_job.fetched_at,
             run_id=raw_job.run_id,
             request_params=raw_job.request_params,

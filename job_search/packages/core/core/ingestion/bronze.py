@@ -49,6 +49,7 @@ def load_to_bronze(
     request_params: dict[str, object],
     payload: dict[str, object],
     payload_sha256: str,
+    collection_channel: str = "targeted",
 ) -> None:
     """Load one raw-job record into bronze.raw_jobs via a dlt merge load.
 
@@ -70,6 +71,10 @@ def load_to_bronze(
         payload_sha256: SHA-256 hex digest of the payload's dedup-relevant
             content — together with source_name/source_job_id, this is the
             merge key that gives the no-op/new-version-row behaviour.
+        collection_channel: "targeted" (frozen keyword matrix, PLAN.md
+            Step 21a) or "discovery" (wide/shallow, PLAN.md Step 4a). Not
+            part of the merge key — the same posting seen via both
+            channels stays one row.
 
     Raises:
         Exception: Whatever dlt raises on a genuine load failure (network,
@@ -87,6 +92,7 @@ def load_to_bronze(
         "request_params": request_params,
         "payload": payload,
         "payload_sha256": payload_sha256,
+        "collection_channel": collection_channel,
     }
 
     resource = dlt.resource(
