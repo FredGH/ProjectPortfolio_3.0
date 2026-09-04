@@ -1,0 +1,27 @@
+job_search:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('DBT_PG_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_PG_PORT', '5432') | as_number }}"
+      user: "{{ env_var('POSTGRES_USER') }}"
+      pass: "{{ env_var('POSTGRES_PASSWORD') }}"
+      dbname: "{{ env_var('POSTGRES_DB') }}"
+      schema: public
+      threads: 4
+
+    gcp:
+      type: postgres
+      # Placeholder target, structurally present but not yet connectable —
+      # no GCP Cloud SQL instance exists yet (PLAN.md's GCP deploy is a
+      # later phase). Kept here now, per the plan's "two targets from the
+      # start" requirement, so Step 5 doesn't have to be revisited to add
+      # it — not tested live in this plan's verification.
+      host: "{{ env_var('DBT_GCP_PG_HOST', '') }}"
+      port: "{{ env_var('DBT_GCP_PG_PORT', '5432') | as_number }}"
+      user: "{{ env_var('DBT_GCP_PG_USER', '') }}"
+      pass: "{{ env_var('DBT_GCP_PG_PASSWORD', '') }}"
+      dbname: "{{ env_var('DBT_GCP_PG_DB', '') }}"
+      schema: public
+      threads: 4
