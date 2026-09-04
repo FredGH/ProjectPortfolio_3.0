@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import sys
 import unittest
 from io import StringIO
 from pathlib import Path
 from unittest import mock
+
+from core.settings import get_settings
 
 # Snapshot and restore app/* entries in sys.modules to avoid ordering
 # collisions. Two different app packages (apps/api, apps/pipeline) exist.
@@ -25,7 +28,7 @@ for name in list(_saved_app_modules):
 # Insert pipeline app path and import.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"))
 
-from app.cli import main  # noqa: E402
+from app.cli import _KNOWN_SOURCES, main  # noqa: E402
 
 # Restore api's app package (or any other pre-existing app module) in
 # sys.modules so tests imported after this one resolve app.* correctly.
@@ -78,6 +81,87 @@ class TestPipelineCli(unittest.TestCase):
         stderr_value = stderr.getvalue()
         self.assertIn("source_name", stderr_value)
         self.assertNotIn("Traceback", stderr_value)
+
+    def test_ingest_subcommand_adzuna_requires_region(self) -> None:
+        """--source adzuna with no --region reports a clean error."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(
+                ["ingest", "--source", "adzuna", "--query", "data engineer"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn("region", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_adzuna_requires_settings_keys(self) -> None:
+        """--source adzuna with no Adzuna keys configured reports a clean error."""
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"ADZUNA_APP_ID": "", "ADZUNA_APP_KEY": ""},
+                clear=False,
+            ),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(
+                [
+                    "ingest",
+                    "--source",
+                    "adzuna",
+                    "--query",
+                    "data engineer",
+                    "--region",
+                    "gb",
+                ]
+            )
+            get_settings.cache_clear()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("adzuna", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_greenhouse_is_a_known_source(self) -> None:
+        """greenhouse is registered in the CLI's known-source registry.
+
+        Asserts directly against `_KNOWN_SOURCES` rather than calling
+        `main()` end-to-end: an end-to-end call would perform a real
+        Greenhouse ingest (network + DB writes to bronze.raw_jobs) from
+        what is meant to be a fast, isolated unit test.
+        """
+        self.assertIn("greenhouse", _KNOWN_SOURCES)
+
+    def test_ingest_subcommand_reed_requires_settings_key(self) -> None:
+        """--source reed with no Reed key configured reports a clean error."""
+        with (
+            mock.patch.dict(os.environ, {"REED_API_KEY": ""}, clear=False),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(["ingest", "--source", "reed", "--query", "data engineer"])
+            get_settings.cache_clear()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("reed", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_jooble_requires_settings_key(self) -> None:
+        """--source jooble with no Jooble key configured reports a clean error."""
+        with (
+            mock.patch.dict(os.environ, {"JOOBLE_KEY": ""}, clear=False),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(
+                ["ingest", "--source", "jooble", "--query", "data engineer"]
+            )
+            get_settings.cache_clear()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("jooble", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
 
 if __name__ == "__main__":
