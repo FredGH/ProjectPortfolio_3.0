@@ -39,6 +39,14 @@ _CANDIDATES: list[tuple[str, str]] = [
     ("Reddit", "reddit"),
     ("Asana", "asana"),
     ("Pinterest", "pinterest"),
+    ("Anthropic", "anthropic"),
+    ("Linear", "linear"),
+    ("Vercel", "vercel"),
+    ("Ramp", "ramp"),
+    ("Brex", "brex"),
+    ("Scale AI", "scaleai"),
+    ("Plaid", "plaid"),
+    ("Rippling", "rippling"),
 ]
 
 
