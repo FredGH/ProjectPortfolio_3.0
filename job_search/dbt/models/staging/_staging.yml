@@ -1,0 +1,60 @@
+version: 2
+
+models:
+  - name: stg_adzuna__jobs
+    description: "One row per Adzuna posting, mapped to the shared staging contract."
+    columns:
+      - name: source_job_id
+        description: "Primary key within source_name."
+        tests:
+          - not_null
+      - name: source_name
+        tests:
+          - not_null
+      - name: job_url
+        tests:
+          - not_null
+      - name: job_url_canonical
+        tests:
+          - not_null
+      - name: entry_method
+        tests:
+          - not_null
+      - name: fetched_at
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: payload_sha256
+        tests:
+          - not_null
+
+  - name: stg_reed__jobs
+    description: "One row per Reed posting, mapped to the shared staging contract."
+    columns:
+      - name: source_job_id
+        description: "Primary key within source_name."
+        tests:
+          - not_null
+      - name: source_name
+        tests:
+          - not_null
+      - name: job_url
+        tests:
+          - not_null
+      - name: job_url_canonical
+        tests:
+          - not_null
+      - name: entry_method
+        tests:
+          - not_null
+      - name: fetched_at
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: payload_sha256
+        tests:
+          - not_null
