@@ -3,6 +3,11 @@
 -- change (bronze.py's own merge-key design), so this is where that
 -- collapses to current state. Grain: job_key (source_name, source_job_id).
 
+-- Every version-row from every source, unfiltered. `SELECT *` is safe
+-- here only because every stg_<source>__jobs model has
+-- `contract: {enforced: true}` in _staging.yml, which pins each model's
+-- column list to the same order — if that ever changes, add explicit
+-- column lists here too.
 WITH unioned AS (
 
     SELECT * FROM {{ ref('stg_adzuna__jobs') }}

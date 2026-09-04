@@ -30,9 +30,23 @@ SELECT
     -- `::timestamptz` cast relies on Postgres's datestyle (MDY by
     -- default here) and hard-errors on any real row where day > 12
     -- (e.g. "25/11/2025"), so this parses the format explicitly instead.
-    TO_TIMESTAMP(NULLIF(payload ->> 'date', ''), 'DD/MM/YYYY') AS posted_at,
+    -- TO_TIMESTAMP() itself resolves the parsed fields against the
+    -- server's session TimeZone, so the round-trip through ::timestamp
+    -- (recovering the parsed wall-clock value) and back via
+    -- `AT TIME ZONE 'UTC'` (treating that value as UTC, matching
+    -- ReedConnector's own assumption) keeps posted_at correct
+    -- regardless of the server's session TimeZone setting.
+    (
+        TO_TIMESTAMP(NULLIF(payload ->> 'date', ''), 'DD/MM/YYYY')::timestamp
+            AT TIME ZONE 'UTC'
+    ) AS posted_at,
     fetched_at,
     run_id,
     payload_sha256
 FROM {{ source('bronze', 'raw_jobs') }}
+-- entry_method = 'api' excludes a manual entry whose free-text source_name
+-- field happens to match 'reed' (ManualJobQuery.source_name is
+-- user-supplied, not validated against real source names) — without this,
+-- such a row would land in both this model and stg_manual__jobs.
 WHERE source_name = 'reed'
+    AND entry_method = 'api'

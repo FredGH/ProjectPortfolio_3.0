@@ -19,7 +19,11 @@ SELECT
     payload -> 'parsed' ->> 'location' AS location,
     payload ->> 'raw_text' AS description,
     payload -> 'parsed' ->> 'salary' AS salary_raw,
-    NULLIF(payload ->> 'posted_date', '')::timestamptz AS posted_at,
+    -- `posted_date` is a bare date (no offset). A plain `::timestamptz`
+    -- cast would interpret it as midnight in the server's session
+    -- TimeZone, silently shifting posted_at; treat it as UTC instead.
+    (NULLIF(payload ->> 'posted_date', '')::timestamp AT TIME ZONE 'UTC')
+        AS posted_at,
     fetched_at,
     run_id,
     payload_sha256

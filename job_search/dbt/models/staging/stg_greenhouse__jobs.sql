@@ -11,7 +11,11 @@ SELECT
     job_url_canonical,
     entry_method,
     payload ->> 'title' AS title,
-    payload ->> 'company_name' AS company,
+    -- Greenhouse's board API doesn't guarantee `company_name` on every
+    -- job; `_company_name` is GreenhouseConnector's own injected fallback
+    -- (always present), so prefer the raw field when it exists.
+    COALESCE(payload ->> 'company_name', payload ->> '_company_name')
+        AS company,
     payload -> 'location' ->> 'name' AS location,
     payload ->> 'content' AS description,
     -- Greenhouse doesn't expose salary data anywhere in its board API.
@@ -24,4 +28,9 @@ SELECT
     run_id,
     payload_sha256
 FROM {{ source('bronze', 'raw_jobs') }}
+-- entry_method = 'api' excludes a manual entry whose free-text source_name
+-- field happens to match 'greenhouse' (ManualJobQuery.source_name is
+-- user-supplied, not validated against real source names) — without this,
+-- such a row would land in both this model and stg_manual__jobs.
 WHERE source_name = 'greenhouse'
+    AND entry_method = 'api'

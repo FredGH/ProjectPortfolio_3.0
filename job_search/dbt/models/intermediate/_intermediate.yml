@@ -31,6 +31,18 @@ models:
           - not_null
           - accepted_values:
               values: ['api', 'manual', 'scraped']
+      - name: title
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: company
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: location
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: description
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: salary_raw
+        description: "Nullable — untransformed source salary text; not every source publishes salary."
+      - name: posted_at
+        description: "Nullable — untransformed source-reported post date; not every source publishes it."
       - name: fetched_at
         tests:
           - not_null

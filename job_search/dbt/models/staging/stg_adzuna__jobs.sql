@@ -24,4 +24,9 @@ SELECT
     run_id,
     payload_sha256
 FROM {{ source('bronze', 'raw_jobs') }}
+-- entry_method = 'api' excludes a manual entry whose free-text source_name
+-- field happens to match 'adzuna' (ManualJobQuery.source_name is
+-- user-supplied, not validated against real source names) — without this,
+-- such a row would land in both this model and stg_manual__jobs.
 WHERE source_name = 'adzuna'
+    AND entry_method = 'api'
