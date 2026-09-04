@@ -85,7 +85,17 @@ def _build_manual_connector(ctx: _ConnectorBuildContext) -> Connector:
     Returns:
         A `ManualConnector` instance.
     """
-    return ManualConnector(http_client=ctx.http_client, llm_adapters=ctx.llm_adapters)
+    # mypy correctly flags this: Connector.fetch(query: object, ...) is a
+    # Protocol, and ManualConnector.fetch(query: ManualJobQuery, ...) narrows
+    # that parameter, which isn't Liskov-substitutable in general. In
+    # practice it's sound: run_connector always pairs a connector_key with
+    # the one query type that connector's own query-builder produces (see
+    # _QUERY_BUILDERS), so a mismatched query never reaches fetch() — the
+    # same out-of-band-knowledge situation documented via typing.cast()
+    # elsewhere in this codebase (core/ingestion/manual.py).
+    return ManualConnector(  # type: ignore[return-value]
+        http_client=ctx.http_client, llm_adapters=ctx.llm_adapters
+    )
 
 
 def _build_adzuna_connector(ctx: _ConnectorBuildContext) -> Connector:
@@ -105,7 +115,9 @@ def _build_adzuna_connector(ctx: _ConnectorBuildContext) -> Connector:
             "source=adzuna requires ADZUNA_APP_ID and ADZUNA_APP_KEY to be "
             "set in .env"
         )
-    return AdzunaConnector(
+    # See _build_manual_connector's comment above — same sound-but-narrower
+    # query-type situation.
+    return AdzunaConnector(  # type: ignore[return-value]
         http_client=ctx.http_client,
         app_id=ctx.settings.adzuna_app_id,
         app_key=ctx.settings.adzuna_app_key,
@@ -121,7 +133,9 @@ def _build_greenhouse_connector(ctx: _ConnectorBuildContext) -> Connector:
     Returns:
         A `GreenhouseConnector` instance.
     """
-    return GreenhouseConnector(
+    # See _build_manual_connector's comment above — same sound-but-narrower
+    # query-type situation.
+    return GreenhouseConnector(  # type: ignore[return-value]
         http_client=ctx.http_client, database_url=ctx.settings.database_url
     )
 
@@ -140,7 +154,11 @@ def _build_reed_connector(ctx: _ConnectorBuildContext) -> Connector:
     """
     if not ctx.settings.reed_api_key:
         raise ValueError("source=reed requires REED_API_KEY to be set in .env")
-    return ReedConnector(http_client=ctx.http_client, api_key=ctx.settings.reed_api_key)
+    # See _build_manual_connector's comment above — same sound-but-narrower
+    # query-type situation.
+    return ReedConnector(  # type: ignore[return-value]
+        http_client=ctx.http_client, api_key=ctx.settings.reed_api_key
+    )
 
 
 def _build_jooble_connector(ctx: _ConnectorBuildContext) -> Connector:
@@ -157,7 +175,11 @@ def _build_jooble_connector(ctx: _ConnectorBuildContext) -> Connector:
     """
     if not ctx.settings.jooble_key:
         raise ValueError("source=jooble requires JOOBLE_KEY to be set in .env")
-    return JoobleConnector(http_client=ctx.http_client, api_key=ctx.settings.jooble_key)
+    # See _build_manual_connector's comment above — same sound-but-narrower
+    # query-type situation.
+    return JoobleConnector(  # type: ignore[return-value]
+        http_client=ctx.http_client, api_key=ctx.settings.jooble_key
+    )
 
 
 _CONNECTOR_BUILDERS: dict[str, Callable[[_ConnectorBuildContext], Connector]] = {
