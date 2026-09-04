@@ -3,145 +3,260 @@ version: 2
 models:
   - name: stg_adzuna__jobs
     description: "One row per Adzuna posting, mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
     columns:
-      - name: source_job_id
-        description: "Primary key within source_name."
+      - name: source_name
+        data_type: text
         tests:
           - not_null
-      - name: source_name
+      - name: source_job_id
+        description: "Primary key within source_name."
+        data_type: text
         tests:
           - not_null
       - name: job_url
+        data_type: text
         tests:
           - not_null
       - name: job_url_canonical
+        data_type: text
         tests:
           - not_null
       - name: entry_method
+        data_type: text
         tests:
           - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
       - name: fetched_at
+        data_type: timestamptz
         tests:
           - not_null
       - name: run_id
+        data_type: text
         tests:
           - not_null
       - name: payload_sha256
+        data_type: text
         tests:
           - not_null
 
   - name: stg_reed__jobs
     description: "One row per Reed posting, mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
     columns:
-      - name: source_job_id
-        description: "Primary key within source_name."
+      - name: source_name
+        data_type: text
         tests:
           - not_null
-      - name: source_name
+      - name: source_job_id
+        description: "Primary key within source_name."
+        data_type: text
         tests:
           - not_null
       - name: job_url
+        data_type: text
         tests:
           - not_null
       - name: job_url_canonical
+        data_type: text
         tests:
           - not_null
       - name: entry_method
+        data_type: text
         tests:
           - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
       - name: fetched_at
+        data_type: timestamptz
         tests:
           - not_null
       - name: run_id
+        data_type: text
         tests:
           - not_null
       - name: payload_sha256
+        data_type: text
         tests:
           - not_null
 
   - name: stg_greenhouse__jobs
     description: "One row per Greenhouse posting, mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
     columns:
-      - name: source_job_id
-        description: "Primary key within source_name."
+      - name: source_name
+        data_type: text
         tests:
           - not_null
-      - name: source_name
+      - name: source_job_id
+        description: "Primary key within source_name."
+        data_type: text
         tests:
           - not_null
       - name: job_url
+        data_type: text
         tests:
           - not_null
       - name: job_url_canonical
+        data_type: text
         tests:
           - not_null
       - name: entry_method
+        data_type: text
         tests:
           - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
       - name: fetched_at
+        data_type: timestamptz
         tests:
           - not_null
       - name: run_id
+        data_type: text
         tests:
           - not_null
       - name: payload_sha256
+        data_type: text
         tests:
           - not_null
 
   - name: stg_jooble__jobs
     description: "One row per Jooble posting, mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
     columns:
-      - name: source_job_id
-        description: "Primary key within source_name."
+      - name: source_name
+        data_type: text
         tests:
           - not_null
-      - name: source_name
+      - name: source_job_id
+        description: "Primary key within source_name."
+        data_type: text
         tests:
           - not_null
       - name: job_url
+        data_type: text
         tests:
           - not_null
       - name: job_url_canonical
+        data_type: text
         tests:
           - not_null
       - name: entry_method
+        data_type: text
         tests:
           - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
       - name: fetched_at
+        data_type: timestamptz
         tests:
           - not_null
       - name: run_id
+        data_type: text
         tests:
           - not_null
       - name: payload_sha256
+        data_type: text
         tests:
           - not_null
 
   - name: stg_manual__jobs
     description: "One row per manually-pasted posting, mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
     columns:
-      - name: source_job_id
-        description: "Primary key within source_name."
+      - name: source_name
+        data_type: text
         tests:
           - not_null
-      - name: source_name
+      - name: source_job_id
+        description: "Primary key within source_name."
+        data_type: text
         tests:
           - not_null
       - name: job_url
+        data_type: text
         tests:
           - not_null
       - name: job_url_canonical
+        data_type: text
         tests:
           - not_null
       - name: entry_method
+        data_type: text
         tests:
           - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
       - name: fetched_at
+        data_type: timestamptz
         tests:
           - not_null
       - name: run_id
+        data_type: text
         tests:
           - not_null
       - name: payload_sha256
+        data_type: text
         tests:
           - not_null
