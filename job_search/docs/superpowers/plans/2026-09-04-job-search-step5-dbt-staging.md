@@ -200,7 +200,7 @@ packages:
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt deps
+DBT_PROFILES_DIR=. dbt deps
 ```
 
 Expected: `dbt_utils` installs into `dbt/dbt_packages/` with no errors.
@@ -258,7 +258,7 @@ production SLA.
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt debug
+DBT_PROFILES_DIR=. dbt debug
 ```
 
 Expected: `All checks passed!` — confirms the Postgres connection, the
@@ -266,7 +266,7 @@ Expected: `All checks passed!` — confirms the Postgres connection, the
 `bronze.raw_jobs`.
 
 ```bash
-DBT_PROFILES_DIR=. python3.11 -m dbt source freshness
+DBT_PROFILES_DIR=. dbt source freshness
 ```
 
 Expected: runs without error (a `WARN` on `bronze.raw_jobs` is fine and
@@ -468,8 +468,8 @@ models:
 cd job_search
 docker compose up -d postgres
 cd dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt run --select stg_adzuna__jobs stg_reed__jobs
-DBT_PROFILES_DIR=. python3.11 -m dbt test --select stg_adzuna__jobs stg_reed__jobs
+DBT_PROFILES_DIR=. dbt run --select stg_adzuna__jobs stg_reed__jobs
+DBT_PROFILES_DIR=. dbt test --select stg_adzuna__jobs stg_reed__jobs
 ```
 
 Expected: both models build (`view` materialization — should be near
@@ -643,8 +643,8 @@ tests on `source_job_id`/`source_name`/`job_url`/`job_url_canonical`/
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt run --select stg_greenhouse__jobs stg_jooble__jobs stg_manual__jobs
-DBT_PROFILES_DIR=. python3.11 -m dbt test --select stg_greenhouse__jobs stg_jooble__jobs stg_manual__jobs
+DBT_PROFILES_DIR=. dbt run --select stg_greenhouse__jobs stg_jooble__jobs stg_manual__jobs
+DBT_PROFILES_DIR=. dbt test --select stg_greenhouse__jobs stg_jooble__jobs stg_manual__jobs
 ```
 
 Expected: all three build, all tests PASS. Inspect real rows for each,
@@ -746,7 +746,7 @@ inside `columns:`).
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt run --select stg_adzuna__jobs stg_reed__jobs stg_greenhouse__jobs stg_jooble__jobs stg_manual__jobs
+DBT_PROFILES_DIR=. dbt run --select stg_adzuna__jobs stg_reed__jobs stg_greenhouse__jobs stg_jooble__jobs stg_manual__jobs
 ```
 
 Expected: all 5 build successfully. If any model's `SELECT` output
@@ -760,7 +760,7 @@ shape should be.
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt parse
+DBT_PROFILES_DIR=. dbt parse
 ```
 
 Expected: `Success` — confirms `_staging.yml`'s YAML is valid and every
@@ -901,8 +901,8 @@ models:
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt run --select int_jobs__unioned
-DBT_PROFILES_DIR=. python3.11 -m dbt test --select int_jobs__unioned
+DBT_PROFILES_DIR=. dbt run --select int_jobs__unioned
+DBT_PROFILES_DIR=. dbt test --select int_jobs__unioned
 ```
 
 Expected: model builds (`table` materialization — will take a moment
@@ -938,7 +938,7 @@ docker compose exec -T postgres pg_isready
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt build
+DBT_PROFILES_DIR=. dbt build
 ```
 
 Expected: every model builds, every test passes, in one command — the
@@ -968,8 +968,8 @@ just via `dbt test`'s own bookkeeping.
 
 ```bash
 cd job_search/dbt
-DBT_PROFILES_DIR=. python3.11 -m dbt source freshness
-DBT_PROFILES_DIR=. python3.11 -m dbt test
+DBT_PROFILES_DIR=. dbt source freshness
+DBT_PROFILES_DIR=. dbt test
 ```
 
 Expected: both clean (freshness `WARN` is acceptable per Task 1 Step 6's

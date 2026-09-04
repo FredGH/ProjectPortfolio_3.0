@@ -14,3 +14,5 @@ data/landing/*
 dbt/dbt_packages/
 dbt/target/
 dbt/logs/
+# dbt's local anonymous-usage-stats file — not part of the project.
+dbt/.user.yml
