@@ -20,6 +20,12 @@ class RunMetadata:
         run_id: The ULID identifying this run.
         source_name: The connector key this run was for, e.g. "adzuna"
             or "manual".
+        collection_channel: "targeted" or "discovery" — the channel this
+            entire run was collected under. Unlike bronze.raw_jobs's own
+            collection_channel column (which is overwritten on a merge if
+            the same posting is later captured under a different
+            channel), this is an immutable, per-run record: one JSON file
+            per run_id, never rewritten.
         query: A string representation of the query used — kept as a
             plain string rather than a generic serialisable type, since
             every connector's query shape differs.
@@ -36,6 +42,7 @@ class RunMetadata:
     started_at: datetime.datetime
     finished_at: datetime.datetime
     status: str
+    collection_channel: str = "targeted"
 
 
 def write_run_metadata(landing_uri: str, metadata: RunMetadata) -> str:
