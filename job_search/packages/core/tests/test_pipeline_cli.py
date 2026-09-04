@@ -147,6 +147,22 @@ class TestPipelineCli(unittest.TestCase):
         self.assertIn("reed", stderr.getvalue().lower())
         self.assertNotIn("Traceback", stderr.getvalue())
 
+    def test_ingest_subcommand_jooble_requires_settings_key(self) -> None:
+        """--source jooble with no Jooble key configured reports a clean error."""
+        with (
+            mock.patch.dict(os.environ, {"JOOBLE_KEY": ""}, clear=False),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(
+                ["ingest", "--source", "jooble", "--query", "data engineer"]
+            )
+            get_settings.cache_clear()
+        self.assertEqual(exit_code, 1)
+        self.assertIn("jooble", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,6 +23,7 @@ import httpx
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
 from core.ingestion.connector import Connector
 from core.ingestion.greenhouse_connector import GreenhouseConnector, GreenhouseQuery
+from core.ingestion.jooble_connector import JoobleConnector, JoobleQuery
 from core.ingestion.manual_connector import ManualConnector, ManualJobQuery
 from core.ingestion.rate_limiter import TokenBucket
 from core.ingestion.reed_connector import ReedConnector, ReedQuery
@@ -142,11 +143,29 @@ def _build_reed_connector(ctx: _ConnectorBuildContext) -> Connector:
     return ReedConnector(http_client=ctx.http_client, api_key=ctx.settings.reed_api_key)
 
 
+def _build_jooble_connector(ctx: _ConnectorBuildContext) -> Connector:
+    """Build the Jooble connector.
+
+    Args:
+        ctx: The shared connector-build context.
+
+    Returns:
+        A `JoobleConnector` instance.
+
+    Raises:
+        ValueError: If `JOOBLE_KEY` isn't configured.
+    """
+    if not ctx.settings.jooble_key:
+        raise ValueError("source=jooble requires JOOBLE_KEY to be set in .env")
+    return JoobleConnector(http_client=ctx.http_client, api_key=ctx.settings.jooble_key)
+
+
 _CONNECTOR_BUILDERS: dict[str, Callable[[_ConnectorBuildContext], Connector]] = {
     "manual": _build_manual_connector,
     "adzuna": _build_adzuna_connector,
     "reed": _build_reed_connector,
     "greenhouse": _build_greenhouse_connector,
+    "jooble": _build_jooble_connector,
 }
 
 _KNOWN_SOURCES = frozenset(_CONNECTOR_BUILDERS)
@@ -295,11 +314,26 @@ def _build_greenhouse_query(raw_query: str, region: str | None) -> GreenhouseQue
     return GreenhouseQuery(board_slugs=slugs or None)
 
 
+def _build_jooble_query(raw_query: str, region: str | None) -> JoobleQuery:
+    """Build a JoobleQuery from --query and --region.
+
+    Args:
+        raw_query: The `--query` argument's raw string value (keywords).
+        region: The `--region` argument's raw string value, used as an
+            optional location filter.
+
+    Returns:
+        The `JoobleQuery`.
+    """
+    return JoobleQuery(keywords=raw_query, location=region)
+
+
 _QUERY_BUILDERS: dict[str, Callable[[str, str | None], object]] = {
     "manual": _build_manual_query,
     "adzuna": _build_adzuna_query,
     "reed": _build_reed_query,
     "greenhouse": _build_greenhouse_query,
+    "jooble": _build_jooble_query,
 }
 
 assert (

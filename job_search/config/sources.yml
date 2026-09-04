@@ -28,3 +28,11 @@ sources:
     calls_per_hour: 120
     concurrency: 1
     backoff: {base: 2, max_retries: 5}
+
+  jooble:
+    enabled: true
+    auth: {key: "${JOOBLE_KEY}"}
+    calls_per_hour: 40
+    concurrency: 1
+    backoff: {base: 2, max_retries: 5}
+    regions: [gb]
