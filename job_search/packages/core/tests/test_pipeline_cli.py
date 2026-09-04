@@ -28,7 +28,7 @@ for name in list(_saved_app_modules):
 # Insert pipeline app path and import.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"))
 
-from app.cli import _KNOWN_SOURCES, main  # noqa: E402
+from app.cli import _KNOWN_SOURCES, _build_adzuna_query, main  # noqa: E402
 
 # Restore api's app package (or any other pre-existing app module) in
 # sys.modules so tests imported after this one resolve app.* correctly.
@@ -207,38 +207,50 @@ class TestPipelineCli(unittest.TestCase):
             )
         self.assertIn("collection-channel", stderr.getvalue().lower())
 
-    def test_adzuna_discovery_mode_interprets_query_as_category(self) -> None:
-        """--collection-channel discovery treats --query as an Adzuna category tag."""
+    def test_ingest_subcommand_rejects_discovery_for_non_discovery_source(
+        self,
+    ) -> None:
+        """--collection-channel discovery is rejected for a source whose
+        query-builder ignores it (e.g. reed), instead of silently
+        mislabeling targeted-mode records as discovery."""
         with (
-            mock.patch.dict(
-                os.environ,
-                {"ADZUNA_APP_ID": "", "ADZUNA_APP_KEY": ""},
-                clear=False,
-            ),
             mock.patch("sys.stdout", new_callable=StringIO),
             mock.patch("sys.stderr", new_callable=StringIO) as stderr,
         ):
-            get_settings.cache_clear()
             exit_code = main(
                 [
                     "ingest",
                     "--source",
-                    "adzuna",
+                    "reed",
                     "--query",
-                    "it-jobs",
-                    "--region",
-                    "gb",
+                    "data engineer",
                     "--collection-channel",
                     "discovery",
                 ]
             )
-            get_settings.cache_clear()
-        # Reaches the (missing-key) connector-build error, not a query-
-        # building error — proves --query was accepted as a category, not
-        # rejected as empty/invalid keywords.
         self.assertEqual(exit_code, 1)
-        self.assertIn("adzuna", stderr.getvalue().lower())
-        self.assertNotIn("Traceback", stderr.getvalue())
+        stderr_value = stderr.getvalue()
+        self.assertIn("discovery", stderr_value.lower())
+        self.assertIn("reed", stderr_value.lower())
+        self.assertNotIn("Traceback", stderr_value)
+
+    def test_adzuna_discovery_mode_interprets_query_as_category(self) -> None:
+        """--collection-channel discovery treats --query as an Adzuna
+        category tag and caps pagination lower than targeted mode."""
+        query = _build_adzuna_query("it-jobs", "gb", "discovery")
+        self.assertEqual(query.keywords, "")
+        self.assertEqual(query.category, "it-jobs")
+        self.assertEqual(query.country, "gb")
+        self.assertEqual(query.max_pages, 2)
+
+    def test_adzuna_targeted_mode_interprets_query_as_keywords(self) -> None:
+        """--collection-channel targeted (default) treats --query as
+        keywords, with no category and the default higher max_pages."""
+        query = _build_adzuna_query("data engineer", "gb", "targeted")
+        self.assertEqual(query.keywords, "data engineer")
+        self.assertIsNone(query.category)
+        self.assertEqual(query.country, "gb")
+        self.assertEqual(query.max_pages, 5)
 
 
 if __name__ == "__main__":

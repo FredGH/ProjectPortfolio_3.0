@@ -213,6 +213,13 @@ _KNOWN_SOURCES = frozenset(_CONNECTOR_BUILDERS)
 connector is one new entry in `_CONNECTOR_BUILDERS`, nothing else, and
 `_KNOWN_SOURCES` picks it up automatically."""
 
+_DISCOVERY_CAPABLE_SOURCES = frozenset({"adzuna", "greenhouse"})
+"""Sources whose query-builder actually changes behaviour under
+`--collection-channel discovery` — Adzuna's category sweep, and
+Greenhouse's native full-board dump. Every other source's query-builder
+ignores `collection_channel` entirely, so accepting `discovery` for them
+would silently mislabel targeted-mode records as discovery in bronze."""
+
 
 def _make_factory(
     builder: Callable[[_ConnectorBuildContext], Connector],
@@ -442,6 +449,19 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         print(
             f"Unknown --source {args.source!r}. Known sources: "
             f"{sorted(_KNOWN_SOURCES)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if (
+        args.collection_channel == "discovery"
+        and args.source not in _DISCOVERY_CAPABLE_SOURCES
+    ):
+        print(
+            f"--collection-channel discovery has no effect for source="
+            f"{args.source!r} (only {sorted(_DISCOVERY_CAPABLE_SOURCES)} "
+            "currently support it) — refusing to silently mislabel "
+            "targeted-mode records",
             file=sys.stderr,
         )
         return 1

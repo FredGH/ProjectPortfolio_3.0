@@ -74,7 +74,10 @@ def load_to_bronze(
         collection_channel: "targeted" (frozen keyword matrix, PLAN.md
             Step 21a) or "discovery" (wide/shallow, PLAN.md Step 4a). Not
             part of the merge key — the same posting seen via both
-            channels stays one row.
+            channels stays one row. Note: on a merge, this column
+            reflects whichever channel most recently wrote this posting
+            — for an immutable per-run record, see
+            RunMetadata.collection_channel instead.
 
     Raises:
         Exception: Whatever dlt raises on a genuine load failure (network,

@@ -117,12 +117,23 @@ def run_connector(
         The `RunResult` describing what this run produced.
 
     Raises:
+        ValueError: If `collection_channel` is not "targeted" or
+            "discovery" — checked before any fetch/landing/bronze work
+            starts, so a typo fails fast instead of surfacing mid-loop as
+            a Postgres CHECK-constraint violation after some records may
+            have already landed.
         Exception: Whatever the connector's `fetch()` raised, once
             retries are exhausted. A `status="failed"` run metadata record
             is written before re-raising.
     """
     run_id = generate_run_id()
     started_at = datetime.datetime.now(datetime.UTC)
+
+    if collection_channel not in ("targeted", "discovery"):
+        raise ValueError(
+            f"collection_channel must be 'targeted' or 'discovery', got "
+            f"{collection_channel!r}"
+        )
 
     if rate_limiter is not None:
         rate_limiter.acquire()
@@ -156,6 +167,7 @@ def run_connector(
                 started_at=started_at,
                 finished_at=finished_at,
                 status="failed",
+                collection_channel=collection_channel,
             ),
         )
         raise
@@ -205,6 +217,7 @@ def run_connector(
         started_at=started_at,
         finished_at=finished_at,
         status="success",
+        collection_channel=collection_channel,
     )
     write_run_metadata_fn(landing_uri, metadata)
 
