@@ -13,7 +13,8 @@ dlt[postgres]==1.5.0
 fsspec==2024.10.0
 # dbt-postgres 1.8.1 is the newest available at pin time; it trails
 # dbt-core intentionally — both versions are verified working together
-# (see dbt/README.md) and re-pinning either requires re-verifying a build.
+# (`dbt build` passes against this pin) and re-pinning either requires
+# re-verifying a build.
 dbt-core==1.11.11
 dbt-postgres==1.8.1
 coverage==7.6.4
