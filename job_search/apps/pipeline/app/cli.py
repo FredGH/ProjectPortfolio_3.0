@@ -61,6 +61,23 @@ def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
     return adapters
 
 
+def _extract_title(payload: dict[str, object]) -> str | None:
+    """Best-effort title extraction across every connector's raw payload shape.
+
+    Args:
+        payload: One `RawJob.payload` dict — connector-specific, never
+            normalised at this layer (normalisation is a later dbt/staging
+            concern per PLAN.md Phase 1).
+
+    Returns:
+        The title string if a recognisable field is present (Adzuna/
+        Greenhouse/Jooble all use "title"; Reed uses "jobTitle"), else
+        `None`.
+    """
+    title = payload.get("title") or payload.get("jobTitle")
+    return str(title) if title else None
+
+
 @dataclass(frozen=True)
 class _ConnectorBuildContext:
     """Everything a connector builder might need to construct its connector.
@@ -240,14 +257,21 @@ def _build_connector_factories(
     }
 
 
-def _build_manual_query(raw_query: str, region: str | None) -> ManualJobQuery:
+def _build_manual_query(
+    raw_query: str, region: str | None, collection_channel: str
+) -> ManualJobQuery:
     """Parse `--query`'s JSON string into a ManualJobQuery.
 
     Args:
         raw_query: The `--query` argument's raw string value.
         region: Unused — manual entry has no region concept. Present only
             so this builder's signature matches every `_QUERY_BUILDERS`
-            entry's uniform `(raw_query, region)` shape.
+            entry's uniform `(raw_query, region, collection_channel)`
+            shape.
+        collection_channel: Unused — manual entry has no discovery-mode
+            concept. Present only so this builder's signature matches
+            every `_QUERY_BUILDERS` entry's uniform
+            `(raw_query, region, collection_channel)` shape.
 
     Returns:
         The parsed `ManualJobQuery`.
@@ -284,26 +308,50 @@ def _build_manual_query(raw_query: str, region: str | None) -> ManualJobQuery:
     )
 
 
-def _build_adzuna_query(raw_query: str, region: str | None) -> AdzunaQuery:
-    """Build an AdzunaQuery from --query and --region.
+def _build_adzuna_query(
+    raw_query: str, region: str | None, collection_channel: str
+) -> AdzunaQuery:
+    """Build an AdzunaQuery from --query, --region, and --collection-channel.
 
     Args:
-        raw_query: The `--query` argument's raw string value (keywords).
+        raw_query: The `--query` argument's raw string value — keywords
+            in targeted mode, an Adzuna category tag in discovery mode
+            (see `collection_channel`).
         region: The `--region` argument's raw string value.
+        collection_channel: "targeted" or "discovery". In discovery mode,
+            `raw_query` is interpreted as a category tag (e.g.
+            "it-jobs") instead of free-text keywords, and pagination is
+            capped lower (2 pages instead of the default 5) — a category
+            sweep returns far more results per page than a keyword
+            search, so the existing per-page cap alone isn't a
+            meaningful volume limit for this mode.
 
     Returns:
         The `AdzunaQuery`.
 
     Raises:
-        ValueError: If `region` is not given — Adzuna's search endpoint is
-            country-scoped, unlike manual entry or Greenhouse.
+        ValueError: If `region` is not given, or if `raw_query` is empty
+            in targeted mode (a category tag is required in discovery
+            mode instead, and empty is valid there via `--query ""`... but
+            for clarity this implementation still requires a non-empty
+            `raw_query` in BOTH modes — an empty string is never a
+            meaningful category tag either).
     """
     if not region:
         raise ValueError("--region is required for source=adzuna")
+    if not raw_query:
+        raise ValueError(
+            "--query is required for source=adzuna (keywords in targeted "
+            "mode, a category tag like 'it-jobs' in discovery mode)"
+        )
+    if collection_channel == "discovery":
+        return AdzunaQuery(keywords="", category=raw_query, country=region, max_pages=2)
     return AdzunaQuery(keywords=raw_query, country=region)
 
 
-def _build_reed_query(raw_query: str, region: str | None) -> ReedQuery:
+def _build_reed_query(
+    raw_query: str, region: str | None, collection_channel: str
+) -> ReedQuery:
     """Build a ReedQuery from --query and --region.
 
     Args:
@@ -311,6 +359,10 @@ def _build_reed_query(raw_query: str, region: str | None) -> ReedQuery:
         region: The `--region` argument's raw string value, used as an
             optional UK location filter — unlike Adzuna, Reed doesn't
             require one (it's UK-only already).
+        collection_channel: Unused — Reed has no discovery-mode concept
+            yet. Present only so this builder's signature matches every
+            `_QUERY_BUILDERS` entry's uniform
+            `(raw_query, region, collection_channel)` shape.
 
     Returns:
         The `ReedQuery`.
@@ -318,7 +370,9 @@ def _build_reed_query(raw_query: str, region: str | None) -> ReedQuery:
     return ReedQuery(keywords=raw_query, location=region)
 
 
-def _build_greenhouse_query(raw_query: str, region: str | None) -> GreenhouseQuery:
+def _build_greenhouse_query(
+    raw_query: str, region: str | None, collection_channel: str
+) -> GreenhouseQuery:
     """Build a GreenhouseQuery from --query.
 
     Args:
@@ -327,7 +381,12 @@ def _build_greenhouse_query(raw_query: str, region: str | None) -> GreenhouseQue
             active target_company registry.
         region: Unused — Greenhouse boards aren't region-scoped. Present
             only so this builder's signature matches every
-            `_QUERY_BUILDERS` entry's uniform `(raw_query, region)` shape.
+            `_QUERY_BUILDERS` entry's uniform
+            `(raw_query, region, collection_channel)` shape.
+        collection_channel: Unused — Greenhouse has no discovery-mode
+            concept yet. Present only so this builder's signature matches
+            every `_QUERY_BUILDERS` entry's uniform
+            `(raw_query, region, collection_channel)` shape.
 
     Returns:
         The `GreenhouseQuery`.
@@ -336,13 +395,19 @@ def _build_greenhouse_query(raw_query: str, region: str | None) -> GreenhouseQue
     return GreenhouseQuery(board_slugs=slugs or None)
 
 
-def _build_jooble_query(raw_query: str, region: str | None) -> JoobleQuery:
+def _build_jooble_query(
+    raw_query: str, region: str | None, collection_channel: str
+) -> JoobleQuery:
     """Build a JoobleQuery from --query and --region.
 
     Args:
         raw_query: The `--query` argument's raw string value (keywords).
         region: The `--region` argument's raw string value, used as an
             optional location filter.
+        collection_channel: Unused — Jooble has no discovery-mode concept
+            yet. Present only so this builder's signature matches every
+            `_QUERY_BUILDERS` entry's uniform
+            `(raw_query, region, collection_channel)` shape.
 
     Returns:
         The `JoobleQuery`.
@@ -350,7 +415,7 @@ def _build_jooble_query(raw_query: str, region: str | None) -> JoobleQuery:
     return JoobleQuery(keywords=raw_query, location=region)
 
 
-_QUERY_BUILDERS: dict[str, Callable[[str, str | None], object]] = {
+_QUERY_BUILDERS: dict[str, Callable[[str, str | None, str], object]] = {
     "manual": _build_manual_query,
     "adzuna": _build_adzuna_query,
     "reed": _build_reed_query,
@@ -367,7 +432,8 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     """Run the `ingest` subcommand.
 
     Args:
-        args: Parsed CLI arguments — `source`, `query`, `since`, `region`.
+        args: Parsed CLI arguments — `source`, `query`, `since`, `region`,
+            `collection_channel`.
 
     Returns:
         0 on success, 1 on a reported error.
@@ -381,7 +447,9 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        query = _QUERY_BUILDERS[args.source](args.query, args.region)
+        query = _QUERY_BUILDERS[args.source](
+            args.query, args.region, args.collection_channel
+        )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -414,10 +482,22 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             query=query,
             since=since,
             entry_method="manual" if args.source == "manual" else "api",
+            collection_channel=args.collection_channel,
             landing_uri=settings.landing_uri,
             database_url=settings.database_url,
             rate_limiter=rate_limiter,
         )
+        if args.collection_channel == "discovery":
+            titles = {
+                title
+                for raw_job in result.raw_jobs
+                if (title := _extract_title(raw_job.payload)) is not None
+            }
+            print(
+                f"discovery yield: {len(result.raw_jobs)} records, "
+                f"{len(titles)} distinct titles"
+            )
+
         print(
             f"ingest complete: source={args.source} "
             f"records={result.run_metadata.records} "
@@ -452,6 +532,16 @@ def main(argv: list[str] | None = None) -> int:
         help="ISO-8601 datetime, e.g. 2026-09-01 or 2026-09-01T00:00:00+00:00",
     )
     ingest_parser.add_argument("--region", default=None)
+    ingest_parser.add_argument(
+        "--collection-channel",
+        default="targeted",
+        choices=["targeted", "discovery"],
+        help=(
+            "'targeted' (default, frozen keyword matrix) or 'discovery' "
+            "(wide/shallow, PLAN.md Step 4a). Run discovery sweeps at most "
+            "weekly by hand — no scheduler exists yet to enforce this."
+        ),
+    )
 
     args = parser.parse_args(argv)
 

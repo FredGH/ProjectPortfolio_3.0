@@ -163,6 +163,70 @@ class TestPipelineCli(unittest.TestCase):
         self.assertIn("jooble", stderr.getvalue().lower())
         self.assertNotIn("Traceback", stderr.getvalue())
 
+    def test_ingest_subcommand_defaults_collection_channel_to_targeted(
+        self,
+    ) -> None:
+        """--collection-channel omitted defaults to 'targeted', accepted cleanly."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            main(["ingest", "--source", "greenhouse", "--query", ""])
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_rejects_unknown_collection_channel(self) -> None:
+        """An invalid --collection-channel value is rejected by argparse."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+            self.assertRaises(SystemExit),
+        ):
+            main(
+                [
+                    "ingest",
+                    "--source",
+                    "greenhouse",
+                    "--query",
+                    "",
+                    "--collection-channel",
+                    "nonsense",
+                ]
+            )
+        self.assertIn("collection-channel", stderr.getvalue().lower())
+
+    def test_adzuna_discovery_mode_interprets_query_as_category(self) -> None:
+        """--collection-channel discovery treats --query as an Adzuna category tag."""
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"ADZUNA_APP_ID": "", "ADZUNA_APP_KEY": ""},
+                clear=False,
+            ),
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            get_settings.cache_clear()
+            exit_code = main(
+                [
+                    "ingest",
+                    "--source",
+                    "adzuna",
+                    "--query",
+                    "it-jobs",
+                    "--region",
+                    "gb",
+                    "--collection-channel",
+                    "discovery",
+                ]
+            )
+            get_settings.cache_clear()
+        # Reaches the (missing-key) connector-build error, not a query-
+        # building error — proves --query was accepted as a category, not
+        # rejected as empty/invalid keywords.
+        self.assertEqual(exit_code, 1)
+        self.assertIn("adzuna", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
