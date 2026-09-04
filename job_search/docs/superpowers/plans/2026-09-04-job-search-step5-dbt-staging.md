@@ -537,8 +537,11 @@ or all of which can be null if extraction failed), `field_source`.
 `dbt/models/staging/stg_greenhouse__jobs.sql`:
 
 ```sql
--- stg_greenhouse__jobs: one row per Greenhouse posting, mapped to the
--- shared staging contract. Grain: source_job_id (unique within source_name).
+-- stg_greenhouse__jobs: one row per Greenhouse posting fetch, mapped to
+-- the shared staging contract. bronze.raw_jobs is append-only/versioned,
+-- so source_job_id can repeat across fetched_at/payload_sha256 versions
+-- of the same posting — see int_jobs__unioned for the current-state
+-- collapse.
 
 SELECT
     source_name,
@@ -568,8 +571,10 @@ WHERE source_name = 'greenhouse'
 `dbt/models/staging/stg_jooble__jobs.sql`:
 
 ```sql
--- stg_jooble__jobs: one row per Jooble posting, mapped to the shared
--- staging contract. Grain: source_job_id (unique within source_name).
+-- stg_jooble__jobs: one row per Jooble posting fetch, mapped to the
+-- shared staging contract. bronze.raw_jobs is append-only/versioned, so
+-- source_job_id can repeat across fetched_at/payload_sha256 versions of
+-- the same posting — see int_jobs__unioned for the current-state collapse.
 
 SELECT
     source_name,
@@ -595,9 +600,11 @@ WHERE source_name = 'jooble'
 `dbt/models/staging/stg_manual__jobs.sql`:
 
 ```sql
--- stg_manual__jobs: one row per manually-pasted posting, mapped to the
--- shared staging contract. Grain: source_job_id (unique within
--- source_name). Unlike the four API-sourced models, title/company/
+-- stg_manual__jobs: one row per manually-pasted posting fetch, mapped to
+-- the shared staging contract. bronze.raw_jobs is append-only/versioned,
+-- so source_job_id can repeat across fetched_at/payload_sha256 versions
+-- of the same posting — see int_jobs__unioned for the current-state
+-- collapse. Unlike the four API-sourced models, title/company/
 -- location here come from best-effort LLM extraction (already merged
 -- with any user override at ingestion time) and can be genuinely NULL
 -- when extraction failed — never coerced to a placeholder, per PLAN.md's

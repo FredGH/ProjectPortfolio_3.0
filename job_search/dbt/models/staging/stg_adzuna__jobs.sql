@@ -1,5 +1,7 @@
--- stg_adzuna__jobs: one row per Adzuna posting, mapped to the shared
--- staging contract. Grain: source_job_id (unique within source_name).
+-- stg_adzuna__jobs: one row per Adzuna posting fetch, mapped to the
+-- shared staging contract. bronze.raw_jobs is append-only/versioned, so
+-- source_job_id can repeat across fetched_at/payload_sha256 versions of
+-- the same posting — see int_jobs__unioned for the current-state collapse.
 
 SELECT
     source_name,
