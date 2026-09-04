@@ -18,14 +18,20 @@ WITH unioned AS (
 ),
 
 -- Rank every version of the same posting by recency, so only the latest
--- fetch of a changed payload survives.
+-- fetch of a changed payload survives. payload_sha256 is a deterministic
+-- tiebreaker for an exact fetched_at tie — ROW_NUMBER() always assigns
+-- strictly increasing ranks even when the ORDER BY key ties, so without
+-- a fully-defining order the "losing" row on a tie would be arbitrary
+-- and not guaranteed stable across re-runs, silently, with no test able
+-- to catch it (the unique test on job_key can never fail from a
+-- fetched_at tie either way, since exactly one row always survives).
 ranked AS (
 
     SELECT
         *,
         ROW_NUMBER() OVER (
             PARTITION BY source_name, source_job_id
-            ORDER BY fetched_at DESC
+            ORDER BY fetched_at DESC, payload_sha256 DESC
         ) AS version_rank
     FROM unioned
 
