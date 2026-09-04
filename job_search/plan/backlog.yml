@@ -287,8 +287,29 @@ epics:
     - "Grow the target-company registry aggressively — board dumps are the richest
       emergent-title source"
 
-  # ---------------------------------------------------------------------------
     jira_key: JOB-76
+  - id: STEP-04B
+    summary: "Step 4b — Jooble connector"
+    description: >
+      A fourth connector, added after Step 4 shipped once a Jooble API key
+      became available: keyed POST JSON, EU breadth (60+ countries).
+      Follows the exact Connector protocol + CLI registry pattern Step 4
+      established — one new file, one _CONNECTOR_BUILDERS/_QUERY_BUILDERS
+      entry, one config/sources.yml block, no changes to the shared runner.
+    acceptance: >
+      `docker compose run --rm pipeline ingest --source jooble --query "data engineer"
+      --region gb`
+      lands files and loads bronze.
+    labels: [ingestion, connector]
+    points: 2
+    subtasks:
+    - "Implement JoobleConnector: POST https://jooble.org/api/{key} with JSON body
+      {keywords, location, page}, page-number pagination"
+    - "Wire into cli.py's _CONNECTOR_BUILDERS/_QUERY_BUILDERS registries and config/sources.yml"
+    - "Verify every landed record carries source_name and job_url"
+
+  # ---------------------------------------------------------------------------
+    jira_key: JOB-440
   jira_key: JOB-1
 - key: PHASE1
   summary: "Phase 1 — Silver layer"
