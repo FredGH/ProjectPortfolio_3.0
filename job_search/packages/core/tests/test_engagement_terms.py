@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import unittest
 
-from core.enrichment.engagement_terms import classify_engagement
+from core.enrichment.engagement_terms import (
+    classify_engagement,
+    extract_engagement_terms,
+)
 
 
 class TestClassifyEngagement(unittest.TestCase):
@@ -96,3 +99,105 @@ class TestClassifyEngagement(unittest.TestCase):
         self.assertEqual(result.engagement_type, "unknown")
         self.assertEqual(result.ir35_status, "unknown")
         self.assertEqual(result.engagement_vehicle, "unknown")
+
+
+class TestExtractEngagementTerms(unittest.TestCase):
+    """Tests for extract_engagement_terms's rate/duration parsing, against
+    real bronze salary_raw and description text."""
+
+    def test_day_rate_phrase_in_description_wins_over_salary_raw(self) -> None:
+        """Real Adzuna posting 5860498506 — salary_raw is Adzuna's own
+        pre-annualised 117000-130000, but the description states the true
+        day rate explicitly; the phrase is authoritative for rate_basis."""
+        result = extract_engagement_terms(
+            "Senior Data Engineer – Microsoft Fabric Contract: Outside IR35 "
+            "Rate : £450 - £500 per day",
+            salary_raw="117000-130000",
+        )
+        self.assertEqual(result.rate_basis, "daily")
+        self.assertEqual(result.rate_currency, "GBP")
+        self.assertEqual(result.rate_daily_gbp_equivalent, 475)
+        self.assertEqual(result.rate_annualised_gbp, 475 * 260)
+
+    def test_plain_annual_salary_raw_with_no_rate_phrase(self) -> None:
+        """Real Adzuna posting 5510354959 — no rate phrase, plain
+        pre-annualised salary_raw numbers."""
+        result = extract_engagement_terms(
+            "Data Engineer, permanent role, London.", salary_raw="130000-130000"
+        )
+        self.assertEqual(result.rate_basis, "annual")
+        self.assertEqual(result.rate_annualised_gbp, 130000)
+        self.assertEqual(result.rate_daily_gbp_equivalent, 130000 / 260)
+
+    def test_jooble_k_shorthand_annual_range(self) -> None:
+        """Real Jooble salary text: '£80k - £95k per year'."""
+        result = extract_engagement_terms(None, salary_raw="£80k - £95k per year")
+        self.assertEqual(result.rate_basis, "annual")
+        self.assertEqual(result.rate_currency, "GBP")
+        self.assertEqual(result.rate_annualised_gbp, 87500)
+
+    def test_monthly_rate_annualises_via_times_twelve(self) -> None:
+        """Real Jooble salary text: '£1,500 per month' — 'monthly' isn't a
+        named rate_basis; it collapses into 'annual' (see plan scope note)."""
+        result = extract_engagement_terms(None, salary_raw="£1,500 per month")
+        self.assertEqual(result.rate_basis, "annual")
+        self.assertEqual(result.rate_annualised_gbp, 1500 * 12)
+
+    def test_hourly_rate_with_dollar_currency(self) -> None:
+        """Real Jooble salary text: '$15 per hour'."""
+        result = extract_engagement_terms(None, salary_raw="$15 per hour")
+        self.assertEqual(result.rate_basis, "hourly")
+        self.assertEqual(result.rate_currency, "USD")
+        self.assertEqual(result.rate_daily_gbp_equivalent, 15 * 7.5)
+        self.assertEqual(result.rate_annualised_gbp, 15 * 7.5 * 260)
+
+    def test_no_salary_at_all_is_unknown_basis_with_null_figures(self) -> None:
+        """Real Greenhouse rows: salary_raw is always NULL."""
+        result = extract_engagement_terms("Senior Data Engineer, Public Sector", None)
+        self.assertEqual(result.rate_basis, "unknown")
+        self.assertIsNone(result.rate_annualised_gbp)
+        self.assertIsNone(result.rate_daily_gbp_equivalent)
+        self.assertIsNone(result.rate_currency)
+
+    def test_contract_length_in_months_extracted(self) -> None:
+        result = extract_engagement_terms(
+            "6 month contract, inside IR35, hybrid working.", salary_raw=None
+        )
+        self.assertEqual(result.contract_length_months, 6)
+
+    def test_no_duration_stated_is_none_not_zero(self) -> None:
+        result = extract_engagement_terms(
+            "Contract role, outside IR35.", salary_raw=None
+        )
+        self.assertIsNone(result.contract_length_months)
+
+    def test_extension_likely_phrase(self) -> None:
+        result = extract_engagement_terms(
+            "6 month contract with a view to extend.", salary_raw=None
+        )
+        self.assertEqual(result.extension_likelihood, "likely")
+
+    def test_extension_possible_phrase(self) -> None:
+        result = extract_engagement_terms(
+            "3 month contract, possible extension subject to budget.",
+            salary_raw=None,
+        )
+        self.assertEqual(result.extension_likelihood, "possible")
+
+    def test_extension_unlikely_phrase(self) -> None:
+        result = extract_engagement_terms(
+            "Fixed 6 month contract, no extension available.", salary_raw=None
+        )
+        self.assertEqual(result.extension_likelihood, "unlikely")
+
+    def test_no_extension_language_is_unstated(self) -> None:
+        result = extract_engagement_terms("Permanent role, London.", salary_raw=None)
+        self.assertEqual(result.extension_likelihood, "unstated")
+
+    def test_classification_fields_pass_through(self) -> None:
+        """extract_engagement_terms includes classify_engagement's fields."""
+        result = extract_engagement_terms(
+            "Permanent Data Engineer role, London.", salary_raw="70000-70000"
+        )
+        self.assertEqual(result.engagement_type, "permanent")
+        self.assertEqual(result.ir35_status, "not_applicable")
