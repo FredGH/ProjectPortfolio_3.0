@@ -25,10 +25,26 @@ block_pairs AS (
 
 ),
 
+-- Company sizes, used to exclude large employers from the soft block —
+-- soft-block's purpose (catching title-divergent duplicates) doesn't
+-- scale to employers with hundreds of genuinely distinct postings; they
+-- still get hard-block matching, just not soft.
+company_sizes AS (
+
+    SELECT
+        normalised_company,
+        COUNT(*) AS company_size
+    FROM keys
+    WHERE normalised_company != ''
+    GROUP BY normalised_company
+
+),
+
 -- Soft block: same company only, titles diverging too badly to share a
 -- 12-character prefix (PLAN.md's "Senior Data Engineer" vs "Data
 -- Platform Engineer" example). Excludes pairs already caught by the
--- hard block, so a pair never appears under both match_types.
+-- hard block, so a pair never appears under both match_types. Also
+-- excludes companies with more than 500 postings — see company_sizes.
 soft_block_pairs AS (
 
     SELECT
@@ -39,7 +55,10 @@ soft_block_pairs AS (
     INNER JOIN keys AS b
         ON a.normalised_company = b.normalised_company
         AND a.job_key < b.job_key
+    INNER JOIN company_sizes AS cs
+        ON a.normalised_company = cs.normalised_company
     WHERE a.normalised_company != ''
+        AND cs.company_size <= 500
 
 )
 
