@@ -1122,7 +1122,9 @@ Pure embedding similarity ranks by *topic*, not by *fit*. Four stages, each
 cheaper than the one it feeds:
 
 1. **Hard filters** — location/remote, contract type, seniority band, salary
-   floor, posting age. Cheap, kills ~80%.
+   floor, posting age, `ir35_status`/`engagement_type` (Step 5a) when the
+   user's preferences exclude a status (e.g. "inside IR35" roles). Cheap,
+   kills ~80%.
 2. **Vector similarity** — embed CV sections and JD chunks separately, cosine
    over section pairs. Local Ollama into pgvector. Store `embedding_model`
    with every vector.

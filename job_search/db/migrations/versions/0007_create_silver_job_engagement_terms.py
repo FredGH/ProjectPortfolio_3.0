@@ -69,8 +69,7 @@ def upgrade() -> None:
             name="ck_job_engagement_terms_rate_basis",
         ),
         sa.CheckConstraint(
-            "extension_likelihood IN "
-            "('likely', 'possible', 'unlikely', 'unstated')",
+            "extension_likelihood IN " "('likely', 'possible', 'unlikely', 'unstated')",
             name="ck_job_engagement_terms_extension_likelihood",
         ),
         schema="silver",
