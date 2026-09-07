@@ -44,3 +44,24 @@ models:
         data_type: bigint
         tests:
           - not_null
+
+  - name: dedup__candidate_pairs
+    description: >
+      One row per candidate pair sharing a blocking key or company
+      alone (soft block). Feeds Step 8's similarity scoring — nothing
+      downstream should regenerate candidate pairs independently.
+    columns:
+      - name: job_key_a
+        data_type: text
+        tests:
+          - not_null
+      - name: job_key_b
+        data_type: text
+        tests:
+          - not_null
+      - name: match_type
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['block', 'soft_block']
