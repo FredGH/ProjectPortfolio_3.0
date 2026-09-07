@@ -21,6 +21,7 @@ from dataclasses import dataclass
 import httpx
 
 from core.db.session import build_engine
+from core.dedup.write_blocking_keys import write_blocking_keys
 from core.enrichment.write_engagement_terms import write_engagement_terms
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
 from core.ingestion.connector import Connector
@@ -446,6 +447,22 @@ def _cmd_enrich_engagement_terms(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compute_blocking_keys(args: argparse.Namespace) -> int:
+    """Run the `compute-blocking-keys` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    written = write_blocking_keys(engine)
+    print(f"compute-blocking-keys complete: rows_written={written}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -476,12 +493,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Extract and write engagement/IR35/rate terms for every " "unioned job",
     )
 
+    subparsers.add_parser(
+        "compute-blocking-keys",
+        help="Compute and write blocking keys for every silver posting",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
         return _cmd_ingest(args)
     if args.command == "enrich-engagement-terms":
         return _cmd_enrich_engagement_terms(args)
+    if args.command == "compute-blocking-keys":
+        return _cmd_compute_blocking_keys(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
