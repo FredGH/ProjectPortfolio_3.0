@@ -1,8 +1,33 @@
-# dbt project — placeholder
+# dbt project
 
-The real dbt project lands in Step 5 (`dbt project and staging models`).
+Transforms `bronze.raw_jobs` (raw JSONB payloads from the ingestion
+connectors) into typed, contract-enforced models.
 
-Convention fixed now, in Step 1a, so Step 5 doesn't have to relitigate it:
+## Layers
+
+- **staging** (`models/staging/`, views, schema `staging`) — one
+  `stg_<source>__jobs` model per source (Adzuna, Reed, Greenhouse,
+  Jooble, manual entries), each a thin JSONB extraction into the shared
+  14-column contract. Not deduped: bronze is append-only, so a posting
+  can appear as multiple version-rows here.
+- **intermediate** (`models/intermediate/`, tables, schema
+  `intermediate`) — `int_jobs__unioned` unions every staging model and
+  collapses bronze's version history down to one current row per
+  `(source_name, source_job_id)`. Downstream steps read from here, never
+  from the staging models directly.
+
+## Running it
+
+From this directory, with `.env` loaded and `DBT_PROFILES_DIR=.`:
+
+```bash
+dbt build
+dbt source freshness
+```
+
+## Conventions
+
+Fixed in Step 1a so later steps don't have to relitigate it:
 
 - **Shared marts** (job postings, `dim_job`, `dim_company`, market marts,
   taxonomy) build once, with no per-user grain at all.

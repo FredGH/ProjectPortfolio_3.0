@@ -11,6 +11,12 @@ pyyaml==6.0.2
 python-ulid==1.1.0
 dlt[postgres]==1.5.0
 fsspec==2024.10.0
+# dbt-postgres 1.8.1 is the newest available at pin time; it trails
+# dbt-core intentionally — both versions are verified working together
+# (`dbt build` passes against this pin) and re-pinning either requires
+# re-verifying a build.
+dbt-core==1.11.11
+dbt-postgres==1.8.1
 coverage==7.6.4
 pre-commit==4.0.1
 ruff==0.8.0

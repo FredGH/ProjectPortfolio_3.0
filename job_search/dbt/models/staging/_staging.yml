@@ -1,0 +1,299 @@
+version: 2
+
+# Every model below has `contract: {enforced: true}`, which makes column
+# order load-bearing, not cosmetic — dbt checks each model's SELECT
+# output against this file's column list position-by-position. The order
+# here (source_name, source_job_id, ...) matches every model's actual
+# SELECT order exactly; don't reorder columns without also checking the
+# SQL, and vice versa.
+
+models:
+  - name: stg_adzuna__jobs
+    description: "One row per Adzuna posting fetch (not deduped — see source_job_id below), mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: source_name
+        data_type: text
+        tests:
+          - not_null
+      - name: source_job_id
+        description: >
+          Identifies a posting within source_name, but is not unique on
+          its own — bronze's append-only versioning means multiple rows
+          can share (source_name, source_job_id) across fetched_at /
+          payload_sha256 versions of the same posting. See
+          int_jobs__unioned for the deduped current-state grain, where
+          (source_name, source_job_id) is unique.
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url_canonical
+        data_type: text
+        tests:
+          - not_null
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: fetched_at
+        data_type: timestamptz
+        tests:
+          - not_null
+      - name: run_id
+        data_type: text
+        tests:
+          - not_null
+      - name: payload_sha256
+        data_type: text
+        tests:
+          - not_null
+
+  - name: stg_reed__jobs
+    description: "One row per Reed posting fetch (not deduped — see source_job_id below), mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: source_name
+        data_type: text
+        tests:
+          - not_null
+      - name: source_job_id
+        description: >
+          Identifies a posting within source_name, but is not unique on
+          its own — bronze's append-only versioning means multiple rows
+          can share (source_name, source_job_id) across fetched_at /
+          payload_sha256 versions of the same posting. See
+          int_jobs__unioned for the deduped current-state grain, where
+          (source_name, source_job_id) is unique.
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url_canonical
+        data_type: text
+        tests:
+          - not_null
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: fetched_at
+        data_type: timestamptz
+        tests:
+          - not_null
+      - name: run_id
+        data_type: text
+        tests:
+          - not_null
+      - name: payload_sha256
+        data_type: text
+        tests:
+          - not_null
+
+  - name: stg_greenhouse__jobs
+    description: "One row per Greenhouse posting fetch (not deduped — see source_job_id below), mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: source_name
+        data_type: text
+        tests:
+          - not_null
+      - name: source_job_id
+        description: >
+          Identifies a posting within source_name, but is not unique on
+          its own — bronze's append-only versioning means multiple rows
+          can share (source_name, source_job_id) across fetched_at /
+          payload_sha256 versions of the same posting. See
+          int_jobs__unioned for the deduped current-state grain, where
+          (source_name, source_job_id) is unique.
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url_canonical
+        data_type: text
+        tests:
+          - not_null
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: fetched_at
+        data_type: timestamptz
+        tests:
+          - not_null
+      - name: run_id
+        data_type: text
+        tests:
+          - not_null
+      - name: payload_sha256
+        data_type: text
+        tests:
+          - not_null
+
+  - name: stg_jooble__jobs
+    description: "One row per Jooble posting fetch (not deduped — see source_job_id below), mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: source_name
+        data_type: text
+        tests:
+          - not_null
+      - name: source_job_id
+        description: >
+          Identifies a posting within source_name, but is not unique on
+          its own — bronze's append-only versioning means multiple rows
+          can share (source_name, source_job_id) across fetched_at /
+          payload_sha256 versions of the same posting. See
+          int_jobs__unioned for the deduped current-state grain, where
+          (source_name, source_job_id) is unique.
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url_canonical
+        data_type: text
+        tests:
+          - not_null
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: fetched_at
+        data_type: timestamptz
+        tests:
+          - not_null
+      - name: run_id
+        data_type: text
+        tests:
+          - not_null
+      - name: payload_sha256
+        data_type: text
+        tests:
+          - not_null
+
+  - name: stg_manual__jobs
+    description: "One row per manually-pasted posting fetch (not deduped — see source_job_id below), mapped to the shared staging contract."
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: source_name
+        data_type: text
+        tests:
+          - not_null
+      - name: source_job_id
+        description: >
+          Identifies a posting within source_name, but is not unique on
+          its own — bronze's append-only versioning means multiple rows
+          can share (source_name, source_job_id) across fetched_at /
+          payload_sha256 versions of the same posting. See
+          int_jobs__unioned for the deduped current-state grain, where
+          (source_name, source_job_id) is unique.
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url_canonical
+        data_type: text
+        tests:
+          - not_null
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: fetched_at
+        data_type: timestamptz
+        tests:
+          - not_null
+      - name: run_id
+        data_type: text
+        tests:
+          - not_null
+      - name: payload_sha256
+        data_type: text
+        tests:
+          - not_null

@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: int_jobs__unioned
+    description: >
+      One row per (source_name, source_job_id), current version only —
+      unions every stg_<source>__jobs model and collapses bronze's
+      version-history rows to the latest fetch. This is the model every
+      downstream dedup/normalisation step (PLAN.md Step 6+) reads from,
+      never the staging models directly.
+    columns:
+      - name: job_key
+        description: "Surrogate key: hash of (source_name, source_job_id)."
+        tests:
+          - unique
+          - not_null
+      - name: source_name
+        tests:
+          - not_null
+      - name: source_job_id
+        tests:
+          - not_null
+      - name: job_url
+        tests:
+          - not_null
+      - name: job_url_canonical
+        tests:
+          - not_null
+      - name: entry_method
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['api', 'manual', 'scraped']
+      - name: title
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: company
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: location
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: description
+        description: "Nullable — best-effort extraction can genuinely fail (manual entries)."
+      - name: salary_raw
+        description: "Nullable — untransformed source salary text; not every source publishes salary."
+      - name: posted_at
+        description: "Nullable — untransformed source-reported post date; not every source publishes it."
+      - name: fetched_at
+        tests:
+          - not_null
+      - name: run_id
+        tests:
+          - not_null
+      - name: payload_sha256
+        tests:
+          - not_null
