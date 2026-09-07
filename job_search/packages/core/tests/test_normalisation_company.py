@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from core.normalisation.company import normalise_company
 from tests.fixtures.normalisation_examples import COMPANY_EXAMPLES
+
+from core.normalisation.company import normalise_company
 
 
 class TestNormaliseCompany(unittest.TestCase):

@@ -9,8 +9,7 @@ from __future__ import annotations
 import re
 
 _SUFFIX_RE = re.compile(
-    r"[,\s]+"
-    r"(ltd|limited|inc|incorporated|gmbh|plc|s\.?a\.?|llc|llp)\.?\s*$",
+    r"[,\s]+" r"(ltd|limited|inc|incorporated|gmbh|plc|s\.?a\.?|llc|llp)\.?\s*$",
     re.IGNORECASE,
 )
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^)]*\)\s*$")
