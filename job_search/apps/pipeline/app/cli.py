@@ -20,6 +20,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from core.db.session import build_engine
+from core.enrichment.write_engagement_terms import write_engagement_terms
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
 from core.ingestion.connector import Connector
 from core.ingestion.greenhouse_connector import GreenhouseConnector, GreenhouseQuery
@@ -428,6 +430,22 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         http_client.close()
 
 
+def _cmd_enrich_engagement_terms(args: argparse.Namespace) -> int:
+    """Run the `enrich-engagement-terms` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    written = write_engagement_terms(engine)
+    print(f"enrich-engagement-terms complete: rows_written={written}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -453,10 +471,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     ingest_parser.add_argument("--region", default=None)
 
+    subparsers.add_parser(
+        "enrich-engagement-terms",
+        help="Extract and write engagement/IR35/rate terms for every " "unioned job",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
         return _cmd_ingest(args)
+    if args.command == "enrich-engagement-terms":
+        return _cmd_enrich_engagement_terms(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
