@@ -1,0 +1,106 @@
+version: 2
+
+sources:
+  - name: silver_ingest
+    schema: silver
+    tables:
+      - name: job_engagement_terms
+        description: >
+          Written by the enrich-engagement-terms pipeline CLI subcommand
+          (core.enrichment.write_engagement_terms), not dbt — the
+          extraction logic needs to run once per row in application code.
+          silver__job_posting joins this in; nothing else should read it
+          directly.
+        columns:
+          - name: job_key
+            description: "Matches intermediate.int_jobs__unioned.job_key."
+
+models:
+  - name: silver__job_posting
+    description: >
+      One row per int_jobs__unioned job, enriched with engagement type,
+      IR35 status and rate normalisation (PLAN.md Step 5a). Left-joins
+      job_engagement_terms so a job without an enrichment row yet (the
+      pipeline subcommand hasn't been run since it landed) still appears,
+      with every engagement field defaulted to its explicit 'unknown'
+      value rather than the row disappearing.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: job_key
+        data_type: text
+        tests:
+          - unique
+          - not_null
+      - name: source_name
+        data_type: text
+        tests:
+          - not_null
+      - name: source_job_id
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url
+        data_type: text
+        tests:
+          - not_null
+      - name: job_url_canonical
+        data_type: text
+        tests:
+          - not_null
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+      - name: title
+        data_type: text
+      - name: company
+        data_type: text
+      - name: location
+        data_type: text
+      - name: description
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: engagement_type
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['permanent', 'contract', 'ftc', 'interim', 'unknown']
+      - name: ir35_status
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                ['inside', 'outside', 'not_applicable', 'undetermined', 'unknown']
+      - name: engagement_vehicle
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['umbrella', 'limited', 'paye', 'agency_paye', 'unknown']
+      - name: rate_basis
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['annual', 'daily', 'hourly', 'unknown']
+      - name: rate_currency
+        data_type: text
+      - name: rate_annualised_gbp
+        data_type: numeric
+      - name: rate_daily_gbp_equivalent
+        data_type: numeric
+      - name: contract_length_months
+        data_type: integer
+      - name: extension_likelihood
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['likely', 'possible', 'unlikely', 'unstated']

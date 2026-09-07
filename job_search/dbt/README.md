@@ -15,6 +15,12 @@ connectors) into typed, contract-enforced models.
   collapses bronze's version history down to one current row per
   `(source_name, source_job_id)`. Downstream steps read from here, never
   from the staging models directly.
+- **silver** (`models/silver/`, tables, schema `silver`) —
+  `silver__job_posting` enriches `int_jobs__unioned` with engagement
+  type, IR35 status and normalised rate figures. The enrichment itself
+  (`core.enrichment.write_engagement_terms`) runs outside dbt, via the
+  `enrich-engagement-terms` pipeline CLI subcommand, and lands in
+  `silver.job_engagement_terms` — a plain dbt `source()`, not a model.
 
 ## Running it
 
