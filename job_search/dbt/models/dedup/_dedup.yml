@@ -39,6 +39,11 @@ models:
       first" check. duplicate_group_key identifies which group a row
       belongs to; two jobs with the same duplicate_group_key AND the
       same duplicate_type are the same exact-match group.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - job_key
+            - duplicate_type
     columns:
       - name: job_key
         data_type: text
@@ -66,6 +71,12 @@ models:
       One row per candidate pair sharing a blocking key or company
       alone (soft block). Feeds Step 8's similarity scoring — nothing
       downstream should regenerate candidate pairs independently.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - job_key_a
+            - job_key_b
+            - match_type
     columns:
       - name: job_key_a
         data_type: text
@@ -89,6 +100,11 @@ models:
       documented weight table) — Step 9 recalibrates the blend from
       real labelled pairs, reading these components directly rather
       than recomputing anything.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - job_key_a
+            - job_key_b
     columns:
       - name: job_key_a
         data_type: text
@@ -119,6 +135,16 @@ models:
         tests:
           - not_null
       - name: date_diff_days
+        description: >
+          Absolute days between the two postings' posted_at values. When
+          either side's posted_at is NULL (26 of 3751 postings, an
+          upstream extraction gap), this is set to the sentinel value
+          22.5 — never a real value, since EXTRACT(DAY FROM a
+          timestamptz difference) always returns a whole integer for
+          real data — chosen so date_similarity's GREATEST(0, 1 - d/45)
+          formula lands exactly on this model's documented neutral score
+          (0.5) for missing information, consistent with how
+          location_similarity/salary_similarity treat missing data.
         data_type: "double precision"
         tests:
           - not_null
