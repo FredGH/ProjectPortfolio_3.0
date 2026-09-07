@@ -1,0 +1,46 @@
+version: 2
+
+sources:
+  - name: dedup_ingest
+    schema: dedup
+    tables:
+      - name: job_blocking_keys
+        description: >
+          Written by the compute-blocking-keys pipeline CLI subcommand
+          (core.dedup.write_blocking_keys), not dbt. One row per
+          silver__job_posting job, carrying its normalised company,
+          matching (seniority-stripped) title, resolved country/region,
+          concatenated block key, and exact-duplicate content hash.
+        columns:
+          - name: job_key
+            description: "Matches silver.silver__job_posting.job_key."
+
+models:
+  - name: dedup__exact_duplicates
+    description: >
+      One row per job that shares job_url_canonical OR content_sha256
+      with at least one other job — PLAN.md Step 7's "cheap matches
+      first" check. duplicate_group_key identifies which group a row
+      belongs to; two jobs with the same duplicate_group_key AND the
+      same duplicate_type are the same exact-match group.
+    columns:
+      - name: job_key
+        data_type: text
+        tests:
+          - not_null
+      - name: duplicate_type
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['url_canonical', 'content_hash']
+      - name: duplicate_group_key
+        description: "The shared job_url_canonical or content_sha256 value."
+        data_type: text
+        tests:
+          - not_null
+      - name: group_size
+        description: "How many jobs share this duplicate_group_key."
+        data_type: bigint
+        tests:
+          - not_null

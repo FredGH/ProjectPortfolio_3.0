@@ -25,3 +25,6 @@ models:
     silver:
       +materialized: table
       +schema: silver
+    dedup:
+      +materialized: table
+      +schema: dedup
