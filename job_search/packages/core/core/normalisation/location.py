@@ -45,7 +45,14 @@ _NON_UK_COUNTRY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         "US",
     ),
-    (re.compile(r",\s*DE\b|\bgermany\b", re.IGNORECASE), "DE"),
+    # Deliberately NOT matching a bare ", DE": that is also the US postal
+    # code for Delaware, so "Wilmington, DE"/"Newark, DE" would resolve to
+    # Germany. Per this module's own philosophy (unresolved beats wrong),
+    # the two-letter code is dropped and only unambiguous signals are
+    # kept: the country name, and "Berlin" as a city that no US state
+    # abbreviation collides with.
+    (re.compile(r"\bgermany\b", re.IGNORECASE), "DE"),
+    (re.compile(r"\bberlin\b", re.IGNORECASE), "DE"),
     (re.compile(r"\bMX\b|\bmexico\b", re.IGNORECASE), "MX"),
     (re.compile(r"\bsouth korea\b", re.IGNORECASE), "KR"),
 ]
@@ -72,17 +79,25 @@ class NormalisedLocation:
     is_remote: bool
 
 
-def normalise_location(raw: str) -> NormalisedLocation:
+def normalise_location(raw: str | None) -> NormalisedLocation:
     """Normalise a location string to ISO country + (for the UK) region.
 
     Args:
-        raw: The location string as stored in int_jobs__unioned.
+        raw: The location string as stored in int_jobs__unioned. `None`
+            when the source has no location for this row —
+            int_jobs__unioned.location is nullable (manual entries with
+            failed extraction).
 
     Returns:
         The `NormalisedLocation`. `country_iso`/`region` are `None` when
         genuinely unresolved (see this module's docstring) — never
-        guessed.
+        guessed. `None` input yields the fully-unresolved
+        `NormalisedLocation(None, None, is_remote=False)` rather than
+        raising: no location string is no signal, not an error.
     """
+    if raw is None:
+        return NormalisedLocation(country_iso=None, region=None, is_remote=False)
+
     is_remote = bool(_REMOTE_RE.search(raw))
 
     if _UK_POSTCODE_RE.match(raw.strip()):

@@ -23,3 +23,8 @@ class TestNormaliseCompany(unittest.TestCase):
 
     def test_alias_is_case_insensitive(self) -> None:
         self.assertEqual(normalise_company("FACEBOOK"), "Meta")
+
+    def test_none_company_returns_none_and_does_not_raise(self) -> None:
+        """int_jobs__unioned.company is nullable (manual entries with
+        failed extraction), so the real caller can pass None."""
+        self.assertIsNone(normalise_company(None))

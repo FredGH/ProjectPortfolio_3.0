@@ -18,3 +18,11 @@ class TestNormaliseLocation(unittest.TestCase):
                 self.assertEqual(result.country_iso, country_iso)
                 self.assertEqual(result.region, region)
                 self.assertEqual(result.is_remote, is_remote)
+
+    def test_none_location_is_fully_unresolved_and_does_not_raise(self) -> None:
+        """int_jobs__unioned.location is nullable (manual entries with
+        failed extraction), so the real caller can pass None."""
+        result = normalise_location(None)
+        self.assertIsNone(result.country_iso)
+        self.assertIsNone(result.region)
+        self.assertFalse(result.is_remote)

@@ -106,6 +106,12 @@ LOCATION_EXAMPLES: list[tuple[str, str | None, str | None, bool]] = [
     ("US-Remote, Chicago, Seattle, San Francisco", "US", None, True),
     ("n/a", None, None, False),
     ("Remote in the US", "US", None, True),
+    # Synthetic regression cases, not from bronze: "DE" is both Germany's
+    # ISO code and the US postal code for Delaware, so a bare ", DE" is
+    # ambiguous and must resolve to nothing rather than to Germany.
+    # "Berlin, DE" above still resolves, via the city name.
+    ("Wilmington, DE", None, None, False),
+    ("Newark, DE", None, None, False),
 ]
 
 # (description, salary_raw, expected_annualised_gbp_or_None)

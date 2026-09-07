@@ -22,7 +22,7 @@ _ALIASES = {
 }
 
 
-def normalise_company(raw: str) -> str:
+def normalise_company(raw: str | None) -> str | None:
     """Normalise a company name for dedup matching.
 
     Strips common legal-entity suffixes (Ltd, Limited, Inc, GmbH, PLC,
@@ -31,13 +31,21 @@ def normalise_company(raw: str) -> str:
     (Meta/Facebook, Google/Alphabet).
 
     Args:
-        raw: The company name as stored in int_jobs__unioned.
+        raw: The company name as stored in int_jobs__unioned. `None` when
+            the source has no company for this row —
+            int_jobs__unioned.company is nullable (manual entries with
+            failed extraction).
 
     Returns:
-        The normalised name. Mixed-case input that isn't ALL-CAPS keeps
-        its original casing (a deliberate brand stylisation is not
-        "wrong casing" to fix).
+        The normalised name, or `None` when `raw` is `None` — no company
+        name is no signal, so it propagates as `None` rather than
+        raising. Mixed-case input that isn't ALL-CAPS keeps its original
+        casing (a deliberate brand stylisation is not "wrong casing" to
+        fix).
     """
+    if raw is None:
+        return None
+
     name = _TRAILING_PAREN_RE.sub("", raw)
     # Suffix stripping can leave a fresh trailing parenthetical exposed in
     # principle (not observed in real data, but cheap to guard); loop
