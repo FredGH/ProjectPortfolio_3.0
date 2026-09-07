@@ -28,6 +28,8 @@ import re
 
 _TOKEN_RE = re.compile(r"\w+")
 
+_UINT64_MASK = 2**64 - 1
+
 
 def _shingles(text: str) -> list[str]:
     """Tokenise `text` into word bigrams ("word1 word2" shingles).
@@ -77,10 +79,16 @@ def hamming_distance(a: int, b: int) -> int:
     """Count the differing bits between two fingerprints.
 
     Args:
-        a: The first fingerprint.
-        b: The second fingerprint.
+        a: The first fingerprint. May be the natural unsigned value
+            compute_simhash produces, or a signed bigint read back from
+            Postgres (dedup.job_similarity_features.description_simhash
+            is stored signed — see core.dedup.write_similarity_features.
+            _to_signed_bigint) — both are accepted and produce the
+            correct result, since masking to 64 bits recovers the same
+            bit pattern regardless of the Python int's sign.
+        b: The second fingerprint, same acceptance as `a`.
 
     Returns:
-        The number of bit positions where `a` and `b` differ.
+        The number of bit positions where `a` and `b` differ, in [0, 64].
     """
-    return bin(a ^ b).count("1")
+    return bin((a & _UINT64_MASK) ^ (b & _UINT64_MASK)).count("1")

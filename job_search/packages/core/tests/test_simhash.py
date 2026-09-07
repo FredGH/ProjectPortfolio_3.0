@@ -105,3 +105,19 @@ class TestHammingDistance(unittest.TestCase):
 
     def test_maximally_different_64_bit_values(self) -> None:
         self.assertEqual(hamming_distance(0, 2**64 - 1), 64)
+
+    def test_accepts_signed_bigint_representation(self) -> None:
+        """dedup.job_similarity_features stores description_simhash as a
+        signed bigint (core.dedup.write_similarity_features._to_signed_bigint
+        converts fingerprints >= 2**63 to negative before every INSERT) — a
+        consumer reading that column back must get the same answer as if it
+        had the natural unsigned value."""
+        unsigned_max = 2**64 - 1
+        signed_representation = -1  # the signed bigint form of 2**64 - 1
+        self.assertEqual(
+            hamming_distance(0, unsigned_max),
+            hamming_distance(0, signed_representation),
+        )
+
+    def test_negative_inputs_give_the_true_64_bit_distance(self) -> None:
+        self.assertEqual(hamming_distance(-1, 0), 64)
