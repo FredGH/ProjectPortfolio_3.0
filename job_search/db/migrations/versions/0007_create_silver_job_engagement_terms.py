@@ -29,6 +29,10 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # IF NOT EXISTS, and never dropped again on downgrade: this migration
+    # creates the schema only opportunistically. dbt also materialises
+    # into `silver` (silver__job_posting), so no single owner may tear it
+    # down — see downgrade().
     op.execute("CREATE SCHEMA IF NOT EXISTS silver")
 
     op.create_table(
@@ -39,8 +43,8 @@ def upgrade() -> None:
         sa.Column("engagement_vehicle", sa.Text(), nullable=False),
         sa.Column("rate_basis", sa.Text(), nullable=False),
         sa.Column("rate_currency", sa.Text(), nullable=True),
-        sa.Column("rate_annualised_gbp", sa.Numeric(), nullable=True),
-        sa.Column("rate_daily_gbp_equivalent", sa.Numeric(), nullable=True),
+        sa.Column("rate_annualised", sa.Numeric(), nullable=True),
+        sa.Column("rate_daily_equivalent", sa.Numeric(), nullable=True),
         sa.Column("contract_length_months", sa.Integer(), nullable=True),
         sa.Column("extension_likelihood", sa.Text(), nullable=False),
         sa.Column(
@@ -77,5 +81,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Drops only the object this migration created. The `silver` schema
+    # itself is deliberately left in place: dbt materialises
+    # silver__job_posting into the same schema, so a bare DROP SCHEMA
+    # would fail ("schema silver is not empty") in every environment
+    # where dbt has run, and a DROP SCHEMA CASCADE would silently destroy
+    # dbt's models. This migration does not exclusively own the schema.
     op.drop_table("job_engagement_terms", schema="silver")
-    op.execute("DROP SCHEMA IF EXISTS silver")

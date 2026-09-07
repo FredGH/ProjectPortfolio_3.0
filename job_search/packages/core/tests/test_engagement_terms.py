@@ -72,6 +72,35 @@ class TestClassifyEngagement(unittest.TestCase):
         self.assertEqual(result.ir35_status, "not_applicable")
         self.assertEqual(result.engagement_vehicle, "unknown")
 
+    def test_explicit_ir35_outranks_an_incidental_permanent_match(self) -> None:
+        """Regression: 'permanent' used to unconditionally win.
+
+        A real contract posting can say "permanent" about something else
+        entirely (benefits, headcount). An explicit inside/outside IR35
+        statement is far stronger evidence of a contract engagement, so
+        it must disqualify the permanent branch — otherwise the stated
+        IR35 status is thrown away and replaced with 'not_applicable'.
+        """
+        result = classify_engagement(
+            "Contract, outside IR35. We offer permanent health insurance."
+        )
+        self.assertEqual(result.engagement_type, "contract")
+        self.assertEqual(result.ir35_status, "outside")
+
+    def test_explicit_inside_ir35_also_outranks_permanent(self) -> None:
+        result = classify_engagement(
+            "6 month engagement, inside IR35. Permanent staff discounts apply."
+        )
+        self.assertEqual(result.engagement_type, "contract")
+        self.assertEqual(result.ir35_status, "inside")
+
+    def test_ftc_with_stated_ir35_stays_ftc_not_contract(self) -> None:
+        """The IR35 guard only disqualifies `permanent` — it must not
+        flatten a more specific ftc/interim signal into 'contract'."""
+        result = classify_engagement("12-month FTC, inside IR35, NHS pension.")
+        self.assertEqual(result.engagement_type, "ftc")
+        self.assertEqual(result.ir35_status, "inside")
+
     def test_fixed_term_contract_is_ftc(self) -> None:
         result = classify_engagement(
             "12-month FTC, Data Engineer, band 6, NHS pension."
@@ -116,8 +145,8 @@ class TestExtractEngagementTerms(unittest.TestCase):
         )
         self.assertEqual(result.rate_basis, "daily")
         self.assertEqual(result.rate_currency, "GBP")
-        self.assertEqual(result.rate_daily_gbp_equivalent, 475)
-        self.assertEqual(result.rate_annualised_gbp, 475 * 260)
+        self.assertEqual(result.rate_daily_equivalent, 475)
+        self.assertEqual(result.rate_annualised, 475 * 260)
 
     def test_plain_annual_salary_raw_with_no_rate_phrase(self) -> None:
         """Real Adzuna posting 5510354959 — no rate phrase, plain
@@ -126,37 +155,37 @@ class TestExtractEngagementTerms(unittest.TestCase):
             "Data Engineer, permanent role, London.", salary_raw="130000-130000"
         )
         self.assertEqual(result.rate_basis, "annual")
-        self.assertEqual(result.rate_annualised_gbp, 130000)
-        self.assertEqual(result.rate_daily_gbp_equivalent, 130000 / 260)
+        self.assertEqual(result.rate_annualised, 130000)
+        self.assertEqual(result.rate_daily_equivalent, 130000 / 260)
 
     def test_jooble_k_shorthand_annual_range(self) -> None:
         """Real Jooble salary text: '£80k - £95k per year'."""
         result = extract_engagement_terms(None, salary_raw="£80k - £95k per year")
         self.assertEqual(result.rate_basis, "annual")
         self.assertEqual(result.rate_currency, "GBP")
-        self.assertEqual(result.rate_annualised_gbp, 87500)
+        self.assertEqual(result.rate_annualised, 87500)
 
     def test_monthly_rate_annualises_via_times_twelve(self) -> None:
         """Real Jooble salary text: '£1,500 per month' — 'monthly' isn't a
         named rate_basis; it collapses into 'annual' (see plan scope note)."""
         result = extract_engagement_terms(None, salary_raw="£1,500 per month")
         self.assertEqual(result.rate_basis, "annual")
-        self.assertEqual(result.rate_annualised_gbp, 1500 * 12)
+        self.assertEqual(result.rate_annualised, 1500 * 12)
 
     def test_hourly_rate_with_dollar_currency(self) -> None:
         """Real Jooble salary text: '$15 per hour'."""
         result = extract_engagement_terms(None, salary_raw="$15 per hour")
         self.assertEqual(result.rate_basis, "hourly")
         self.assertEqual(result.rate_currency, "USD")
-        self.assertEqual(result.rate_daily_gbp_equivalent, 15 * 7.5)
-        self.assertEqual(result.rate_annualised_gbp, 15 * 7.5 * 260)
+        self.assertEqual(result.rate_daily_equivalent, 15 * 7.5)
+        self.assertEqual(result.rate_annualised, 15 * 7.5 * 260)
 
     def test_no_salary_at_all_is_unknown_basis_with_null_figures(self) -> None:
         """Real Greenhouse rows: salary_raw is always NULL."""
         result = extract_engagement_terms("Senior Data Engineer, Public Sector", None)
         self.assertEqual(result.rate_basis, "unknown")
-        self.assertIsNone(result.rate_annualised_gbp)
-        self.assertIsNone(result.rate_daily_gbp_equivalent)
+        self.assertIsNone(result.rate_annualised)
+        self.assertIsNone(result.rate_daily_equivalent)
         self.assertIsNone(result.rate_currency)
 
     def test_contract_length_in_months_extracted(self) -> None:
@@ -193,6 +222,38 @@ class TestExtractEngagementTerms(unittest.TestCase):
     def test_no_extension_language_is_unstated(self) -> None:
         result = extract_engagement_terms("Permanent role, London.", salary_raw=None)
         self.assertEqual(result.extension_likelihood, "unstated")
+
+    def test_comma_only_salary_raw_does_not_crash(self) -> None:
+        """Regression: salary_raw with punctuation but no number.
+
+        The number regex used to be `[\\d,]+`, which matched the bare ","
+        in "Competitive, negotiable" as a whole token; _parse_amount then
+        evaluated float("") and raised ValueError. Because
+        write_engagement_terms runs the whole batch inside one
+        engine.begin() with no per-row handling, that single row would
+        have aborted the entire enrichment run.
+        """
+        result = extract_engagement_terms(None, salary_raw="Competitive, negotiable")
+        self.assertEqual(result.rate_basis, "unknown")
+        self.assertIsNone(result.rate_annualised)
+        self.assertIsNone(result.rate_daily_equivalent)
+        self.assertIsNone(result.rate_currency)
+
+    def test_free_text_salary_raw_with_real_numbers_does_not_crash(self) -> None:
+        """Same regression, for free text that DOES contain numbers.
+
+        Known limitation, deliberately not fixed here: the salary_raw
+        fallback averages every number it finds, so the unrelated
+        "25 days holiday" drags the figure down to the mean of 50000 and
+        25. Telling a salary apart from unrelated numbers in free text is
+        a separate problem (the LLM-residual pass PLAN.md defers); this
+        test pins only that the row is processed without raising.
+        """
+        result = extract_engagement_terms(
+            None, salary_raw="50000 plus bonus, 25 days holiday"
+        )
+        self.assertEqual(result.rate_basis, "annual")
+        self.assertEqual(result.rate_annualised, (50000 + 25) / 2)
 
     def test_classification_fields_pass_through(self) -> None:
         """extract_engagement_terms includes classify_engagement's fields."""

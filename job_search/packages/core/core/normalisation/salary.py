@@ -27,8 +27,11 @@ class ParsedSalary:
     """A posting's salary, normalised for coarse comparison across postings.
 
     Attributes:
-        annualised_gbp: The rate annualised and converted to GBP, or
-            `None` when no rate was stated (rate_basis == "unknown").
+        annualised_gbp: The rate annualised and converted to GBP — this
+            is the GBP-converted figure, unlike
+            `EngagementTerms.rate_annualised`, which stays in the
+            currency the posting stated. `None` when no rate was stated
+            (rate_basis == "unknown").
         band: A GBP band string, e.g. "80000-90000", or `None` when
             annualised_gbp is `None`.
         original_currency: The currency the rate was actually stated in,
@@ -69,7 +72,7 @@ def parse_salary(description: str | None, salary_raw: str | None) -> ParsedSalar
         The `ParsedSalary`.
     """
     terms = extract_engagement_terms(description, salary_raw)
-    if terms.rate_annualised_gbp is None:
+    if terms.rate_annualised is None:
         return ParsedSalary(
             annualised_gbp=None,
             band=None,
@@ -78,7 +81,7 @@ def parse_salary(description: str | None, salary_raw: str | None) -> ParsedSalar
         )
 
     fx_rate = _APPROXIMATE_FX_TO_GBP.get(terms.rate_currency or "GBP", 1.0)
-    annualised_gbp = terms.rate_annualised_gbp * fx_rate
+    annualised_gbp = terms.rate_annualised * fx_rate
     return ParsedSalary(
         annualised_gbp=annualised_gbp,
         band=_band(annualised_gbp),

@@ -21,13 +21,13 @@ _UPSERT = text(
     """
     INSERT INTO silver.job_engagement_terms (
         job_key, engagement_type, ir35_status, engagement_vehicle,
-        rate_basis, rate_currency, rate_annualised_gbp,
-        rate_daily_gbp_equivalent, contract_length_months,
+        rate_basis, rate_currency, rate_annualised,
+        rate_daily_equivalent, contract_length_months,
         extension_likelihood
     ) VALUES (
         :job_key, :engagement_type, :ir35_status, :engagement_vehicle,
-        :rate_basis, :rate_currency, :rate_annualised_gbp,
-        :rate_daily_gbp_equivalent, :contract_length_months,
+        :rate_basis, :rate_currency, :rate_annualised,
+        :rate_daily_equivalent, :contract_length_months,
         :extension_likelihood
     )
     ON CONFLICT (job_key) DO UPDATE SET
@@ -36,8 +36,8 @@ _UPSERT = text(
         engagement_vehicle = EXCLUDED.engagement_vehicle,
         rate_basis = EXCLUDED.rate_basis,
         rate_currency = EXCLUDED.rate_currency,
-        rate_annualised_gbp = EXCLUDED.rate_annualised_gbp,
-        rate_daily_gbp_equivalent = EXCLUDED.rate_daily_gbp_equivalent,
+        rate_annualised = EXCLUDED.rate_annualised,
+        rate_daily_equivalent = EXCLUDED.rate_daily_equivalent,
         contract_length_months = EXCLUDED.contract_length_months,
         extension_likelihood = EXCLUDED.extension_likelihood,
         extracted_at = now()
@@ -68,8 +68,8 @@ def write_engagement_terms(engine: Engine) -> int:
                     "engagement_vehicle": terms.engagement_vehicle,
                     "rate_basis": terms.rate_basis,
                     "rate_currency": terms.rate_currency,
-                    "rate_annualised_gbp": terms.rate_annualised_gbp,
-                    "rate_daily_gbp_equivalent": terms.rate_daily_gbp_equivalent,
+                    "rate_annualised": terms.rate_annualised,
+                    "rate_daily_equivalent": terms.rate_daily_equivalent,
                     "contract_length_months": terms.contract_length_months,
                     "extension_likelihood": terms.extension_likelihood,
                 },

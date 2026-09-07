@@ -5,5 +5,5 @@
 SELECT job_key, rate_basis
 FROM {{ ref('silver__job_posting') }}
 WHERE rate_basis != 'unknown'
-    AND rate_annualised_gbp IS NULL
-    AND rate_daily_gbp_equivalent IS NULL
+    AND rate_annualised IS NULL
+    AND rate_daily_equivalent IS NULL

@@ -67,7 +67,18 @@ def classify_engagement(description: str | None) -> EngagementClassification:
     """
     text = description or ""
 
-    if _PERMANENT_RE.search(text):
+    # An explicit "inside/outside IR35" statement is strong evidence of a
+    # contract-family engagement, so it disqualifies the `permanent`
+    # branch: a bare "permanent" match is easily a false positive from
+    # unrelated text in a real posting ("we offer permanent health
+    # insurance"). The remaining branches keep their original precedence,
+    # so an explicit FTC/interim posting that also states IR35 still
+    # classifies as ftc/interim rather than being flattened to contract.
+    has_explicit_ir35 = bool(
+        _OUTSIDE_IR35_RE.search(text) or _INSIDE_IR35_RE.search(text)
+    )
+
+    if _PERMANENT_RE.search(text) and not has_explicit_ir35:
         engagement_type = "permanent"
     elif _FTC_RE.search(text):
         engagement_type = "ftc"
@@ -134,7 +145,10 @@ _RATE_PHRASE_RE = re.compile(
 
 _K_SHORTHAND_RE = re.compile(r"(\d+(?:\.\d+)?)k", re.IGNORECASE)
 
-_SALARY_RAW_NUMBERS_RE = re.compile(r"[\d,]+(?:\.\d+)?")
+# Must start with a digit: `[\d,]+` would match a bare "," as a whole
+# token (e.g. in "Competitive, negotiable"), which `_parse_amount` then
+# turned into float("") -> ValueError, aborting the whole enrichment run.
+_SALARY_RAW_NUMBERS_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 _MONTHS_RE = re.compile(r"\b(\d{1,2})[\s-]*month", re.IGNORECASE)
 
@@ -164,11 +178,18 @@ def _parse_amount(raw: str) -> float:
 
     Returns:
         The parsed float, with 'k' expanded (e.g. "80k" -> 80000.0).
+
+    Raises:
+        ValueError: If `raw` holds no digits at all. Callers are expected
+            to pass fragments matched by a digit-anchored regex, so this
+            is a programming error rather than a data condition.
     """
     match = _K_SHORTHAND_RE.fullmatch(raw.strip())
     if match:
         return float(match.group(1)) * 1000
-    return float(raw.replace(",", ""))
+    # Belt-and-braces: strip stray leading/trailing commas so a fragment
+    # like ",500" or "500," can never reach float() as an empty string.
+    return float(raw.strip().strip(",").replace(",", ""))
 
 
 def _extract_rate_from_phrase(
@@ -236,15 +257,14 @@ class EngagementTerms:
             no rate signal was found at all (e.g. every Greenhouse row).
         rate_currency: ISO-ish 3-letter code (GBP/USD/EUR), or `None` when
             no currency signal was found.
-        rate_annualised_gbp: The rate annualised, at WORKING_DAYS_PER_YEAR/
+        rate_annualised: The rate annualised, at WORKING_DAYS_PER_YEAR/
             HOURS_PER_DAY where a conversion was needed. `None` when
-            rate_basis is 'unknown'. Despite the name, this is NOT
-            currency-converted to GBP — that conversion is Step 6's
-            parse_salary's job; this field name matches PLAN.md's own
-            wording ("annualised figure") and the currency actually stated
-            is in rate_currency.
-        rate_daily_gbp_equivalent: The rate as a day-rate equivalent, same
-            caveats as rate_annualised_gbp.
+            rate_basis is 'unknown'. Stated in whatever currency the
+            posting used (see rate_currency) — deliberately NOT
+            converted to GBP; that conversion is Step 6's parse_salary's
+            job, which is why this field is not named `_gbp`.
+        rate_daily_equivalent: The rate as a day-rate equivalent, same
+            currency caveat as rate_annualised.
         contract_length_months: Stated contract duration in months, or
             `None` when not stated (never 0 — a stated duration is always
             a positive integer here).
@@ -256,8 +276,8 @@ class EngagementTerms:
     engagement_vehicle: str
     rate_basis: str
     rate_currency: str | None
-    rate_annualised_gbp: float | None
-    rate_daily_gbp_equivalent: float | None
+    rate_annualised: float | None
+    rate_daily_equivalent: float | None
     contract_length_months: int | None
     extension_likelihood: str
 
@@ -292,7 +312,7 @@ def extract_engagement_terms(
             daily = annual / WORKING_DAYS_PER_YEAR
             basis = "annual"
         rate_basis, rate_currency = basis, currency
-        rate_annualised_gbp, rate_daily_gbp_equivalent = annual, daily
+        rate_annualised, rate_daily_equivalent = annual, daily
     elif salary_raw:
         salary_rate = _extract_rate_from_phrase(salary_raw)
         if salary_rate is not None:
@@ -308,20 +328,20 @@ def extract_engagement_terms(
             rate_basis, rate_currency = (
                 "annual" if basis == "monthly" else basis
             ), currency
-            rate_annualised_gbp, rate_daily_gbp_equivalent = annual, daily
+            rate_annualised, rate_daily_equivalent = annual, daily
         else:
             fallback = _extract_rate_from_salary_raw(salary_raw)
             if fallback is not None:
                 currency, annual = fallback
                 rate_basis, rate_currency = "annual", currency
-                rate_annualised_gbp = annual
-                rate_daily_gbp_equivalent = annual / WORKING_DAYS_PER_YEAR
+                rate_annualised = annual
+                rate_daily_equivalent = annual / WORKING_DAYS_PER_YEAR
             else:
                 rate_basis, rate_currency = "unknown", None
-                rate_annualised_gbp, rate_daily_gbp_equivalent = None, None
+                rate_annualised, rate_daily_equivalent = None, None
     else:
         rate_basis, rate_currency = "unknown", None
-        rate_annualised_gbp, rate_daily_gbp_equivalent = None, None
+        rate_annualised, rate_daily_equivalent = None, None
 
     months_match = _MONTHS_RE.search(text)
     contract_length_months = int(months_match.group(1)) if months_match else None
@@ -341,8 +361,8 @@ def extract_engagement_terms(
         engagement_vehicle=classification.engagement_vehicle,
         rate_basis=rate_basis,
         rate_currency=rate_currency,
-        rate_annualised_gbp=rate_annualised_gbp,
-        rate_daily_gbp_equivalent=rate_daily_gbp_equivalent,
+        rate_annualised=rate_annualised,
+        rate_daily_equivalent=rate_daily_equivalent,
         contract_length_months=contract_length_months,
         extension_likelihood=extension_likelihood,
     )

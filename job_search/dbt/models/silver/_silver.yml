@@ -91,14 +91,35 @@ models:
           - accepted_values:
               values: ['annual', 'daily', 'hourly', 'unknown']
       - name: rate_currency
+        description: >
+          The currency the rate was actually stated in (GBP/USD/EUR).
+          Nullable — a plain numeric salary_raw carries no currency
+          signal, and this column is never guessed.
         data_type: text
-      - name: rate_annualised_gbp
+      - name: rate_annualised
+        description: >
+          The stated rate annualised (260 working days / 7.5-hour day
+          where a conversion was needed). Expressed in rate_currency —
+          this is NOT converted to GBP. Currency conversion happens in
+          core.normalisation.salary.parse_salary (PLAN.md Step 6), a
+          separate function; do not compare this column across
+          currencies. Nullable when rate_basis is 'unknown'.
         data_type: numeric
-      - name: rate_daily_gbp_equivalent
+      - name: rate_daily_equivalent
+        description: >
+          The stated rate as a day-rate equivalent, same 260-day basis.
+          Expressed in rate_currency, NOT converted to GBP — same caveat
+          as rate_annualised. Nullable when rate_basis is 'unknown'.
         data_type: numeric
       - name: contract_length_months
+        description: >
+          Stated contract duration in months. Nullable when the posting
+          does not state one — never 0.
         data_type: integer
       - name: extension_likelihood
+        description: >
+          How likely an extension is, per the posting's own wording.
+          'unstated' when the posting says nothing about extensions.
         data_type: text
         tests:
           - not_null

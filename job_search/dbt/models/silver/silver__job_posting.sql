@@ -20,8 +20,8 @@ SELECT
     COALESCE(t.engagement_vehicle, 'unknown') AS engagement_vehicle,
     COALESCE(t.rate_basis, 'unknown') AS rate_basis,
     t.rate_currency,
-    t.rate_annualised_gbp,
-    t.rate_daily_gbp_equivalent,
+    t.rate_annualised,
+    t.rate_daily_equivalent,
     t.contract_length_months,
     COALESCE(t.extension_likelihood, 'unstated') AS extension_likelihood
 FROM {{ ref('int_jobs__unioned') }} AS j
