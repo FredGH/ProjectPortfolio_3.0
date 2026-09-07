@@ -23,6 +23,7 @@ import httpx
 from core.db.session import build_engine
 from core.dedup.write_blocking_keys import write_blocking_keys
 from core.dedup.write_similarity_features import write_similarity_features
+from core.dedup.write_title_similarity_scores import write_title_similarity_scores
 from core.enrichment.write_engagement_terms import write_engagement_terms
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
 from core.ingestion.connector import Connector
@@ -480,6 +481,22 @@ def _cmd_compute_similarity_features(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compute_title_similarity_scores(args: argparse.Namespace) -> int:
+    """Run the `compute-title-similarity-scores` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    written = write_title_similarity_scores(engine)
+    print(f"compute-title-similarity-scores complete: rows_written={written}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -520,6 +537,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Compute and write per-job similarity features (SimHash, salary)",
     )
 
+    subparsers.add_parser(
+        "compute-title-similarity-scores",
+        help="Compute and write pair-level title similarity scores",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -530,6 +552,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compute_blocking_keys(args)
     if args.command == "compute-similarity-features":
         return _cmd_compute_similarity_features(args)
+    if args.command == "compute-title-similarity-scores":
+        return _cmd_compute_title_similarity_scores(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
