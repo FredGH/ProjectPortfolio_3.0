@@ -615,21 +615,26 @@ class TestWriteSimilarityFeatures(unittest.TestCase):
     """Integration test against a real Postgres instance."""
 
     def setUp(self) -> None:
+        # write_similarity_features reads from silver.silver__job_posting
+        # (a dbt table materialization), not intermediate.int_jobs__unioned
+        # — the fixture must insert into the table this function actually
+        # reads, or the row never appears there without an intervening
+        # `dbt run` and the test fails with NoResultFound regardless of
+        # correctness (this exact mistake was caught and fixed during the
+        # sibling Step 7 plan's Task 3 — same root cause, fixed here too).
         self.engine = build_engine(_OWNER_DSN)
         self.job_key = f"test-{uuid.uuid4().hex}"
         with self.engine.begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO intermediate.int_jobs__unioned "
+                    "INSERT INTO silver.silver__job_posting "
                     "(job_key, source_name, source_job_id, job_url, "
                     "job_url_canonical, entry_method, title, company, "
-                    "location, description, salary_raw, posted_at, "
-                    "fetched_at, run_id, payload_sha256) VALUES "
+                    "location, description, salary_raw, posted_at) VALUES "
                     "(:job_key, 'test_source', :job_key, 'https://x', "
                     "'https://x', 'api', 'Data Engineer', 'Acme Ltd', "
                     "'London', 'A test description.', "
-                    "'£80k - £95k per year', now(), now(), 'run-1', "
-                    "'sha-1')"
+                    "'£80k - £95k per year', now())"
                 ),
                 {"job_key": self.job_key},
             )
@@ -645,7 +650,7 @@ class TestWriteSimilarityFeatures(unittest.TestCase):
             )
             conn.execute(
                 text(
-                    "DELETE FROM intermediate.int_jobs__unioned "
+                    "DELETE FROM silver.silver__job_posting "
                     "WHERE job_key = :job_key"
                 ),
                 {"job_key": self.job_key},
