@@ -14,6 +14,22 @@ sources:
         columns:
           - name: job_key
             description: "Matches silver.silver__job_posting.job_key."
+      - name: job_similarity_features
+        description: >
+          Written by the compute-similarity-features pipeline CLI
+          subcommand (core.dedup.write_similarity_features). One row per
+          silver__job_posting job: a description SimHash fingerprint and
+          Step 6's parsed-salary output.
+        columns:
+          - name: job_key
+            description: "Matches silver.silver__job_posting.job_key."
+      - name: pair_title_scores
+        description: >
+          Written by the compute-title-similarity-scores pipeline CLI
+          subcommand (core.dedup.write_title_similarity_scores). One row
+          per dedup__candidate_pairs row — the one Step 8 signal
+          computed per PAIR rather than per job, since rapidfuzz's
+          token_set_ratio has no SQL equivalent.
 
 models:
   - name: dedup__exact_duplicates
@@ -65,3 +81,60 @@ models:
           - not_null
           - accepted_values:
               values: ['block', 'soft_block']
+
+  - name: dedup__similarity_scores
+    description: >
+      One row per Step 7 candidate pair, every Step 8 component signal
+      persisted separately plus an initial blend (see this plan's
+      documented weight table) — Step 9 recalibrates the blend from
+      real labelled pairs, reading these components directly rather
+      than recomputing anything.
+    columns:
+      - name: job_key_a
+        data_type: text
+        tests:
+          - not_null
+      - name: job_key_b
+        data_type: text
+        tests:
+          - not_null
+      - name: match_type
+        data_type: text
+        tests:
+          - not_null
+      - name: company_similarity
+        data_type: "double precision"
+        tests:
+          - not_null
+      - name: title_similarity
+        data_type: numeric
+        tests:
+          - not_null
+      - name: description_similarity
+        data_type: "double precision"
+        tests:
+          - not_null
+      - name: location_similarity
+        data_type: "double precision"
+        tests:
+          - not_null
+      - name: date_diff_days
+        data_type: "double precision"
+        tests:
+          - not_null
+      - name: date_similarity
+        data_type: "double precision"
+        tests:
+          - not_null
+      - name: salary_similarity
+        data_type: "double precision"
+        tests:
+          - not_null
+      - name: hard_veto
+        data_type: boolean
+        tests:
+          - not_null
+      - name: blended_score
+        data_type: "double precision"
+        tests:
+          - not_null
