@@ -48,6 +48,46 @@ def _lookup_curve_point(curve: list[dict], threshold: float) -> dict:
 st.set_page_config(page_title="Dedup Calibration", layout="wide")
 st.title("Dedup Calibration")
 
+with st.expander("User manual"):
+    st.markdown(
+        """
+The **x-axis of the chart is "threshold"** — a candidate cutoff for the
+blended similarity score. Every point on it asks: *"if I called every
+pair with a score at or above this number an auto-match, what would
+precision and recall be?"* The two lines are **precision** (light) and
+**recall** (dark) at each of those candidate cutoffs.
+
+Your **Auto-match threshold** number below is literally one x-value on
+that chart — the "Measured precision/recall" boxes are just reading
+the two lines' heights at that point. For example: at a threshold of
+**0.80**, the chart might show precision **1.000** and recall
+**0.250**. That means everything the curve calls "predicted match" at
+that cutoff happens to be a real match (precision = 1.0), but that's a
+small, strict slice — only about a quarter of the actual "match"-labeled
+pairs score that high (recall = 0.25). The rest of the real matches,
+scoring below 0.80, would not get auto-matched at that threshold.
+
+The **Auto-reject threshold** is *not* read from this chart at all —
+there's no plotted line for "reject precision." It's a separate number
+you set independently: anything scoring at or below it is confidently
+treated as "not the same job," no auto-match consideration needed. It
+sits below the noisy middle of the curve, by design.
+
+**Is a high-precision, low-recall pick (like 0.80 / 1.000 precision /
+0.250 recall above) a good choice?** PLAN.md's target is precision
+above 0.95 at the auto-match threshold — a value like that comfortably
+clears the bar. The recall tradeoff is intentional and safe: everything
+that doesn't clear the auto-match threshold falls into the "middle
+band" between the two thresholds, which goes to the **Dedup Review
+Queue** for a human decision rather than being silently auto-merged.
+This is deliberate: a missed auto-match just means "you review it,"
+while a wrong auto-match silently loses a real job from the pipeline
+forever. Lowering the auto-match threshold trades some of that safety
+margin for a higher auto-match recall — precision will drop but more
+pairs get merged automatically without a human in the loop.
+"""
+    )
+
 _settings = get_settings()
 
 try:
