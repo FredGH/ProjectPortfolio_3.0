@@ -57,38 +57,54 @@ pair with a score at or above this number an auto-match, what would
 precision and recall be?"* The two lines are **precision** (light) and
 **recall** (dark) at each of those candidate cutoffs.
 
-**Precision** asks: *of the pairs this threshold calls a match, how
-many actually are one?* It's calculated as
+#### Definitions and formulas
+
+Precision and recall are standard classification metrics, defined
+against **true positives (TP)**, **false positives (FP)**, and
+**false negatives (FN)**:
 
 ```
-precision = (labeled "match" pairs scoring ≥ threshold)
-            ────────────────────────────────────────────
-            (all pairs scoring ≥ threshold, match or not)
+Precision = TP / (TP + FP)   —  "when it predicts positive, how often is it right?"
+Recall    = TP / (TP + FN)   —  "of every real positive, how many did it find?"
 ```
 
-Concretely: say this threshold calls 10 pairs "a match," and 9 of
-those 10 turn out to really be the same job — precision is 9/10 =
-**0.90**. Raising the threshold means fewer pairs clear the bar at
-all, but the ones that still do are the ones the model is most
-confident about — so as you raise the threshold, precision usually
-climbs toward 1.0.
+**In this tool, "predicting positive" means "this pair's blended
+score is at or above the threshold."** So, at a given threshold:
 
-**Recall** asks the opposite question: *of every pair you've actually
-labeled a match, how many did this threshold catch?* It's calculated
-as
+- **TP** — a pair scoring ≥ threshold that you labeled `match` (a
+  real match, correctly caught)
+- **FP** — a pair scoring ≥ threshold that you labeled `not_match`
+  (a false alarm)
+- **FN** — a pair you labeled `match` that scores *below* the
+  threshold (a real match this threshold misses)
+
+Substituting those into the generic formulas gives the two lines on
+the chart:
 
 ```
-recall = (labeled "match" pairs scoring ≥ threshold)
-         ──────────────────────────────────────────────
-         (all pairs you labeled "match", regardless of score)
+precision = TP / (TP + FP) = (labeled "match" pairs scoring ≥ threshold)
+                              ────────────────────────────────────────────
+                              (all pairs scoring ≥ threshold, match or not)
+
+recall    = TP / (TP + FN) = (labeled "match" pairs scoring ≥ threshold)
+                              ──────────────────────────────────────────────
+                              (all pairs you labeled "match", regardless of score)
 ```
 
-Concretely: say you've labeled 20 pairs as real matches overall, and
-at this threshold only 5 of those 20 score high enough to clear it —
-recall is 5/20 = **0.25**. The other 15 real matches scored below
-this threshold and are missed entirely. Raising the threshold makes
-this worse, not better: a stricter bar catches fewer of the real
-matches, so recall usually falls toward 0 as you raise the threshold.
+**Precision, concretely:** say this threshold calls 10 pairs "a
+match" (TP + FP = 10), and 9 of those 10 turn out to really be the
+same job (TP = 9) — precision is 9/10 = **0.90**. Raising the
+threshold means fewer pairs clear the bar at all, but the ones that
+still do are the ones the model is most confident about — so as you
+raise the threshold, precision usually climbs toward 1.0.
+
+**Recall, concretely:** say you've labeled 20 pairs as real matches
+overall (TP + FN = 20), and at this threshold only 5 of those 20
+score high enough to clear it (TP = 5) — recall is 5/20 = **0.25**.
+The other 15 real matches (FN) scored below this threshold and are
+missed entirely. Raising the threshold makes this worse, not better:
+a stricter bar catches fewer of the real matches, so recall usually
+falls toward 0 as you raise the threshold.
 
 Precision and recall pull in opposite directions as you move the
 threshold — that's the whole reason there's a curve here instead of
