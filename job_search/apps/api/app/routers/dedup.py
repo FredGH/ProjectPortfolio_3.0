@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from app.dependencies import get_app_db_engine
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import Engine, Row, text
 
 from core.dedup.calibration import LabeledPair, compute_precision_recall_curve
@@ -231,24 +231,37 @@ def get_pairs_to_label(
         ).all()
         postings_by_key = {row.job_key: _posting_summary(row) for row in posting_rows}
 
-    return [
-        PairToLabel(
-            scores=SimilarityScores(
-                job_key_a=row.job_key_a,
-                job_key_b=row.job_key_b,
-                blended_score=float(row.blended_score),
-                company_similarity=float(row.company_similarity),
-                title_similarity=float(row.title_similarity),
-                description_similarity=float(row.description_similarity),
-                location_similarity=float(row.location_similarity),
-                date_diff_days=float(row.date_diff_days),
-                salary_similarity=float(row.salary_similarity),
-            ),
-            posting_a=postings_by_key[row.job_key_a],
-            posting_b=postings_by_key[row.job_key_b],
+    # The dedup dbt layer runs out-of-band relative to silver (see
+    # dbt/README.md's dedup bullet) — a scored pair can reference a
+    # job_key whose silver__job_posting row doesn't exist yet (or
+    # anymore) any time the two are run out of the documented
+    # interleaved order. That's a reachable operational state, not a
+    # bug, so skip such a pair rather than 500ing the whole batch over
+    # one missing posting.
+    pairs_to_label: list[PairToLabel] = []
+    for row in rows:
+        posting_a = postings_by_key.get(row.job_key_a)
+        posting_b = postings_by_key.get(row.job_key_b)
+        if posting_a is None or posting_b is None:
+            continue
+        pairs_to_label.append(
+            PairToLabel(
+                scores=SimilarityScores(
+                    job_key_a=row.job_key_a,
+                    job_key_b=row.job_key_b,
+                    blended_score=float(row.blended_score),
+                    company_similarity=float(row.company_similarity),
+                    title_similarity=float(row.title_similarity),
+                    description_similarity=float(row.description_similarity),
+                    location_similarity=float(row.location_similarity),
+                    date_diff_days=float(row.date_diff_days),
+                    salary_similarity=float(row.salary_similarity),
+                ),
+                posting_a=posting_a,
+                posting_b=posting_b,
+            )
         )
-        for row in rows
-    ]
+    return pairs_to_label
 
 
 @router.post("/dedup/labels")
@@ -302,12 +315,37 @@ class ThresholdsRequest(BaseModel):
         calibrated_by: Free-text identifier of who ran the calibration.
     """
 
-    auto_match_threshold: float
-    auto_reject_threshold: float
-    measured_precision: float
-    measured_recall: float
+    auto_match_threshold: float = Field(ge=0.0, le=1.0)
+    auto_reject_threshold: float = Field(ge=0.0, le=1.0)
+    measured_precision: float = Field(ge=0.0, le=1.0)
+    measured_recall: float = Field(ge=0.0, le=1.0)
     labeled_pair_count: int
     calibrated_by: str | None = None
+
+    @model_validator(mode="after")
+    def _check_thresholds_are_not_transposed(self) -> ThresholdsRequest:
+        """Ensure auto_reject_threshold sits below auto_match_threshold.
+
+        A transposed or out-of-order pair would leave every pair
+        outside a valid band, since `pairs-to-label`'s production-mode
+        query only returns rows strictly between the two — silently
+        bricking the review queue forever.
+
+        Returns:
+            This instance, unchanged, once validated.
+
+        Raises:
+            ValueError: If auto_reject_threshold is not strictly less
+                than auto_match_threshold.
+        """
+        if self.auto_reject_threshold >= self.auto_match_threshold:
+            raise ValueError(
+                "auto_reject_threshold must be strictly less than "
+                "auto_match_threshold "
+                f"(got auto_reject_threshold={self.auto_reject_threshold}, "
+                f"auto_match_threshold={self.auto_match_threshold})"
+            )
+        return self
 
 
 class ThresholdsResponse(BaseModel):
