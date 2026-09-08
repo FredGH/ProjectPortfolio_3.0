@@ -12,6 +12,34 @@ import streamlit as st
 
 from core.settings import get_settings
 
+
+def _lookup_curve_point(curve: list[dict], threshold: float) -> dict:
+    """Find the curve point whose precision/recall apply at `threshold`.
+
+    The curve only has one point per distinct historical blended_score,
+    sorted descending by threshold — it has no point at an arbitrary
+    chosen threshold. predicted_match_count (and therefore precision/
+    recall) is a step function of threshold, so the closest point at or
+    above the chosen threshold is the correct one: any pair scoring at
+    or above that point's threshold would also score at or above the
+    chosen threshold.
+
+    Args:
+        curve: The full precision-recall curve, sorted descending by
+            threshold (as returned by GET /dedup/calibration).
+        threshold: The user's chosen auto-match threshold.
+
+    Returns:
+        The chosen curve point. Falls back to the highest-threshold
+        point if `threshold` exceeds every historical score (no point
+        is at or above it).
+    """
+    candidates = [point for point in curve if point["threshold"] >= threshold]
+    if not candidates:
+        return curve[0]
+    return min(candidates, key=lambda point: point["threshold"])
+
+
 st.set_page_config(page_title="Dedup Calibration", layout="wide")
 st.title("Dedup Calibration")
 
@@ -62,48 +90,63 @@ else:
     st.dataframe(curve, use_container_width=True)
 
     st.subheader("Record a new calibration run")
+    st.caption(
+        "Measured precision/recall are looked up from the curve above at "
+        "the chosen auto-match threshold — they are never typed by hand, "
+        "so what gets recorded always matches a real measurement."
+    )
     with st.form("record_calibration"):
         col1, col2 = st.columns(2)
         with col1:
             auto_match_threshold = st.number_input(
                 "Auto-match threshold", min_value=0.0, max_value=1.0, value=0.9
             )
-            measured_precision = st.number_input(
-                "Measured precision at that threshold",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.95,
-            )
         with col2:
             auto_reject_threshold = st.number_input(
                 "Auto-reject threshold", min_value=0.0, max_value=1.0, value=0.5
             )
-            measured_recall = st.number_input(
-                "Measured recall at that threshold",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.8,
-            )
+
+        selected_point = _lookup_curve_point(curve, auto_match_threshold)
+        measured_precision = selected_point["precision"]
+        measured_recall = selected_point["recall"]
+
+        metric_col1, metric_col2 = st.columns(2)
+        metric_col1.metric(
+            "Measured precision at that threshold",
+            f"{measured_precision:.3f}" if measured_precision is not None else "n/a",
+        )
+        metric_col2.metric(
+            "Measured recall at that threshold",
+            f"{measured_recall:.3f}" if measured_recall is not None else "n/a",
+        )
+
         calibrated_by = st.text_input("Your name")
         submitted = st.form_submit_button("Save thresholds")
 
     if submitted:
-        try:
-            response = httpx.post(
-                f"{_settings.api_base_url}/dedup/thresholds",
-                json={
-                    "auto_match_threshold": auto_match_threshold,
-                    "auto_reject_threshold": auto_reject_threshold,
-                    "measured_precision": measured_precision,
-                    "measured_recall": measured_recall,
-                    "labeled_pair_count": curve[-1]["predicted_match_count"],
-                    "calibrated_by": calibrated_by or None,
-                },
-                timeout=10.0,
+        if measured_precision is None or measured_recall is None:
+            st.error(
+                "Precision/recall are undefined at this threshold (no "
+                "predicted matches, or no true matches in the label set) "
+                "— choose a different auto-match threshold before saving."
             )
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            st.error(f"Failed to save thresholds: {exc}")
         else:
-            st.success("Thresholds saved.")
-            st.rerun()
+            try:
+                response = httpx.post(
+                    f"{_settings.api_base_url}/dedup/thresholds",
+                    json={
+                        "auto_match_threshold": auto_match_threshold,
+                        "auto_reject_threshold": auto_reject_threshold,
+                        "measured_precision": measured_precision,
+                        "measured_recall": measured_recall,
+                        "labeled_pair_count": curve[-1]["predicted_match_count"],
+                        "calibrated_by": calibrated_by or None,
+                    },
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                st.error(f"Failed to save thresholds: {exc}")
+            else:
+                st.success("Thresholds saved.")
+                st.rerun()
