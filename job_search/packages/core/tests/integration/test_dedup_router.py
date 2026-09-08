@@ -309,3 +309,93 @@ class TestProductionModeExcludesHardVetoedPairs(unittest.TestCase):
             for p in response.json()
         }
         self.assertNotIn((self.job_key_a, self.job_key_b), keys)
+
+
+class TestCalibrationAndThresholds(unittest.TestCase):
+    """Integration tests for /dedup/calibration and /dedup/thresholds."""
+
+    def setUp(self) -> None:
+        self.owner_engine = build_engine(_OWNER_DSN)
+        self.app_engine = build_engine(_APP_DSN)
+        app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
+        self.client = TestClient(app)
+
+        suffix = uuid.uuid4().hex
+        self.job_key_a = f"test-a-{suffix}"
+        self.job_key_b = f"test-b-{suffix}"
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.dedup__similarity_scores "
+                    "(job_key_a, job_key_b, match_type, company_similarity, "
+                    "title_similarity, description_similarity, "
+                    "location_similarity, date_diff_days, date_similarity, "
+                    "salary_similarity, hard_veto, blended_score) VALUES "
+                    "(:a, :b, 'block', 1.0, 1.0, 1.0, 0.5, 0, 1.0, 0.5, "
+                    "false, 0.9)"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.pair_labels (job_key_a, job_key_b, label) "
+                    "VALUES (:a, :b, 'match')"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+
+    def tearDown(self) -> None:
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.calibration_thresholds "
+                    "WHERE calibrated_by = 'test-runner'"
+                )
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.pair_labels "
+                    "WHERE job_key_a = :a AND job_key_b = :b"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.dedup__similarity_scores "
+                    "WHERE job_key_a = :a AND job_key_b = :b"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+        del app.dependency_overrides[get_app_db_engine]
+        self.owner_engine.dispose()
+        self.app_engine.dispose()
+
+    def test_calibration_curve_includes_the_seeded_labeled_pair(self) -> None:
+        response = self.client.get("/dedup/calibration")
+        self.assertEqual(response.status_code, 200)
+        curve = response.json()
+        self.assertTrue(any(point["threshold"] == 0.9 for point in curve))
+
+    def test_thresholds_is_null_before_any_calibration_run(self) -> None:
+        response = self.client.get("/dedup/thresholds")
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json())
+
+    def test_posting_thresholds_makes_them_retrievable(self) -> None:
+        post_response = self.client.post(
+            "/dedup/thresholds",
+            json={
+                "auto_match_threshold": 0.9,
+                "auto_reject_threshold": 0.6,
+                "measured_precision": 0.97,
+                "measured_recall": 0.85,
+                "labeled_pair_count": 50,
+                "calibrated_by": "test-runner",
+            },
+        )
+        self.assertEqual(post_response.status_code, 200)
+
+        get_response = self.client.get("/dedup/thresholds")
+        body = get_response.json()
+        self.assertEqual(body["auto_match_threshold"], 0.9)
+        self.assertEqual(body["auto_reject_threshold"], 0.6)

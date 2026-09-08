@@ -97,9 +97,7 @@ def upgrade() -> None:
         ),
         schema="dedup",
     )
-    op.execute(
-        "GRANT SELECT, INSERT, UPDATE ON dedup.pair_labels TO job_search_app"
-    )
+    op.execute("GRANT SELECT, INSERT, UPDATE ON dedup.pair_labels TO job_search_app")
 
     op.create_table(
         "calibration_thresholds",
@@ -118,13 +116,24 @@ def upgrade() -> None:
         ),
         schema="dedup",
     )
+    op.execute("GRANT SELECT, INSERT ON dedup.calibration_thresholds TO job_search_app")
+    # calibration_thresholds.id is a SERIAL PK — INSERT with no explicit id
+    # calls nextval() on its backing sequence, which needs its own GRANT;
+    # table-level INSERT privilege does not imply sequence privilege.
     op.execute(
-        "GRANT SELECT, INSERT ON dedup.calibration_thresholds TO job_search_app"
+        "GRANT USAGE, SELECT ON SEQUENCE dedup.calibration_thresholds_id_seq "
+        "TO job_search_app"
     )
 
 
 def downgrade() -> None:
-    op.execute("REVOKE SELECT, INSERT ON dedup.calibration_thresholds FROM job_search_app")
+    op.execute(
+        "REVOKE USAGE, SELECT ON SEQUENCE dedup.calibration_thresholds_id_seq "
+        "FROM job_search_app"
+    )
+    op.execute(
+        "REVOKE SELECT, INSERT ON dedup.calibration_thresholds FROM job_search_app"
+    )
     op.drop_table("calibration_thresholds", schema="dedup")
     op.execute("REVOKE SELECT, INSERT, UPDATE ON dedup.pair_labels FROM job_search_app")
     op.drop_table("pair_labels", schema="dedup")

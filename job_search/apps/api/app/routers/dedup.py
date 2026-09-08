@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import Engine, Row, text
 
+from core.dedup.calibration import LabeledPair, compute_precision_recall_curve
+
 router = APIRouter()
 
 
@@ -283,6 +285,186 @@ def post_label(
                 "job_key_b": request.job_key_b,
                 "label": request.label,
                 "labeled_by": request.labeled_by,
+            },
+        )
+    return {"status": "ok"}
+
+
+class ThresholdsRequest(BaseModel):
+    """A newly-calibrated pair of thresholds.
+
+    Attributes:
+        auto_match_threshold: Pairs at or above this score auto-match.
+        auto_reject_threshold: Pairs at or below this score auto-reject.
+        measured_precision: The precision measured at auto_match_threshold.
+        measured_recall: The recall measured at auto_match_threshold.
+        labeled_pair_count: How many labeled pairs this calibration used.
+        calibrated_by: Free-text identifier of who ran the calibration.
+    """
+
+    auto_match_threshold: float
+    auto_reject_threshold: float
+    measured_precision: float
+    measured_recall: float
+    labeled_pair_count: int
+    calibrated_by: str | None = None
+
+
+class ThresholdsResponse(BaseModel):
+    """The current (most recent) calibration run.
+
+    Attributes:
+        auto_match_threshold: The current auto-match cutoff.
+        auto_reject_threshold: The current auto-reject cutoff.
+        measured_precision: The precision measured at calibration time.
+        measured_recall: The recall measured at calibration time.
+        labeled_pair_count: How many labeled pairs informed this run.
+        calibrated_at: When this calibration was recorded.
+    """
+
+    auto_match_threshold: float
+    auto_reject_threshold: float
+    measured_precision: float
+    measured_recall: float
+    labeled_pair_count: int
+    calibrated_at: datetime.datetime
+
+
+class CalibrationPoint(BaseModel):
+    """One point on the precision-recall curve.
+
+    Attributes:
+        threshold: The candidate auto-match cutoff.
+        precision: Precision at this threshold, or None (see
+            core.dedup.calibration.ThresholdMetrics).
+        recall: Recall at this threshold, or None.
+        predicted_match_count: How many labeled pairs would auto-match.
+    """
+
+    threshold: float
+    precision: float | None
+    recall: float | None
+    predicted_match_count: int
+
+
+@router.get("/dedup/calibration", response_model=list[CalibrationPoint])
+def get_calibration(
+    engine: Engine = Depends(get_app_db_engine),
+) -> list[CalibrationPoint]:
+    """Compute the precision-recall curve from every current label.
+
+    Args:
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        One `CalibrationPoint` per distinct blended_score among labeled
+        pairs, sorted by descending threshold. Empty if no pairs are
+        labeled yet.
+    """
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                SELECT l.job_key_a, l.job_key_b, l.label, s.blended_score
+                FROM dedup.pair_labels AS l
+                INNER JOIN dedup.dedup__similarity_scores AS s
+                    ON l.job_key_a = s.job_key_a AND l.job_key_b = s.job_key_b
+                """
+            )
+        ).all()
+
+    labeled_pairs = [
+        LabeledPair(
+            job_key_a=row.job_key_a,
+            job_key_b=row.job_key_b,
+            blended_score=float(row.blended_score),
+            label=row.label,
+        )
+        for row in rows
+    ]
+    curve = compute_precision_recall_curve(labeled_pairs)
+    return [
+        CalibrationPoint(
+            threshold=point.threshold,
+            precision=point.precision,
+            recall=point.recall,
+            predicted_match_count=point.predicted_match_count,
+        )
+        for point in curve
+    ]
+
+
+@router.get("/dedup/thresholds", response_model=ThresholdsResponse | None)
+def get_thresholds(
+    engine: Engine = Depends(get_app_db_engine),
+) -> ThresholdsResponse | None:
+    """Return the current (most recently calibrated) thresholds.
+
+    Args:
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        The current `ThresholdsResponse`, or None if no calibration run
+        has ever been recorded.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            text(
+                "SELECT auto_match_threshold, auto_reject_threshold, "
+                "measured_precision, measured_recall, labeled_pair_count, "
+                "calibrated_at FROM dedup.calibration_thresholds "
+                "ORDER BY calibrated_at DESC LIMIT 1"
+            )
+        ).one_or_none()
+    if row is None:
+        return None
+    return ThresholdsResponse(
+        auto_match_threshold=float(row.auto_match_threshold),
+        auto_reject_threshold=float(row.auto_reject_threshold),
+        measured_precision=float(row.measured_precision),
+        measured_recall=float(row.measured_recall),
+        labeled_pair_count=row.labeled_pair_count,
+        calibrated_at=row.calibrated_at,
+    )
+
+
+@router.post("/dedup/thresholds")
+def post_thresholds(
+    request: ThresholdsRequest,
+    engine: Engine = Depends(get_app_db_engine),
+) -> dict[str, str]:
+    """Record a new calibration run.
+
+    Args:
+        request: The newly-calibrated thresholds and their measured
+            precision/recall.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `{"status": "ok"}`.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                INSERT INTO dedup.calibration_thresholds (
+                    auto_match_threshold, auto_reject_threshold,
+                    measured_precision, measured_recall, labeled_pair_count,
+                    calibrated_by
+                ) VALUES (
+                    :auto_match_threshold, :auto_reject_threshold,
+                    :measured_precision, :measured_recall,
+                    :labeled_pair_count, :calibrated_by
+                )
+                """
+            ),
+            {
+                "auto_match_threshold": request.auto_match_threshold,
+                "auto_reject_threshold": request.auto_reject_threshold,
+                "measured_precision": request.measured_precision,
+                "measured_recall": request.measured_recall,
+                "labeled_pair_count": request.labeled_pair_count,
+                "calibrated_by": request.calibrated_by,
             },
         )
     return {"status": "ok"}
