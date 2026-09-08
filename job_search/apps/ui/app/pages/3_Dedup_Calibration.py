@@ -98,35 +98,37 @@ else:
     st.caption(
         "Measured precision/recall are looked up from the curve above at "
         "the chosen auto-match threshold — they are never typed by hand, "
-        "so what gets recorded always matches a real measurement."
+        "so what gets recorded always matches a real measurement. Adjust "
+        "the threshold below and the preview updates immediately; nothing "
+        "is saved until you click Save thresholds."
     )
-    with st.form("record_calibration"):
-        col1, col2 = st.columns(2)
-        with col1:
-            auto_match_threshold = st.number_input(
-                "Auto-match threshold", min_value=0.0, max_value=1.0, value=0.9
-            )
-        with col2:
-            auto_reject_threshold = st.number_input(
-                "Auto-reject threshold", min_value=0.0, max_value=1.0, value=0.5
-            )
 
-        selected_point = _lookup_curve_point(curve, auto_match_threshold)
-        measured_precision = selected_point["precision"]
-        measured_recall = selected_point["recall"]
-
-        metric_col1, metric_col2 = st.columns(2)
-        metric_col1.metric(
-            "Measured precision at that threshold",
-            f"{measured_precision:.3f}" if measured_precision is not None else "n/a",
+    col1, col2 = st.columns(2)
+    with col1:
+        auto_match_threshold = st.number_input(
+            "Auto-match threshold", min_value=0.0, max_value=1.0, value=0.9
         )
-        metric_col2.metric(
-            "Measured recall at that threshold",
-            f"{measured_recall:.3f}" if measured_recall is not None else "n/a",
+    with col2:
+        auto_reject_threshold = st.number_input(
+            "Auto-reject threshold", min_value=0.0, max_value=1.0, value=0.5
         )
 
-        calibrated_by = st.text_input("Your name")
-        submitted = st.form_submit_button("Save thresholds")
+    selected_point = _lookup_curve_point(curve, auto_match_threshold)
+    measured_precision = selected_point["precision"]
+    measured_recall = selected_point["recall"]
+
+    metric_col1, metric_col2 = st.columns(2)
+    metric_col1.metric(
+        "Measured precision at that threshold",
+        f"{measured_precision:.3f}" if measured_precision is not None else "n/a",
+    )
+    metric_col2.metric(
+        "Measured recall at that threshold",
+        f"{measured_recall:.3f}" if measured_recall is not None else "n/a",
+    )
+
+    calibrated_by = st.text_input("Your name")
+    submitted = st.button("Save thresholds")
 
     if submitted:
         if measured_precision is None or measured_recall is None:
