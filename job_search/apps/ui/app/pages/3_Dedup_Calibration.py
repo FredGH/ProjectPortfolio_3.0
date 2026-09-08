@@ -57,15 +57,43 @@ pair with a score at or above this number an auto-match, what would
 precision and recall be?"* The two lines are **precision** (light) and
 **recall** (dark) at each of those candidate cutoffs.
 
+**Precision** asks: *of the pairs this threshold calls a match, how
+many actually are one?* It's calculated as
+
+```
+precision = (labeled "match" pairs scoring ≥ threshold)
+            ────────────────────────────────────────────
+            (all pairs scoring ≥ threshold, match or not)
+```
+
+In plain English: raise the threshold, and only the pairs you're most
+confident about clear it, so precision tends to go up — you're trading
+away pairs, not wrong answers.
+
+**Recall** asks the opposite question: *of every pair you've actually
+labeled a match, how many did this threshold catch?* It's calculated
+as
+
+```
+recall = (labeled "match" pairs scoring ≥ threshold)
+         ──────────────────────────────────────────────
+         (all pairs you labeled "match", regardless of score)
+```
+
+In plain English: raise the threshold, and you start losing real
+matches that happened to score lower, so recall tends to go down. The
+two pull in opposite directions — that's the whole reason there's a
+curve here instead of one obvious number.
+
 Your **Auto-match threshold** number below is literally one x-value on
 that chart — the "Measured precision/recall" boxes are just reading
 the two lines' heights at that point. For example: at a threshold of
 **0.80**, the chart might show precision **1.000** and recall
-**0.250**. That means everything the curve calls "predicted match" at
-that cutoff happens to be a real match (precision = 1.0), but that's a
-small, strict slice — only about a quarter of the actual "match"-labeled
-pairs score that high (recall = 0.25). The rest of the real matches,
-scoring below 0.80, would not get auto-matched at that threshold.
+**0.250**. That means every pair scoring ≥ 0.80 happens to be a real
+match (precision = 1.0), but that's a small, strict slice — only about
+a quarter of the actual "match"-labeled pairs score that high
+(recall = 0.25). The rest of the real matches, scoring below 0.80,
+would not get auto-matched at that threshold.
 
 The **Auto-reject threshold** is *not* read from this chart at all —
 there's no plotted line for "reject precision." It's a separate number
