@@ -40,7 +40,9 @@ else:
     st.warning("No calibration run recorded yet — label some pairs first.")
 
 try:
-    curve_response = httpx.get(f"{_settings.api_base_url}/dedup/calibration", timeout=10.0)
+    curve_response = httpx.get(
+        f"{_settings.api_base_url}/dedup/calibration", timeout=10.0
+    )
     curve_response.raise_for_status()
     curve = curve_response.json()
 except httpx.HTTPError as exc:

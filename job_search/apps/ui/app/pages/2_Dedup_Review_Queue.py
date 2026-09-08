@@ -48,7 +48,9 @@ index = st.session_state.dedup_pair_index
 if not pairs:
     st.success("No pairs need labeling right now.")
 elif index >= len(pairs):
-    st.success(f"Done — labeled all {len(pairs)} loaded pairs. Click 'Load pairs' for more.")
+    st.success(
+        f"Done — labeled all {len(pairs)} loaded pairs. Click 'Load pairs' for more."
+    )
 else:
     pair = pairs[index]
     st.progress((index) / len(pairs), text=f"Pair {index + 1} of {len(pairs)}")
@@ -101,7 +103,9 @@ else:
     if button_cols[0].button("✅ Same job (match)", use_container_width=True):
         _submit_label("match")
         st.rerun()
-    if button_cols[1].button("❌ Different jobs (not a match)", use_container_width=True):
+    if button_cols[1].button(
+        "❌ Different jobs (not a match)", use_container_width=True
+    ):
         _submit_label("not_match")
         st.rerun()
     if button_cols[2].button("⏭ Skip", use_container_width=True):
