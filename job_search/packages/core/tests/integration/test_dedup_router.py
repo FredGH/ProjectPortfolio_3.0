@@ -195,3 +195,117 @@ class TestPairsToLabelAndLabels(unittest.TestCase):
             ).one()
         self.assertEqual(count, 1)
         self.assertEqual(row.label, "not_match")
+
+
+class TestProductionModeExcludesHardVetoedPairs(unittest.TestCase):
+    """Production mode (a calibration_thresholds row exists) must still
+    honor Step 8's hard veto — a vetoed pair whose blended_score happens
+    to land inside the auto-reject/auto-match band must never reach the
+    human review queue, since hard_veto and blended_score are
+    independently computed columns.
+    """
+
+    def setUp(self) -> None:
+        self.owner_engine = build_engine(_OWNER_DSN)
+        self.app_engine = build_engine(_APP_DSN)
+        app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
+        self.client = TestClient(app)
+
+        suffix = uuid.uuid4().hex
+        self.job_key_a = f"test-veto-a-{suffix}"
+        self.job_key_b = f"test-veto-b-{suffix}"
+        with self.owner_engine.begin() as conn:
+            for job_key in (self.job_key_a, self.job_key_b):
+                conn.execute(
+                    text(
+                        "INSERT INTO silver.silver__job_posting "
+                        "(job_key, source_name, source_job_id, job_url, "
+                        "job_url_canonical, entry_method, title, company, "
+                        "location, description, salary_raw, posted_at, "
+                        "engagement_type, ir35_status, engagement_vehicle, "
+                        "rate_basis, extension_likelihood) VALUES "
+                        "(:job_key, 'test_source', :job_key, 'https://x', "
+                        "'https://x', 'api', 'Data Engineer', 'Acme Ltd', "
+                        "'London', 'A test description.', NULL, now(), "
+                        "'unknown', 'unknown', 'unknown', 'unknown', "
+                        "'unstated')"
+                    ),
+                    {"job_key": job_key},
+                )
+            # hard_veto = true with a blended_score that falls strictly
+            # inside the auto_reject/auto_match band set up below — the
+            # two columns are independently computed, so this is a
+            # realistic case (e.g. a date-proximity veto on two postings
+            # that otherwise look very similar).
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.dedup__similarity_scores "
+                    "(job_key_a, job_key_b, match_type, company_similarity, "
+                    "title_similarity, description_similarity, "
+                    "location_similarity, date_diff_days, date_similarity, "
+                    "salary_similarity, hard_veto, blended_score) VALUES "
+                    "(:a, :b, 'block', 1.0, 1.0, 1.0, 0.5, 90, 0.0, 0.5, "
+                    "true, 0.85)"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+            # Switches the router into production mode for every request
+            # made while this row exists — 0.85 sits strictly between
+            # these thresholds, so this pair would land in the queue
+            # if the hard-veto filter were missing.
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.calibration_thresholds "
+                    "(auto_match_threshold, auto_reject_threshold, "
+                    "measured_precision, measured_recall, "
+                    "labeled_pair_count, calibrated_by) VALUES "
+                    "(0.95, 0.3, 0.9, 0.9, 10, 'test-runner')"
+                )
+            )
+
+    def tearDown(self) -> None:
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.calibration_thresholds "
+                    "WHERE calibrated_by = 'test-runner'"
+                )
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.dedup__similarity_scores "
+                    "WHERE job_key_a = :a AND job_key_b = :b"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM silver.silver__job_posting "
+                    "WHERE job_key IN (:a, :b)"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+        del app.dependency_overrides[get_app_db_engine]
+        self.owner_engine.dispose()
+        self.app_engine.dispose()
+
+    def test_hard_vetoed_pair_is_excluded_even_inside_the_threshold_band(
+        self,
+    ) -> None:
+        # Production mode has no decile bucketing — it's a flat
+        # `ORDER BY random() LIMIT :limit` over every unlabeled row
+        # whose blended_score falls in the 0.3-0.95 band set up above.
+        # This dev database already has ~72k real rows in that band, so
+        # (as in the bootstrap-mode tests above) a small `limit` would
+        # make this assertion pass by omission — a plain random sample
+        # would almost never draw our one seeded row regardless of
+        # whether the hard-veto filter is present. Use a `limit` large
+        # enough to cover every matching row so the SQL `WHERE` clause,
+        # not sampling luck, is what's actually being tested.
+        response = self.client.get("/dedup/pairs-to-label", params={"limit": 100_000})
+        self.assertEqual(response.status_code, 200)
+        keys = {
+            (p["scores"]["job_key_a"], p["scores"]["job_key_b"])
+            for p in response.json()
+        }
+        self.assertNotIn((self.job_key_a, self.job_key_b), keys)

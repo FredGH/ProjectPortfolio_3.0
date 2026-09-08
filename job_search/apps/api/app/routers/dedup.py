@@ -202,6 +202,7 @@ def get_pairs_to_label(
                     LEFT JOIN dedup.pair_labels AS l
                         ON s.job_key_a = l.job_key_a AND s.job_key_b = l.job_key_b
                     WHERE l.job_key_a IS NULL
+                        AND s.hard_veto = false
                         AND s.blended_score > :auto_reject
                         AND s.blended_score < :auto_match
                     ORDER BY random()
