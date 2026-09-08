@@ -66,9 +66,12 @@ precision = (labeled "match" pairs scoring ≥ threshold)
             (all pairs scoring ≥ threshold, match or not)
 ```
 
-In plain English: raise the threshold, and only the pairs you're most
-confident about clear it, so precision tends to go up — you're trading
-away pairs, not wrong answers.
+Concretely: say this threshold calls 10 pairs "a match," and 9 of
+those 10 turn out to really be the same job — precision is 9/10 =
+**0.90**. Raising the threshold means fewer pairs clear the bar at
+all, but the ones that still do are the ones the model is most
+confident about — so as you raise the threshold, precision usually
+climbs toward 1.0.
 
 **Recall** asks the opposite question: *of every pair you've actually
 labeled a match, how many did this threshold catch?* It's calculated
@@ -80,10 +83,16 @@ recall = (labeled "match" pairs scoring ≥ threshold)
          (all pairs you labeled "match", regardless of score)
 ```
 
-In plain English: raise the threshold, and you start losing real
-matches that happened to score lower, so recall tends to go down. The
-two pull in opposite directions — that's the whole reason there's a
-curve here instead of one obvious number.
+Concretely: say you've labeled 20 pairs as real matches overall, and
+at this threshold only 5 of those 20 score high enough to clear it —
+recall is 5/20 = **0.25**. The other 15 real matches scored below
+this threshold and are missed entirely. Raising the threshold makes
+this worse, not better: a stricter bar catches fewer of the real
+matches, so recall usually falls toward 0 as you raise the threshold.
+
+Precision and recall pull in opposite directions as you move the
+threshold — that's the whole reason there's a curve here instead of
+one obvious number.
 
 Your **Auto-match threshold** number below is literally one x-value on
 that chart — the "Measured precision/recall" boxes are just reading
