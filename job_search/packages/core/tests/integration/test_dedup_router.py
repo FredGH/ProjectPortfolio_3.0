@@ -104,7 +104,33 @@ class TestPairsToLabelAndLabels(unittest.TestCase):
         self.owner_engine.dispose()
         self.app_engine.dispose()
 
+    def _skip_unless_bootstrap_mode(self) -> None:
+        """Skip this test if a calibration_thresholds row already exists.
+
+        This test's assertions only hold in bootstrap mode (see
+        `GET /dedup/pairs-to-label`'s docstring) — once a real
+        calibration_thresholds row exists (which this whole branch
+        exists to let a real user create), the endpoint switches to
+        production mode and this test's seeded pair (blended_score
+        0.85) may or may not fall inside whatever band that real user
+        chose, for reasons unrelated to what this test claims to
+        verify. `dedup.calibration_thresholds` is shared, global dev-DB
+        state with no per-test isolation, so rather than delete/restore
+        a real user's calibration row, skip cleanly when one is
+        present.
+        """
+        with self.owner_engine.connect() as conn:
+            count = conn.execute(
+                text("SELECT count(*) FROM dedup.calibration_thresholds")
+            ).scalar_one()
+        if count > 0:
+            self.skipTest(
+                "requires bootstrap mode - a calibration_thresholds row "
+                "already exists"
+            )
+
     def test_pairs_to_label_includes_the_seeded_pair_in_bootstrap_mode(self) -> None:
+        self._skip_unless_bootstrap_mode()
         # This dev database already carries ~72k real (non-test) unlabeled,
         # non-veto dedup__similarity_scores rows from earlier PLAN.md steps'
         # pipeline runs, spread over deciles of ~7.3k rows each. Bootstrap
@@ -148,6 +174,7 @@ class TestPairsToLabelAndLabels(unittest.TestCase):
         self.assertEqual(row.labeled_by, "test-user")
 
     def test_labeled_pairs_are_excluded_from_pairs_to_label(self) -> None:
+        self._skip_unless_bootstrap_mode()
         self.client.post(
             "/dedup/labels",
             json={
@@ -311,6 +338,138 @@ class TestProductionModeExcludesHardVetoedPairs(unittest.TestCase):
         self.assertNotIn((self.job_key_a, self.job_key_b), keys)
 
 
+class TestProductionModeReturnsPairsInsideTheBand(unittest.TestCase):
+    """Production mode's positive case — the only prior production-mode
+    coverage (TestProductionModeExcludesHardVetoedPairs) was purely
+    negative, so swapping the query's `>`/`<` band comparisons for their
+    opposites (or dropping them) would still pass every existing test.
+    This asserts a pair strictly inside the band IS returned, and a pair
+    at/beyond either edge is NOT.
+    """
+
+    def setUp(self) -> None:
+        self.owner_engine = build_engine(_OWNER_DSN)
+        self.app_engine = build_engine(_APP_DSN)
+        app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
+        self.client = TestClient(app)
+
+        suffix = uuid.uuid4().hex
+        self.in_band_a = f"test-inband-a-{suffix}"
+        self.in_band_b = f"test-inband-b-{suffix}"
+        self.out_of_band_a = f"test-outband-a-{suffix}"
+        self.out_of_band_b = f"test-outband-b-{suffix}"
+        self.all_job_keys = (
+            self.in_band_a,
+            self.in_band_b,
+            self.out_of_band_a,
+            self.out_of_band_b,
+        )
+        with self.owner_engine.begin() as conn:
+            for job_key in self.all_job_keys:
+                conn.execute(
+                    text(
+                        "INSERT INTO silver.silver__job_posting "
+                        "(job_key, source_name, source_job_id, job_url, "
+                        "job_url_canonical, entry_method, title, company, "
+                        "location, description, salary_raw, posted_at, "
+                        "engagement_type, ir35_status, engagement_vehicle, "
+                        "rate_basis, extension_likelihood) VALUES "
+                        "(:job_key, 'test_source', :job_key, 'https://x', "
+                        "'https://x', 'api', 'Data Engineer', 'Acme Ltd', "
+                        "'London', 'A test description.', NULL, now(), "
+                        "'unknown', 'unknown', 'unknown', 'unknown', "
+                        "'unstated')"
+                    ),
+                    {"job_key": job_key},
+                )
+            # Strictly inside the 0.3-0.95 band set up below.
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.dedup__similarity_scores "
+                    "(job_key_a, job_key_b, match_type, company_similarity, "
+                    "title_similarity, description_similarity, "
+                    "location_similarity, date_diff_days, date_similarity, "
+                    "salary_similarity, hard_veto, blended_score) VALUES "
+                    "(:a, :b, 'block', 1.0, 1.0, 1.0, 0.5, 0, 1.0, 0.5, "
+                    "false, 0.6)"
+                ),
+                {"a": self.in_band_a, "b": self.in_band_b},
+            )
+            # At the auto_match edge (>= auto_match_threshold) — should
+            # never appear in the review queue, it would auto-match.
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.dedup__similarity_scores "
+                    "(job_key_a, job_key_b, match_type, company_similarity, "
+                    "title_similarity, description_similarity, "
+                    "location_similarity, date_diff_days, date_similarity, "
+                    "salary_similarity, hard_veto, blended_score) VALUES "
+                    "(:a, :b, 'block', 1.0, 1.0, 1.0, 0.5, 0, 1.0, 0.5, "
+                    "false, 0.95)"
+                ),
+                {"a": self.out_of_band_a, "b": self.out_of_band_b},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.calibration_thresholds "
+                    "(auto_match_threshold, auto_reject_threshold, "
+                    "measured_precision, measured_recall, "
+                    "labeled_pair_count, calibrated_by) VALUES "
+                    "(0.95, 0.3, 0.9, 0.9, 10, 'test-runner')"
+                )
+            )
+
+    def tearDown(self) -> None:
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.calibration_thresholds "
+                    "WHERE calibrated_by = 'test-runner'"
+                )
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.dedup__similarity_scores "
+                    "WHERE job_key_a = :in_a AND job_key_b = :in_b "
+                    "OR job_key_a = :out_a AND job_key_b = :out_b"
+                ),
+                {
+                    "in_a": self.in_band_a,
+                    "in_b": self.in_band_b,
+                    "out_a": self.out_of_band_a,
+                    "out_b": self.out_of_band_b,
+                },
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM silver.silver__job_posting "
+                    "WHERE job_key = ANY(:job_keys)"
+                ),
+                {"job_keys": list(self.all_job_keys)},
+            )
+        del app.dependency_overrides[get_app_db_engine]
+        self.owner_engine.dispose()
+        self.app_engine.dispose()
+
+    def test_pair_strictly_inside_the_band_is_returned(self) -> None:
+        response = self.client.get("/dedup/pairs-to-label", params={"limit": 100_000})
+        self.assertEqual(response.status_code, 200)
+        keys = {
+            (p["scores"]["job_key_a"], p["scores"]["job_key_b"])
+            for p in response.json()
+        }
+        self.assertIn((self.in_band_a, self.in_band_b), keys)
+
+    def test_pair_at_or_beyond_the_band_edge_is_not_returned(self) -> None:
+        response = self.client.get("/dedup/pairs-to-label", params={"limit": 100_000})
+        self.assertEqual(response.status_code, 200)
+        keys = {
+            (p["scores"]["job_key_a"], p["scores"]["job_key_b"])
+            for p in response.json()
+        }
+        self.assertNotIn((self.out_of_band_a, self.out_of_band_b), keys)
+
+
 class TestCalibrationAndThresholds(unittest.TestCase):
     """Integration tests for /dedup/calibration and /dedup/thresholds."""
 
@@ -376,10 +535,37 @@ class TestCalibrationAndThresholds(unittest.TestCase):
         curve = response.json()
         self.assertTrue(any(point["threshold"] == 0.9 for point in curve))
 
-    def test_thresholds_is_null_before_any_calibration_run(self) -> None:
-        response = self.client.get("/dedup/thresholds")
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNone(response.json())
+    def test_thresholds_returns_the_current_row_once_one_exists(self) -> None:
+        # `GET /dedup/thresholds` returning `null` is only true in a
+        # database with zero calibration_thresholds rows anywhere — not
+        # a stable invariant once a real user has calibrated through the
+        # UI (this branch's entire purpose). Test the thing this test
+        # actually controls instead: post a known row, then assert the
+        # endpoint returns exactly that row as "current" (most recent by
+        # calibrated_at), which holds regardless of what else is in the
+        # table.
+        post_response = self.client.post(
+            "/dedup/thresholds",
+            json={
+                "auto_match_threshold": 0.92,
+                "auto_reject_threshold": 0.55,
+                "measured_precision": 0.97,
+                "measured_recall": 0.85,
+                "labeled_pair_count": 50,
+                "calibrated_by": "test-runner",
+            },
+        )
+        self.assertEqual(post_response.status_code, 200)
+
+        get_response = self.client.get("/dedup/thresholds")
+        self.assertEqual(get_response.status_code, 200)
+        body = get_response.json()
+        self.assertIsNotNone(body)
+        self.assertEqual(body["auto_match_threshold"], 0.92)
+        self.assertEqual(body["auto_reject_threshold"], 0.55)
+        self.assertEqual(body["measured_precision"], 0.97)
+        self.assertEqual(body["measured_recall"], 0.85)
+        self.assertEqual(body["labeled_pair_count"], 50)
 
     def test_posting_thresholds_makes_them_retrievable(self) -> None:
         post_response = self.client.post(
@@ -399,3 +585,42 @@ class TestCalibrationAndThresholds(unittest.TestCase):
         body = get_response.json()
         self.assertEqual(body["auto_match_threshold"], 0.9)
         self.assertEqual(body["auto_reject_threshold"], 0.6)
+
+    def test_transposed_thresholds_are_rejected_with_422(self) -> None:
+        response = self.client.post(
+            "/dedup/thresholds",
+            json={
+                # Transposed: auto_reject above auto_match — would leave
+                # no valid middle band and brick the review queue.
+                "auto_match_threshold": 0.5,
+                "auto_reject_threshold": 0.9,
+                "measured_precision": 0.9,
+                "measured_recall": 0.9,
+                "labeled_pair_count": 10,
+                "calibrated_by": "test-runner",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+
+        with self.owner_engine.connect() as conn:
+            count = conn.execute(
+                text(
+                    "SELECT count(*) FROM dedup.calibration_thresholds "
+                    "WHERE calibrated_by = 'test-runner'"
+                )
+            ).scalar_one()
+        self.assertEqual(count, 0)
+
+    def test_out_of_range_threshold_is_rejected_with_422(self) -> None:
+        response = self.client.post(
+            "/dedup/thresholds",
+            json={
+                "auto_match_threshold": 1.5,
+                "auto_reject_threshold": 0.6,
+                "measured_precision": 0.9,
+                "measured_recall": 0.9,
+                "labeled_pair_count": 10,
+                "calibrated_by": "test-runner",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
