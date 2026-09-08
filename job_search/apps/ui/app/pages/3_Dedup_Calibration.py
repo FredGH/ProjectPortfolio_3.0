@@ -69,14 +69,19 @@ Recall    = TP / (TP + FN)   —  "of every real positive, how many did it find?
 ```
 
 **In this tool, "predicting positive" means "this pair's blended
-score is at or above the threshold."** So, at a given threshold:
+score is at or above the threshold."** Every labeled pair falls into
+one of these boxes, depending on what YOU labeled it (rows) versus
+what the THRESHOLD decided (columns):
 
-- **TP** — a pair scoring ≥ threshold that you labeled `match` (a
-  real match, correctly caught)
-- **FP** — a pair scoring ≥ threshold that you labeled `not_match`
-  (a false alarm)
-- **FN** — a pair you labeled `match` that scores *below* the
-  threshold (a real match this threshold misses)
+| your label ↓ / threshold decision → | scores ≥ threshold | scores < threshold |
+|---|---|---|
+| you labeled `match` | **TP** — correctly caught | **FN** — missed |
+| you labeled `not_match` | **FP** — false alarm | (not used by precision/recall) |
+
+So: **TP and FP are both pairs the threshold called "a match"** — the
+only difference is whether you agreed (`match`, → TP) or disagreed
+(`not_match`, → FP). **FN, in contrast, is a pair the threshold
+*didn't* call a match, even though you labeled it one.**
 
 Substituting those into the generic formulas gives the two lines on
 the chart:
