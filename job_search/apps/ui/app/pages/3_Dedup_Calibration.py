@@ -94,7 +94,7 @@ else:
                     "auto_reject_threshold": auto_reject_threshold,
                     "measured_precision": measured_precision,
                     "measured_recall": measured_recall,
-                    "labeled_pair_count": len(curve),
+                    "labeled_pair_count": curve[-1]["predicted_match_count"],
                     "calibrated_by": calibrated_by or None,
                 },
                 timeout=10.0,
