@@ -30,13 +30,18 @@ def _lookup_curve_point(curve: list[dict], threshold: float) -> dict:
         threshold: The user's chosen auto-match threshold.
 
     Returns:
-        The chosen curve point. Falls back to the highest-threshold
-        point if `threshold` exceeds every historical score (no point
-        is at or above it).
+        The chosen curve point. If `threshold` exceeds every historical
+        score, no curve point applies at that threshold — no labeled
+        pair scores that high, so predicted_match_count would be 0 and
+        precision is undefined per `compute_precision_recall_curve`'s
+        own rule (`precision = true_positives / len(predicted) if
+        predicted else None`). Returns a synthetic point signaling
+        that: `{"precision": None, "recall": None,
+        "predicted_match_count": 0}`.
     """
     candidates = [point for point in curve if point["threshold"] >= threshold]
     if not candidates:
-        return curve[0]
+        return {"precision": None, "recall": None, "predicted_match_count": 0}
     return min(candidates, key=lambda point: point["threshold"])
 
 

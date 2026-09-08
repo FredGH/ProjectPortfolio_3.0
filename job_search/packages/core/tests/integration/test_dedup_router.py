@@ -224,6 +224,111 @@ class TestPairsToLabelAndLabels(unittest.TestCase):
         self.assertEqual(row.label, "not_match")
 
 
+class TestPairsToLabelSkipsPairsWithAMissingPosting(unittest.TestCase):
+    """Regression test for the fix in 32dc684: `get_pairs_to_label` used
+    to look up each pair's postings with `postings_by_key[...]`, which
+    raises an unhandled KeyError (-> 500) if a scored pair references a
+    job_key with no matching `silver__job_posting` row. The dedup dbt
+    layer runs out-of-band relative to silver (see dbt/README.md's
+    dedup bullet), so this is a documented, reachable operational
+    state. The fix uses `.get(...)` and silently skips any pair missing
+    either posting instead of 500ing the whole batch.
+    """
+
+    def setUp(self) -> None:
+        self.owner_engine = build_engine(_OWNER_DSN)
+        self.app_engine = build_engine(_APP_DSN)
+        app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
+        self.client = TestClient(app)
+
+        suffix = uuid.uuid4().hex
+        self.job_key_a = f"test-missingposting-a-{suffix}"
+        self.job_key_b = f"test-missingposting-b-{suffix}"
+        with self.owner_engine.begin() as conn:
+            # Only job_key_a gets a silver__job_posting row — job_key_b
+            # is deliberately never inserted, simulating the dedup
+            # layer having scored a pair before silver caught up.
+            conn.execute(
+                text(
+                    "INSERT INTO silver.silver__job_posting "
+                    "(job_key, source_name, source_job_id, job_url, "
+                    "job_url_canonical, entry_method, title, company, "
+                    "location, description, salary_raw, posted_at, "
+                    "engagement_type, ir35_status, engagement_vehicle, "
+                    "rate_basis, extension_likelihood) VALUES "
+                    "(:job_key, 'test_source', :job_key, 'https://x', "
+                    "'https://x', 'api', 'Data Engineer', 'Acme Ltd', "
+                    "'London', 'A test description.', NULL, now(), "
+                    "'unknown', 'unknown', 'unknown', 'unknown', "
+                    "'unstated')"
+                ),
+                {"job_key": self.job_key_a},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.dedup__similarity_scores "
+                    "(job_key_a, job_key_b, match_type, company_similarity, "
+                    "title_similarity, description_similarity, "
+                    "location_similarity, date_diff_days, date_similarity, "
+                    "salary_similarity, hard_veto, blended_score) VALUES "
+                    "(:a, :b, 'block', 1.0, 1.0, 1.0, 0.5, 0, 1.0, 0.5, "
+                    "false, 0.85)"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+
+    def tearDown(self) -> None:
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM dedup.dedup__similarity_scores "
+                    "WHERE job_key_a = :a AND job_key_b = :b"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM silver.silver__job_posting "
+                    "WHERE job_key IN (:a, :b)"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+        del app.dependency_overrides[get_app_db_engine]
+        self.owner_engine.dispose()
+        self.app_engine.dispose()
+
+    def _skip_unless_bootstrap_mode(self) -> None:
+        """Skip unless in bootstrap mode.
+
+        See `TestPairsToLabelAndLabels._skip_unless_bootstrap_mode`'s
+        docstring for why this test's assertions only hold when no
+        `calibration_thresholds` row exists yet.
+        """
+        with self.owner_engine.connect() as conn:
+            count = conn.execute(
+                text("SELECT count(*) FROM dedup.calibration_thresholds")
+            ).scalar_one()
+        if count > 0:
+            self.skipTest(
+                "requires bootstrap mode - a calibration_thresholds row "
+                "already exists"
+            )
+
+    def test_pair_with_a_missing_posting_is_skipped_not_500ed(self) -> None:
+        self._skip_unless_bootstrap_mode()
+        # Same guaranteed-full-decile `limit` reasoning as the other
+        # bootstrap-mode tests in this file: with ~72k real unlabeled
+        # rows already in this dev database, a small `limit` would make
+        # the "not in results" assertion pass trivially by omission.
+        response = self.client.get("/dedup/pairs-to-label", params={"limit": 100_000})
+        self.assertEqual(response.status_code, 200)
+        keys = {
+            (p["scores"]["job_key_a"], p["scores"]["job_key_b"])
+            for p in response.json()
+        }
+        self.assertNotIn((self.job_key_a, self.job_key_b), keys)
+
+
 class TestProductionModeExcludesHardVetoedPairs(unittest.TestCase):
     """Production mode (a calibration_thresholds row exists) must still
     honor Step 8's hard veto — a vetoed pair whose blended_score happens
