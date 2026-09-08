@@ -81,8 +81,17 @@ else:
                 key=f"desc_{posting['job_key']}_{index}",
             )
 
-    def _submit_label(label: str) -> None:
-        """Post the current pair's label and advance to the next one."""
+    def _submit_label(label: str) -> bool:
+        """Post the current pair's label and advance to the next one.
+
+        Args:
+            label: "match" or "not_match".
+
+        Returns:
+            True if the label was saved (and the index advanced), False
+            if the save failed (the index is left unchanged so the pair
+            can be retried).
+        """
         try:
             response = httpx.post(
                 f"{_settings.api_base_url}/dedup/labels",
@@ -96,18 +105,20 @@ else:
             )
             response.raise_for_status()
             st.session_state.dedup_pair_index += 1
+            return True
         except httpx.HTTPError as exc:
             st.error(f"Failed to save label: {exc}")
+            return False
 
     button_cols = st.columns(3)
     if button_cols[0].button("✅ Same job (match)", use_container_width=True):
-        _submit_label("match")
-        st.rerun()
+        if _submit_label("match"):
+            st.rerun()
     if button_cols[1].button(
         "❌ Different jobs (not a match)", use_container_width=True
     ):
-        _submit_label("not_match")
-        st.rerun()
+        if _submit_label("not_match"):
+            st.rerun()
     if button_cols[2].button("⏭ Skip", use_container_width=True):
         st.session_state.dedup_pair_index += 1
         st.rerun()
