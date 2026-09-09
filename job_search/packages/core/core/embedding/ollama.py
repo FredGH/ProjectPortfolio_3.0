@@ -39,9 +39,13 @@ def embed_text(
     Returns:
         The embedding vector as a list of floats.
     """
+    # Lowercase text to avoid Ollama/nomic-embed-text serving bug where short
+    # Title-Case phrases ("Data Engineer", "Product Manager") collapse to an
+    # identical, content-independent vector; lowercased variants preserve correct
+    # cosine ordering across the full vocabulary.
     response = client.post(
         f"{base_url}/api/embeddings",
-        json={"model": model, "prompt": text},
+        json={"model": model, "prompt": text.lower()},
     )
     response.raise_for_status()
     return response.json()["embedding"]
