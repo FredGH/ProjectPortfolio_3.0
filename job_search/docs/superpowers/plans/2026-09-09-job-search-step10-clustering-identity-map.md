@@ -110,6 +110,22 @@ function (Task 5) that Step 11 calls when materialising `dim_job`;
 Step 10 does not itself persist a `sources[]` array anywhere, since
 nothing downstream reads `job_identity_map` for it yet.
 
+## Scope note — `ClusterMember.title_for_display`/`.first_seen_at` have no source yet
+
+`core/dedup/survivorship.py`'s `ClusterMember` dataclass requires
+`title_for_display` and `first_seen_at` fields, but neither is produced
+anywhere in the pipeline as shipped: `title_for_display` is a Step 6
+deliverable (DECISIONS.md §5 — decoration-stripped but seniority-kept,
+distinct from `strip_title`'s output) that was never actually built (no
+dbt column, no Python function), and nothing computes a per-source
+first-ingested `first_seen_at` timestamp either. `resolve_description`,
+`resolve_apply_source`, and `build_sources_array` are all correct and
+fully tested against synthetic `ClusterMember` instances, but Step 11
+will need to build/source both fields before it can construct real
+`ClusterMember` rows from actual pipeline data. Noted here, alongside
+the `apply_url` and `sources[]` scope notes above, so it doesn't read as
+a silent gap later.
+
 ## Global Constraints
 
 - SQL style per `.claude/rules/sql-style.md`; Python style per
@@ -196,10 +212,12 @@ blended_score, and that evidence needs its own match_method so it's
 distinguishable from an ordinary threshold-cleared fuzzy match. See the
 Step 10 plan's "Step 9 is done and merged" scope note.
 
-job_search_app is not granted any access here (unlike pair_labels/
-calibration_thresholds in migration 0010): this table is written only
-by the pipeline CLI via the owner role, and nothing in the FastAPI layer
-reads it yet.
+job_search_app inherits SELECT access on this table via migration 0010's
+ALTER DEFAULT PRIVILEGES rule — every table job_search_owner creates in
+the silver schema automatically grants SELECT to job_search_app,
+surviving dbt's drop/recreate cycle. The table itself is written only by
+the migration/owner role, via the `cluster-jobs` pipeline CLI subcommand;
+job_search_app has read-only access and no write permission.
 """
 
 from __future__ import annotations
@@ -722,6 +740,14 @@ class IdentityAssignment:
     is_manual_override: bool = False
 
 
+# Tie-break order for `assign_new_job_groups`'s best_edge_for_key and
+# best_bridge selections when two edges carry equal confidence: manual is
+# human-verified, exact is deterministic-but-automatic, fuzzy is
+# probabilistic — so a human's explicit confirmation must win a tie even
+# against an equally-confident automatic signal.
+_MATCH_METHOD_PRIORITY = {"manual": 2, "exact": 1, "fuzzy": 0}
+
+
 def build_edges_from_exact_duplicates(
     rows: Iterable[tuple[str, str, str]],
 ) -> list[ClusterEdge]:
@@ -935,15 +961,25 @@ def assign_new_job_groups(
     # Strongest edge touching each individual new job_key, from either
     # edge set — used only to set each assigned row's own confidence/
     # match_method, never to decide grouping (grouping is decided below,
-    # per-component). 'manual' and 'exact' edges both carry confidence
-    # 1.0; ties are broken by whichever was appended first, which is
-    # deterministic given a deterministic input ordering upstream.
+    # per-component). Confidence is the primary sort key; when two edges
+    # tie on confidence (e.g. an 'exact' and a 'manual' edge both at
+    # 1.0), _MATCH_METHOD_PRIORITY breaks the tie (manual > exact >
+    # fuzzy) so a human's explicit confirmation always wins over an
+    # equally-confident automatic signal, regardless of edge list order.
+    # The same (confidence, method_priority) rule also decides
+    # `best_bridge` below, for the same reason.
     best_edge_for_key: dict[str, ClusterEdge] = {}
     for e in new_new_edges + bridge_edges:
         for key in (e.job_key_a, e.job_key_b):
             if key in new_keys:
                 current = best_edge_for_key.get(key)
-                if current is None or e.confidence > current.confidence:
+                if current is None or (
+                    e.confidence,
+                    _MATCH_METHOD_PRIORITY.get(e.match_method, -1),
+                ) > (
+                    current.confidence,
+                    _MATCH_METHOD_PRIORITY.get(current.match_method, -1),
+                ):
                     best_edge_for_key[key] = e
 
     assignments: list[IdentityAssignment] = []
@@ -955,7 +991,13 @@ def assign_new_job_groups(
             or (e.job_key_b in members and e.job_key_a in representative_to_group)
         ]
         if bridge_matches:
-            best_bridge = max(bridge_matches, key=lambda e: e.confidence)
+            best_bridge = max(
+                bridge_matches,
+                key=lambda e: (
+                    e.confidence,
+                    _MATCH_METHOD_PRIORITY.get(e.match_method, -1),
+                ),
+            )
             rep = (
                 best_bridge.job_key_b
                 if best_bridge.job_key_a in members
