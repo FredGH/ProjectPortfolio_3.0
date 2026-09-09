@@ -28,3 +28,6 @@ models:
     dedup:
       +materialized: table
       +schema: dedup
+    gold:
+      +materialized: table
+      +schema: gold
