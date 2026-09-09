@@ -124,7 +124,10 @@ class TestAssignNewJobGroups(unittest.TestCase):
         assigned = {"rep": "existing-group"}
         edges = [ClusterEdge("new", "rep", 0.85, "fuzzy")]
         result = assign_new_job_groups(
-            all_job_keys=["new"], edges=edges, assigned=assigned, new_group_id=self._ids()
+            all_job_keys=["new"],
+            edges=edges,
+            assigned=assigned,
+            new_group_id=self._ids(),
         )
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0].job_group_id, "existing-group")
@@ -161,7 +164,10 @@ class TestAssignNewJobGroups(unittest.TestCase):
             ClusterEdge("a", "rep", 0.85, "fuzzy"),
         ]
         result = assign_new_job_groups(
-            all_job_keys=["a", "b"], edges=edges, assigned=assigned, new_group_id=self._ids()
+            all_job_keys=["a", "b"],
+            edges=edges,
+            assigned=assigned,
+            new_group_id=self._ids(),
         )
         group_ids = {r.job_key: r.job_group_id for r in result}
         self.assertEqual(group_ids["a"], "existing-group")
@@ -171,7 +177,10 @@ class TestAssignNewJobGroups(unittest.TestCase):
         assigned = {"a": "group-1", "b": "group-1"}
         edges = [ClusterEdge("a", "b", 0.9, "fuzzy")]
         result = assign_new_job_groups(
-            all_job_keys=["a", "b"], edges=edges, assigned=assigned, new_group_id=self._ids()
+            all_job_keys=["a", "b"],
+            edges=edges,
+            assigned=assigned,
+            new_group_id=self._ids(),
         )
         self.assertEqual(result, [])
 
