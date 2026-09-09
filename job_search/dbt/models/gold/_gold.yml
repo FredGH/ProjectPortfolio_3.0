@@ -1,0 +1,113 @@
+version: 2
+
+sources:
+  - name: silver_ingest
+    schema: silver
+    tables:
+      - name: job_identity_map
+        description: >
+          Written by the cluster-jobs pipeline CLI subcommand
+          (core.dedup.write_job_identity_map), not dbt — union-find
+          clustering has no dbt equivalent (PLAN.md Step 10). Maps each
+          source posting to its stable job_group_id. Insert-only:
+          job_group_id never changes once assigned.
+        columns:
+          - name: job_group_id
+            description: "Matches gold.dim_job.job_group_id."
+      - name: job_survivorship
+        description: >
+          Written by the compute-survivorship pipeline CLI subcommand
+          (core.dedup.write_job_survivorship), not dbt — reuses Step
+          10's already-tested core.dedup.survivorship functions rather
+          than re-implementing the same rules in SQL (PLAN.md Step 11).
+          One row per job_group_id: which source's description/apply
+          link/display title wins.
+        columns:
+          - name: job_group_id
+            description: "Matches gold.dim_job.job_group_id."
+
+models:
+  - name: dim_job
+    description: >
+      One row per deduplicated job (PLAN.md Step 11). job_group_id is
+      the PK; description/apply_url/title_for_display are resolved by
+      silver.job_survivorship (Step 10's rules, reused verbatim); every
+      other field mirrors the same posting that won apply_url — see
+      this model's header comment for why.
+    columns:
+      - name: job_group_id
+        data_type: text
+        tests: [unique, not_null]
+      - name: apply_url
+        data_type: text
+        tests: [not_null]
+      - name: title_for_display
+        data_type: text
+      - name: description
+        data_type: text
+      - name: title_raw
+        data_type: text
+      - name: company
+        data_type: text
+      - name: normalised_company
+        data_type: text
+        tests: [not_null]
+      - name: location
+        data_type: text
+      - name: country_iso
+        data_type: text
+      - name: region
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: rate_currency
+        data_type: text
+      - name: rate_annualised
+        data_type: numeric
+      - name: rate_daily_equivalent
+        data_type: numeric
+      - name: contract_length_months
+        data_type: integer
+      - name: engagement_type
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['permanent', 'contract', 'ftc', 'interim', 'unknown']
+      - name: ir35_status
+        data_type: text
+        tests:
+          - accepted_values:
+              values:
+                ['inside', 'outside', 'not_applicable', 'undetermined', 'unknown']
+      - name: engagement_vehicle
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['umbrella', 'limited', 'paye', 'agency_paye', 'unknown']
+      - name: rate_basis
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['annual', 'daily', 'hourly', 'unknown']
+      - name: extension_likelihood
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['likely', 'possible', 'unlikely', 'unstated']
+      - name: posted_at
+        data_type: timestamptz
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['api', 'manual', 'scraped']
+      - name: apply_source_name
+        data_type: text
+        tests: [not_null]
+      - name: apply_source_job_id
+        data_type: text
+        tests: [not_null]
+      - name: sources
+        data_type: jsonb
+        tests: [not_null]
