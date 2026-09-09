@@ -37,11 +37,20 @@ models:
     columns:
       - name: job_group_id
         data_type: text
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: source('silver_ingest', 'job_identity_map')
+              field: job_group_id
       - name: apply_url
+        description: "The surviving apply link (DECISIONS.md §2.7: source-rank wins)."
         data_type: text
         tests: [not_null]
       - name: title_for_display
+        description: >
+          The surviving display title (DECISIONS.md §5: same source as
+          apply_url).
         data_type: text
       - name: description
         data_type: text
@@ -50,21 +59,41 @@ models:
       - name: company
         data_type: text
       - name: normalised_company
+        description: >
+          Step 7's matching-only company key — never a display string;
+          join key for dim_company.
         data_type: text
         tests: [not_null]
       - name: location
         data_type: text
       - name: country_iso
+        description: "Derived from the apply-winning posting's normalised location (Step 7)."
         data_type: text
       - name: region
+        description: "Derived from the apply-winning posting's normalised location (Step 7)."
         data_type: text
       - name: salary_raw
         data_type: text
       - name: rate_currency
+        description: >
+          The currency the rate was actually stated in (GBP/USD/EUR).
+          Nullable — a plain numeric salary_raw carries no currency
+          signal, and this column is never guessed.
         data_type: text
       - name: rate_annualised
+        description: >
+          The stated rate annualised (260 working days / 7.5-hour day
+          where a conversion was needed). Expressed in rate_currency —
+          this is NOT converted to GBP. Currency conversion happens in
+          core.normalisation.salary.parse_salary (PLAN.md Step 6), a
+          separate function; do not compare this column across
+          currencies. Nullable when rate_basis is 'unknown'.
         data_type: numeric
       - name: rate_daily_equivalent
+        description: >
+          The stated rate as a day-rate equivalent, same 260-day basis.
+          Expressed in rate_currency, NOT converted to GBP — same caveat
+          as rate_annualised. Nullable when rate_basis is 'unknown'.
         data_type: numeric
       - name: contract_length_months
         data_type: integer
@@ -103,12 +132,25 @@ models:
           - accepted_values:
               values: ['api', 'manual', 'scraped']
       - name: apply_source_name
+        description: >
+          Lineage — the natural key of the posting that won apply_url
+          survivorship. Not part of the original PLAN.md spec; exposed
+          so dim_company/fct_market_demand can join back without a
+          fragile URL match.
         data_type: text
         tests: [not_null]
       - name: apply_source_job_id
+        description: >
+          Lineage — the natural key of the posting that won apply_url
+          survivorship. Not part of the original PLAN.md spec; exposed
+          so dim_company/fct_market_demand can join back without a
+          fragile URL match.
         data_type: text
         tests: [not_null]
       - name: sources
+        description: >
+          Every source URL for this job_group_id, regardless of which
+          one won survivorship.
         data_type: jsonb
         tests: [not_null]
 
@@ -123,7 +165,12 @@ models:
         tests: [unique, not_null]
       - name: normalised_company
         data_type: text
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: normalised_company
       - name: company_name
         data_type: text
         tests: [not_null]
