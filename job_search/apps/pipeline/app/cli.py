@@ -23,6 +23,7 @@ import httpx
 from core.db.session import build_engine
 from core.dedup.write_blocking_keys import write_blocking_keys
 from core.dedup.write_job_identity_map import write_job_identity_map
+from core.dedup.write_job_survivorship import write_job_survivorship
 from core.dedup.write_similarity_features import write_similarity_features
 from core.dedup.write_title_similarity_scores import write_title_similarity_scores
 from core.enrichment.write_engagement_terms import write_engagement_terms
@@ -514,6 +515,22 @@ def _cmd_cluster_jobs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compute_survivorship(args: argparse.Namespace) -> int:
+    """Run the `compute-survivorship` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    written = write_job_survivorship(engine)
+    print(f"compute-survivorship complete: rows_written={written}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -564,6 +581,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Assign job_group_id to every unclustered silver posting",
     )
 
+    subparsers.add_parser(
+        "compute-survivorship",
+        help="Resolve field-level survivorship for every job_group_id",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -578,6 +600,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compute_title_similarity_scores(args)
     if args.command == "cluster-jobs":
         return _cmd_cluster_jobs(args)
+    if args.command == "compute-survivorship":
+        return _cmd_compute_survivorship(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
