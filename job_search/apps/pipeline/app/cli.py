@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from core.classification.write_job_category import write_job_category
 from core.db.session import build_engine
 from core.dedup.write_blocking_keys import write_blocking_keys
 from core.dedup.write_job_identity_map import write_job_identity_map
@@ -531,6 +532,27 @@ def _cmd_compute_survivorship(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_classify_jobs(args: argparse.Namespace) -> int:
+    """Run the `classify-jobs` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        written = write_job_category(engine, adapters=adapters, http_client=http_client)
+        print(f"classify-jobs complete: rows_written={written}")
+        return 0
+    finally:
+        http_client.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -586,6 +608,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Resolve field-level survivorship for every job_group_id",
     )
 
+    subparsers.add_parser(
+        "classify-jobs",
+        help="Classify every unclassified job_group_id (category, seniority_band)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -602,6 +629,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_cluster_jobs(args)
     if args.command == "compute-survivorship":
         return _cmd_compute_survivorship(args)
+    if args.command == "classify-jobs":
+        return _cmd_classify_jobs(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
