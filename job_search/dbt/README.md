@@ -85,6 +85,15 @@ connectors) into typed, contract-enforced models.
   an existing cluster, since which source "wins" survivorship is never
   required to stay fixed, only `job_group_id` itself.
 
+  A plain `dbt build` on its own is **not** enough here either:
+  `dim_job`'s final SELECT chains three INNER JOINs (survivorship →
+  apply_posting → apply_blocking_keys → sources), so a `job_group_id`
+  whose `compute-survivorship`/`compute-blocking-keys` rows are stale
+  (not rerun since new postings were clustered) silently vanishes from
+  `dim_job` rather than erroring. The singular test
+  `assert_dim_job_covers_every_job_group` exists specifically to catch
+  that.
+
 ## Running it
 
 From this directory, with `.env` loaded and `DBT_PROFILES_DIR=.`:

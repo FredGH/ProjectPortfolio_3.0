@@ -86,7 +86,7 @@ sources AS (
                 'job_url', sp.job_url,
                 'first_seen_at', fs.first_seen_at
             )
-            ORDER BY sp.source_name
+            ORDER BY sp.source_name, sp.source_job_id
         ) AS sources
     FROM identity_map AS im
     INNER JOIN {{ ref('silver__job_posting') }} AS sp
