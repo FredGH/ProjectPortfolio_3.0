@@ -182,7 +182,14 @@ models:
                 - platform_devops
                 - other
       - name: category_confidence
-        description: "Confidence in `category`, 0.0-1.0, per whichever stage resolved it."
+        description: >
+          Confidence in `category`, 0.0-1.0 — but not one comparable
+          scale: rules always reports a flat 0.9, embedding reports a
+          raw cosine similarity (0.75-1.0, since below 0.75 it declines
+          rather than returning a value), and the LLM stage reports a
+          self-assessed confidence that can span the full range. Useful
+          for ordering low-confidence rows for review WITHIN one
+          category_method, not for comparing confidence across methods.
         data_type: numeric
         tests:
           - not_null

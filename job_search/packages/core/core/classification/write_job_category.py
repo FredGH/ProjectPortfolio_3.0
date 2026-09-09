@@ -19,6 +19,20 @@ from core.classification.embeddings import build_centroids, load_seed_examples
 from core.llm.types import LLMAdapter
 from core.settings import get_settings
 
+# Reads silver.job_survivorship directly rather than gold.dim_job.
+#
+# gold.dim_job's title_for_display column is literally
+# silver.job_survivorship.apply_title_for_display passed through
+# unchanged (see dbt/models/gold/dim_job.sql), so this is behaviourally
+# identical for the columns this query needs — but gold.dim_job is dbt-
+# materialised as a `table` (dbt_project.yml), meaning a job_group_id
+# only appears there after an intervening `dbt run`. Querying it here
+# would silently under-classify (or, in the integration test, find zero
+# rows) for any job_group_id created since the last `dbt run` —
+# including a fixture inserted directly into the silver tables the way
+# test_write_job_category.py (and the established
+# test_write_blocking_keys.py / test_write_job_survivorship.py pattern
+# for this same class of Python-written table) does.
 _SELECT_UNCLASSIFIED = text(
     """
     SELECT js.job_group_id, js.apply_title_for_display AS title_for_display
@@ -27,6 +41,20 @@ _SELECT_UNCLASSIFIED = text(
     WHERE jc.job_group_id IS NULL
     """
 )
+
+# A `job_group_ids`-scoped variant of _SELECT_UNCLASSIFIED.
+#
+# Exists so a caller — specifically test_write_job_category.py — can
+# exercise write_job_category's real end-to-end write path against one
+# fixture row without also picking up every other unclassified
+# job_group_id already sitting in silver.job_survivorship. Without this,
+# running the integration test in any environment where Step 11's
+# compute-survivorship has already populated real data (as it has here:
+# 2,602 real rows) would classify the entire real dataset on every test
+# run — a real, uncapped LLM/embedding cost and a long-held open
+# transaction on the shared dev database, not a test. The CLI's
+# classify-jobs subcommand never passes job_group_ids, so production
+# behaviour (classify everything unclassified) is unchanged.
 _SELECT_UNCLASSIFIED_SCOPED = text(
     """
     SELECT js.job_group_id, js.apply_title_for_display AS title_for_display
@@ -36,35 +64,6 @@ _SELECT_UNCLASSIFIED_SCOPED = text(
     AND js.job_group_id = ANY(:job_group_ids)
     """
 )
-"""A `job_group_ids`-scoped variant of _SELECT_UNCLASSIFIED.
-
-Exists so a caller — specifically test_write_job_category.py — can
-exercise write_job_category's real end-to-end write path against one
-fixture row without also picking up every other unclassified
-job_group_id already sitting in silver.job_survivorship. Without this,
-running the integration test in any environment where Step 11's
-compute-survivorship has already populated real data (as it has here:
-2,602 real rows) would classify the entire real dataset on every test
-run — a real, uncapped LLM/embedding cost and a long-held open
-transaction on the shared dev database, not a test. The CLI's
-classify-jobs subcommand never passes job_group_ids, so production
-behaviour (classify everything unclassified) is unchanged."""
-"""Reads silver.job_survivorship directly rather than gold.dim_job.
-
-gold.dim_job's title_for_display column is literally
-silver.job_survivorship.apply_title_for_display passed through
-unchanged (see dbt/models/gold/dim_job.sql), so this is behaviourally
-identical for the columns this query needs — but gold.dim_job is dbt-
-materialised as a `table` (dbt_project.yml), meaning a job_group_id
-only appears there after an intervening `dbt run`. Querying it here
-would silently under-classify (or, in the integration test, find zero
-rows) for any job_group_id created since the last `dbt run` —
-including a fixture inserted directly into the silver tables the way
-test_write_job_category.py (and the established
-test_write_blocking_keys.py / test_write_job_survivorship.py pattern
-for this same class of Python-written table) does. See the Task 5
-report for the full write-up of this deviation from the task brief.
-"""
 
 _UPSERT = text(
     """

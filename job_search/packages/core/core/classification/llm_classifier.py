@@ -2,8 +2,13 @@
 fallback for titles neither the rules nor embedding stage could
 confidently classify. Routed via core.llm.gateway's per-task provider
 resolution (config/llm_tasks.yml's `job_categorisation` entry, DECISIONS.md
-§1) — never a hardcoded provider, and never called for the ~70%+ of
-titles the cheaper stages already resolved.
+§1) — never a hardcoded provider. Measured against the real dataset,
+this stage resolves a majority of ALL titles (not just a small
+residual): the rules/embedding stages can only ever return one of the
+6 substantive categories, so every genuinely non-engineering title
+(the majority of postings in a broad job aggregator) reaches this
+stage and correctly resolves to "other" here, alongside the smaller
+share of substantive titles the cheaper stages couldn't place.
 """
 
 from __future__ import annotations

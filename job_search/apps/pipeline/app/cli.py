@@ -546,6 +546,15 @@ def _cmd_classify_jobs(args: argparse.Namespace) -> int:
     http_client = httpx.Client(timeout=30.0)
     try:
         adapters = _build_llm_adapters(http_client)
+        if "anthropic" not in adapters:
+            print(
+                "classify-jobs: ANTHROPIC_API_KEY is not configured — the LLM "
+                "residual stage cannot run. Set it before retrying; failing "
+                "here up front avoids burning the rules/embedding cascade "
+                "against the whole corpus only to error on the first "
+                "residual title."
+            )
+            return 1
         written = write_job_category(engine, adapters=adapters, http_client=http_client)
         print(f"classify-jobs complete: rows_written={written}")
         return 0

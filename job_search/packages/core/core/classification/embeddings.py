@@ -86,6 +86,11 @@ def build_centroids(
     """
     centroids: dict[str, list[float]] = {}
     for category, examples in seed_examples.items():
+        if not examples:
+            raise ValueError(
+                f"category_seed_examples.yml's {category!r} entry has no "
+                "example titles — cannot build a centroid from zero vectors."
+            )
         vectors = [
             embed_text(example, base_url=base_url, model=model, client=client)
             for example in examples
@@ -129,7 +134,10 @@ def classify_by_embedding(
             (category, _cosine_similarity(vector, centroid))
             for category, centroid in centroids.items()
         ),
-        key=lambda pair: pair[1],
+        # A tie on cosine similarity alone leaves the winner to dict
+        # (YAML insertion) order — add category as a fully-defining
+        # tie-break so the result never depends on iteration order.
+        key=lambda pair: (pair[1], pair[0]),
     )
     if best_score < _CONFIDENT_COSINE_THRESHOLD:
         return None

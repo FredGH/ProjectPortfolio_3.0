@@ -1,6 +1,10 @@
 """Rules-based title classification (PLAN.md Step 11a, stage 1) —
-catches the ~70% of titles a keyword match resolves deterministically
-and for free, before the more expensive embedding/LLM stages run.
+catches a keyword match deterministically and for free, before the
+more expensive embedding/LLM stages run. Measured against the real
+dataset: ~76% of genuinely-categorizable (non-"other") titles resolve
+here — titles that are not one of the 6 substantive categories at all
+correctly cascade past this stage every time, by design (see
+core.classification.llm_classifier's module docstring).
 
 Rule order matters: more specific categories (ai_ml_engineer,
 data_scientist, analytics_engineer, platform_devops) are checked
@@ -16,7 +20,8 @@ import re
 _RULES: list[tuple[re.Pattern[str], str]] = [
     (
         re.compile(
-            r"machine learning|\bml\b|\bai\b|deep learning|\bnlp\b|computer vision",
+            r"machine learning|deep learning|\bnlp\b|computer vision|"
+            r"\b(?:ai|ml)\b[\s/&-]*(?:engineer|scientist|developer|architect|researcher)",
             re.IGNORECASE,
         ),
         "ai_ml_engineer",

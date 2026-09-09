@@ -105,7 +105,7 @@ def classify_title(
         # titleless posting for no signal beyond a placeholder string.)
         return Classification(
             category="other",
-            category_confidence=1.0,
+            category_confidence=0.0,
             category_method="rules",
             qa_category=qa_category_map.get("other"),
             seniority_band=seniority_band,

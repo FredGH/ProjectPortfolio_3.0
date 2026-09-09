@@ -94,10 +94,14 @@ connectors) into typed, contract-enforced models.
   `assert_dim_job_covers_every_job_group` exists specifically to catch
   that.
 
-  Category and seniority classification runs after survivorship:
+  Category and seniority classification runs after survivorship. Run
+  from the host (not inside the `pipeline` container), `OLLAMA_BASE_URL`
+  needs the `localhost` override — `.env`'s `http://ollama:11434` is the
+  Docker-internal hostname and won't resolve here:
 
   ```bash
-  python3.11 -m apps.pipeline.app.cli classify-jobs
+  OLLAMA_BASE_URL=http://localhost:11434 \
+    python3.11 -m apps.pipeline.app.cli classify-jobs
   dbt build --select dim_job
   ```
 
