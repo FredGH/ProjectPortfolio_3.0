@@ -472,6 +472,7 @@ _SELECT_GROUP_MEMBERS = text(
     FROM silver.job_identity_map AS im
     INNER JOIN silver.silver__job_posting AS sp
         ON im.source_name = sp.source_name AND im.source_job_id = sp.source_job_id
+    ORDER BY im.job_group_id, sp.source_name, sp.source_job_id
     """
 )
 
@@ -529,9 +530,14 @@ def write_job_survivorship(engine: Engine) -> int:
                     first_seen_at=None,
                 )
             )
-            source_job_id_by_group[row.job_group_id][
-                (row.source_name, row.job_url)
-            ] = row.source_job_id
+            # First-wins, matching resolve_apply_source's min() semantics:
+            # when two postings in a group share both source_name and
+            # job_url (the same-source-repost scenario), the SELECT's
+            # ORDER BY guarantees the lowest source_job_id arrives first,
+            # so setdefault keeps it — the same member min() will pick.
+            source_job_id_by_group[row.job_group_id].setdefault(
+                (row.source_name, row.job_url), row.source_job_id
+            )
 
         written = 0
         for job_group_id, members in members_by_group.items():
@@ -685,11 +691,20 @@ models:
     columns:
       - name: job_group_id
         data_type: text
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: source('silver_ingest', 'job_identity_map')
+              field: job_group_id
       - name: apply_url
+        description: "The surviving apply link (DECISIONS.md §2.7: source-rank wins)."
         data_type: text
         tests: [not_null]
       - name: title_for_display
+        description: >
+          The surviving display title (DECISIONS.md §5: same source as
+          apply_url).
         data_type: text
       - name: description
         data_type: text
@@ -698,21 +713,41 @@ models:
       - name: company
         data_type: text
       - name: normalised_company
+        description: >
+          Step 7's matching-only company key — never a display string;
+          join key for dim_company.
         data_type: text
         tests: [not_null]
       - name: location
         data_type: text
       - name: country_iso
+        description: "Derived from the apply-winning posting's normalised location (Step 7)."
         data_type: text
       - name: region
+        description: "Derived from the apply-winning posting's normalised location (Step 7)."
         data_type: text
       - name: salary_raw
         data_type: text
       - name: rate_currency
+        description: >
+          The currency the rate was actually stated in (GBP/USD/EUR).
+          Nullable — a plain numeric salary_raw carries no currency
+          signal, and this column is never guessed.
         data_type: text
       - name: rate_annualised
+        description: >
+          The stated rate annualised (260 working days / 7.5-hour day
+          where a conversion was needed). Expressed in rate_currency —
+          this is NOT converted to GBP. Currency conversion happens in
+          core.normalisation.salary.parse_salary (PLAN.md Step 6), a
+          separate function; do not compare this column across
+          currencies. Nullable when rate_basis is 'unknown'.
         data_type: numeric
       - name: rate_daily_equivalent
+        description: >
+          The stated rate as a day-rate equivalent, same 260-day basis.
+          Expressed in rate_currency, NOT converted to GBP — same caveat
+          as rate_annualised. Nullable when rate_basis is 'unknown'.
         data_type: numeric
       - name: contract_length_months
         data_type: integer
@@ -751,12 +786,25 @@ models:
           - accepted_values:
               values: ['api', 'manual', 'scraped']
       - name: apply_source_name
+        description: >
+          Lineage — the natural key of the posting that won apply_url
+          survivorship. Not part of the original PLAN.md spec; exposed
+          so dim_company/fct_market_demand can join back without a
+          fragile URL match.
         data_type: text
         tests: [not_null]
       - name: apply_source_job_id
+        description: >
+          Lineage — the natural key of the posting that won apply_url
+          survivorship. Not part of the original PLAN.md spec; exposed
+          so dim_company/fct_market_demand can join back without a
+          fragile URL match.
         data_type: text
         tests: [not_null]
       - name: sources
+        description: >
+          Every source URL for this job_group_id, regardless of which
+          one won survivorship.
         data_type: jsonb
         tests: [not_null]
 ```
@@ -854,7 +902,7 @@ sources AS (
                 'job_url', sp.job_url,
                 'first_seen_at', fs.first_seen_at
             )
-            ORDER BY sp.source_name
+            ORDER BY sp.source_name, sp.source_job_id
         ) AS sources
     FROM identity_map AS im
     INNER JOIN {{ ref('silver__job_posting') }} AS sp
@@ -928,10 +976,22 @@ docker compose exec -T postgres psql -U job_search_owner -d job_search -c "
 Expected: at least one row with `source_count > 1` and a non-null
 `title_for_display` (e.g. seniority kept, `(m/f/d)` stripped).
 
+- [ ] **Step 4a (added in the final-review fix wave): singular coverage test**
+
+`dim_job`'s final SELECT is a chain of INNER JOINs (survivorship →
+apply_posting → apply_blocking_keys → sources); if `compute-survivorship`
+or `compute-blocking-keys` haven't been rerun since new postings were
+clustered, affected `job_group_id`s silently vanish from `dim_job` with
+`dbt build` still reporting green. Added
+`dbt/tests/assert_dim_job_covers_every_job_group.sql` (same shape as
+`assert_similarity_scores_match_candidate_pairs_count` one layer down)
+plus a matching warning paragraph in `dbt/README.md`'s gold-layer bullet.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add dbt/models/gold/dim_job.sql dbt/models/gold/_gold.yml
+git add dbt/models/gold/dim_job.sql dbt/models/gold/_gold.yml \
+        dbt/tests/assert_dim_job_covers_every_job_group.sql
 git commit -m "feat(job_search): add gold.dim_job"
 ```
 
@@ -963,7 +1023,12 @@ Append to the `models:` list in `dbt/models/gold/_gold.yml`:
         tests: [unique, not_null]
       - name: normalised_company
         data_type: text
-        tests: [unique, not_null]
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: normalised_company
       - name: company_name
         data_type: text
         tests: [not_null]
