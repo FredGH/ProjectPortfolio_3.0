@@ -25,6 +25,17 @@ sources:
         columns:
           - name: job_group_id
             description: "Matches gold.dim_job.job_group_id."
+      - name: job_category
+        description: >
+          Written by the classify-jobs pipeline CLI subcommand
+          (core.classification.write_job_category), not dbt — the
+          rules/embedding/LLM cascade is Python logic tested in
+          packages/core/tests (PLAN.md Step 11a). One row per
+          job_group_id: category, category_confidence, category_method,
+          qa_category, seniority_band.
+        columns:
+          - name: job_group_id
+            description: "Matches gold.dim_job.job_group_id."
 
 models:
   - name: dim_job
@@ -153,6 +164,54 @@ models:
           one won survivorship.
         data_type: jsonb
         tests: [not_null]
+      - name: category
+        description: >
+          The 7-value classification taxonomy (PLAN.md Step 11a) —
+          the analytical grain for market/skill-demand marts and the
+          skill gap analysis.
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values:
+                - software_engineer
+                - data_engineer
+                - data_scientist
+                - ai_ml_engineer
+                - analytics_engineer
+                - platform_devops
+                - other
+      - name: category_confidence
+        description: "Confidence in `category`, 0.0-1.0, per whichever stage resolved it."
+        data_type: numeric
+        tests:
+          - not_null
+      - name: category_method
+        description: "Which cascade stage resolved `category` — 'rules', 'embedding', or 'llm'."
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['rules', 'embedding', 'llm']
+      - name: qa_category
+        description: >
+          The separate 4-value question-bank taxonomy (PLAN.md Step
+          11a) — coarser than `category` by design. Null when
+          `category = 'other'`, which has no reasonable question-bank
+          equivalent. dbt's `accepted_values` test passes NULLs through
+          by default, so no `not_null` test belongs here — nullability
+          is intentional, not a gap.
+        data_type: text
+        tests:
+          - accepted_values:
+              values: [software_engineer, data_engineer, data_scientist, ai_engineer]
+      - name: seniority_band
+        description: "Derived from the job title's own wording (PLAN.md Step 11a)."
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: [junior, mid, senior, lead, principal]
 
   - name: dim_company
     description: >
