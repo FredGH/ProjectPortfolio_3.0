@@ -97,10 +97,12 @@ def classify_title(
         # missing title resolves straight to "other" via the rules
         # stage rather than cascading all the way to an LLM call on a
         # placeholder string. (This diverges from the task-5 brief's
-        # literal code, which fell through to classify_by_llm here —
-        # see the Task 5 report for why that was a bug: it contradicted
-        # this module's own unit test and needlessly spent an LLM call
-        # on titleless postings.)
+        # literal code, which fell through to classify_by_llm("Untitled
+        # posting", ...) here: that contradicts this module's own unit
+        # test — test_none_title_classifies_as_other_via_rules_without_
+        # calling_llm asserts the LLM adapter is never called for a
+        # `None` title — and would spend a real LLM call on every
+        # titleless posting for no signal beyond a placeholder string.)
         return Classification(
             category="other",
             category_confidence=1.0,
