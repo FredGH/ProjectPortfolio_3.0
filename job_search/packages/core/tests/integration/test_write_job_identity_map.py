@@ -70,7 +70,10 @@ class TestWriteJobIdentityMap(unittest.TestCase):
                 {"a": self.source_a, "b": self.source_b},
             )
             conn.execute(
-                text("DELETE FROM dedup.pair_labels WHERE job_key_a = :a AND job_key_b = :b"),
+                text(
+                    "DELETE FROM dedup.pair_labels "
+                    "WHERE job_key_a = :a AND job_key_b = :b"
+                ),
                 {"a": self.job_key_a, "b": self.job_key_b},
             )
             conn.execute(

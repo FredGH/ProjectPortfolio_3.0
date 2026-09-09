@@ -121,7 +121,12 @@ def write_job_identity_map(engine: Engine) -> int:
         fuzzy_edges = exclude_labeled_pairs(
             build_edges_from_similarity_scores(
                 (
-                    (row.job_key_a, row.job_key_b, float(row.blended_score), row.hard_veto)
+                    (
+                        row.job_key_a,
+                        row.job_key_b,
+                        float(row.blended_score),
+                        row.hard_veto,
+                    )
                     for row in conn.execute(_SELECT_SIMILARITY_EDGES).all()
                 ),
                 threshold=threshold,
