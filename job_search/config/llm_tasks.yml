@@ -14,3 +14,7 @@ tasks:
     provider: ollama
     model: llama3.1:8b
     prompt_family: local
+  job_categorisation:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
