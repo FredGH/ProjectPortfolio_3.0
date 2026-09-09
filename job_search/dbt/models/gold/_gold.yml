@@ -132,3 +132,38 @@ models:
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 1
+
+  - name: fct_market_demand
+    description: >
+      The base demand fact (PLAN.md Step 11), filtered to entry_method
+      = 'api' — see this model's header comment for the selection-bias
+      rationale and why no category column exists yet.
+    columns:
+      - name: job_group_id
+        data_type: text
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: job_group_id
+      - name: company_key
+        data_type: text
+        tests:
+          - relationships:
+              to: ref('dim_company')
+              field: company_key
+      - name: country_iso
+        data_type: text
+      - name: region
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: posted_week
+        data_type: timestamptz
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['api']
