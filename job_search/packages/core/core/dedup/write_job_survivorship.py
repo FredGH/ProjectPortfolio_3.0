@@ -50,6 +50,7 @@ _SELECT_GROUP_MEMBERS = text(
     FROM silver.job_identity_map AS im
     INNER JOIN silver.silver__job_posting AS sp
         ON im.source_name = sp.source_name AND im.source_job_id = sp.source_job_id
+    ORDER BY im.job_group_id, sp.source_name, sp.source_job_id
     """
 )
 
@@ -107,9 +108,14 @@ def write_job_survivorship(engine: Engine) -> int:
                     first_seen_at=None,
                 )
             )
-            source_job_id_by_group[row.job_group_id][
-                (row.source_name, row.job_url)
-            ] = row.source_job_id
+            # First-wins, matching resolve_apply_source's min() semantics:
+            # when two postings in a group share both source_name and
+            # job_url (the same-source-repost scenario), the SELECT's
+            # ORDER BY guarantees the lowest source_job_id arrives first,
+            # so setdefault keeps it — the same member min() will pick.
+            source_job_id_by_group[row.job_group_id].setdefault(
+                (row.source_name, row.job_url), row.source_job_id
+            )
 
         written = 0
         for job_group_id, members in members_by_group.items():

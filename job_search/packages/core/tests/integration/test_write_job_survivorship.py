@@ -126,6 +126,88 @@ class TestWriteJobSurvivorship(unittest.TestCase):
         # DECISIONS.md §5, computed here via core.normalisation.title.
         self.assertEqual(row.apply_title_for_display, "Senior Data Engineer")
 
+    def test_same_source_tie_is_resolved_deterministically(self) -> None:
+        # Two postings from the SAME source in one group — exactly the
+        # repost scenario dedup__exact_duplicates/candidate_pairs can
+        # produce with no same-source exclusion. Both tie on source
+        # rank, so resolve_apply_source's min() breaks the tie by
+        # source_job_id ordering — this must be stable across reruns,
+        # not dependent on arbitrary row-arrival order.
+        suffix2 = uuid.uuid4().hex
+        job_key_gh2 = f"gh2-{suffix2}"
+        source_job_id_gh2 = f"gh2-src-{suffix2}"
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO silver.silver__job_posting "
+                    "(job_key, source_name, source_job_id, job_url, "
+                    "job_url_canonical, entry_method, title, company, "
+                    "location, description, salary_raw, posted_at) "
+                    "VALUES (:job_key, 'greenhouse', :source_job_id, "
+                    "'https://greenhouse.example/job2', "
+                    "'https://greenhouse.example/job2', 'api', "
+                    "'Senior Data Engineer (m/f/d)', 'Test Co', 'London', "
+                    "'a different short desc', NULL, now())"
+                ),
+                {"job_key": job_key_gh2, "source_job_id": source_job_id_gh2},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO silver.job_identity_map "
+                    "(source_name, source_job_id, job_group_id, "
+                    "match_method, confidence) "
+                    "VALUES ('greenhouse', :source_job_id, :job_group_id, "
+                    "'fuzzy', 0.9)"
+                ),
+                {
+                    "source_job_id": source_job_id_gh2,
+                    "job_group_id": self.job_group_id,
+                },
+            )
+
+        try:
+            write_job_survivorship(self.engine)
+            with self.engine.connect() as conn:
+                row = conn.execute(
+                    text(
+                        "SELECT apply_source_job_id, apply_job_url "
+                        "FROM silver.job_survivorship WHERE job_group_id = :g"
+                    ),
+                    {"g": self.job_group_id},
+                ).one()
+
+            # Both greenhouse postings tie on source rank; the winner
+            # must be one of the two known greenhouse source_job_ids,
+            # and re-running must reproduce the SAME one every time —
+            # that determinism, not which one wins, is what this test
+            # guards.
+            first_winner = row.apply_source_job_id
+            self.assertIn(first_winner, {f"gh-src-{self.suffix}", source_job_id_gh2})
+
+            write_job_survivorship(self.engine)
+            with self.engine.connect() as conn:
+                row2 = conn.execute(
+                    text(
+                        "SELECT apply_source_job_id FROM silver.job_survivorship "
+                        "WHERE job_group_id = :g"
+                    ),
+                    {"g": self.job_group_id},
+                ).one()
+            self.assertEqual(first_winner, row2.apply_source_job_id)
+        finally:
+            with self.engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "DELETE FROM silver.job_identity_map "
+                        "WHERE job_group_id = :g AND source_job_id = :s"
+                    ),
+                    {"g": self.job_group_id, "s": source_job_id_gh2},
+                )
+                conn.execute(
+                    text("DELETE FROM silver.silver__job_posting WHERE job_key = :k"),
+                    {"k": job_key_gh2},
+                )
+
     def test_rerun_upserts_rather_than_duplicating(self) -> None:
         write_job_survivorship(self.engine)
         write_job_survivorship(self.engine)
