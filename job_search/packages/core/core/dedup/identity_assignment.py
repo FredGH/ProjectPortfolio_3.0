@@ -66,6 +66,14 @@ class IdentityAssignment:
     is_manual_override: bool = False
 
 
+# Tie-break order for `assign_new_job_groups`'s best_edge_for_key selection
+# when two edges touching the same job_key carry equal confidence: manual is
+# human-verified, exact is deterministic-but-automatic, fuzzy is
+# probabilistic — so a human's explicit confirmation must win a tie even
+# against an equally-confident automatic signal.
+_MATCH_METHOD_PRIORITY = {"manual": 2, "exact": 1, "fuzzy": 0}
+
+
 def build_edges_from_exact_duplicates(
     rows: Iterable[tuple[str, str, str]],
 ) -> list[ClusterEdge]:
@@ -287,7 +295,13 @@ def assign_new_job_groups(
         for key in (e.job_key_a, e.job_key_b):
             if key in new_keys:
                 current = best_edge_for_key.get(key)
-                if current is None or e.confidence > current.confidence:
+                if current is None or (
+                    e.confidence,
+                    _MATCH_METHOD_PRIORITY[e.match_method],
+                ) > (
+                    current.confidence,
+                    _MATCH_METHOD_PRIORITY[current.match_method],
+                ):
                     best_edge_for_key[key] = e
 
     assignments: list[IdentityAssignment] = []

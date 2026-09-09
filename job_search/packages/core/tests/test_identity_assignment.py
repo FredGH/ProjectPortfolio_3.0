@@ -174,3 +174,28 @@ class TestAssignNewJobGroups(unittest.TestCase):
             all_job_keys=["a", "b"], edges=edges, assigned=assigned, new_group_id=self._ids()
         )
         self.assertEqual(result, [])
+
+    def test_manual_edge_beats_equal_confidence_exact_edge_in_tie_break(
+        self,
+    ) -> None:
+        # Reproduces a live-data bug: job_key "b" has an exact
+        # content-hash duplicate edge to "c" AND is the manually-labeled
+        # partner of "a" (a human confirmed a/b as 'match' in
+        # dedup.pair_labels). Both edges carry confidence=1.0. Because
+        # 'manual' means a human vouched for this specific job's
+        # assignment, it must win the tie over an automatic 'exact'
+        # edge — is_manual_override must be True so an audit query
+        # never silently misses this row.
+        edges = [
+            ClusterEdge("b", "c", 1.0, "exact"),
+            ClusterEdge("a", "b", 1.0, "manual"),
+        ]
+        result = assign_new_job_groups(
+            all_job_keys=["a", "b", "c"],
+            edges=edges,
+            assigned={},
+            new_group_id=self._ids(),
+        )
+        by_key = {r.job_key: r for r in result}
+        self.assertEqual(by_key["b"].match_method, "manual")
+        self.assertTrue(by_key["b"].is_manual_override)
