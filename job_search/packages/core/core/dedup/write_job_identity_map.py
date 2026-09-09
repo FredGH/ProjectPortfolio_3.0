@@ -134,6 +134,13 @@ def write_job_identity_map(engine: Engine) -> int:
             labeled_pairs=labeled_pairs,
         )
 
+        # Build order here (exact, then fuzzy, then manual) is provably
+        # irrelevant to the outcome, not just safe by convention:
+        # assign_new_job_groups's best_edge_for_key and best_bridge
+        # selections both compare (confidence, _MATCH_METHOD_PRIORITY)
+        # tuples rather than taking the first-seen edge, so a 'manual'
+        # edge always outranks an equally-confident 'exact'/'fuzzy' one
+        # regardless of which list it was concatenated from.
         edges = (
             build_edges_from_exact_duplicates(
                 (row.job_key, row.duplicate_type, row.duplicate_group_key)
@@ -164,4 +171,11 @@ def write_job_identity_map(engine: Engine) -> int:
                     "is_manual_override": assignment.is_manual_override,
                 },
             )
+    # len(assignments) is always the exact insert count, never inflated
+    # by a hit on ON CONFLICT DO NOTHING: every job_key in `assignments`
+    # came from `all_job_keys` after excluding whatever `assigned`
+    # already covers, and `assigned` is derived from the very same
+    # (source_name, source_job_id) natural key the ON CONFLICT clause
+    # targets — so no row in `assignments` can already exist in
+    # silver.job_identity_map, and the conflict clause can never fire.
     return len(assignments)

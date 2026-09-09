@@ -9,6 +9,18 @@ Note on `apply_url`: PLAN.md and DECISIONS.md name this field
 Steps 5a/6 never built a separate apply-vs-listing URL distinction).
 This module treats `job_url` as the intended target of every
 "apply_url" survivorship rule in the spec.
+
+Note on `ClusterMember.title_for_display` and `.first_seen_at`: neither
+field is produced anywhere in the current pipeline yet. `title_for_
+display` is a Step 6 deliverable (DECISIONS.md §5 — decoration-stripped
+but seniority-kept, distinct from `strip_title`'s output) that was
+apparently never built: no dbt column and no Python function emits it.
+`first_seen_at` has no source either — nothing computes a per-source
+first-ingested timestamp today. This module's logic is correct and
+fully tested against synthetic `ClusterMember` instances, but Step 11
+will need to build/source both fields before it can construct real ones
+from actual pipeline data — treat this as a known gap, not an oversight
+in this module.
 """
 
 from __future__ import annotations
@@ -84,6 +96,11 @@ def resolve_apply_source(members: list[ClusterMember]) -> ClusterMember:
         apply_url, and (DECISIONS.md §5) its `title_for_display` is the
         one that must be used too, since both rules pick the same
         source by construction.
+
+    Raises:
+        ValueError: If `members` is empty — raised by the underlying
+            `min()` call ("min() arg is an empty sequence"), since there
+            is no member to pick a winner from.
     """
     return min(members, key=lambda m: (_source_rank(m.source_name), m.source_name))
 

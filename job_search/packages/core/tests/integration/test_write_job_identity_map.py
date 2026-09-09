@@ -172,3 +172,41 @@ class TestWriteJobIdentityMap(unittest.TestCase):
 
         self.assertEqual(second_written, 0)
         self.assertEqual(first_run, second_run)
+
+    def test_manual_match_label_forces_a_merge_below_threshold(self) -> None:
+        # Step 9's whole point, the other direction from the not_match test
+        # above: a human can force a merge even when the automatic score
+        # alone would never clear the auto-match threshold.
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE dedup.dedup__similarity_scores "
+                    "SET blended_score = 0.1 WHERE job_key_a = :a AND job_key_b = :b"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO dedup.pair_labels (job_key_a, job_key_b, label) "
+                    "VALUES (:a, :b, 'match')"
+                ),
+                {"a": self.job_key_a, "b": self.job_key_b},
+            )
+
+        write_job_identity_map(self.engine)
+
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT source_job_id, job_group_id, match_method, "
+                    "is_manual_override "
+                    "FROM silver.job_identity_map "
+                    "WHERE source_job_id IN (:a, :b)"
+                ),
+                {"a": self.source_a, "b": self.source_b},
+            ).all()
+        self.assertEqual(len(rows), 2)
+        group_ids = {row.job_group_id for row in rows}
+        self.assertEqual(len(group_ids), 1, "a 'match' label must force the merge")
+        self.assertTrue(all(row.match_method == "manual" for row in rows))
+        self.assertTrue(all(row.is_manual_override is True for row in rows))

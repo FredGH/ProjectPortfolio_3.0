@@ -208,3 +208,38 @@ class TestAssignNewJobGroups(unittest.TestCase):
         by_key = {r.job_key: r for r in result}
         self.assertEqual(by_key["b"].match_method, "manual")
         self.assertTrue(by_key["b"].is_manual_override)
+
+    def test_manual_bridge_wins_over_equal_confidence_exact_bridge(self) -> None:
+        # A new job has two competing bridge edges at equal confidence: an
+        # automatic exact-duplicate edge to one existing group, and a
+        # human-confirmed manual edge to a different existing group. The
+        # human's signal must decide which group wins, not edge list order.
+        assigned = {"exact_rep": "group-exact", "manual_rep": "group-manual"}
+        edges = [
+            ClusterEdge("new", "exact_rep", 1.0, "exact"),
+            ClusterEdge("new", "manual_rep", 1.0, "manual"),
+        ]
+        result = assign_new_job_groups(
+            all_job_keys=["new"],
+            edges=edges,
+            assigned=assigned,
+            new_group_id=self._ids(),
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].job_group_id, "group-manual")
+        self.assertEqual(result[0].match_method, "manual")
+        self.assertTrue(result[0].is_manual_override)
+
+    def test_manual_bridge_wins_regardless_of_edge_list_order(self) -> None:
+        assigned = {"exact_rep": "group-exact", "manual_rep": "group-manual"}
+        edges = [
+            ClusterEdge("new", "manual_rep", 1.0, "manual"),
+            ClusterEdge("new", "exact_rep", 1.0, "exact"),
+        ]
+        result = assign_new_job_groups(
+            all_job_keys=["new"],
+            edges=edges,
+            assigned=assigned,
+            new_group_id=self._ids(),
+        )
+        self.assertEqual(result[0].job_group_id, "group-manual")

@@ -287,9 +287,13 @@ def assign_new_job_groups(
     # Strongest edge touching each individual new job_key, from either
     # edge set — used only to set each assigned row's own confidence/
     # match_method, never to decide grouping (grouping is decided below,
-    # per-component). 'manual' and 'exact' edges both carry confidence
-    # 1.0; ties are broken by whichever was appended first, which is
-    # deterministic given a deterministic input ordering upstream.
+    # per-component). Confidence is the primary sort key; when two edges
+    # tie on confidence (e.g. an 'exact' and a 'manual' edge both at
+    # 1.0), _MATCH_METHOD_PRIORITY breaks the tie (manual > exact >
+    # fuzzy) so a human's explicit confirmation always wins over an
+    # equally-confident automatic signal, regardless of edge list order.
+    # The same (confidence, method_priority) rule also decides
+    # `best_bridge` below, for the same reason.
     best_edge_for_key: dict[str, ClusterEdge] = {}
     for e in new_new_edges + bridge_edges:
         for key in (e.job_key_a, e.job_key_b):
@@ -297,10 +301,10 @@ def assign_new_job_groups(
                 current = best_edge_for_key.get(key)
                 if current is None or (
                     e.confidence,
-                    _MATCH_METHOD_PRIORITY[e.match_method],
+                    _MATCH_METHOD_PRIORITY.get(e.match_method, -1),
                 ) > (
                     current.confidence,
-                    _MATCH_METHOD_PRIORITY[current.match_method],
+                    _MATCH_METHOD_PRIORITY.get(current.match_method, -1),
                 ):
                     best_edge_for_key[key] = e
 
@@ -313,7 +317,13 @@ def assign_new_job_groups(
             or (e.job_key_b in members and e.job_key_a in representative_to_group)
         ]
         if bridge_matches:
-            best_bridge = max(bridge_matches, key=lambda e: e.confidence)
+            best_bridge = max(
+                bridge_matches,
+                key=lambda e: (
+                    e.confidence,
+                    _MATCH_METHOD_PRIORITY.get(e.match_method, -1),
+                ),
+            )
             rep = (
                 best_bridge.job_key_b
                 if best_bridge.job_key_a in members
