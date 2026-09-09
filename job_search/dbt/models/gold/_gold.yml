@@ -111,3 +111,24 @@ models:
       - name: sources
         data_type: jsonb
         tests: [not_null]
+
+  - name: dim_company
+    description: >
+      One row per normalised company (PLAN.md Step 11). Greenfield — no
+      prior dim_company convention exists; see this model's header
+      comment for the display-name resolution rule.
+    columns:
+      - name: company_key
+        data_type: text
+        tests: [unique, not_null]
+      - name: normalised_company
+        data_type: text
+        tests: [unique, not_null]
+      - name: company_name
+        data_type: text
+        tests: [not_null]
+      - name: job_count
+        data_type: bigint
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
