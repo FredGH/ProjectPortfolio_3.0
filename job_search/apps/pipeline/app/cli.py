@@ -22,6 +22,7 @@ import httpx
 
 from core.db.session import build_engine
 from core.dedup.write_blocking_keys import write_blocking_keys
+from core.dedup.write_job_identity_map import write_job_identity_map
 from core.dedup.write_similarity_features import write_similarity_features
 from core.dedup.write_title_similarity_scores import write_title_similarity_scores
 from core.enrichment.write_engagement_terms import write_engagement_terms
@@ -497,6 +498,22 @@ def _cmd_compute_title_similarity_scores(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_cluster_jobs(args: argparse.Namespace) -> int:
+    """Run the `cluster-jobs` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    written = write_job_identity_map(engine)
+    print(f"cluster-jobs complete: rows_written={written}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -542,6 +559,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Compute and write pair-level title similarity scores",
     )
 
+    subparsers.add_parser(
+        "cluster-jobs",
+        help="Assign job_group_id to every unclustered silver posting",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -554,6 +576,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compute_similarity_features(args)
     if args.command == "compute-title-similarity-scores":
         return _cmd_compute_title_similarity_scores(args)
+    if args.command == "cluster-jobs":
+        return _cmd_cluster_jobs(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
