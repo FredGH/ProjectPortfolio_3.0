@@ -723,6 +723,16 @@ So bias hard toward precision. Aim above 0.95 at the auto-match threshold.
 Record the measured precision figure in the repo. Future-you will want to
 know whether 0.95 was achieved or aspired to.
 
+**Measured (2026-09-08):** 53 pairs hand-labeled (45 `not_match`, 8
+`match`) via the Streamlit review queue. Auto-match threshold **0.81**,
+auto-reject threshold **0.50** — measured **precision 1.0**, **recall
+0.125** at that auto-match threshold. 0.95 was not just achieved but
+exceeded; the low recall is an intentional, accepted tradeoff (see the
+"Why precision matters more than recall" note above) — most real
+matches at this label-set size fall into the review queue rather than
+auto-matching, which is the safe failure mode this step exists to
+produce. Recorded in `dedup.calibration_thresholds`.
+
 ### Done when
 
 Measured precision at the chosen auto-match threshold exceeds 0.95, and the
