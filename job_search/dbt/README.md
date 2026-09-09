@@ -44,6 +44,22 @@ connectors) into typed, contract-enforced models.
   dbt build --select dedup__similarity_scores
   ```
 
+  Once `dedup__similarity_scores` is built, cluster:
+
+  ```bash
+  python3.11 -m apps.pipeline.app.cli cluster-jobs
+  ```
+
+  `cluster-jobs` reads `dedup__exact_duplicates`,
+  `dedup__similarity_scores`, and Step 9's `dedup.pair_labels`/`dedup.
+  calibration_thresholds`, and writes `silver.job_identity_map`
+  (PLAN.md Step 10) — insert-only, so re-running it after new postings
+  land only assigns the new ones; existing `job_group_id`s never
+  change. The auto-match threshold is read live from the most recent
+  `dedup.calibration_thresholds` row (Step 9's calibration flow), not
+  hardcoded; a human `dedup.pair_labels` decision always overrides the
+  automatic score for that specific pair.
+
   A plain `dbt build` on its own is **not** enough: it rebuilds
   `dedup__candidate_pairs` with the new pairs, but `dedup__similarity_scores`
   joins the out-of-band tables with `INNER JOIN`, so every pair without a
