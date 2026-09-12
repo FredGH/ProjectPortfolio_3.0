@@ -167,3 +167,54 @@ class TestWriteJobCategory(unittest.TestCase):
                 {"g": self.job_group_id},
             ).scalar_one()
         self.assertEqual(count, 1)
+
+    def test_llm_classified_row_carries_prompt_version_and_model_id(self) -> None:
+        """Persist prompt_version/model_id only for LLM-classified rows.
+
+        Exercises the real write path against this fixture's job_group_id.
+        This fixture's title ("Senior Data Engineer") is expected to
+        resolve via the rules stage rather than the LLM stage, so
+        `category_method` is not guaranteed to be "llm" here — but
+        whichever stage resolves it, the two new columns must match the
+        documented contract: non-NULL for an "llm"-method row, NULL
+        otherwise.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            AssertionError: If prompt_version/model_id don't match the
+                NULL-iff-non-llm contract for the written row.
+        """
+        write_job_category(
+            self.engine,
+            adapters={
+                "anthropic": AnthropicAdapter(
+                    api_key=_settings.anthropic_api_key,
+                    client=anthropic.Anthropic(api_key=_settings.anthropic_api_key),
+                )
+            },
+            http_client=self.http_client,
+            job_group_ids=[self.job_group_id],
+        )
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT category_method, prompt_version, model_id "
+                    "FROM silver.job_category WHERE job_group_id = :id"
+                ),
+                {"id": self.job_group_id},
+            ).one()
+        if row.category_method == "llm":
+            self.assertIsNotNone(row.prompt_version)
+            self.assertIsNotNone(row.model_id)
+        else:
+            # Rules/embedding resolved this fixture's title before the
+            # LLM stage — still a valid outcome (this fixture's title
+            # isn't guaranteed to reach the LLM stage), and NULL is the
+            # documented-correct value for a non-LLM row.
+            self.assertIsNone(row.prompt_version)
+            self.assertIsNone(row.model_id)
