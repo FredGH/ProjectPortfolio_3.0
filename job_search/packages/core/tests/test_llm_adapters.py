@@ -43,6 +43,7 @@ class TestOllamaAdapter(unittest.TestCase):
         self.assertEqual(result.output_tokens, 7)
 
     def test_complete_sends_temperature_and_seed_in_options(self) -> None:
+        """Verify Ollama adapter forwards temperature and seed as options."""
         captured_json: dict = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -61,6 +62,7 @@ class TestOllamaAdapter(unittest.TestCase):
         self.assertEqual(captured_json["options"]["seed"], 42)
 
     def test_complete_without_seed_omits_it_from_options(self) -> None:
+        """Verify Ollama adapter omits seed and defaults temperature to 0.0."""
         captured_json: dict = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -106,6 +108,7 @@ class TestAnthropicAdapter(unittest.TestCase):
         )
 
     def test_complete_sends_temperature_but_not_seed(self) -> None:
+        """Verify Anthropic adapter forwards temperature but drops seed."""
         fake_message = mock.Mock()
         fake_message.content = [mock.Mock(text="hello from claude")]
         fake_message.usage = mock.Mock(input_tokens=20, output_tokens=9)
