@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 import uuid
@@ -42,8 +43,11 @@ def _insert_dim_job(conn, **overrides: object) -> None:
         "category_method": "rules",
         "qa_category": "data_engineer",
         "seniority_band": "mid",
+        "sources": None,
     }
     values.update(overrides)
+    if values["sources"] is not None:
+        values["sources"] = json.dumps(values["sources"])
     conn.execute(
         text(
             """
@@ -51,12 +55,12 @@ def _insert_dim_job(conn, **overrides: object) -> None:
                 job_group_id, title_for_display, title_raw, company,
                 location, country_iso, region, description, category,
                 category_confidence, category_method, qa_category,
-                seniority_band
+                seniority_band, sources
             ) VALUES (
                 :job_group_id, :title_for_display, :title_raw, :company,
                 :location, :country_iso, :region, :description, :category,
                 :category_confidence, :category_method, :qa_category,
-                :seniority_band
+                :seniority_band, CAST(:sources AS jsonb)
             )
             """
         ),
@@ -338,6 +342,81 @@ class TestJobsToReviewCountryFilter(unittest.TestCase):
         self.assertIn(self.gb_id, with_none_ids)
         self.assertIn(self.us_id, with_none_ids)
         self.assertIn(self.unresolved_id, with_none_ids)
+
+
+class TestJobsToReviewJoobleExclusion(unittest.TestCase):
+    """Integration tests for excluding Jooble-only rows from review.
+
+    Jooble's search API only ever returns a short pre-truncated
+    snippet, never a full description (see JoobleConnector's
+    docstring), so a job whose surviving description came only from
+    Jooble carries too little text to meaningfully review or classify.
+    """
+
+    def setUp(self) -> None:
+        self.owner_engine = build_engine(_OWNER_DSN)
+        self.app_engine = build_engine(_APP_DSN)
+        app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
+        self.client = TestClient(app)
+
+        suffix = uuid.uuid4().hex
+        self.jooble_only_id = f"test-jooble-only-{suffix}"
+        self.jooble_and_other_id = f"test-jooble-other-{suffix}"
+        self.no_sources_id = f"test-no-sources-{suffix}"
+        with self.owner_engine.begin() as conn:
+            _insert_dim_job(
+                conn,
+                job_group_id=self.jooble_only_id,
+                sources=[{"source_name": "jooble", "job_url": "https://x"}],
+            )
+            _insert_dim_job(
+                conn,
+                job_group_id=self.jooble_and_other_id,
+                sources=[
+                    {"source_name": "jooble", "job_url": "https://x"},
+                    {"source_name": "greenhouse", "job_url": "https://y"},
+                ],
+            )
+            _insert_dim_job(conn, job_group_id=self.no_sources_id, sources=None)
+
+    def tearDown(self) -> None:
+        ids = (self.jooble_only_id, self.jooble_and_other_id, self.no_sources_id)
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM classification.category_review_labels "
+                    "WHERE job_group_id = ANY(:ids)"
+                ),
+                {"ids": list(ids)},
+            )
+            conn.execute(
+                text("DELETE FROM gold.dim_job WHERE job_group_id = ANY(:ids)"),
+                {"ids": list(ids)},
+            )
+        del app.dependency_overrides[get_app_db_engine]
+        self.owner_engine.dispose()
+        self.app_engine.dispose()
+
+    def test_excludes_a_job_whose_only_source_is_jooble(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
+        self.assertNotIn(self.jooble_only_id, ids)
+
+    def test_keeps_a_job_with_jooble_plus_another_source(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
+        self.assertIn(self.jooble_and_other_id, ids)
+
+    def test_keeps_a_job_with_no_sources_recorded(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
+        self.assertIn(self.no_sources_id, ids)
 
 
 class TestReviewSummary(unittest.TestCase):

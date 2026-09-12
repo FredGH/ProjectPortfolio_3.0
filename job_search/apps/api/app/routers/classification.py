@@ -37,6 +37,25 @@ _COUNTRY_FILTER_SQL = f"""
     )
 """
 
+# Excludes rows whose `sources` are exclusively Jooble. Jooble's search
+# API only ever returns a short pre-truncated "snippet" (see
+# JoobleConnector's docstring) — never a full description — so a job
+# whose surviving description came only from Jooble carries too little
+# text for a human (or the pipeline) to categorise with any confidence.
+# A job with a non-Jooble source alongside Jooble is unaffected: dedup
+# survivorship already keeps the longest description across a cluster's
+# members (core.dedup.survivorship.resolve_description), so it isn't
+# stuck with the Jooble snippet.
+_EXCLUDE_JOOBLE_ONLY_SQL = """
+    AND NOT COALESCE(
+        (
+            SELECT bool_and(src ->> 'source_name' = 'jooble')
+            FROM jsonb_array_elements(d.sources) AS src
+        ),
+        FALSE
+    )
+"""
+
 
 def _normalize_country_iso(country_iso: str | None) -> str | None:
     """Treat an empty-string `country_iso` the same as an omitted one.
@@ -169,6 +188,9 @@ def get_jobs_to_review(
     rows biased to the front of each bucket — the rows PLAN.md's own
     review-list guidance already flags as most likely to be wrong.
 
+    Rows whose `sources` are exclusively Jooble are excluded — see
+    `_EXCLUDE_JOOBLE_ONLY_SQL`.
+
     Args:
         limit: Maximum number of jobs to return.
         country_iso: Optional country filter — see `Query`'s
@@ -191,6 +213,7 @@ def get_jobs_to_review(
                     ON d.job_group_id = r.job_group_id
                 WHERE r.job_group_id IS NULL AND d.category IS NOT NULL
                 {_COUNTRY_FILTER_SQL}
+                {_EXCLUDE_JOOBLE_ONLY_SQL}
                 """
             ),
             params,
@@ -213,6 +236,7 @@ def get_jobs_to_review(
                     ON d.job_group_id = r.job_group_id
                 WHERE r.job_group_id IS NULL AND d.category IS NOT NULL
                 {_COUNTRY_FILTER_SQL}
+                {_EXCLUDE_JOOBLE_ONLY_SQL}
                 """
             ),
             params,
@@ -230,6 +254,7 @@ def get_jobs_to_review(
                     WHERE r.job_group_id IS NULL
                         AND d.category IS NOT NULL
                         {_COUNTRY_FILTER_SQL}
+                        {_EXCLUDE_JOOBLE_ONLY_SQL}
                 ),
                 bucketed AS (
                     SELECT
