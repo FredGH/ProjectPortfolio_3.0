@@ -102,7 +102,7 @@ def _predict_job_categorisation(
     model: str,
     prompt_family: str,
     adapters: dict[str, LLMAdapter],
-) -> dict[str, object]:
+) -> tuple[dict[str, object], str | None]:
     """Predict a `job_categorisation` case's category via the LLM.
 
     Args:
@@ -115,8 +115,10 @@ def _predict_job_categorisation(
         adapters: Every available LLM adapter, keyed by provider name.
 
     Returns:
-        `{"category": <predicted category>}`, for `exact_match` to
-        compare against the case's `expected`.
+        A tuple of (`{"category": <predicted category>}`, for
+        `exact_match` to compare against the case's `expected`) and the
+        real `prompt_version` that `classify_by_llm` used for this
+        case.
     """
     # Imported locally, not at module level: this predictor is the
     # only place in the eval runner that needs the classification
@@ -124,17 +126,17 @@ def _predict_job_categorisation(
     # can run without pulling in core.classification at all.
     from core.classification.llm_classifier import classify_by_llm
 
-    category, _confidence, _prompt_version, _model_id = classify_by_llm(
+    category, _confidence, prompt_version, _model_id = classify_by_llm(
         case.input["title"],
         adapters=adapters,
         provider=provider,
         model=model,
         prompt_family=prompt_family,
     )
-    return {"category": category}
+    return {"category": category}, prompt_version
 
 
-_Predictor = Callable[..., dict[str, object]]
+_Predictor = Callable[..., tuple[dict[str, object], str | None]]
 
 _PREDICTORS: dict[str, _Predictor] = {
     "job_categorisation": _predict_job_categorisation,
@@ -206,20 +208,46 @@ def run_eval(
 
     metric_fn = _METRICS[task_config.eval_metric]
     predictor = _PREDICTORS[task]
-    scores = [
-        metric_fn(
-            predictor(
-                case,
-                provider=resolved_provider,
-                model=resolved_model,
-                prompt_family=resolved_prompt_family,
-                adapters=adapters,
-            ),
-            case.expected,
+    predictions = [
+        predictor(
+            case,
+            provider=resolved_provider,
+            model=resolved_model,
+            prompt_family=resolved_prompt_family,
+            adapters=adapters,
         )
         for case in cases
     ]
+    scores = [
+        metric_fn(prediction, case.expected)
+        for (prediction, _prompt_version), case in zip(predictions, cases)
+    ]
     score = sum(scores) / len(scores)
+
+    # Every case in one run shares the same resolved (provider, model,
+    # prompt_family) — see `_resolve_provider` — so the predictor
+    # should return the same `prompt_version` for every case. Assert
+    # that rather than silently picking one: a mismatch would mean a
+    # predictor is resolving its own prompt version independently of
+    # the run's resolved config, which is a bug worth surfacing loudly
+    # rather than persisting an arbitrary one of the observed values.
+    observed_prompt_versions = {pv for _prediction, pv in predictions if pv is not None}
+    if len(observed_prompt_versions) > 1:
+        raise RuntimeError(
+            f"Task {task!r} predictor returned multiple distinct "
+            f"prompt_version values within one run: "
+            f"{sorted(observed_prompt_versions)!r}. Every case in a run "
+            "shares the same resolved (provider, model, prompt_family), "
+            "so this indicates a predictor bug."
+        )
+    if observed_prompt_versions:
+        prompt_version = next(iter(observed_prompt_versions))
+    else:
+        # Defensive fallback only — should not happen given the
+        # `insufficient_data` guard above ensures `cases` (and thus
+        # `predictions`) is non-empty, but a predictor could in
+        # principle return `None` for every case.
+        prompt_version = f"{resolved_prompt_family}.v1"
 
     with engine.connect() as conn:
         previous_row = conn.execute(
@@ -255,7 +283,7 @@ def run_eval(
             {
                 "task": task,
                 "provider": resolved_provider,
-                "prompt_version": f"{resolved_prompt_family}.v1",
+                "prompt_version": prompt_version,
                 "metric": task_config.eval_metric,
                 "score": score,
                 "case_count": len(cases),
