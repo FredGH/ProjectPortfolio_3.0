@@ -56,6 +56,7 @@ services:
       - ./apps/pipeline/app:/app/apps/pipeline/app
       - ./packages/core:/app/packages/core
       - ./config:/app/config
+      - ./prompts:/app/prompts
       - ./data/landing:/data/landing
     depends_on:
       postgres:
