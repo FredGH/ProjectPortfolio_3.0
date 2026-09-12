@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from core.evals.metrics import exact_match, field_f1
+from core.evals.metrics import JudgeResult, exact_match, field_f1, llm_judge
+from core.llm.types import LLMResponse
 
 
 class TestExactMatch(unittest.TestCase):
@@ -58,6 +59,55 @@ class TestFieldF1(unittest.TestCase):
         # No fields expected, none predicted — trivially correct rather
         # than a division-by-zero.
         self.assertEqual(field_f1({}, {}), 1.0)
+
+
+class _FakeJudgeAdapter:
+    def __init__(self, response_text: str) -> None:
+        self._response_text = response_text
+        self.calls: list[str] = []
+
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
+        self.calls.append(prompt)
+        return LLMResponse(
+            text=self._response_text,
+            provider="anthropic",
+            model=model,
+            input_tokens=10,
+            output_tokens=10,
+        )
+
+
+class TestLlmJudge(unittest.TestCase):
+    def test_parses_a_well_formed_judge_response(self) -> None:
+        adapter = _FakeJudgeAdapter(
+            '{"score": 0.8, "rationale": "mostly accurate, minor omission"}'
+        )
+        result = llm_judge(
+            "The candidate has 5 years of Python.",
+            "Score 0-1 on factual grounding against the source CV.",
+            adapters={"anthropic": adapter},
+        )
+        self.assertIsInstance(result, JudgeResult)
+        self.assertEqual(result.score, 0.8)
+        self.assertEqual(result.rationale, "mostly accurate, minor omission")
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertIn("Score 0-1 on factual grounding", adapter.calls[0])
+        self.assertIn("The candidate has 5 years of Python.", adapter.calls[0])
+
+    def test_malformed_response_returns_zero_score_not_a_raised_exception(
+        self,
+    ) -> None:
+        adapter = _FakeJudgeAdapter("not json at all")
+        result = llm_judge("output", "rubric", adapters={"anthropic": adapter})
+        self.assertEqual(result.score, 0.0)
+        self.assertIn("could not parse", result.rationale.lower())
 
 
 if __name__ == "__main__":

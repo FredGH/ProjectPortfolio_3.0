@@ -6,6 +6,12 @@ instrument.
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
+
+from core.llm.gateway import complete
+from core.llm.types import LLMAdapter
+
 
 def exact_match(predicted: dict[str, object], expected: dict[str, object]) -> float:
     """Score 1.0 if every field in `expected` matches `predicted` exactly.
@@ -50,3 +56,60 @@ def field_f1(predicted: dict[str, object], expected: dict[str, object]) -> float
     if precision + recall == 0:
         return 0.0
     return 2 * precision * recall / (precision + recall)
+
+
+_JUDGE_PROMPT_TEMPLATE = (
+    "You are grading one piece of output against a rubric.\n\n"
+    "Rubric: {rubric}\n\n"
+    "Output to grade:\n{output}\n\n"
+    "Respond with ONLY a JSON object, no other text: "
+    '{{"score": <float 0-1>, "rationale": "<one sentence>"}}'
+)
+
+
+@dataclass(frozen=True)
+class JudgeResult:
+    """One LLM-as-judge grading result.
+
+    Attributes:
+        score: The judge's score, 0.0-1.0.
+        rationale: The judge's one-sentence explanation. Also carries a
+            parse-failure message when the judge's response couldn't be
+            read as the expected JSON shape.
+    """
+
+    score: float
+    rationale: str
+
+
+def llm_judge(
+    output: str, rubric: str, *, adapters: dict[str, LLMAdapter]
+) -> JudgeResult:
+    """Grade `output` against `rubric` via the `eval_judge` LLM task.
+
+    Args:
+        output: The generated text to grade.
+        rubric: The grading rubric, in plain language.
+        adapters: Every available LLM adapter, keyed by provider —
+            passed through to `core.llm.gateway.complete`.
+
+    Returns:
+        The `JudgeResult`. Falls back to `JudgeResult(0.0, "could not
+        parse judge response: ...")` if the judge's response can't be
+        parsed as the expected JSON shape — one malformed judge
+        response should not crash a whole eval run.
+    """
+    prompt = _JUDGE_PROMPT_TEMPLATE.format(rubric=rubric, output=output)
+    response = complete(
+        task="eval_judge",
+        prompt=prompt,
+        prompt_version="inline-v1",
+        adapters=adapters,
+    )
+    try:
+        parsed = json.loads(response.text.strip())
+        return JudgeResult(score=float(parsed["score"]), rationale=parsed["rationale"])
+    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+        return JudgeResult(
+            score=0.0, rationale=f"could not parse judge response: {exc}"
+        )
