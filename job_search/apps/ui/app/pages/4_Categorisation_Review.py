@@ -38,6 +38,8 @@ _settings = get_settings()
 if "review_jobs" not in st.session_state:
     st.session_state.review_jobs = []
     st.session_state.review_index = 0
+    st.session_state.review_submitted_count = 0
+    st.session_state.review_baseline_count = 0
 
 reviewed_by = st.text_input("Your name (for the audit trail)", key="reviewed_by")
 
@@ -76,13 +78,28 @@ if st.button("Load jobs") or not st.session_state.review_jobs:
             timeout=30.0,
         )
         response.raise_for_status()
-        st.session_state.review_jobs = response.json()
+        payload = response.json()
+        st.session_state.review_jobs = payload["jobs"]
         st.session_state.review_index = 0
+        st.session_state.review_submitted_count = 0
+        # Snapshot reviewed/unreviewed totals now, so the progress bar
+        # reflects the whole DB-backed pool rather than just this batch.
+        summary_response = httpx.get(
+            f"{_settings.api_base_url}/classification/review-summary", timeout=10.0
+        )
+        summary_response.raise_for_status()
+        summary_now = summary_response.json()
+        st.session_state.review_baseline_count = summary_now["reviewed_count"]
+        st.session_state.review_total_count = (
+            summary_now["reviewed_count"] + payload["total_unreviewed_count"]
+        )
     except httpx.HTTPError as exc:
         st.error(f"Failed to load jobs: {exc}")
 
 jobs = st.session_state.review_jobs
 index = st.session_state.review_index
+baseline = st.session_state.review_baseline_count
+total = st.session_state.get("review_total_count", len(jobs))
 
 if not jobs:
     st.success("No jobs need reviewing right now.")
@@ -92,7 +109,12 @@ elif index >= len(jobs):
     )
 else:
     job = jobs[index]
-    st.progress(index / len(jobs), text=f"Job {index + 1} of {len(jobs)}")
+    # Position only advances on an actual saved review (not on Skip),
+    # and is capped at `total` — a `classify-jobs` rerun can add rows
+    # to the pool between this batch's fetch and now, and st.progress
+    # rejects a fraction above 1.0.
+    position = min(baseline + st.session_state.review_submitted_count + 1, total)
+    st.progress(position / total, text=f"Job {position} of {total}")
 
     st.subheader(job["title_for_display"] or job["title_raw"] or "(no title)")
     meta_cols = st.columns(4)
@@ -150,6 +172,7 @@ else:
             )
             response.raise_for_status()
             st.session_state.review_index += 1
+            st.session_state.review_submitted_count += 1
             return True
         except httpx.HTTPError as exc:
             st.error(f"Failed to save review: {exc}")

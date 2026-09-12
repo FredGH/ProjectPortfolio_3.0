@@ -83,11 +83,27 @@ class ReviewRequest(BaseModel):
     notes: str | None = None
 
 
-@router.get("/classification/jobs-to-review", response_model=list[JobToReview])
+class JobsToReviewResponse(BaseModel):
+    """A batch of jobs to review, plus the size of the full remaining pool.
+
+    Attributes:
+        jobs: Up to `limit` unreviewed `JobToReview` entries.
+        total_unreviewed_count: Total unreviewed rows across all of
+            `gold.dim_job`, not just this batch — lets a caller show
+            progress against the whole pool (e.g. combined with
+            `ReviewSummary.reviewed_count`) instead of resetting every
+            time a fresh batch is fetched.
+    """
+
+    jobs: list[JobToReview]
+    total_unreviewed_count: int
+
+
+@router.get("/classification/jobs-to-review", response_model=JobsToReviewResponse)
 def get_jobs_to_review(
     limit: int = 100,
     engine: Engine = Depends(get_app_db_engine),
-) -> list[JobToReview]:
+) -> JobsToReviewResponse:
     """Return a stratified sample of unreviewed `gold.dim_job` rows.
 
     Stratified across `category` x `category_method` (so no cascade
@@ -100,9 +116,21 @@ def get_jobs_to_review(
         engine: Injected via `get_app_db_engine`.
 
     Returns:
-        Up to `limit` unreviewed `JobToReview` entries.
+        Up to `limit` unreviewed `JobToReview` entries, plus the total
+        unreviewed count across the whole pool.
     """
     with engine.connect() as conn:
+        total_unreviewed_count = conn.execute(
+            text(
+                """
+                SELECT count(*)
+                FROM gold.dim_job AS d
+                LEFT JOIN classification.category_review_labels AS r
+                    ON d.job_group_id = r.job_group_id
+                WHERE r.job_group_id IS NULL AND d.category IS NOT NULL
+                """
+            )
+        ).scalar_one()
         # Bucket count isn't fixed (it's however many (category,
         # category_method) combos currently have unreviewed rows), so
         # compute it first — same `per_bucket = max(1, limit // N)`
@@ -155,22 +183,25 @@ def get_jobs_to_review(
             {"per_bucket": per_bucket, "limit": limit},
         ).all()
 
-    return [
-        JobToReview(
-            job_group_id=row.job_group_id,
-            title_for_display=row.title_for_display,
-            title_raw=row.title_raw,
-            company=row.company,
-            location=row.location,
-            description=row.description,
-            category=row.category,
-            category_confidence=float(row.category_confidence),
-            category_method=row.category_method,
-            qa_category=row.qa_category,
-            seniority_band=row.seniority_band,
-        )
-        for row in rows
-    ]
+    return JobsToReviewResponse(
+        jobs=[
+            JobToReview(
+                job_group_id=row.job_group_id,
+                title_for_display=row.title_for_display,
+                title_raw=row.title_raw,
+                company=row.company,
+                location=row.location,
+                description=row.description,
+                category=row.category,
+                category_confidence=float(row.category_confidence),
+                category_method=row.category_method,
+                qa_category=row.qa_category,
+                seniority_band=row.seniority_band,
+            )
+            for row in rows
+        ],
+        total_unreviewed_count=total_unreviewed_count,
+    )
 
 
 @router.post("/classification/reviews")

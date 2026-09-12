@@ -100,7 +100,7 @@ class TestJobsToReviewAndReviews(unittest.TestCase):
             "/classification/jobs-to-review", params={"limit": 100_000}
         )
         self.assertEqual(response.status_code, 200)
-        ids = {job["job_group_id"] for job in response.json()}
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
         self.assertIn(self.job_group_id, ids)
 
     def test_jobs_to_review_excludes_rows_with_no_category(self) -> None:
@@ -115,7 +115,7 @@ class TestJobsToReviewAndReviews(unittest.TestCase):
         response = self.client.get(
             "/classification/jobs-to-review", params={"limit": 100_000}
         )
-        ids = {job["job_group_id"] for job in response.json()}
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
         self.assertNotIn(self.job_group_id, ids)
 
     def test_reviewing_a_job_removes_it_from_jobs_to_review(self) -> None:
@@ -133,8 +133,30 @@ class TestJobsToReviewAndReviews(unittest.TestCase):
         get_response = self.client.get(
             "/classification/jobs-to-review", params={"limit": 100_000}
         )
-        ids = {job["job_group_id"] for job in get_response.json()}
+        ids = {job["job_group_id"] for job in get_response.json()["jobs"]}
         self.assertNotIn(self.job_group_id, ids)
+
+    def test_reviewing_a_job_decreases_total_unreviewed_count(self) -> None:
+        # This dev database sees concurrent pipeline activity (see the
+        # class docstring's note on ~2.6k real rows), so assert the
+        # direction of the change rather than an exact delta.
+        before = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 1}
+        ).json()["total_unreviewed_count"]
+
+        self.client.post(
+            "/classification/reviews",
+            json={
+                "job_group_id": self.job_group_id,
+                "reviewed_category": "data_engineer",
+                "reviewed_seniority_band": "mid",
+            },
+        )
+
+        after = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 1}
+        ).json()["total_unreviewed_count"]
+        self.assertLess(after, before)
 
     def test_review_round_trips(self) -> None:
         self.client.post(
