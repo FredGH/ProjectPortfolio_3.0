@@ -97,5 +97,30 @@ class TestLoadGoldenSetFileBased(unittest.TestCase):
             load_golden_set("truly_unregistered_task", golden_dir=self.golden_dir)
 
 
+class TestLoadGoldenSetDbBackedRequiresEngine(unittest.TestCase):
+    """A DB-backed task called with `engine=None` must raise this
+    module's own `EvalConfigError`, not a confusing `AttributeError`
+    from deep inside SQLAlchemy.
+    """
+
+    def test_raises_eval_config_error_when_engine_is_none(self) -> None:
+        """`job_categorisation` (DB-backed) with no `engine` argument
+        must raise `EvalConfigError` before ever touching SQLAlchemy.
+
+        Args:
+            None.
+
+        Returns:
+            None.
+
+        Raises:
+            AssertionError: If `EvalConfigError` is not raised, or if a
+                different exception type (e.g. `AttributeError`) leaks
+                through instead.
+        """
+        with self.assertRaises(EvalConfigError):
+            load_golden_set("job_categorisation", engine=None)
+
+
 if __name__ == "__main__":
     unittest.main()

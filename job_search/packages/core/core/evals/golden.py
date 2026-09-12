@@ -74,9 +74,14 @@ def load_golden_set(
 
     Raises:
         EvalConfigError: If `task` is not DB-backed and no
-            `<golden_dir>/<task>.yml` file exists.
+            `<golden_dir>/<task>.yml` file exists, or if `task` is
+            DB-backed and no `engine` was given.
     """
     if task in _DB_BACKED_TASKS:
+        if engine is None:
+            raise EvalConfigError(
+                f"Task {task!r} is DB-backed and requires an `engine` argument."
+            )
         from core.evals.golden_db import load_job_categorisation_golden_set
 
         return load_job_categorisation_golden_set(engine, job_group_ids=job_group_ids)
