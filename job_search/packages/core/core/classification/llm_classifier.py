@@ -16,9 +16,12 @@ from __future__ import annotations
 import json
 
 from core.llm.gateway import complete
+from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
-_PROMPT_VERSION = "job_categorisation-v1"
+_PROMPT_FAMILY = "claude"
+_PROMPT_VERSION_NUMBER = 1
+_PROMPT_VERSION = f"{_PROMPT_FAMILY}.v{_PROMPT_VERSION_NUMBER}"
 
 _CATEGORIES = [
     "software_engineer",
@@ -29,14 +32,6 @@ _CATEGORIES = [
     "platform_devops",
     "other",
 ]
-
-_PROMPT_TEMPLATE = (
-    "Classify this job title into exactly one of these categories: "
-    "{categories}.\n\n"
-    "Job title: {title}\n\n"
-    "Respond with ONLY a JSON object, no other text: "
-    '{{"category": "<one of the categories above>", "confidence": <float 0-1>}}'
-)
 
 
 def classify_by_llm(
@@ -55,7 +50,10 @@ def classify_by_llm(
         category outside the taxonomy — one malformed response should
         not fail the whole classification batch.
     """
-    prompt = _PROMPT_TEMPLATE.format(categories=", ".join(_CATEGORIES), title=title)
+    prompt_template = load_prompt(
+        "job_categorisation", _PROMPT_FAMILY, _PROMPT_VERSION_NUMBER
+    )
+    prompt = prompt_template.format(categories=", ".join(_CATEGORIES), title=title)
     response = complete(
         task="job_categorisation",
         prompt=prompt,
