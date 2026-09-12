@@ -94,6 +94,24 @@ connectors) into typed, contract-enforced models.
   `assert_dim_job_covers_every_job_group` exists specifically to catch
   that.
 
+  Category and seniority classification runs after survivorship. Run
+  from the host (not inside the `pipeline` container), `OLLAMA_BASE_URL`
+  needs the `localhost` override — `.env`'s `http://ollama:11434` is the
+  Docker-internal hostname and won't resolve here:
+
+  ```bash
+  OLLAMA_BASE_URL=http://localhost:11434 \
+    python3.11 -m apps.pipeline.app.cli classify-jobs
+  dbt build --select dim_job
+  ```
+
+  `classify-jobs` (PLAN.md Step 11a) only classifies job_group_ids not
+  already in `silver.job_category` — it makes real Ollama embedding
+  calls and, for titles neither the rules nor embedding stage can
+  confidently place, real (billed) Anthropic API calls. A fresh
+  environment needs `docker compose up -d ollama` and `docker compose
+  exec ollama ollama pull nomic-embed-text` once before this will work.
+
 ## Running it
 
 From this directory, with `.env` loaded and `DBT_PROFILES_DIR=.`:

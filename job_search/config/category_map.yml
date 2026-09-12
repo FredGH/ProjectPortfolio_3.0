@@ -1,0 +1,12 @@
+# qa_category_map: PLAN.md Step 11a's second taxonomy (4 active values,
+# the question-bank grain) mapped from the first taxonomy (7 values,
+# the analytical grain). "other" has no reasonable question-bank
+# mapping — null, not a guess.
+qa_category_map:
+  software_engineer: software_engineer
+  data_engineer: data_engineer
+  data_scientist: data_scientist
+  ai_ml_engineer: ai_engineer
+  analytics_engineer: data_engineer
+  platform_devops: software_engineer
+  other: null

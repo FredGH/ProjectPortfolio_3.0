@@ -27,6 +27,17 @@ identity_map AS (
 
 ),
 
+-- Category/seniority classification (PLAN.md Step 11a) — written by the
+-- classify-jobs pipeline CLI subcommand, not dbt. Joined LEFT below: a
+-- job_group_id that hasn't been classified yet (e.g. between
+-- cluster-jobs running and classify-jobs catching up) must still appear
+-- in dim_job, with these fields NULL.
+job_category AS (
+
+    SELECT * FROM {{ source('silver_ingest', 'job_category') }}
+
+),
+
 -- The posting whose apply_url won survivorship — every field not
 -- covered by its own explicit rule is taken from here.
 apply_posting AS (
@@ -122,7 +133,12 @@ SELECT
     ap.entry_method,
     s.apply_source_name,
     s.apply_source_job_id,
-    src.sources
+    src.sources,
+    jc.category,
+    jc.category_confidence,
+    jc.category_method,
+    jc.qa_category,
+    jc.seniority_band
 FROM survivorship AS s
 INNER JOIN apply_posting AS ap
     ON s.apply_source_name = ap.source_name AND s.apply_source_job_id = ap.source_job_id
@@ -130,3 +146,5 @@ INNER JOIN apply_blocking_keys AS abk
     ON s.job_group_id = abk.job_group_id
 INNER JOIN sources AS src
     ON s.job_group_id = src.job_group_id
+LEFT JOIN job_category AS jc
+    ON s.job_group_id = jc.job_group_id

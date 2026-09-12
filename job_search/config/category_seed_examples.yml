@@ -1,0 +1,56 @@
+# Hand-curated starting seed set for embedding centroids (PLAN.md Step
+# 11a, stage 2). NOT exhaustive — a disclosed judgment call, expected
+# to be refined once the "hand-check 100 classifications" acceptance
+# activity (PLAN.md's own "Done when") reveals where it's weak. Titles
+# chosen to be unambiguous representatives of each category, avoiding
+# titles that plausibly belong to a sibling category.
+categories:
+  software_engineer:
+    - "Software Engineer"
+    - "Senior Software Engineer"
+    - "Backend Developer"
+    - "Full Stack Developer"
+    - "Frontend Developer"
+    - "iOS Engineer"
+  data_engineer:
+    - "Data Engineer"
+    - "Senior Data Engineer"
+    - "ETL Developer"
+    - "Data Platform Engineer"
+    - "Big Data Engineer"
+    - "Data Infrastructure Engineer"
+  data_scientist:
+    - "Data Scientist"
+    - "Senior Data Scientist"
+    - "Applied Scientist"
+    - "Statistical Analyst"
+    - "Quantitative Analyst"
+    - "Research Data Scientist"
+  ai_ml_engineer:
+    - "Machine Learning Engineer"
+    - "AI Engineer"
+    - "ML Engineer"
+    - "Deep Learning Engineer"
+    - "NLP Engineer"
+    - "Computer Vision Engineer"
+  analytics_engineer:
+    - "Analytics Engineer"
+    - "BI Engineer"
+    - "Business Intelligence Engineer"
+    - "Reporting Analyst"
+    - "Analytics Developer"
+    - "dbt Analytics Engineer"
+  platform_devops:
+    - "DevOps Engineer"
+    - "Platform Engineer"
+    - "Site Reliability Engineer"
+    - "Infrastructure Engineer"
+    - "Cloud Engineer"
+    - "SRE"
+  other:
+    - "Product Manager"
+    - "Technical Project Manager"
+    - "QA Engineer"
+    - "Business Analyst"
+    - "Scrum Master"
+    - "Technical Writer"
