@@ -71,7 +71,10 @@ def load_task_config(task: str, config_path: Path | None = None) -> TaskConfig:
         The resolved `TaskConfig` for the requested task.
 
     Raises:
-        TaskConfigError: If `task` has no entry in the config file.
+        TaskConfigError: If `task` has no entry in the config file, or
+            if its entry sets `eval_metric` without also setting
+            `eval_regression_threshold` (which would leave regression
+            detection permanently, silently disabled for that task).
     """
     path = config_path or _DEFAULT_CONFIG_PATH
     raw = yaml.safe_load(path.read_text())
@@ -84,13 +87,22 @@ def load_task_config(task: str, config_path: Path | None = None) -> TaskConfig:
         )
 
     entry = tasks[task]
+    eval_metric = entry.get("eval_metric")
+    eval_regression_threshold = entry.get("eval_regression_threshold")
+    if eval_metric is not None and eval_regression_threshold is None:
+        raise TaskConfigError(
+            f"Task {task!r} has eval_metric={entry.get('eval_metric')!r} "
+            "configured but no eval_regression_threshold — regression "
+            "detection would silently never fire. Set "
+            "eval_regression_threshold in config/llm_tasks.yml."
+        )
     return TaskConfig(
         task=task,
         provider=entry["provider"],
         model=entry["model"],
         prompt_family=entry["prompt_family"],
-        eval_metric=entry.get("eval_metric"),
-        eval_regression_threshold=entry.get("eval_regression_threshold"),
+        eval_metric=eval_metric,
+        eval_regression_threshold=eval_regression_threshold,
         local_provider=entry.get("local_provider"),
         local_model=entry.get("local_model"),
         local_prompt_family=entry.get("local_prompt_family"),

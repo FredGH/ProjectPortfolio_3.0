@@ -84,6 +84,53 @@ class TestLoadTaskConfig(unittest.TestCase):
         self.assertIsNone(config.eval_metric)
         self.assertIsNone(config.eval_regression_threshold)
 
+    def test_raises_when_eval_metric_set_without_regression_threshold(
+        self,
+    ) -> None:
+        """An `eval_metric` without a matching `eval_regression_threshold`
+        must raise, not silently load — otherwise regression detection
+        for that task would never fire.
+
+        Returns:
+            None.
+
+        Raises:
+            AssertionError: If `load_task_config` does not raise
+                `TaskConfigError` for this misconfigured entry.
+        """
+        yaml_text = """
+tasks:
+  half_configured_task:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+    eval_metric: exact_match
+"""
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yml", delete=False, encoding="utf-8"
+        )
+        tmp.write(yaml_text)
+        tmp.close()
+        config_path = Path(tmp.name)
+        try:
+            with self.assertRaises(TaskConfigError):
+                load_task_config("half_configured_task", config_path=config_path)
+        finally:
+            config_path.unlink(missing_ok=True)
+
+    def test_job_categorisation_real_config_still_loads(self) -> None:
+        """The real `config/llm_tasks.yml` entry for `job_categorisation`
+        (which sets both `eval_metric` and `eval_regression_threshold`)
+        must still load without raising, now that both fields are
+        validated together.
+
+        Returns:
+            None.
+        """
+        config = load_task_config("job_categorisation")
+        self.assertEqual(config.eval_metric, "exact_match")
+        self.assertIsNotNone(config.eval_regression_threshold)
+
 
 if __name__ == "__main__":
     unittest.main()
