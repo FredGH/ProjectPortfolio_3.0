@@ -34,6 +34,8 @@ _CATEGORIES = (
 )
 _SENIORITY_BANDS = ("junior", "mid", "senior", "lead", "principal")
 _CONFIDENCE_LEVELS = (0.80, 0.90, 0.95, 0.99)
+_DEFAULT_MARGIN = 0.08  # only used to seed the calculator the first
+# time a region is opened — after that, target and margin are user-set.
 
 st.set_page_config(page_title="Categorisation Review", layout="wide")
 st.title("Categorisation Review")
@@ -175,77 +177,98 @@ else:
             "population correction (`n`) since the pool (`N`) isn't "
             "infinite. `z` comes from the confidence level below, `p=0.5` "
             "is the most conservative assumption (the true agreement rate "
-            "isn't known ahead of time), and `e` is the target margin of "
-            "error. A **larger target** narrows the margin of error — the "
-            "measured agreement rate is more likely to reflect the "
-            "pipeline's true accuracy — at the cost of more reviewer time. "
-            "A **smaller target** is faster to complete but the measured "
+            "isn't known ahead of time), and `e` is the margin of error — "
+            "target and margin are two sides of the same formula, so "
+            "editing either one recalculates the other. A **larger "
+            "target** narrows the margin of error — the measured "
+            "agreement rate is more likely to reflect the pipeline's "
+            "true accuracy — at the cost of more reviewer time. A "
+            "**smaller target** is faster to complete but the measured "
             "rate could be off by a wider margin — you could clear (or "
             "fail) the 90% agreement bar by sampling luck alone."
         )
-        confidence = st.selectbox(
-            "Confidence level",
-            _CONFIDENCE_LEVELS,
-            index=_CONFIDENCE_LEVELS.index(0.90),
-            format_func=lambda c: f"{c:.0%}",
-            key="review_confidence",
-        )
-        recommended_margin = (
-            st.number_input(
-                "Recommended-target margin of error (%)",
-                min_value=1.0,
-                max_value=50.0,
-                value=8.0,
-                step=1.0,
-                key="review_recommended_margin_pct",
-            )
-            / 100
-        )
 
-    recommended_target = recommended_sample_size(
-        population, confidence, recommended_margin
+    confidence = st.selectbox(
+        "Confidence level",
+        _CONFIDENCE_LEVELS,
+        index=_CONFIDENCE_LEVELS.index(0.90),
+        format_func=lambda c: f"{c:.0%}",
+        key="review_confidence",
     )
-    clamped_recommendation = min(max(recommended_target, 1), population)
 
-    # st.number_input only honours `value=` the very first time a given
-    # widget key exists — on every later rerun it keeps whatever the
-    # widget already holds, `value=` or not. So changing confidence or
-    # the recommended-target margin above wouldn't otherwise move the
-    # target field at all; it would just make the help text/delta below
-    # disagree with what's shown. Track the (confidence, margin) this
-    # target was last computed from, and when either changes, write the
-    # new recommendation into session state ourselves before the widget
-    # reads it — the one way Streamlit lets you override a widget's
-    # value after its first render.
+    # Target and margin are two views of one formula, kept in sync by
+    # hand: st.number_input only honours `value=` the very first time a
+    # widget key exists, so the only way to make editing one field move
+    # the other is to detect which one the reviewer just touched (by
+    # diffing against a "shadow" of what was rendered last run) and
+    # write the recalculated value into the other's session-state entry
+    # before it's instantiated. Region-keyed so switching regions starts
+    # from a fresh recommendation instead of carrying over a stale pair.
     target_key = f"review_target_{country_iso}"
-    margin_basis = (confidence, round(recommended_margin, 4))
-    if (
-        target_key not in st.session_state
-        or st.session_state.get("review_target_margin_basis") != margin_basis
-    ):
-        st.session_state[target_key] = clamped_recommendation
-        st.session_state["review_target_margin_basis"] = margin_basis
+    margin_key = f"review_margin_pct_{country_iso}"
+    target_shadow_key = f"{target_key}__shadow"
+    margin_shadow_key = f"{margin_key}__shadow"
 
-    target = st.number_input(
+    if target_key not in st.session_state:
+        default_target = min(
+            max(recommended_sample_size(population, confidence, _DEFAULT_MARGIN), 1),
+            population,
+        )
+        st.session_state[target_key] = default_target
+        st.session_state[margin_key] = round(
+            margin_of_error_for_sample_size(population, default_target, confidence)
+            * 100,
+            1,
+        )
+    else:
+        target_changed = st.session_state[target_key] != st.session_state.get(
+            target_shadow_key
+        )
+        confidence_changed = confidence != st.session_state.get(
+            "review_confidence__shadow"
+        )
+        if target_changed:
+            new_margin = margin_of_error_for_sample_size(
+                population, st.session_state[target_key], confidence
+            )
+            st.session_state[margin_key] = round(new_margin * 100, 1)
+        elif (
+            st.session_state[margin_key] != st.session_state.get(margin_shadow_key)
+            or confidence_changed
+        ):
+            margin_fraction = st.session_state[margin_key] / 100
+            new_target = (
+                population
+                if margin_fraction <= 0
+                else recommended_sample_size(population, confidence, margin_fraction)
+            )
+            st.session_state[target_key] = min(max(new_target, 1), population)
+
+    st.caption(
+        f"Defaults to ±{_DEFAULT_MARGIN:.0%} margin of error at "
+        f"{confidence:.0%} confidence for this region's pool of "
+        f"{population} jobs — edit either field below and the other "
+        "recalculates."
+    )
+    target_col, margin_col = st.columns(2)
+    target = target_col.number_input(
         "Review target for this region",
         min_value=1,
         max_value=population,
         step=10,
         key=target_key,
-        help=(
-            f"Statistically recommended: {recommended_target} reviews "
-            f"(±{recommended_margin:.0%} margin of error at "
-            f"{confidence:.0%} confidence, over a pool of {population})."
-        ),
     )
-    implied_margin = margin_of_error_for_sample_size(population, target, confidence)
-    delta_pct = (implied_margin - recommended_margin) * 100
-    st.metric(
-        "Margin of error at this target",
-        f"±{implied_margin:.1%}",
-        delta=f"{delta_pct:+.1f} pts vs. recommended ({recommended_target} reviews)",
-        delta_color="inverse",
+    margin_pct = margin_col.number_input(
+        "Margin of error (%)",
+        min_value=0.0,
+        max_value=50.0,
+        step=0.5,
+        key=margin_key,
     )
+    st.session_state[target_shadow_key] = target
+    st.session_state[margin_shadow_key] = margin_pct
+    st.session_state["review_confidence__shadow"] = confidence
+
     if reviewed_count >= target:
         rate = summary["agreement_rate"] if summary else None
         rate_text = f"{rate:.0%}" if rate is not None else "n/a"
@@ -253,13 +276,13 @@ else:
             st.success(
                 f"{reviewed_count} of {target} reviewed at {rate_text} "
                 f"agreement — target reached (margin of error "
-                f"±{implied_margin:.1%})."
+                f"±{margin_pct:.1f}%)."
             )
         else:
             st.warning(
                 f"{reviewed_count} of {target} reviewed at {rate_text} "
                 "agreement — target reached, but below the 90% agreement "
-                f"bar (margin of error ±{implied_margin:.1%})."
+                f"bar (margin of error ±{margin_pct:.1f}%)."
             )
 
 if st.button("Load jobs") or st.session_state.review_loaded_region != country_iso:
