@@ -14,7 +14,14 @@ class _FakeAdapter:
         self._category = category
         self._confidence = confidence
 
-    def complete(self, *, model: str, prompt: str):
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ):
         from core.llm.types import LLMResponse
 
         self.called = True
@@ -72,6 +79,28 @@ class TestClassifyTitle(unittest.TestCase):
         self.assertEqual(result.category, "software_engineer")
         self.assertEqual(result.category_method, "llm")
         self.assertEqual(result.category_confidence, 0.6)
+        self.assertEqual(result.prompt_version, "claude.v1")
+        self.assertEqual(result.model_id, "claude-sonnet-5")
+
+    def test_rules_stage_result_carries_no_prompt_version_or_model_id(self) -> None:
+        """A rules-stage result never called an LLM, so it must carry no
+        prompt_version/model_id.
+
+        Returns:
+            None.
+        """
+        adapter = _FakeAdapter()
+        result = classify_title(
+            "Senior Data Engineer",
+            centroids={},
+            qa_category_map=self._qa_map(),
+            adapters={"anthropic": adapter},
+            embedding_base_url="unused",
+            embedding_model="unused",
+            http_client=None,  # type: ignore[arg-type]
+        )
+        self.assertIsNone(result.prompt_version)
+        self.assertIsNone(result.model_id)
 
     def test_none_title_classifies_as_other_via_rules_without_calling_llm(
         self,
