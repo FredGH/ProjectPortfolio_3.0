@@ -205,14 +205,33 @@ else:
     recommended_target = recommended_sample_size(
         population, confidence, recommended_margin
     )
+    clamped_recommendation = min(max(recommended_target, 1), population)
+
+    # st.number_input only honours `value=` the very first time a given
+    # widget key exists — on every later rerun it keeps whatever the
+    # widget already holds, `value=` or not. So changing confidence or
+    # the recommended-target margin above wouldn't otherwise move the
+    # target field at all; it would just make the help text/delta below
+    # disagree with what's shown. Track the (confidence, margin) this
+    # target was last computed from, and when either changes, write the
+    # new recommendation into session state ourselves before the widget
+    # reads it — the one way Streamlit lets you override a widget's
+    # value after its first render.
+    target_key = f"review_target_{country_iso}"
+    margin_basis = (confidence, round(recommended_margin, 4))
+    if (
+        target_key not in st.session_state
+        or st.session_state.get("review_target_margin_basis") != margin_basis
+    ):
+        st.session_state[target_key] = clamped_recommendation
+        st.session_state["review_target_margin_basis"] = margin_basis
 
     target = st.number_input(
         "Review target for this region",
         min_value=1,
         max_value=population,
-        value=min(max(recommended_target, 1), population),
         step=10,
-        key=f"review_target_{country_iso}",
+        key=target_key,
         help=(
             f"Statistically recommended: {recommended_target} reviews "
             f"(±{recommended_margin:.0%} margin of error at "
