@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 
 from core.llm.gateway import complete
+from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
 
@@ -58,15 +59,6 @@ def field_f1(predicted: dict[str, object], expected: dict[str, object]) -> float
     return 2 * precision * recall / (precision + recall)
 
 
-_JUDGE_PROMPT_TEMPLATE = (
-    "You are grading one piece of output against a rubric.\n\n"
-    "Rubric: {rubric}\n\n"
-    "Output to grade:\n{output}\n\n"
-    "Respond with ONLY a JSON object, no other text: "
-    '{{"score": <float 0-1>, "rationale": "<one sentence>"}}'
-)
-
-
 @dataclass(frozen=True)
 class JudgeResult:
     """One LLM-as-judge grading result.
@@ -101,12 +93,15 @@ def llm_judge(
 
     Raises:
         KeyError: If the resolved judge provider is not in `adapters`.
+        FileNotFoundError: If the `eval_judge` prompt registry file
+            (`prompts/eval_judge/claude.v1.md`) is missing.
     """
-    prompt = _JUDGE_PROMPT_TEMPLATE.format(rubric=rubric, output=output)
+    prompt_template = load_prompt("eval_judge", "claude", 1)
+    prompt = prompt_template.format(rubric=rubric, output=output)
     response = complete(
         task="eval_judge",
         prompt=prompt,
-        prompt_version="inline-v1",
+        prompt_version="claude.v1",
         adapters=adapters,
     )
     try:
