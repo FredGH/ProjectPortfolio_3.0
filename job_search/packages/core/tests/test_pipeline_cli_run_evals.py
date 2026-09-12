@@ -97,6 +97,44 @@ class TestRunEvalsSubcommand(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertGreaterEqual(mock_run_eval.call_count, 1)
 
+    @mock.patch("app.cli.run_eval")
+    def test_missing_adapter_prints_a_clear_message_and_exits_non_zero(
+        self, mock_run_eval: mock.Mock
+    ) -> None:
+        """`run_eval` raising `KeyError` (no adapter configured for the
+        resolved provider, e.g. no `ANTHROPIC_API_KEY`) must not crash
+        `run-evals` with a raw traceback — it should print one clear
+        line naming the task/provider and the missing key, and the
+        command must still exit non-zero since this task/provider
+        combination never completed.
+
+        Args:
+            mock_run_eval: The patched `app.cli.run_eval`, configured
+                to raise `KeyError("anthropic")` as `core.llm.gateway.
+                complete` does when the resolved provider has no
+                matching adapter.
+
+        Returns:
+            None.
+        """
+        mock_run_eval.side_effect = KeyError("anthropic")
+        with mock.patch("builtins.print") as mock_print:
+            exit_code = main(
+                ["run-evals", "--task", "job_categorisation", "--provider", "target"]
+            )
+        self.assertEqual(exit_code, 1)
+        printed_lines = [call.args[0] for call in mock_print.call_args_list]
+        self.assertTrue(
+            any(
+                "job_categorisation" in line
+                and "target" in line
+                and "anthropic" in line
+                for line in printed_lines
+            ),
+            f"expected a clear error line naming task/provider/key, "
+            f"got: {printed_lines}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

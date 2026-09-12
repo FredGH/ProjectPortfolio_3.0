@@ -698,7 +698,11 @@ def _cmd_run_evals(args: argparse.Namespace) -> int:
         args: Parsed CLI arguments — `task` (or `all`) and `provider`.
 
     Returns:
-        0 if every run reported no regression, 1 if any did.
+        0 if every run completed with no regression, 1 if any run
+        regressed or errored (e.g. no adapter configured for the
+        resolved provider) — `run-evals` is the harness's designated
+        CI entry point, so any incomplete run must fail the command
+        rather than silently exiting 0.
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
@@ -711,14 +715,24 @@ def _cmd_run_evals(args: argparse.Namespace) -> int:
         )
 
         any_regressed = False
+        any_errored = False
         for task in tasks:
             for provider_label in provider_labels:
-                result = run_eval(
-                    task, provider_label, engine=engine, adapters=adapters
-                )
+                try:
+                    result = run_eval(
+                        task, provider_label, engine=engine, adapters=adapters
+                    )
+                except KeyError as exc:
+                    any_errored = True
+                    print(
+                        f"{task} ({provider_label}): no adapter configured for "
+                        f"the resolved provider ({exc}) — check "
+                        "ANTHROPIC_API_KEY/OLLAMA_BASE_URL"
+                    )
+                    continue
                 _report_eval_result(result)
                 any_regressed = any_regressed or result.regressed
-        return 1 if any_regressed else 0
+        return 1 if (any_regressed or any_errored) else 0
     finally:
         http_client.close()
 
