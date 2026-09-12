@@ -16,6 +16,12 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  job_categorisation:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+    eval_metric: exact_match
+    eval_regression_threshold: 0.05
 """
 
 
@@ -58,6 +64,25 @@ class TestLoadTaskConfig(unittest.TestCase):
         """Test that TaskConfigError is raised for missing tasks."""
         with self.assertRaises(TaskConfigError):
             load_task_config("does_not_exist", config_path=self.config_path)
+
+    def test_resolves_eval_fields_when_present(self) -> None:
+        """Test that eval_metric and eval_regression_threshold resolve.
+
+        `job_categorisation` has both eval fields configured but no
+        `local_*` fields, so those must default to `None`.
+        """
+        config = load_task_config("job_categorisation", config_path=self.config_path)
+        self.assertEqual(config.eval_metric, "exact_match")
+        self.assertEqual(config.eval_regression_threshold, 0.05)
+        self.assertIsNone(config.local_provider)
+        self.assertIsNone(config.local_model)
+        self.assertIsNone(config.local_prompt_family)
+
+    def test_eval_fields_default_to_none_when_absent(self) -> None:
+        """Test that eval fields default to None when not in the YAML."""
+        config = load_task_config("skill_extraction", config_path=self.config_path)
+        self.assertIsNone(config.eval_metric)
+        self.assertIsNone(config.eval_regression_threshold)
 
 
 if __name__ == "__main__":

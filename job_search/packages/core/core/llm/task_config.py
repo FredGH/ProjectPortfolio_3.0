@@ -32,12 +32,31 @@ class TaskConfig:
         prompt_family: Which prompt variant family to load — prompts are
             versioned per (task, model_family) and never converted between
             families (DECISIONS.md §1).
+        eval_metric: Which `core.evals.metrics` function grades this
+            task's output, e.g. "exact_match". `None` if this task has
+            no eval configured yet.
+        eval_regression_threshold: How far a re-run's score may drop
+            below the prior run before `run-evals` reports a regression.
+            `None` if unconfigured.
+        local_provider: The provider to use when the eval harness is
+            asked to run this task's golden set against "local" instead
+            of its production-configured provider. `None` if no local
+            variant is configured for this task (PLAN.md Step 12a: not
+            every task has a tuned local prompt).
+        local_model: The model to use with `local_provider`.
+        local_prompt_family: The prompt family to load with
+            `local_provider`.
     """
 
     task: str
     provider: Literal["ollama", "anthropic"]
     model: str
     prompt_family: str
+    eval_metric: str | None = None
+    eval_regression_threshold: float | None = None
+    local_provider: str | None = None
+    local_model: str | None = None
+    local_prompt_family: str | None = None
 
 
 def load_task_config(task: str, config_path: Path | None = None) -> TaskConfig:
@@ -70,4 +89,9 @@ def load_task_config(task: str, config_path: Path | None = None) -> TaskConfig:
         provider=entry["provider"],
         model=entry["model"],
         prompt_family=entry["prompt_family"],
+        eval_metric=entry.get("eval_metric"),
+        eval_regression_threshold=entry.get("eval_regression_threshold"),
+        local_provider=entry.get("local_provider"),
+        local_model=entry.get("local_model"),
+        local_prompt_family=entry.get("local_prompt_family"),
     )

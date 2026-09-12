@@ -18,6 +18,8 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+    eval_metric: exact_match
+    eval_regression_threshold: 0.05
   eval_judge:
     provider: anthropic
     model: claude-sonnet-5
