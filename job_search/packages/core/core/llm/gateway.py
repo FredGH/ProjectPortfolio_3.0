@@ -22,6 +22,10 @@ def complete(
     prompt_version: str,
     adapters: dict[str, LLMAdapter],
     config_path: Path | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.0,
+    seed: int | None = None,
 ) -> LLMResponse:
     """Run a completion for `task`, routed to its configured provider.
 
@@ -38,18 +42,37 @@ def complete(
             or network access.
         config_path: Path to the task-config YAML. Defaults to
             `config/llm_tasks.yml` at the repository root.
+        provider: Overrides the task's configured provider. Used by the
+            eval harness (PLAN.md Step 12a) to force a specific provider
+            for an eval run, independent of what the task routes to in
+            production. `None` (the default) resolves from
+            `config/llm_tasks.yml` as before — every existing caller is
+            unaffected.
+        model: Overrides the task's configured model. Must be given
+            together with `provider` — an override that supplies one
+            without the other resolves the missing one from task config,
+            which is almost never what an eval-time caller wants.
+        temperature: Sampling temperature, passed straight through to the
+            adapter. Defaults to 0.0 for maximum reproducibility.
+        seed: A fixed seed, passed straight through — honoured by Ollama,
+            ignored by Anthropic (see `AnthropicAdapter.complete`).
 
     Returns:
         The adapter's `LLMResponse`.
 
     Raises:
         core.llm.task_config.TaskConfigError: If `task` has no entry in the
-            task config file.
+            task config file and no full override is given.
         KeyError: If the resolved provider has no matching entry in
             `adapters`.
     """
-    task_config = load_task_config(task, config_path=config_path)
-    adapter = adapters[task_config.provider]
-    response = adapter.complete(model=task_config.model, prompt=prompt)
+    if provider is None or model is None:
+        task_config = load_task_config(task, config_path=config_path)
+        provider = provider or task_config.provider
+        model = model or task_config.model
+    adapter = adapters[provider]
+    response = adapter.complete(
+        model=model, prompt=prompt, temperature=temperature, seed=seed
+    )
     log_llm_call(task=task, response=response, prompt_version=prompt_version)
     return response
