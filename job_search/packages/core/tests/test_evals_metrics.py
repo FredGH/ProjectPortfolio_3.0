@@ -62,7 +62,18 @@ class TestFieldF1(unittest.TestCase):
 
 
 class _FakeJudgeAdapter:
+    """Mock LLM adapter for testing judge responses.
+
+    Attributes:
+        calls: List of prompts sent to the adapter.
+    """
+
     def __init__(self, response_text: str) -> None:
+        """Initialize the fake adapter with a fixed response text.
+
+        Args:
+            response_text: The text to return from all calls to complete().
+        """
         self._response_text = response_text
         self.calls: list[str] = []
 
@@ -74,6 +85,17 @@ class _FakeJudgeAdapter:
         temperature: float = 0.0,
         seed: int | None = None,
     ) -> LLMResponse:
+        """Return a fake LLM response and record the prompt.
+
+        Args:
+            model: The model name (ignored).
+            prompt: The prompt sent to the LLM.
+            temperature: Temperature parameter (ignored).
+            seed: Random seed (ignored).
+
+        Returns:
+            A fake LLMResponse with the configured response text.
+        """
         self.calls.append(prompt)
         return LLMResponse(
             text=self._response_text,
@@ -86,6 +108,7 @@ class _FakeJudgeAdapter:
 
 class TestLlmJudge(unittest.TestCase):
     def test_parses_a_well_formed_judge_response(self) -> None:
+        """Verify that llm_judge parses valid JSON responses correctly."""
         adapter = _FakeJudgeAdapter(
             '{"score": 0.8, "rationale": "mostly accurate, minor omission"}'
         )
@@ -104,6 +127,7 @@ class TestLlmJudge(unittest.TestCase):
     def test_malformed_response_returns_zero_score_not_a_raised_exception(
         self,
     ) -> None:
+        """Verify that malformed JSON responses return zero score without raising."""
         adapter = _FakeJudgeAdapter("not json at all")
         result = llm_judge("output", "rubric", adapters={"anthropic": adapter})
         self.assertEqual(result.score, 0.0)

@@ -98,6 +98,9 @@ def llm_judge(
         parse judge response: ...")` if the judge's response can't be
         parsed as the expected JSON shape — one malformed judge
         response should not crash a whole eval run.
+
+    Raises:
+        KeyError: If the resolved judge provider is not in `adapters`.
     """
     prompt = _JUDGE_PROMPT_TEMPLATE.format(rubric=rubric, output=output)
     response = complete(
