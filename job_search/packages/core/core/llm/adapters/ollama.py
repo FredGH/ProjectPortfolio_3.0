@@ -28,19 +28,37 @@ class OllamaAdapter:
         self.base_url = base_url
         self.client = client
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Run one completion call against Ollama.
 
         Args:
             model: The Ollama model tag, e.g. "llama3.1:8b".
             prompt: The prompt text.
+            temperature: Sampling temperature, sent as `options.temperature`.
+            seed: A fixed seed, sent as `options.seed` when given — Ollama
+                supports true seeded determinism, unlike Anthropic.
 
         Returns:
             The normalised `LLMResponse`.
         """
+        options: dict[str, object] = {"temperature": temperature}
+        if seed is not None:
+            options["seed"] = seed
         response = self.client.post(
             f"{self.base_url}/api/generate",
-            json={"model": model, "prompt": prompt, "stream": False},
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                "options": options,
+            },
         )
         response.raise_for_status()
         payload = response.json()

@@ -29,12 +29,25 @@ class LLMResponse:
 class LLMAdapter(Protocol):
     """The interface every provider adapter implements identically."""
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Run one completion call.
 
         Args:
             model: The provider-specific model identifier.
             prompt: The prompt text.
+            temperature: Sampling temperature. Defaults to 0.0 — the eval
+                harness (PLAN.md Step 12a) depends on every call being as
+                deterministic as the provider allows, so 0.0 is the
+                default for every caller, not an eval-only opt-in.
+            seed: A fixed seed, where the provider supports one. `None`
+                means "no seed requested."
 
         Returns:
             The normalised `LLMResponse`.

@@ -21,7 +21,14 @@ from core.llm.types import LLMAdapter, LLMResponse  # noqa: E402
 class _FakeAdapter(LLMAdapter):
     """A test double so this test never touches a real LLM provider."""
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Return a fixed structured-extraction response."""
         return LLMResponse(
             text='{"title": "Data Engineer"}',

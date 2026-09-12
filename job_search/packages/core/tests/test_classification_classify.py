@@ -14,7 +14,14 @@ class _FakeAdapter:
         self._category = category
         self._confidence = confidence
 
-    def complete(self, *, model: str, prompt: str):
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ):
         from core.llm.types import LLMResponse
 
         self.called = True

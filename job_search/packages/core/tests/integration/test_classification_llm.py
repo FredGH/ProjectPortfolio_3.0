@@ -39,7 +39,14 @@ class TestClassifyByLlm(unittest.TestCase):
         # one — still an integration-shaped test of the parsing logic,
         # not a mock of the classification decision itself.
         class _BrokenAdapter:
-            def complete(self, *, model: str, prompt: str):
+            def complete(
+                self,
+                *,
+                model: str,
+                prompt: str,
+                temperature: float = 0.0,
+                seed: int | None = None,
+            ):
                 from core.llm.types import LLMResponse
 
                 return LLMResponse(
