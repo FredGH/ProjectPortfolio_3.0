@@ -1,0 +1,216 @@
+version: 2
+
+sources:
+  - name: silver_ingest
+    schema: silver
+    tables:
+      - name: job_identity_map
+        description: >
+          Written by the cluster-jobs pipeline CLI subcommand
+          (core.dedup.write_job_identity_map), not dbt — union-find
+          clustering has no dbt equivalent (PLAN.md Step 10). Maps each
+          source posting to its stable job_group_id. Insert-only:
+          job_group_id never changes once assigned.
+        columns:
+          - name: job_group_id
+            description: "Matches gold.dim_job.job_group_id."
+      - name: job_survivorship
+        description: >
+          Written by the compute-survivorship pipeline CLI subcommand
+          (core.dedup.write_job_survivorship), not dbt — reuses Step
+          10's already-tested core.dedup.survivorship functions rather
+          than re-implementing the same rules in SQL (PLAN.md Step 11).
+          One row per job_group_id: which source's description/apply
+          link/display title wins.
+        columns:
+          - name: job_group_id
+            description: "Matches gold.dim_job.job_group_id."
+
+models:
+  - name: dim_job
+    description: >
+      One row per deduplicated job (PLAN.md Step 11). job_group_id is
+      the PK; description/apply_url/title_for_display are resolved by
+      silver.job_survivorship (Step 10's rules, reused verbatim); every
+      other field mirrors the same posting that won apply_url — see
+      this model's header comment for why.
+    columns:
+      - name: job_group_id
+        data_type: text
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: source('silver_ingest', 'job_identity_map')
+              field: job_group_id
+      - name: apply_url
+        description: "The surviving apply link (DECISIONS.md §2.7: source-rank wins)."
+        data_type: text
+        tests: [not_null]
+      - name: title_for_display
+        description: >
+          The surviving display title (DECISIONS.md §5: same source as
+          apply_url).
+        data_type: text
+      - name: description
+        data_type: text
+      - name: title_raw
+        data_type: text
+      - name: company
+        data_type: text
+      - name: normalised_company
+        description: >
+          Step 7's matching-only company key — never a display string;
+          join key for dim_company.
+        data_type: text
+        tests: [not_null]
+      - name: location
+        data_type: text
+      - name: country_iso
+        description: "Derived from the apply-winning posting's normalised location (Step 7)."
+        data_type: text
+      - name: region
+        description: "Derived from the apply-winning posting's normalised location (Step 7)."
+        data_type: text
+      - name: salary_raw
+        data_type: text
+      - name: rate_currency
+        description: >
+          The currency the rate was actually stated in (GBP/USD/EUR).
+          Nullable — a plain numeric salary_raw carries no currency
+          signal, and this column is never guessed.
+        data_type: text
+      - name: rate_annualised
+        description: >
+          The stated rate annualised (260 working days / 7.5-hour day
+          where a conversion was needed). Expressed in rate_currency —
+          this is NOT converted to GBP. Currency conversion happens in
+          core.normalisation.salary.parse_salary (PLAN.md Step 6), a
+          separate function; do not compare this column across
+          currencies. Nullable when rate_basis is 'unknown'.
+        data_type: numeric
+      - name: rate_daily_equivalent
+        description: >
+          The stated rate as a day-rate equivalent, same 260-day basis.
+          Expressed in rate_currency, NOT converted to GBP — same caveat
+          as rate_annualised. Nullable when rate_basis is 'unknown'.
+        data_type: numeric
+      - name: contract_length_months
+        data_type: integer
+      - name: engagement_type
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['permanent', 'contract', 'ftc', 'interim', 'unknown']
+      - name: ir35_status
+        data_type: text
+        tests:
+          - accepted_values:
+              values:
+                ['inside', 'outside', 'not_applicable', 'undetermined', 'unknown']
+      - name: engagement_vehicle
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['umbrella', 'limited', 'paye', 'agency_paye', 'unknown']
+      - name: rate_basis
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['annual', 'daily', 'hourly', 'unknown']
+      - name: extension_likelihood
+        data_type: text
+        tests:
+          - accepted_values:
+              values: ['likely', 'possible', 'unlikely', 'unstated']
+      - name: posted_at
+        data_type: timestamptz
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['api', 'manual', 'scraped']
+      - name: apply_source_name
+        description: >
+          Lineage — the natural key of the posting that won apply_url
+          survivorship. Not part of the original PLAN.md spec; exposed
+          so dim_company/fct_market_demand can join back without a
+          fragile URL match.
+        data_type: text
+        tests: [not_null]
+      - name: apply_source_job_id
+        description: >
+          Lineage — the natural key of the posting that won apply_url
+          survivorship. Not part of the original PLAN.md spec; exposed
+          so dim_company/fct_market_demand can join back without a
+          fragile URL match.
+        data_type: text
+        tests: [not_null]
+      - name: sources
+        description: >
+          Every source URL for this job_group_id, regardless of which
+          one won survivorship.
+        data_type: jsonb
+        tests: [not_null]
+
+  - name: dim_company
+    description: >
+      One row per normalised company (PLAN.md Step 11). Greenfield — no
+      prior dim_company convention exists; see this model's header
+      comment for the display-name resolution rule.
+    columns:
+      - name: company_key
+        data_type: text
+        tests: [unique, not_null]
+      - name: normalised_company
+        data_type: text
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: normalised_company
+      - name: company_name
+        data_type: text
+        tests: [not_null]
+      - name: job_count
+        data_type: bigint
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+
+  - name: fct_market_demand
+    description: >
+      The base demand fact (PLAN.md Step 11), filtered to entry_method
+      = 'api' — see this model's header comment for the selection-bias
+      rationale and why no category column exists yet.
+    columns:
+      - name: job_group_id
+        data_type: text
+        tests:
+          - unique
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: job_group_id
+      - name: company_key
+        data_type: text
+        tests:
+          - relationships:
+              to: ref('dim_company')
+              field: company_key
+      - name: country_iso
+        data_type: text
+      - name: region
+        data_type: text
+      - name: posted_at
+        data_type: timestamptz
+      - name: posted_week
+        data_type: timestamptz
+      - name: entry_method
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['api']

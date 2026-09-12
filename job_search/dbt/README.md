@@ -66,6 +66,33 @@ connectors) into typed, contract-enforced models.
   matching row is silently dropped rather than erroring. The singular test
   `assert_similarity_scores_match_candidate_pairs_count` exists specifically
   to catch that.
+- **gold** (`models/gold/`, tables, schema `gold`) — `dim_job`,
+  `dim_company`, and `fct_market_demand` (PLAN.md Step 11). Depends on
+  `silver.job_survivorship`, written **outside dbt** by the
+  `compute-survivorship` pipeline CLI subcommand, which itself depends
+  on `silver.job_identity_map` (Step 10) already being populated.
+
+  After `cluster-jobs` has run (see the dedup section above), build the
+  gold layer:
+
+  ```bash
+  python3.11 -m apps.pipeline.app.cli compute-survivorship
+  dbt build --select dim_job dim_company fct_market_demand
+  ```
+
+  `compute-survivorship` is a plain UPSERT (unlike `cluster-jobs`'s
+  insert-only design) — safe to re-run any time source data changes for
+  an existing cluster, since which source "wins" survivorship is never
+  required to stay fixed, only `job_group_id` itself.
+
+  A plain `dbt build` on its own is **not** enough here either:
+  `dim_job`'s final SELECT chains three INNER JOINs (survivorship →
+  apply_posting → apply_blocking_keys → sources), so a `job_group_id`
+  whose `compute-survivorship`/`compute-blocking-keys` rows are stale
+  (not rerun since new postings were clustered) silently vanishes from
+  `dim_job` rather than erroring. The singular test
+  `assert_dim_job_covers_every_job_group` exists specifically to catch
+  that.
 
 ## Running it
 
