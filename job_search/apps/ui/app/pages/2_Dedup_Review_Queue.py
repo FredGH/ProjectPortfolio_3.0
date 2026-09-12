@@ -7,40 +7,11 @@ GET /dedup/pairs-to-label's own docstring for the exact rule.
 
 from __future__ import annotations
 
-import html
-import re
-
 import httpx
 import streamlit as st
 
 from core.settings import get_settings
-
-
-def _readable_description(raw: str) -> str:
-    """Render a posting's raw (HTML-entity-escaped HTML) description as
-    plain, human-readable text for side-by-side comparison.
-
-    Postings from ATS sources (e.g. Greenhouse) carry their description
-    as HTML, and it's stored here HTML-entity-escaped (literal `&lt;`,
-    `&quot;`, ...) rather than as raw tags. This is a display-only
-    transform for this review page — the stored `description` field is
-    left untouched, since other consumers (survivorship, scoring
-    chunking) may depend on its current form.
-
-    Args:
-        raw: The posting's raw description text as returned by the API.
-
-    Returns:
-        Plain text with HTML tags stripped and entities decoded,
-        whitespace collapsed for readability.
-    """
-    unescaped = html.unescape(raw)
-    without_tags = re.sub(r"<[^>]+>", " ", unescaped)
-    without_tags = html.unescape(without_tags)
-    collapsed = re.sub(r"[ \t]+", " ", without_tags)
-    collapsed = re.sub(r"\n\s*\n+", "\n\n", collapsed)
-    return collapsed.strip()
-
+from core.text import readable_description
 
 st.set_page_config(page_title="Dedup Review Queue", layout="wide")
 st.title("Dedup Review Queue")
@@ -106,7 +77,7 @@ else:
             description = posting["description"]
             st.text_area(
                 "Description",
-                value=_readable_description(description) if description else "(none)",
+                value=readable_description(description) if description else "(none)",
                 height=200,
                 disabled=True,
                 key=f"desc_{posting['job_key']}_{index}",
