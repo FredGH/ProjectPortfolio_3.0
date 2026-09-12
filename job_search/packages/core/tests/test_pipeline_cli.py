@@ -28,7 +28,7 @@ for name in list(_saved_app_modules):
 # Insert pipeline app path and import.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"))
 
-from app.cli import _KNOWN_SOURCES, main  # noqa: E402
+from app.cli import _KNOWN_SOURCES, _build_adzuna_query, main  # noqa: E402
 
 # Restore api's app package (or any other pre-existing app module) in
 # sys.modules so tests imported after this one resolve app.* correctly.
@@ -162,6 +162,95 @@ class TestPipelineCli(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("jooble", stderr.getvalue().lower())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_defaults_collection_channel_to_targeted(
+        self,
+    ) -> None:
+        """--collection-channel omitted defaults to 'targeted', accepted cleanly.
+
+        Uses --source adzuna with no --region so the run fails at
+        _build_adzuna_query's early, Settings/DB/network-independent
+        ValueError check — never reaching run_connector. This keeps the
+        test fast and isolated (see test_greenhouse_is_a_known_source's
+        docstring for why a real end-to-end connector run is avoided
+        here), while still proving argparse accepted the omitted
+        --collection-channel and threaded its default through cleanly.
+        """
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(
+                ["ingest", "--source", "adzuna", "--query", "data engineer"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn("region", stderr.getvalue().lower())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_ingest_subcommand_rejects_unknown_collection_channel(self) -> None:
+        """An invalid --collection-channel value is rejected by argparse."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+            self.assertRaises(SystemExit),
+        ):
+            main(
+                [
+                    "ingest",
+                    "--source",
+                    "greenhouse",
+                    "--query",
+                    "",
+                    "--collection-channel",
+                    "nonsense",
+                ]
+            )
+        self.assertIn("collection-channel", stderr.getvalue().lower())
+
+    def test_ingest_subcommand_rejects_discovery_for_non_discovery_source(
+        self,
+    ) -> None:
+        """--collection-channel discovery is rejected for a source whose
+        query-builder ignores it (e.g. reed), instead of silently
+        mislabeling targeted-mode records as discovery."""
+        with (
+            mock.patch("sys.stdout", new_callable=StringIO),
+            mock.patch("sys.stderr", new_callable=StringIO) as stderr,
+        ):
+            exit_code = main(
+                [
+                    "ingest",
+                    "--source",
+                    "reed",
+                    "--query",
+                    "data engineer",
+                    "--collection-channel",
+                    "discovery",
+                ]
+            )
+        self.assertEqual(exit_code, 1)
+        stderr_value = stderr.getvalue()
+        self.assertIn("discovery", stderr_value.lower())
+        self.assertIn("reed", stderr_value.lower())
+        self.assertNotIn("Traceback", stderr_value)
+
+    def test_adzuna_discovery_mode_interprets_query_as_category(self) -> None:
+        """--collection-channel discovery treats --query as an Adzuna
+        category tag and caps pagination lower than targeted mode."""
+        query = _build_adzuna_query("it-jobs", "gb", "discovery")
+        self.assertEqual(query.keywords, "")
+        self.assertEqual(query.category, "it-jobs")
+        self.assertEqual(query.country, "gb")
+        self.assertEqual(query.max_pages, 2)
+
+    def test_adzuna_targeted_mode_interprets_query_as_keywords(self) -> None:
+        """--collection-channel targeted (default) treats --query as
+        keywords, with no category and the default higher max_pages."""
+        query = _build_adzuna_query("data engineer", "gb", "targeted")
+        self.assertEqual(query.keywords, "data engineer")
+        self.assertIsNone(query.category)
+        self.assertEqual(query.country, "gb")
+        self.assertEqual(query.max_pages, 5)
 
 
 if __name__ == "__main__":

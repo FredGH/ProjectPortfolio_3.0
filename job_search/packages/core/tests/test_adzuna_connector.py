@@ -45,6 +45,7 @@ class TestAdzunaConnector(unittest.TestCase):
             page,
             results_per_page,
             what,
+            category,
             max_days_old,
         ):
             self.calls.append(
@@ -165,6 +166,74 @@ class TestAdzunaConnector(unittest.TestCase):
             )
         )
         self.assertEqual([j.source_job_id for j in jobs], ["1", "3"])
+
+    def test_category_sweep_sends_category_param_without_what(self) -> None:
+        """A category-only query omits `what` and sends `category`."""
+
+        def fake_fetch_page(
+            http_client,
+            *,
+            app_id,
+            app_key,
+            country,
+            page,
+            results_per_page,
+            what,
+            category,
+            max_days_old,
+        ):
+            self.calls.append({"what": what, "category": category})
+            return {"results": [_result(1, "Some Role")], "count": 1}
+
+        connector = AdzunaConnector(
+            http_client=self.http_client,
+            app_id="test-id",
+            app_key="test-key",
+            fetch_page_fn=fake_fetch_page,
+        )
+        list(
+            connector.fetch(
+                AdzunaQuery(keywords="", category="it-jobs", country="gb"),
+                None,
+                run_id="run-1",
+            )
+        )
+        self.assertEqual(self.calls[0]["what"], "")
+        self.assertEqual(self.calls[0]["category"], "it-jobs")
+
+    def test_targeted_query_sends_what_without_category(self) -> None:
+        """The pre-existing keyword-search path is unaffected — category is None."""
+
+        def fake_fetch_page(
+            http_client,
+            *,
+            app_id,
+            app_key,
+            country,
+            page,
+            results_per_page,
+            what,
+            category,
+            max_days_old,
+        ):
+            self.calls.append({"what": what, "category": category})
+            return {"results": [_result(1, "Data Engineer")], "count": 1}
+
+        connector = AdzunaConnector(
+            http_client=self.http_client,
+            app_id="test-id",
+            app_key="test-key",
+            fetch_page_fn=fake_fetch_page,
+        )
+        list(
+            connector.fetch(
+                AdzunaQuery(keywords="data engineer", country="gb"),
+                None,
+                run_id="run-1",
+            )
+        )
+        self.assertEqual(self.calls[0]["what"], "data engineer")
+        self.assertIsNone(self.calls[0]["category"])
 
 
 if __name__ == "__main__":

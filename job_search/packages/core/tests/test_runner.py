@@ -292,6 +292,43 @@ class TestRunConnector(unittest.TestCase):
         self.assertEqual(len(self.metadata_calls), 1)
         self.assertEqual(self.metadata_calls[0].status, "failed")
 
+    def test_collection_channel_defaults_to_targeted(self) -> None:
+        """A call with no collection_channel argument stamps 'targeted'."""
+        connector = _FakeConnector([_sample_job()])
+        run_connector(
+            connector_key="fake",
+            connector=connector,
+            query="my query",
+            since=None,
+            entry_method="api",
+            landing_uri="file:///tmp/unused",
+            database_url="unused",
+            load_to_bronze_fn=self._fake_load_to_bronze,
+            write_landing_record_fn=self._fake_write_landing_record,
+            write_run_metadata_fn=self._fake_write_run_metadata,
+            sleep_fn=lambda s: None,
+        )
+        self.assertEqual(self.bronze_calls[0]["collection_channel"], "targeted")
+
+    def test_collection_channel_discovery_is_threaded_through(self) -> None:
+        """An explicit collection_channel="discovery" reaches load_to_bronze_fn."""
+        connector = _FakeConnector([_sample_job()])
+        run_connector(
+            connector_key="fake",
+            connector=connector,
+            query="my query",
+            since=None,
+            entry_method="api",
+            collection_channel="discovery",
+            landing_uri="file:///tmp/unused",
+            database_url="unused",
+            load_to_bronze_fn=self._fake_load_to_bronze,
+            write_landing_record_fn=self._fake_write_landing_record,
+            write_run_metadata_fn=self._fake_write_run_metadata,
+            sleep_fn=lambda s: None,
+        )
+        self.assertEqual(self.bronze_calls[0]["collection_channel"], "discovery")
+
 
 if __name__ == "__main__":
     unittest.main()

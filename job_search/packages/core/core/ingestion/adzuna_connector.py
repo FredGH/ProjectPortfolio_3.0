@@ -33,8 +33,16 @@ class AdzunaQuery:
     """AdzunaConnector's `query` type.
 
     Attributes:
-        keywords: Free-text search terms, e.g. "data engineer".
+        keywords: Free-text search terms, e.g. "data engineer". Empty
+            string is valid when `category` is given — see `category`.
         country: Adzuna's two-letter country code, e.g. "gb", "us".
+        category: An Adzuna category tag (e.g. "it-jobs", "engineering-jobs"
+            — the full list is at Adzuna's `/categories` endpoint, not
+            called by this connector). When given, this is a discovery-
+            style category sweep instead of a keyword search — live-
+            verified during planning to work with `keywords=""` (no
+            `what` param sent at all). `None` (the default) means a
+            normal keyword search.
         max_pages: Safety cap on API calls per fetch() — pagination also
             stops early on a short page. Defaults to 5 (up to 250 results
             at the default results_per_page).
@@ -42,8 +50,9 @@ class AdzunaQuery:
             50.
     """
 
-    keywords: str
-    country: str
+    keywords: str = ""
+    country: str = ""
+    category: str | None = None
     max_pages: int = _DEFAULT_MAX_PAGES
     results_per_page: int = _DEFAULT_RESULTS_PER_PAGE
 
@@ -70,6 +79,7 @@ def _fetch_adzuna_page(
     page: int,
     results_per_page: int,
     what: str,
+    category: str | None,
     max_days_old: int | None,
 ) -> dict[str, object]:
     """Fetch one page of Adzuna search results.
@@ -81,7 +91,10 @@ def _fetch_adzuna_page(
         country: Adzuna's two-letter country code.
         page: 1-indexed page number.
         results_per_page: Results requested for this page.
-        what: Free-text keyword query.
+        what: Free-text keyword query. Omitted from the request entirely
+            when empty (a category-only sweep sends no `what` at all).
+        category: An Adzuna category tag for a category sweep, or `None`
+            for a normal keyword search.
         max_days_old: Only return postings at most this many days old, or
             `None` for no age filter.
 
@@ -95,9 +108,12 @@ def _fetch_adzuna_page(
         "app_id": app_id,
         "app_key": app_key,
         "results_per_page": results_per_page,
-        "what": what,
         "content-type": "application/json",
     }
+    if what:
+        params["what"] = what
+    if category:
+        params["category"] = category
     if max_days_old is not None:
         params["max_days_old"] = max_days_old
 
@@ -165,6 +181,7 @@ class AdzunaConnector:
                 page=page,
                 results_per_page=query.results_per_page,
                 what=query.keywords,
+                category=query.category,
                 max_days_old=max_days_old,
             )
             results = cast(list[dict[str, object]], body.get("results", []))
@@ -186,6 +203,7 @@ class AdzunaConnector:
                         run_id=run_id,
                         request_params={
                             "what": query.keywords,
+                            "category": query.category,
                             "country": query.country,
                             "page": page,
                         },

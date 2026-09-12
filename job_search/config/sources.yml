@@ -6,6 +6,11 @@
 # entry (core.ingestion.manual_connector.ManualConnector), which makes no
 # external API calls and therefore needs neither.
 #
+# Discovery-channel runs (--collection-channel discovery) should be run
+# at most weekly, by hand — no scheduler exists in this project yet to
+# enforce that automatically (PLAN.md Phase 6). Don't loop this in a cron
+# job without first building real orchestration.
+#
 sources:
   adzuna:
     enabled: true
