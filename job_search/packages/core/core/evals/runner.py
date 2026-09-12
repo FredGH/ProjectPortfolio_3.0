@@ -118,6 +118,10 @@ def _predict_job_categorisation(
         `{"category": <predicted category>}`, for `exact_match` to
         compare against the case's `expected`.
     """
+    # Imported locally, not at module level: this predictor is the
+    # only place in the eval runner that needs the classification
+    # package, so every other task's predictor (added by future steps)
+    # can run without pulling in core.classification at all.
     from core.classification.llm_classifier import classify_by_llm
 
     category, _confidence, _prompt_version, _model_id = classify_by_llm(
@@ -130,7 +134,9 @@ def _predict_job_categorisation(
     return {"category": category}
 
 
-_PREDICTORS: dict[str, Callable] = {
+_Predictor = Callable[..., dict[str, object]]
+
+_PREDICTORS: dict[str, _Predictor] = {
     "job_categorisation": _predict_job_categorisation,
 }
 
@@ -166,6 +172,13 @@ def run_eval(
 
     Returns:
         The `EvalRunResult`.
+
+    Raises:
+        KeyError: If `task`'s configured `eval_metric` isn't a key in
+            `_METRICS`, or if `task` itself isn't a key in
+            `_PREDICTORS` (both indicate a task registered in
+            `config/llm_tasks.yml` without a matching entry wired up
+            in this module).
     """
     task_config = load_task_config(task, config_path=config_path)
     resolved = _resolve_provider(task_config, provider)
@@ -219,10 +232,16 @@ def run_eval(
         ).one_or_none()
     previous_score = float(previous_row.score) if previous_row else None
     delta = (score - previous_score) if previous_score is not None else None
+    # `or float("inf")` would silently treat a deliberately-configured
+    # zero-tolerance threshold (0) the same as "unconfigured" — falsy
+    # but meaningfully different from None. Check `is not None`
+    # explicitly so a threshold of 0 still flags any regression.
+    threshold = task_config.eval_regression_threshold
     regressed = (
         delta is not None
         and delta < 0
-        and abs(delta) > (task_config.eval_regression_threshold or float("inf"))
+        and threshold is not None
+        and abs(delta) > threshold
     )
 
     with engine.begin() as conn:
