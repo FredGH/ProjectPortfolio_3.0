@@ -28,6 +28,7 @@ from core.dedup.write_job_survivorship import write_job_survivorship
 from core.dedup.write_similarity_features import write_similarity_features
 from core.dedup.write_title_similarity_scores import write_title_similarity_scores
 from core.enrichment.write_engagement_terms import write_engagement_terms
+from core.evals.runner import EvalRunResult, run_eval
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
 from core.ingestion.connector import Connector
 from core.ingestion.greenhouse_connector import GreenhouseConnector, GreenhouseQuery
@@ -662,6 +663,66 @@ def _cmd_classify_jobs(args: argparse.Namespace) -> int:
         http_client.close()
 
 
+# Tasks with an eval configured — extend as future steps (13, 15-17,
+# 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
+_EVAL_TASKS = ["job_categorisation"]
+
+
+def _report_eval_result(result: EvalRunResult) -> None:
+    """Print one EvalRunResult in a human-readable line.
+
+    Args:
+        result: The result to report.
+    """
+    if result.status == "insufficient_data":
+        print(
+            f"{result.task} ({result.provider}): insufficient_data "
+            f"({result.case_count} cases, need {20})"
+        )
+        return
+    if result.status == "provider_not_configured":
+        print(f"{result.task} ({result.provider}): provider_not_configured")
+        return
+    delta_str = f", delta={result.delta:+.3f}" if result.delta is not None else ""
+    regressed_str = " REGRESSED" if result.regressed else ""
+    print(
+        f"{result.task} ({result.provider}): score={result.score:.3f} "
+        f"(n={result.case_count}){delta_str}{regressed_str}"
+    )
+
+
+def _cmd_run_evals(args: argparse.Namespace) -> int:
+    """Run the `run-evals` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `task` (or `all`) and `provider`.
+
+    Returns:
+        0 if every run reported no regression, 1 if any did.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        tasks = _EVAL_TASKS if args.all else [args.task]
+        provider_labels = (
+            ["target", "local"] if args.provider == "both" else [args.provider]
+        )
+
+        any_regressed = False
+        for task in tasks:
+            for provider_label in provider_labels:
+                result = run_eval(
+                    task, provider_label, engine=engine, adapters=adapters
+                )
+                _report_eval_result(result)
+                any_regressed = any_regressed or result.regressed
+        return 1 if any_regressed else 0
+    finally:
+        http_client.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the pipeline CLI.
 
@@ -732,6 +793,17 @@ def main(argv: list[str] | None = None) -> int:
         help="Classify every unclassified job_group_id (category, seniority_band)",
     )
 
+    run_evals_parser = subparsers.add_parser(
+        "run-evals",
+        help="Run a task's golden set against target/local/both providers",
+    )
+    run_evals_group = run_evals_parser.add_mutually_exclusive_group(required=True)
+    run_evals_group.add_argument("--task", choices=_EVAL_TASKS)
+    run_evals_group.add_argument("--all", action="store_true")
+    run_evals_parser.add_argument(
+        "--provider", required=True, choices=["target", "local", "both"]
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -750,6 +822,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compute_survivorship(args)
     if args.command == "classify-jobs":
         return _cmd_classify_jobs(args)
+    if args.command == "run-evals":
+        return _cmd_run_evals(args)
 
     print("pipeline scaffold ready — run with `ingest --source X --query Y`")
     return 0
