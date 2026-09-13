@@ -23,15 +23,27 @@ FastAPI, Streamlit, the existing `core.llm` gateway/task-config machinery.
 
 ## Global Constraints
 
-- Docling pin: `docling==2.126.0`. **Already verified** in a scratch venv
-  against this project's exact `requirements.txt` pins (minus dbt, which
-  is never needed for Python unit/integration tests) — installs with
-  zero `pip check` conflicts, and `DocumentConverter().convert(stream)
-  .document.export_to_markdown()` with `docling.datamodel.base_models
-  .DocumentStream` was smoke-tested end-to-end against a synthetic HTML
-  snippet and produced correct markdown. Task 1 repeats this install in
-  the project's real venv (not the scratch one) so it's part of the
-  tracked dependency set, not a re-verification of feasibility.
+- Docling pin: `docling==2.126.0`. Adding it to `requirements.txt` alone
+  is **not** conflict-free: `docling-slim[standard]` (one of Docling's
+  own required dependencies, not an optional extra) needs `httpx>=0.28`
+  and `docling-core` needs `pydantic-settings>=2.14.0`, both violating
+  this project's existing pins (`httpx==0.27.2`, `pydantic-settings==2.6.0`).
+  **Ruling (made during SDD pre-flight/Task-1 execution, after a first
+  scratch-venv check missed both conflicts by installing Docling in a
+  separate `pip` call, which let the resolver silently upgrade both
+  packages without erroring):** bump both pins — `httpx==0.28.1`,
+  `pydantic-settings==2.15.0` — alongside adding Docling. Verified via a
+  single combined `pip install -r requirements.txt` (with all three
+  changes present at once, dbt excluded as usual) against every other
+  pin in this file (fastapi, streamlit, anthropic, sqlalchemy, dlt,
+  coverage, pre-commit, ruff, black, isort, mypy): zero `pip check`
+  conflicts. Both bumps stay within their current major version, and a
+  repo-wide grep found no use of either package's deprecated APIs
+  (`httpx`'s removed `proxies=` kwarg; no code here constructs
+  `pydantic_settings.BaseSettings` with anything beyond
+  `SettingsConfigDict(env_file=..., extra=...)`, which is unchanged
+  across this version range). Task 1 makes all three `requirements.txt`
+  edits together, in one commit.
 - `cv_extraction` is a **local-only** task: `config/llm_tasks.yml` routes
   it to `provider: ollama`, never `anthropic` — per DECISIONS.md's task
   split ("CV truth-base extraction: local, hand-corrected anyway, never
@@ -98,20 +110,33 @@ Run: `cd packages/core && python -m unittest tests.test_docling_import -v`
 Expected: FAIL (`ModuleNotFoundError: No module named 'docling'`) — the
 dependency isn't installed yet.
 
-- [ ] **Step 3: Add the dependency and install it**
+- [ ] **Step 3: Add the dependency and bump the two pins it conflicts with**
 
-In `requirements.txt`, add one line after `fsspec==2024.10.0`:
+Docling's own required dependencies (not optional extras) need
+`httpx>=0.28` and `pydantic-settings>=2.14.0` — both violate this
+project's current pins. Make all three edits to `requirements.txt`
+together:
 
-```
-docling==2.126.0
-```
+1. Add one line after `fsspec==2024.10.0`:
+   ```
+   docling==2.126.0
+   ```
+2. Change the existing `httpx==0.27.2` line to:
+   ```
+   httpx==0.28.1
+   ```
+3. Change the existing `pydantic-settings==2.6.0` line to:
+   ```
+   pydantic-settings==2.15.0
+   ```
 
 Then, in this project's venv: `pip install -r requirements.txt`. This
-has already been verified conflict-free in a scratch venv against this
-exact pin set (minus dbt, which install/test never needs), so this step
-should simply succeed — if it doesn't, something about the real venv
-differs from the scratch one; report the exact error rather than
-forcing the install.
+exact combination (all three edits at once) has already been verified
+conflict-free in a scratch venv against every other pin in this file
+(dbt excluded, as install/test never needs it) — this step should
+simply succeed. If it doesn't, something about the real venv differs
+from the scratch one; report the exact error rather than forcing the
+install or reverting the pin bumps.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -122,7 +147,11 @@ Expected: PASS
 
 ```bash
 git add requirements.txt packages/core/tests/test_docling_import.py
-git commit -m "chore(job_search): add docling dependency for CV extraction (JOB-202)"
+git commit -m "chore(job_search): add docling dependency for CV extraction (JOB-202)
+
+Bumps httpx to 0.28.1 and pydantic-settings to 2.15.0 — both required
+transitively by docling-slim/docling-core, verified conflict-free
+against every other pin in requirements.txt."
 ```
 
 ---
