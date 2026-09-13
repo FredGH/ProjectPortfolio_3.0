@@ -5,7 +5,7 @@ resolution (config/llm_tasks.yml's `job_categorisation` entry, DECISIONS.md
 §1) — never a hardcoded provider. Measured against the real dataset,
 this stage resolves a majority of ALL titles (not just a small
 residual): the rules/embedding stages can only ever return one of the
-6 substantive categories, so every genuinely non-engineering title
+7 substantive categories, so every genuinely non-engineering title
 (the majority of postings in a broad job aggregator) reaches this
 stage and correctly resolves to "other" here, alongside the smaller
 share of substantive titles the cheaper stages couldn't place.
@@ -30,6 +30,7 @@ _CATEGORIES = [
     "ai_ml_engineer",
     "analytics_engineer",
     "platform_devops",
+    "forward_deployed_engineer",
     "other",
 ]
 

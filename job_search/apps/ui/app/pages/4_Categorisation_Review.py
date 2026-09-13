@@ -31,6 +31,7 @@ _CATEGORIES = (
     "ai_ml_engineer",
     "analytics_engineer",
     "platform_devops",
+    "forward_deployed_engineer",
     "other",
 )
 _SENIORITY_BANDS = ("junior", "mid", "senior", "lead", "principal")

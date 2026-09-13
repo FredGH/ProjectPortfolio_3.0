@@ -166,8 +166,9 @@ models:
         tests: [not_null]
       - name: category
         description: >
-          The 7-value classification taxonomy (PLAN.md Step 11a) —
-          the analytical grain for market/skill-demand marts and the
+          The 8-value classification taxonomy (PLAN.md Step 11a,
+          extended by Step 11b/JOB-444 for forward_deployed_engineer)
+          — the analytical grain for market/skill-demand marts and the
           skill gap analysis.
         data_type: text
         tests:
@@ -180,6 +181,7 @@ models:
                 - ai_ml_engineer
                 - analytics_engineer
                 - platform_devops
+                - forward_deployed_engineer
                 - other
       - name: category_confidence
         description: >
@@ -202,16 +204,23 @@ models:
               values: ['rules', 'embedding', 'llm']
       - name: qa_category
         description: >
-          The separate 4-value question-bank taxonomy (PLAN.md Step
-          11a) — coarser than `category` by design. Null when
-          `category = 'other'`, which has no reasonable question-bank
-          equivalent. dbt's `accepted_values` test passes NULLs through
-          by default, so no `not_null` test belongs here — nullability
-          is intentional, not a gap.
+          The separate 5-value question-bank taxonomy (PLAN.md Step
+          11a, extended by Step 11b/JOB-444) — coarser than `category`
+          by design, except forward_deployed_engineer which keeps its
+          own qa_category rather than folding into software_engineer.
+          Null when `category = 'other'`, which has no reasonable
+          question-bank equivalent. dbt's `accepted_values` test passes
+          NULLs through by default, so no `not_null` test belongs here
+          — nullability is intentional, not a gap.
         data_type: text
         tests:
           - accepted_values:
-              values: [software_engineer, data_engineer, data_scientist, ai_engineer]
+              values:
+                - software_engineer
+                - data_engineer
+                - data_scientist
+                - ai_engineer
+                - forward_deployed_engineer
       - name: seniority_band
         description: "Derived from the job title's own wording (PLAN.md Step 11a)."
         data_type: text

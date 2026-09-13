@@ -103,6 +103,22 @@ class TestClassifyByLlm(unittest.TestCase):
         self.assertEqual(default_adapter.calls, [])
         self.assertEqual(len(overridden_adapter.calls), 1)
 
+    def test_forward_deployed_engineer_is_a_valid_category(self) -> None:
+        """forward_deployed_engineer parses like any other taxonomy value,
+        rather than being rejected as unrecognised.
+
+        Returns:
+            None.
+        """
+        adapter = _FakeAdapter(
+            '{"category": "forward_deployed_engineer", "confidence": 0.8}'
+        )
+        category, confidence, _, _ = classify_by_llm(
+            "Some Title", adapters={"anthropic": adapter}
+        )
+        self.assertEqual(category, "forward_deployed_engineer")
+        self.assertEqual(confidence, 0.8)
+
     def test_malformed_response_falls_back_to_other_with_no_prompt_version(
         self,
     ) -> None:
