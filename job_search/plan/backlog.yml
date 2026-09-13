@@ -561,6 +561,41 @@ epics:
     - "Route low-confidence classifications to a review list rather than guessing"
 
     jira_key: JOB-158
+  - id: STEP-11B
+    summary: "Step 11b — Add Forward Deployed Engineer classification category"
+    description: >
+      Manually add forward_deployed_engineer across the classification
+      taxonomy established in Step 11a (JOB-158) — rules-stage regex,
+      embedding seed examples, LLM prompt taxonomy, category_map.yml (as
+      its own qa_category, not mapped to an existing one), dbt
+      accepted_values tests, the category_review_labels CHECK constraint
+      (new migration), the API _Category contract, and the
+      Categorisation Review UI dropdown — plus a one-off backfill
+      reclassifying previously-misclassified forward-deployed postings.
+      Anticipates Step 21b's (JOB-336) emergent-role promotion workflow
+      by hand-confirming a known category ahead of that automated
+      pipeline being built.
+    acceptance: >
+      classify-jobs correctly assigns forward_deployed_engineer to new
+      FDE postings via all three cascade stages; dbt test passes with
+      the updated accepted_values; previously-misclassified FDE
+      postings are identified and backfilled; the API and review UI
+      expose the new category.
+    labels: [dbt, llm]
+    points: 2
+    subtasks:
+    - "Add forward_deployed_engineer to llm_classifier.py's _CATEGORIES"
+    - "Add a rules-stage regex for 'forward deployed' titles"
+    - "Add forward_deployed_engineer seed examples to category_seed_examples.yml"
+    - "Add forward_deployed_engineer as its own qa_category in category_map.yml"
+    - "Add forward_deployed_engineer to dbt gold accepted_values tests (category and
+      qa_category)"
+    - "New migration altering the category_review_labels CHECK constraint"
+    - "Add forward_deployed_engineer to the API _Category contract and review UI dropdown"
+    - "Backfill: identify and reclassify previously-misclassified forward-deployed
+      postings"
+
+    jira_key: JOB-444
   - id: STEP-12
     summary: "Step 12 — First GCP deployment"
     description: >

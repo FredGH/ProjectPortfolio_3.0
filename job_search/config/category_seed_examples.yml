@@ -47,6 +47,13 @@ categories:
     - "Infrastructure Engineer"
     - "Cloud Engineer"
     - "SRE"
+  forward_deployed_engineer:
+    - "Forward Deployed Engineer"
+    - "Senior Forward Deployed Engineer"
+    - "Forward Deployed Software Engineer"
+    - "Lead Forward Deployed Engineer"
+    - "Forward Deployed Engineer, Solutions"
+    - "Field Deployment Engineer"
   other:
     - "Product Manager"
     - "Technical Project Manager"

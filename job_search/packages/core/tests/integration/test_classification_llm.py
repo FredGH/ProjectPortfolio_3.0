@@ -22,14 +22,14 @@ class TestClassifyByLlm(unittest.TestCase):
         }
 
     def test_classifies_an_unambiguous_residual_title(self) -> None:
-        """A title outside all 6 substantive categories resolves to
+        """A title outside all 7 substantive categories resolves to
         "other" via the real Anthropic API, with a prompt_version and
         model_id stamped on the result.
 
         Returns:
             None.
         """
-        # A title deliberately outside all 6 substantive categories —
+        # A title deliberately outside all 7 substantive categories —
         # the exact "declined by rules and embedding" case this stage
         # exists for.
         category, confidence, prompt_version, model_id = classify_by_llm(

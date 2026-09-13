@@ -37,6 +37,35 @@ class TestClassifyByRules(unittest.TestCase):
         for title in ("DevOps Engineer", "Site Reliability Engineer", "SRE"):
             self.assertEqual(classify_by_rules(title), "platform_devops")
 
+    def test_forward_deployed_engineer_titles(self) -> None:
+        for title in (
+            "Forward Deployed Engineer",
+            "Senior Forward Deployed Engineer",
+            "Forward-Deployed Engineer",
+        ):
+            self.assertEqual(classify_by_rules(title), "forward_deployed_engineer")
+
+    def test_forward_deployed_software_engineer_is_not_software_engineer(
+        self,
+    ) -> None:
+        # Regression: "Forward Deployed Software Engineer" contains the
+        # software_engineer pattern's own "software engineer" substring,
+        # so the forward_deployed_engineer rule must be checked first.
+        self.assertEqual(
+            classify_by_rules("Forward Deployed Software Engineer"),
+            "forward_deployed_engineer",
+        )
+
+    def test_forward_deployed_ai_engineer_does_not_false_positive_as_ai_ml_engineer(
+        self,
+    ) -> None:
+        # Regression: "Forward Deployed AI Engineer" contains the
+        # ai_ml_engineer pattern's own "AI Engineer" substring.
+        self.assertEqual(
+            classify_by_rules("Forward Deployed AI Engineer"),
+            "forward_deployed_engineer",
+        )
+
     def test_unrecognised_title_returns_none(self) -> None:
         # Must cascade to the embedding/LLM stages, not guess "other".
         self.assertIsNone(classify_by_rules("Product Manager"))

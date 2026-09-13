@@ -2,15 +2,19 @@
 catches a keyword match deterministically and for free, before the
 more expensive embedding/LLM stages run. Measured against the real
 dataset: ~76% of genuinely-categorizable (non-"other") titles resolve
-here — titles that are not one of the 6 substantive categories at all
+here — titles that are not one of the 7 substantive categories at all
 correctly cascade past this stage every time, by design (see
 core.classification.llm_classifier's module docstring).
 
-Rule order matters: more specific categories (ai_ml_engineer,
-data_scientist, analytics_engineer, platform_devops) are checked
-before the broader software_engineer/data_engineer patterns, so e.g.
-"Data Platform Engineer" matches data_engineer's "data platform"
-phrase rather than falling through to a generic "engineer" match.
+Rule order matters: more specific categories (forward_deployed_engineer,
+ai_ml_engineer, data_scientist, analytics_engineer, platform_devops)
+are checked before the broader software_engineer/data_engineer
+patterns, so e.g. "Data Platform Engineer" matches data_engineer's
+"data platform" phrase rather than falling through to a generic
+"engineer" match. forward_deployed_engineer is checked first of all,
+since titles like "Forward Deployed Software Engineer" and "Forward
+Deployed AI Engineer" would otherwise false-positive against the
+software_engineer/ai_ml_engineer patterns.
 """
 
 from __future__ import annotations
@@ -18,6 +22,10 @@ from __future__ import annotations
 import re
 
 _RULES: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"forward[\s-]?deployed", re.IGNORECASE),
+        "forward_deployed_engineer",
+    ),
     (
         re.compile(
             r"machine learning|deep learning|\bnlp\b|computer vision|"

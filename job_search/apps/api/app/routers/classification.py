@@ -90,9 +90,10 @@ def _normalize_country_iso(country_iso: str | None) -> str | None:
     return country_iso or None
 
 
-# Mirrors config/category_map.yml's 7-value taxonomy and
+# Mirrors config/category_map.yml's 8-value taxonomy and
 # core.classification.seniority's 5-value band set, plus the DB check
-# constraints on classification.category_review_labels (0014) — kept
+# constraints on classification.category_review_labels (0014, extended
+# by Step 11b's migration 0017 for forward_deployed_engineer) — kept
 # here as Literal types so an invalid value 422s at the API boundary
 # instead of surfacing as a raw Postgres CheckViolation.
 _Category = Literal[
@@ -102,6 +103,7 @@ _Category = Literal[
     "ai_ml_engineer",
     "analytics_engineer",
     "platform_devops",
+    "forward_deployed_engineer",
     "other",
 ]
 _SeniorityBand = Literal["junior", "mid", "senior", "lead", "principal"]
