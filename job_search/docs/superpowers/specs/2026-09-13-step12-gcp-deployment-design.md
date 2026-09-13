@@ -56,10 +56,12 @@ literal text:
     one-time manual GCP Console steps, `terraform init`/`plan`/`apply`
     order, and the local-vs-GCP environment variable matrix PLAN.md's
     own subtask list asks for
-11. Tests: since this is Terraform, "tests" means `terraform validate`
-    and `terraform plan` succeeding against the example tfvars (with
-    placeholder/fake values) — there is no unit-test framework for HCL
-    in this project, and none is being introduced
+11. Tests: since this is Terraform, "tests" means `terraform fmt -check`
+    and `terraform validate` passing — there is no unit-test framework
+    for HCL in this project, and none is being introduced. `terraform
+    plan` cannot run offline (the google provider requires real
+    credentials even to plan against a nonexistent project — verified,
+    not assumed); it becomes the user's own first runbook step
 
 **Out of scope (this pass, explicitly):**
 - Running `terraform apply` against a real project (no account exists)
@@ -301,11 +303,22 @@ Step 1, before any `terraform apply`.
 
 ## Testing
 
-- `terraform fmt -check` and `terraform validate` on every `.tf` file
-- `terraform plan -var-file=terraform.tfvars.example` (with placeholder
-  fake values for every variable, including the `sensitive` ones) must
-  succeed with no errors — this is the closest thing to a "test" HCL has
-  without a real project to plan against
+- `terraform fmt -check` and `terraform validate` on every `.tf` file —
+  verified directly: the google provider authenticates against real GCP
+  endpoints for `plan`/`apply` but not for `validate`, which only checks
+  HCL syntax, resource-schema correctness (required arguments, argument
+  types), and cross-resource reference correctness — offline, no
+  credentials needed. This is genuinely the strongest check available
+  without a real account, not a weaker substitute for one.
+- **`terraform plan` cannot be run here, even against placeholder
+  tfvars** — confirmed by actually running it: the google provider
+  requires Application Default Credentials before it will do anything,
+  including planning against a project that doesn't exist yet
+  (`Attempted to load application default credentials... No credentials
+  loaded`). This is a real limitation of the google provider, not a
+  skipped step. `terraform plan` becomes the user's own first runbook
+  action, immediately after `gcloud auth application-default login`
+  against their real project.
 - Manual review of `cloudbuild.yaml` against each Dockerfile's actual
   build context (no automated test possible without a real Cloud Build
   run)
@@ -313,9 +326,10 @@ Step 1, before any `terraform apply`.
 ## Done when
 
 - `terraform fmt -check` and `terraform validate` pass
-- `terraform plan -var-file=terraform.tfvars.example` succeeds cleanly
 - Every resource in Architecture above exists in the Terraform code
 - `infra/README.md` covers every runbook step above, including the two
-  manual-Console prerequisites and the full env-var matrix
+  manual-Console prerequisites and the full env-var matrix, and states
+  plainly that `terraform plan` needs real credentials this session
+  doesn't have
 - `terraform.tfvars.example` is committed; `terraform.tfvars` and
   `*.tfstate*` are added to `.gitignore`

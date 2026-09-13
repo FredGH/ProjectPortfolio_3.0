@@ -1,0 +1,126 @@
+# Cloud Build config for the job_search project (PLAN.md Step 12).
+# Referenced by infra/cloud_build.tf's trigger as
+# "job_search/cloudbuild.yaml" (relative to the whole ProjectPortfolio_3.0
+# repo, which this monorepo's job_search/ directory lives inside).
+#
+# Build context for every image is job_search/ itself (this file's own
+# directory) — matches docker-compose.yml's `context: .` / `dockerfile:
+# apps/<name>/Dockerfile` convention exactly, so the same Dockerfiles
+# build identically here and locally.
+#
+# Substitutions this trigger's Terraform resource provides implicitly:
+# $PROJECT_ID, $LOCATION, $COMMIT_SHA (all Cloud Build defaults).
+substitutions:
+  _REGION: "europe-west2" # overridden per-project if infra/variables.tf's region differs
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/api:${COMMIT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/ui:${COMMIT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/pipeline:${COMMIT_SHA}"
+
+steps:
+  # --- Build ---
+  - name: "gcr.io/cloud-builders/docker"
+    id: build-api
+    dir: "job_search"
+    args:
+      - build
+      - -f
+      - apps/api/Dockerfile
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/api:${COMMIT_SHA}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/api:latest"
+      - .
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: build-ui
+    dir: "job_search"
+    args:
+      - build
+      - -f
+      - apps/ui/Dockerfile
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/ui:${COMMIT_SHA}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/ui:latest"
+      - .
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: build-pipeline
+    dir: "job_search"
+    args:
+      - build
+      - -f
+      - apps/pipeline/Dockerfile
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/pipeline:${COMMIT_SHA}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/pipeline:latest"
+      - .
+
+  # --- Push (images: block above pushes the tagged images already built
+  # above, but the deploy steps that follow need the :latest tag pushed
+  # too, since Cloud Run's `image:` field in infra/*.tf references :latest,
+  # not a per-build commit SHA) ---
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-latest-tags
+    args:
+      - push
+      - --all-tags
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/api"
+    waitFor: ["build-api"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-latest-tags-ui
+    args:
+      - push
+      - --all-tags
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/ui"
+    waitFor: ["build-ui"]
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: push-latest-tags-pipeline
+    args:
+      - push
+      - --all-tags
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/pipeline"
+    waitFor: ["build-pipeline"]
+
+  # --- Deploy ---
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: deploy-api
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - job-search-api
+      - "--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/api:${COMMIT_SHA}"
+      - "--region=${_REGION}"
+    waitFor: ["push-latest-tags"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: deploy-ui
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - job-search-ui
+      - "--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/ui:${COMMIT_SHA}"
+      - "--region=${_REGION}"
+    waitFor: ["push-latest-tags-ui"]
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: deploy-pipeline
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - job-search-pipeline
+      - "--image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/job-search/pipeline:${COMMIT_SHA}"
+      - "--region=${_REGION}"
+    waitFor: ["push-latest-tags-pipeline"]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
