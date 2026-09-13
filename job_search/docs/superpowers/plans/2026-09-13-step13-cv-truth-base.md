@@ -1000,16 +1000,64 @@ as shown.
 Docling round-trip test that uses a synthetic HTML input (not a PDF) so
 no fixture here is a CV-shaped document that could be confused with, or
 need updating in lockstep with, real personal data.
+
+Unit-level, fake adapter only — mirrors test_llm_classifier.py's own
+`_FakeAdapter` pattern rather than mocking, since `core.llm.types.LLMAdapter`
+is already a seam this codebase's tests implement directly.
 """
 
 from __future__ import annotations
 
 import json
 import unittest
-from unittest.mock import MagicMock
 
 from core.cv.extract import docling_to_markdown, extract_truth_base
 from core.llm.types import LLMResponse
+
+
+class _FakeAdapter:
+    """A fake `LLMAdapter` that returns a fixed response.
+
+    Attributes:
+        calls: `(model, prompt)` pairs passed to every `complete` call.
+    """
+
+    def __init__(self, response_text: str) -> None:
+        """Initialise the fake adapter.
+
+        Args:
+            response_text: The text every `complete` call will return.
+        """
+        self._response_text = response_text
+        self.calls: list[tuple[str, str]] = []
+
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
+        """Record the call and return the fixed fake response.
+
+        Args:
+            model: The provider-specific model identifier.
+            prompt: The prompt text.
+            temperature: Sampling temperature (unused by the fake).
+            seed: A fixed seed (unused by the fake).
+
+        Returns:
+            The fixed `LLMResponse` configured at construction time.
+        """
+        self.calls.append((model, prompt))
+        return LLMResponse(
+            text=self._response_text,
+            provider="ollama",
+            model=model,
+            input_tokens=1,
+            output_tokens=1,
+        )
 
 
 class TestDoclingToMarkdown(unittest.TestCase):
@@ -1043,10 +1091,7 @@ class TestExtractTruthBase(unittest.TestCase):
             "certifications": [],
             "publications": [],
         }
-        fake_adapter = MagicMock()
-        fake_adapter.complete.return_value = LLMResponse(
-            text=json.dumps(payload), model="llama3.1:8b"
-        )
+        fake_adapter = _FakeAdapter(json.dumps(payload))
 
         result = extract_truth_base(
             "# Jane Doe CV",
@@ -1069,10 +1114,7 @@ class TestExtractTruthBase(unittest.TestCase):
         )
 
     def test_raises_value_error_on_unparseable_response(self) -> None:
-        fake_adapter = MagicMock()
-        fake_adapter.complete.return_value = LLMResponse(
-            text="not json", model="llama3.1:8b"
-        )
+        fake_adapter = _FakeAdapter("not json")
         with self.assertRaises(ValueError):
             extract_truth_base(
                 "# Jane Doe CV",
@@ -1086,11 +1128,6 @@ class TestExtractTruthBase(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 ```
-
-Check `core.llm.types.LLMResponse`'s actual field names before relying
-on the constructor call above (`text=`, `model=`) — mirror
-`test_llm_classifier.py` or another existing test that already
-constructs one, and adjust if the real field names differ.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1350,16 +1387,65 @@ near-duplicates). No real person's CV content in any case.
 - [ ] **Step 2: Write the failing test**
 
 ```python
-"""cv_extraction's golden set loads and the predictor round-trips it."""
+"""cv_extraction's golden set loads and the predictor round-trips it.
+
+Unit-level, fake adapter only — mirrors test_llm_classifier.py's
+`_FakeAdapter` pattern rather than mocking.
+"""
 
 from __future__ import annotations
 
+import json
 import unittest
-from unittest.mock import MagicMock
 
 from core.evals.golden import load_golden_set
 from core.evals.runner import _PREDICTORS
 from core.llm.types import LLMResponse
+
+
+class _FakeAdapter:
+    """A fake `LLMAdapter` that returns a fixed response.
+
+    Attributes:
+        calls: `(model, prompt)` pairs passed to every `complete` call.
+    """
+
+    def __init__(self, response_text: str) -> None:
+        """Initialise the fake adapter.
+
+        Args:
+            response_text: The text every `complete` call will return.
+        """
+        self._response_text = response_text
+        self.calls: list[tuple[str, str]] = []
+
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
+        """Record the call and return the fixed fake response.
+
+        Args:
+            model: The provider-specific model identifier.
+            prompt: The prompt text.
+            temperature: Sampling temperature (unused by the fake).
+            seed: A fixed seed (unused by the fake).
+
+        Returns:
+            The fixed `LLMResponse` configured at construction time.
+        """
+        self.calls.append((model, prompt))
+        return LLMResponse(
+            text=self._response_text,
+            provider="ollama",
+            model=model,
+            input_tokens=1,
+            output_tokens=1,
+        )
 
 
 class TestCvExtractionGoldenSet(unittest.TestCase):
@@ -1396,12 +1482,7 @@ class TestCvExtractionGoldenSet(unittest.TestCase):
             "certifications": [],
             "publications": [],
         }
-        fake_adapter = MagicMock()
-        import json
-
-        fake_adapter.complete.return_value = LLMResponse(
-            text=json.dumps(payload), model="llama3.1:8b"
-        )
+        fake_adapter = _FakeAdapter(json.dumps(payload))
 
         predictor = _PREDICTORS["cv_extraction"]
         predicted, prompt_version = predictor(
