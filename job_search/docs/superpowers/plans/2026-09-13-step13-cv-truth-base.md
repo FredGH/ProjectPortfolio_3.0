@@ -1620,6 +1620,14 @@ git commit -m "feat(job_search): add cv_extraction golden set and eval predictor
 **Files:**
 - Create: `apps/api/app/routers/cv.py`
 - Modify: `apps/api/app/main.py`
+- Modify: `requirements.txt` — add `python-multipart==0.0.20` (a real
+  dependency gap found during Task 8's first execution attempt: FastAPI's
+  `UploadFile` parameter, used by `POST /cv/extract` below, requires
+  `python-multipart` at route-registration time — its absence crashes
+  `import app.main` entirely, breaking every router's tests, not just
+  this one. Verified conflict-free via `pip install` + `pip check`
+  against every other pin in this file, same verification method as
+  Task 1's docling/httpx/pydantic-settings ruling.)
 - Test: `packages/core/tests/integration/test_cv_router.py`
 
 **Interfaces:**
