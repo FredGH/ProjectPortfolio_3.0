@@ -7,10 +7,11 @@ override it). Loads a stratified sample across category x
 category_method with low-confidence rows biased to the front — see
 GET /classification/jobs-to-review's own docstring for the exact rule.
 
-See the "How is this calculated?" expander for the sample-size formula.
-A reviewer can override the recommended target and see, live, the
-margin of error it implies; can also scope the whole exercise (target,
-progress, jobs fetched) to one `country_iso`.
+See the "User guide" expander, right under this page's title, for the
+sample-size formula behind the review target. A reviewer can override
+the recommended target and see, live, the margin of error it implies;
+can also scope the whole exercise (target, progress, jobs fetched) to
+one `country_iso`.
 """
 
 from __future__ import annotations
@@ -44,6 +45,49 @@ st.write(
     "dropdowns start pre-filled with the pipeline's own answer — "
     "submit as-is when it's right, change it first when it's not."
 )
+
+with st.expander("User guide"):
+    st.markdown(
+        "- **How is the review target calculated, and what do confidence "
+        "level and margin of error mean?**"
+    )
+    st.latex(r"n_0 = \frac{z^2 \cdot p(1-p)}{e^2}")
+    st.latex(r"n = \dfrac{n_0}{1 + \dfrac{n_0 - 1}{N}}")
+    st.markdown(
+        "  Standard sample-size-for-a-proportion formula, with a finite-"
+        "population correction (`n`) since the pool (`N`) isn't "
+        "infinite. `p=0.5` is the most conservative assumption — the "
+        "true agreement rate isn't known ahead of time, and 50/50 is "
+        "the hardest case to pin down, so it needs the most reviews."
+    )
+    st.markdown(
+        "  - **Confidence level (`z`)** — how sure you want to be that "
+        "the *true* agreement rate actually falls within the margin "
+        "of error below. 90% confidence means: if you repeated this "
+        "hand-check with a fresh random sample many times, about 9 "
+        "in 10 of those samples would land within the stated margin "
+        "of the pipeline's real accuracy — 1 in 10 would be a fluke "
+        "outside it. Pushing to 95% or 99% shrinks that fluke risk, "
+        "but needs more reviews for the same margin of error.\n"
+        "  - **Margin of error (`e`)** — how far the agreement rate you "
+        "*measure* on your sample could plausibly sit from the "
+        "pipeline's true accuracy, in either direction. A ±8% margin "
+        "means: if your sample comes back at 82% agreement, the "
+        "pipeline's real accuracy is most likely somewhere between "
+        "74% and 90% — not exactly 82%. A tighter margin (a smaller "
+        "%) pins that range down more precisely, at the cost of more "
+        "reviews."
+    )
+    st.markdown(
+        "  Target and margin are two sides of the same formula, so "
+        "editing either one recalculates the other. A **larger "
+        "target** narrows the margin of error — the measured "
+        "agreement rate is more likely to reflect the pipeline's "
+        "true accuracy — at the cost of more reviewer time. A "
+        "**smaller target** is faster to complete but the measured "
+        "rate could be off by a wider margin — you could clear (or "
+        "fail) the 90% agreement bar by sampling luck alone."
+    )
 
 _settings = get_settings()
 
@@ -87,23 +131,39 @@ except httpx.HTTPError as exc:
     st.error(f"Failed to load regions: {exc}")
     region_rows = []
 
-_region_choices: dict[str, str | None] = {"All regions": None}
+all_regions_reviewed_count = sum(
+    row["total_count"] - row["unreviewed_count"] for row in region_rows
+)
+
+_region_labels: dict[str | None, str] = {None: "All regions"}
 for row in sorted(region_rows, key=lambda r: r["total_count"], reverse=True):
     if row["country_iso"] is None:
-        label = (
+        _region_labels[_UNRESOLVED_COUNTRY] = (
             f"Unclassified — no resolved country "
             f"({row['total_count']} total, {row['unreviewed_count']} to review)"
         )
-        _region_choices[label] = _UNRESOLVED_COUNTRY
     else:
-        label = (
+        _region_labels[row["country_iso"]] = (
             f"{row['country_iso']} "
             f"({row['total_count']} total, {row['unreviewed_count']} to review)"
         )
-        _region_choices[label] = row["country_iso"]
 
-region_label = st.selectbox("Region", list(_region_choices.keys()), key="review_region")
-country_iso = _region_choices[region_label]
+# Options are keyed by the stable `country_iso` value (via `format_func`
+# for display), not by the label text itself — the label embeds counts
+# that change on every review submission, and a selectbox's session
+# state is keyed by the option identity: if that identity were the
+# label string, a changed count after Submit would no longer match any
+# current option and Streamlit would silently fall back to `index`
+# instead of preserving the reviewer's actual selection.
+_region_values = list(_region_labels.keys())
+_default_region_index = _region_values.index("GB") if "GB" in _region_values else 0
+country_iso = st.selectbox(
+    "Region",
+    _region_values,
+    index=_default_region_index,
+    format_func=lambda v: _region_labels[v],
+    key="review_region",
+)
 
 
 def _region_params(**extra: object) -> dict[str, object]:
@@ -144,7 +204,16 @@ try:
         st.metric(
             "Agreement so far",
             f"{rate:.0%}",
-            help=f"{summary['agree_count']} of {summary['reviewed_count']} reviewed",
+            help=(
+                f"{summary['agree_count']} of {summary['reviewed_count']} "
+                "reviewed jobs so far have a reviewer-chosen category that "
+                "matches the pipeline's current category for that job — "
+                "recomputed live against `gold.dim_job.category`, not a "
+                "stored flag, so it reflects any later pipeline rerun. "
+                "This is the measured version of the `p` (true agreement "
+                "rate) the review target's sample-size formula assumes — "
+                "see the expander above."
+            ),
         )
 except httpx.HTTPError as exc:
     st.error(f"Failed to load review summary: {exc}")
@@ -169,45 +238,6 @@ if population == 0:
     st.info("No categorized jobs in this region yet.")
     target = 0
 else:
-    with st.expander("How is this calculated?"):
-        st.latex(r"n_0 = \frac{z^2 \cdot p(1-p)}{e^2}")
-        st.latex(r"n = \dfrac{n_0}{1 + \dfrac{n_0 - 1}{N}}")
-        st.write(
-            "Standard sample-size-for-a-proportion formula, with a finite-"
-            "population correction (`n`) since the pool (`N`) isn't "
-            "infinite. `p=0.5` is the most conservative assumption — the "
-            "true agreement rate isn't known ahead of time, and 50/50 is "
-            "the hardest case to pin down, so it needs the most reviews."
-        )
-        st.markdown(
-            "- **Confidence level (`z`)** — how sure you want to be that "
-            "the *true* agreement rate actually falls within the margin "
-            "of error below. 90% confidence means: if you repeated this "
-            "hand-check with a fresh random sample many times, about 9 "
-            "in 10 of those samples would land within the stated margin "
-            "of the pipeline's real accuracy — 1 in 10 would be a fluke "
-            "outside it. Pushing to 95% or 99% shrinks that fluke risk, "
-            "but needs more reviews for the same margin of error.\n"
-            "- **Margin of error (`e`)** — how far the agreement rate you "
-            "*measure* on your sample could plausibly sit from the "
-            "pipeline's true accuracy, in either direction. A ±8% margin "
-            "means: if your sample comes back at 82% agreement, the "
-            "pipeline's real accuracy is most likely somewhere between "
-            "74% and 90% — not exactly 82%. A tighter margin (a smaller "
-            "%) pins that range down more precisely, at the cost of more "
-            "reviews."
-        )
-        st.write(
-            "Target and margin are two sides of the same formula, so "
-            "editing either one recalculates the other. A **larger "
-            "target** narrows the margin of error — the measured "
-            "agreement rate is more likely to reflect the pipeline's "
-            "true accuracy — at the cost of more reviewer time. A "
-            "**smaller target** is faster to complete but the measured "
-            "rate could be off by a wider margin — you could clear (or "
-            "fail) the 90% agreement bar by sampling luck alone."
-        )
-
     confidence = st.selectbox(
         "Confidence level",
         _CONFIDENCE_LEVELS,
@@ -347,7 +377,13 @@ else:
     # and st.progress rejects a fraction above 1.0.
     position = baseline + st.session_state.review_submitted_count + 1
     denominator = max(target, position)
-    st.progress(min(position / denominator, 1.0), text=f"Job {position} of {target}")
+    st.progress(
+        min(position / denominator, 1.0),
+        text=(
+            f"Job {position} of {target}  ·  "
+            f"{all_regions_reviewed_count} reviewed across all regions"
+        ),
+    )
 
     st.subheader(job["title_for_display"] or job["title_raw"] or "(no title)")
     meta_cols = st.columns(6)
