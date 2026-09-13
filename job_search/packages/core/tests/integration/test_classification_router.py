@@ -359,11 +359,12 @@ class TestJobsToReviewCountryFilter(unittest.TestCase):
 class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
     """Integration tests for excluding snippet-only-sourced rows from review.
 
-    Jooble's and Reed's search APIs only ever return a short
+    Jooble's, Reed's, and Adzuna's search APIs only ever return a short
     pre-truncated snippet, never a full description (see
-    JoobleConnector's and ReedConnector's docstrings), so a job whose
-    surviving description came only from one or both of these carries
-    too little text to meaningfully review or classify.
+    JoobleConnector's, ReedConnector's, and AdzunaConnector's
+    docstrings), so a job whose surviving description came only from
+    one or more of these carries too little text to meaningfully
+    review or classify.
     """
 
     def setUp(self) -> None:
@@ -372,9 +373,22 @@ class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
         app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
         self.client = TestClient(app)
 
+        # Snapshot the "unclassified" (country_iso IS NULL) bucket's
+        # unreviewed_count before seeding — all of this class's rows
+        # default to that bucket (see _insert_dim_job's defaults), so
+        # the delta after seeding isolates exactly how many of them
+        # `GET /classification/regions` actually counted.
+        regions_before = self.client.get("/classification/regions").json()
+        self.unclassified_unreviewed_before = next(
+            row["unreviewed_count"]
+            for row in regions_before
+            if row["country_iso"] is None
+        )
+
         suffix = uuid.uuid4().hex
         self.jooble_only_id = f"test-jooble-only-{suffix}"
         self.reed_only_id = f"test-reed-only-{suffix}"
+        self.adzuna_only_id = f"test-adzuna-only-{suffix}"
         self.jooble_and_reed_id = f"test-jooble-reed-{suffix}"
         self.jooble_and_other_id = f"test-jooble-other-{suffix}"
         self.no_sources_id = f"test-no-sources-{suffix}"
@@ -388,6 +402,11 @@ class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
                 conn,
                 job_group_id=self.reed_only_id,
                 sources=[{"source_name": "reed", "job_url": "https://x"}],
+            )
+            _insert_dim_job(
+                conn,
+                job_group_id=self.adzuna_only_id,
+                sources=[{"source_name": "adzuna", "job_url": "https://x"}],
             )
             _insert_dim_job(
                 conn,
@@ -411,6 +430,7 @@ class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
         ids = (
             self.jooble_only_id,
             self.reed_only_id,
+            self.adzuna_only_id,
             self.jooble_and_reed_id,
             self.jooble_and_other_id,
             self.no_sources_id,
@@ -445,6 +465,13 @@ class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
         ids = {job["job_group_id"] for job in response.json()["jobs"]}
         self.assertNotIn(self.reed_only_id, ids)
 
+    def test_excludes_a_job_whose_only_source_is_adzuna(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
+        self.assertNotIn(self.adzuna_only_id, ids)
+
     def test_excludes_a_job_whose_sources_are_jooble_and_reed_only(self) -> None:
         response = self.client.get(
             "/classification/jobs-to-review", params={"limit": 100_000}
@@ -465,6 +492,23 @@ class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
         )
         ids = {job["job_group_id"] for job in response.json()["jobs"]}
         self.assertIn(self.no_sources_id, ids)
+
+    def test_regions_excludes_snippet_only_rows_from_its_counts(self) -> None:
+        # Of this class's 6 seeded rows (all in the "unclassified"
+        # bucket), only jooble_and_other and no_sources are reviewable
+        # — the other 4 (jooble-only, reed-only, adzuna-only,
+        # jooble+reed-only) must not inflate
+        # GET /classification/regions' count either, matching
+        # GET /classification/jobs-to-review.
+        regions_after = self.client.get("/classification/regions").json()
+        unclassified_unreviewed_after = next(
+            row["unreviewed_count"]
+            for row in regions_after
+            if row["country_iso"] is None
+        )
+        self.assertEqual(
+            unclassified_unreviewed_after - self.unclassified_unreviewed_before, 2
+        )
 
 
 class TestReviewSummary(unittest.TestCase):

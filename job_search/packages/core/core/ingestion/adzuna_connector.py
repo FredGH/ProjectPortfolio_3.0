@@ -4,6 +4,11 @@ Free tier is 1,000 calls/month, so `max_pages` defaults to a conservative
 cap: pagination stops at the first short (< results_per_page) page OR
 max_pages, whichever comes first, so one ingest run can never silently
 burn the whole monthly budget on one broad query.
+
+`description` is truncated by Adzuna itself (confirmed live: ~500 chars
+with a literal "…") — not this connector's doing; stored as-is, since
+the full text is only available via the posting's own `redirect_url`,
+which this connector does not fetch.
 """
 
 from __future__ import annotations

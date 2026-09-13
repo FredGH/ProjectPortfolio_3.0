@@ -39,9 +39,11 @@ _COUNTRY_FILTER_SQL = f"""
 
 # Sources whose search API only ever returns a short pre-truncated
 # snippet, never a full description: Jooble (see JoobleConnector's
-# docstring) and Reed (see ReedConnector's docstring — Reed truncates
-# `jobDescription` itself, ~500 chars with a literal "...").
-_SNIPPET_ONLY_SOURCES = ("jooble", "reed")
+# docstring), Reed (see ReedConnector's docstring — Reed truncates
+# `jobDescription` itself, ~500 chars with a literal "...") and Adzuna
+# (see AdzunaConnector's docstring — same ~500-char truncation, with a
+# literal "…").
+_SNIPPET_ONLY_SOURCES = ("jooble", "reed", "adzuna")
 _SNIPPET_ONLY_SOURCES_SQL_LIST = ", ".join(
     f"'{name}'" for name in _SNIPPET_ONLY_SOURCES
 )
@@ -325,9 +327,11 @@ class RegionOption(BaseModel):
             review UI's region picker can offer an explicit
             "unclassified" option.
         unreviewed_count: How many of this country's categorized jobs
-            still need a review.
+            still need a review. Excludes `_SNIPPET_ONLY_SOURCES` rows,
+            matching `GET /classification/jobs-to-review`.
         total_count: How many of this country's categorized jobs exist
-            in total (reviewed + unreviewed).
+            in total (reviewed + unreviewed). Also excludes
+            `_SNIPPET_ONLY_SOURCES` rows, for the same reason.
     """
 
     country_iso: str | None
@@ -352,7 +356,7 @@ def get_regions(engine: Engine = Depends(get_app_db_engine)) -> list[RegionOptio
     with engine.connect() as conn:
         rows = conn.execute(
             text(
-                """
+                f"""
                 SELECT
                     d.country_iso,
                     count(*) FILTER (WHERE r.job_group_id IS NULL) AS unreviewed_count,
@@ -361,6 +365,7 @@ def get_regions(engine: Engine = Depends(get_app_db_engine)) -> list[RegionOptio
                 LEFT JOIN classification.category_review_labels AS r
                     ON d.job_group_id = r.job_group_id
                 WHERE d.category IS NOT NULL
+                {_EXCLUDE_SNIPPET_ONLY_SOURCES_SQL}
                 GROUP BY d.country_iso
                 ORDER BY total_count DESC
                 """
