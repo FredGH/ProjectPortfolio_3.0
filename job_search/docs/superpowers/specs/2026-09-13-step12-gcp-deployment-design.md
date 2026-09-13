@@ -208,30 +208,50 @@ to.
 
 | SA | IAM bindings | Why |
 |---|---|---|
-| `pipeline-sa` | `roles/storage.objectAdmin` on the landing bucket only (resource-level, not project-level); `roles/secretmanager.secretAccessor` on its Neon owner DSN + source API key secrets | Writes to the landing zone, reads bronze-load credentials and source keys |
-| `api-sa` | `roles/secretmanager.secretAccessor` on its Neon app DSN secret only | Serves requests against the app-role DSN; no Cloud SQL client role exists to grant because Neon needs none |
-| `ui-sa` | none beyond the default Cloud Run runtime identity | Streamlit talks to the API over HTTP (`api_base_url`) — confirmed by reading `apps/ui/app/pages/*.py`, none of which import a DB session — so it touches no secret and no bucket |
+| `pipeline-sa` | `roles/storage.objectAdmin` on the landing bucket only (resource-level, not project-level); `roles/secretmanager.secretAccessor` on **both** Neon DSN secrets + every source API key secret | Writes to the landing zone, reads bronze-load credentials and source keys |
+| `api-sa` | `roles/secretmanager.secretAccessor` on **both** Neon DSN secrets | Serves requests against the app-role DSN operationally; no Cloud SQL client role exists to grant because Neon needs none |
+| `ui-sa` | `roles/secretmanager.secretAccessor` on **both** Neon DSN secrets | Never queries Postgres directly, but see the note below — it still needs read access |
 
-This table is a deliberate, documented departure from PLAN.md's literal
-text ("The pipeline job needs `storage.objectAdmin`... and
+**Why every service account reads both DSNs, not just the one it
+actually queries with:** `core.settings.Settings` declares both
+`database_url` and `app_database_url` as required fields with no
+default (`packages/core/core/settings.py:60-61`) — confirmed by reading
+the file directly, not assumed. `get_settings()` is called at
+import/module-load time in every one of `apps/api`, `apps/ui`, and
+`apps/pipeline` (confirmed by grep across all three apps), so **any**
+container missing either variable fails Pydantic validation and never
+starts — regardless of whether that container's code path ever uses
+the value. This is a real, load-bearing constraint on the Terraform,
+not a design preference: changing it would mean touching
+`core/settings.py` to make one field optional, which this spec's scope
+explicitly excludes ("Any change to application code... this step
+deploys them, it doesn't change them").
+
+This table is still a deliberate, documented departure from PLAN.md's
+literal text ("The pipeline job needs `storage.objectAdmin`... and
 `cloudsql.client`. The UI needs `cloudsql.client` and nothing else") —
 that text assumes Cloud SQL. Neon removes the `cloudsql.client` role
-from every row, and the UI ends up needing nothing at all rather than
-"nothing else."
+from every row. The UI's IAM footprint is smaller than PLAN.md's
+Cloud-SQL-oriented text (no client role, no object-storage access), but
+not literally zero, for the reason above.
 
 ### Cloud Run
 
 - **API**: `google_cloud_run_v2_service`, `min_instances = 0`, image from
-  Artifact Registry, env vars from `variables.tf` + secret references
-  for the DSN, `ENV=gcp`, `DB_CONNECTION_MODE=dsn`.
-- **UI**: same shape, plus a `google_cloud_run_v2_service_iam_binding`
-  restricting invocation to IAP's service identity — the binding is
-  real Terraform, but IAP itself requires an OAuth consent screen
-  configured once via Console first (see Runbook; this is a genuine
-  GCP product limitation, not something skipped for convenience).
+  Artifact Registry, `ENV=gcp`, `DB_CONNECTION_MODE=dsn`, plus
+  **both** `DATABASE_URL` and `APP_DATABASE_URL` injected via
+  `secret_key_ref` (see the service-account note above for why both).
+- **UI**: same shape and same two DSN env vars, plus a
+  `google_cloud_run_v2_service_iam_binding` restricting invocation to
+  IAP's service identity — the binding is real Terraform, but IAP itself
+  requires an OAuth consent screen configured once via Console first
+  (see Runbook; this is a genuine GCP product limitation, not something
+  skipped for convenience).
 - **Pipeline**: `google_cloud_run_v2_job`, not a service — batch
   semantics, matching PLAN.md's explicit reasoning ("right primitive for
-  batch, 24h timeout, no request lifecycle to fight").
+  batch, 24h timeout, no request lifecycle to fight"). Same two DSN env
+  vars, plus `LANDING_URI=gs://<bucket>/landing` and the source API key
+  env vars it needs for connectors.
 
 ### Cloud Build
 
