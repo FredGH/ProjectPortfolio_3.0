@@ -1,0 +1,26 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is git-ignored — never commit it, it holds secrets.
+
+project_id = "your-gcp-project-id"
+# region    = "europe-west2"  # uncomment to override the default
+# environment = "gcp"          # uncomment to override the default
+
+github_owner = "your-github-username-or-org"
+github_repo  = "ProjectPortfolio_3.0"
+
+# Neon connection strings — from your Neon project's dashboard.
+# Must include ?sslmode=require (Neon rejects unencrypted connections).
+neon_owner_dsn = "postgresql://job_search_owner:CHANGE_ME@ep-example-123456.eu-central-1.aws.neon.tech/job_search?sslmode=require"
+neon_app_dsn   = "postgresql://job_search_app:CHANGE_ME@ep-example-123456.eu-central-1.aws.neon.tech/job_search?sslmode=require"
+
+anthropic_api_key = "sk-ant-CHANGE_ME"
+
+adzuna_app_id  = "CHANGE_ME"
+adzuna_app_key = "CHANGE_ME"
+reed_api_key   = "CHANGE_ME"
+jooble_key     = "CHANGE_ME"
+
+# The two trusted users (PLAN.md's own scope) allowed to open the UI directly.
+authorized_user_emails = [
+  "you@example.com",
+]

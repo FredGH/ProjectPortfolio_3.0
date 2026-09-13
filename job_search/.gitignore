@@ -16,3 +16,12 @@ dbt/target/
 dbt/logs/
 # dbt's local anonymous-usage-stats file — not part of the project.
 dbt/.user.yml
+
+# Terraform (PLAN.md Step 12) — tfvars and state hold real secrets and
+# real infrastructure identifiers; never commit them. .terraform.lock.hcl
+# IS committed (pins provider versions) — everything else here is not.
+infra/.terraform/
+infra/terraform.tfvars
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/.terraform.tfstate.lock.info
