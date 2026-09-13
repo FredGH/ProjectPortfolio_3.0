@@ -350,15 +350,16 @@ else:
     st.progress(min(position / denominator, 1.0), text=f"Job {position} of {target}")
 
     st.subheader(job["title_for_display"] or job["title_raw"] or "(no title)")
-    meta_cols = st.columns(5)
+    meta_cols = st.columns(6)
     meta_cols[0].write(f"Company: {job['company'] or '(none)'}")
     location_country = job["country_iso"] or "unresolved"
     if job["region"]:
         location_country = f"{location_country}, {job['region']}"
     meta_cols[1].write(f"Location: {job['location'] or '(none)'} ({location_country})")
     meta_cols[2].write(f"Pipeline method: {job['category_method']}")
-    meta_cols[3].write(f"Confidence: {job['category_confidence']:.2f}")
-    meta_cols[4].write(f"Job {index + 1} of {len(jobs)} in this batch")
+    meta_cols[3].write(f"Source: {job['apply_source_name'] or '(none)'}")
+    meta_cols[4].write(f"Confidence: {job['category_confidence']:.2f}")
+    meta_cols[5].write(f"Job {index + 1} of {len(jobs)} in this batch")
 
     description = job["description"]
     st.text_area(

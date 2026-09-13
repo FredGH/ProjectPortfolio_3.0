@@ -37,19 +37,29 @@ _COUNTRY_FILTER_SQL = f"""
     )
 """
 
-# Excludes rows whose `sources` are exclusively Jooble. Jooble's search
-# API only ever returns a short pre-truncated "snippet" (see
-# JoobleConnector's docstring) — never a full description — so a job
-# whose surviving description came only from Jooble carries too little
-# text for a human (or the pipeline) to categorise with any confidence.
-# A job with a non-Jooble source alongside Jooble is unaffected: dedup
-# survivorship already keeps the longest description across a cluster's
-# members (core.dedup.survivorship.resolve_description), so it isn't
-# stuck with the Jooble snippet.
-_EXCLUDE_JOOBLE_ONLY_SQL = """
+# Sources whose search API only ever returns a short pre-truncated
+# snippet, never a full description: Jooble (see JoobleConnector's
+# docstring) and Reed (see ReedConnector's docstring — Reed truncates
+# `jobDescription` itself, ~500 chars with a literal "...").
+_SNIPPET_ONLY_SOURCES = ("jooble", "reed")
+_SNIPPET_ONLY_SOURCES_SQL_LIST = ", ".join(
+    f"'{name}'" for name in _SNIPPET_ONLY_SOURCES
+)
+
+# Excludes rows whose `sources` are drawn exclusively from
+# `_SNIPPET_ONLY_SOURCES` — such a row's surviving description carries
+# too little text for a human (or the pipeline) to categorise with any
+# confidence. A row with a non-snippet-only source alongside one of
+# these is unaffected: dedup survivorship already keeps the longest
+# description across a cluster's members
+# (core.dedup.survivorship.resolve_description), so it isn't stuck with
+# the snippet.
+_EXCLUDE_SNIPPET_ONLY_SOURCES_SQL = f"""
     AND NOT COALESCE(
         (
-            SELECT bool_and(src ->> 'source_name' = 'jooble')
+            SELECT bool_and(
+                src ->> 'source_name' IN ({_SNIPPET_ONLY_SOURCES_SQL_LIST})
+            )
             FROM jsonb_array_elements(d.sources) AS src
         ),
         FALSE
@@ -110,6 +120,10 @@ class JobToReview(BaseModel):
         region: The job's normalised UK ITL1 region code, or None
             (only ever set when `country_iso` is "GB").
         description: The job's description, or None.
+        apply_source_name: The job board/provider backing the surviving
+            apply link (e.g. "greenhouse", "reed"), or None — the same
+            source-rank survivorship rule that picks `apply_url`
+            (core.dedup.survivorship.resolve_apply_source).
         category: The pipeline's assigned category.
         category_confidence: Confidence in `category`, 0.0-1.0.
         category_method: Which cascade stage assigned `category`.
@@ -125,6 +139,7 @@ class JobToReview(BaseModel):
     country_iso: str | None
     region: str | None
     description: str | None
+    apply_source_name: str | None
     category: str
     category_confidence: float
     category_method: str
@@ -188,8 +203,9 @@ def get_jobs_to_review(
     rows biased to the front of each bucket — the rows PLAN.md's own
     review-list guidance already flags as most likely to be wrong.
 
-    Rows whose `sources` are exclusively Jooble are excluded — see
-    `_EXCLUDE_JOOBLE_ONLY_SQL`.
+    Rows whose `sources` are drawn exclusively from
+    `_SNIPPET_ONLY_SOURCES` are excluded — see
+    `_EXCLUDE_SNIPPET_ONLY_SOURCES_SQL`.
 
     Args:
         limit: Maximum number of jobs to return.
@@ -213,7 +229,7 @@ def get_jobs_to_review(
                     ON d.job_group_id = r.job_group_id
                 WHERE r.job_group_id IS NULL AND d.category IS NOT NULL
                 {_COUNTRY_FILTER_SQL}
-                {_EXCLUDE_JOOBLE_ONLY_SQL}
+                {_EXCLUDE_SNIPPET_ONLY_SOURCES_SQL}
                 """
             ),
             params,
@@ -236,7 +252,7 @@ def get_jobs_to_review(
                     ON d.job_group_id = r.job_group_id
                 WHERE r.job_group_id IS NULL AND d.category IS NOT NULL
                 {_COUNTRY_FILTER_SQL}
-                {_EXCLUDE_JOOBLE_ONLY_SQL}
+                {_EXCLUDE_SNIPPET_ONLY_SOURCES_SQL}
                 """
             ),
             params,
@@ -254,7 +270,7 @@ def get_jobs_to_review(
                     WHERE r.job_group_id IS NULL
                         AND d.category IS NOT NULL
                         {_COUNTRY_FILTER_SQL}
-                        {_EXCLUDE_JOOBLE_ONLY_SQL}
+                        {_EXCLUDE_SNIPPET_ONLY_SOURCES_SQL}
                 ),
                 bucketed AS (
                     SELECT
@@ -286,6 +302,7 @@ def get_jobs_to_review(
                 country_iso=row.country_iso,
                 region=row.region,
                 description=row.description,
+                apply_source_name=row.apply_source_name,
                 category=row.category,
                 category_confidence=float(row.category_confidence),
                 category_method=row.category_method,

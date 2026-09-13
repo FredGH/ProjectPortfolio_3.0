@@ -44,6 +44,7 @@ def _insert_dim_job(conn, **overrides: object) -> None:
         "qa_category": "data_engineer",
         "seniority_band": "mid",
         "sources": None,
+        "apply_source_name": None,
     }
     values.update(overrides)
     if values["sources"] is not None:
@@ -55,12 +56,12 @@ def _insert_dim_job(conn, **overrides: object) -> None:
                 job_group_id, title_for_display, title_raw, company,
                 location, country_iso, region, description, category,
                 category_confidence, category_method, qa_category,
-                seniority_band, sources
+                seniority_band, sources, apply_source_name
             ) VALUES (
                 :job_group_id, :title_for_display, :title_raw, :company,
                 :location, :country_iso, :region, :description, :category,
                 :category_confidence, :category_method, :qa_category,
-                :seniority_band, CAST(:sources AS jsonb)
+                :seniority_band, CAST(:sources AS jsonb), :apply_source_name
             )
             """
         ),
@@ -79,7 +80,9 @@ class TestJobsToReviewAndReviews(unittest.TestCase):
 
         self.job_group_id = f"test-job-{uuid.uuid4().hex}"
         with self.owner_engine.begin() as conn:
-            _insert_dim_job(conn, job_group_id=self.job_group_id)
+            _insert_dim_job(
+                conn, job_group_id=self.job_group_id, apply_source_name="greenhouse"
+            )
 
     def tearDown(self) -> None:
         with self.owner_engine.begin() as conn:
@@ -110,6 +113,15 @@ class TestJobsToReviewAndReviews(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         ids = {job["job_group_id"] for job in response.json()["jobs"]}
         self.assertIn(self.job_group_id, ids)
+
+    def test_jobs_to_review_reports_apply_source_name(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        job = next(
+            j for j in response.json()["jobs"] if j["job_group_id"] == self.job_group_id
+        )
+        self.assertEqual(job["apply_source_name"], "greenhouse")
 
     def test_jobs_to_review_excludes_rows_with_no_category(self) -> None:
         with self.owner_engine.begin() as conn:
@@ -344,13 +356,14 @@ class TestJobsToReviewCountryFilter(unittest.TestCase):
         self.assertIn(self.unresolved_id, with_none_ids)
 
 
-class TestJobsToReviewJoobleExclusion(unittest.TestCase):
-    """Integration tests for excluding Jooble-only rows from review.
+class TestJobsToReviewSnippetOnlySourceExclusion(unittest.TestCase):
+    """Integration tests for excluding snippet-only-sourced rows from review.
 
-    Jooble's search API only ever returns a short pre-truncated
-    snippet, never a full description (see JoobleConnector's
-    docstring), so a job whose surviving description came only from
-    Jooble carries too little text to meaningfully review or classify.
+    Jooble's and Reed's search APIs only ever return a short
+    pre-truncated snippet, never a full description (see
+    JoobleConnector's and ReedConnector's docstrings), so a job whose
+    surviving description came only from one or both of these carries
+    too little text to meaningfully review or classify.
     """
 
     def setUp(self) -> None:
@@ -361,6 +374,8 @@ class TestJobsToReviewJoobleExclusion(unittest.TestCase):
 
         suffix = uuid.uuid4().hex
         self.jooble_only_id = f"test-jooble-only-{suffix}"
+        self.reed_only_id = f"test-reed-only-{suffix}"
+        self.jooble_and_reed_id = f"test-jooble-reed-{suffix}"
         self.jooble_and_other_id = f"test-jooble-other-{suffix}"
         self.no_sources_id = f"test-no-sources-{suffix}"
         with self.owner_engine.begin() as conn:
@@ -368,6 +383,19 @@ class TestJobsToReviewJoobleExclusion(unittest.TestCase):
                 conn,
                 job_group_id=self.jooble_only_id,
                 sources=[{"source_name": "jooble", "job_url": "https://x"}],
+            )
+            _insert_dim_job(
+                conn,
+                job_group_id=self.reed_only_id,
+                sources=[{"source_name": "reed", "job_url": "https://x"}],
+            )
+            _insert_dim_job(
+                conn,
+                job_group_id=self.jooble_and_reed_id,
+                sources=[
+                    {"source_name": "jooble", "job_url": "https://x"},
+                    {"source_name": "reed", "job_url": "https://y"},
+                ],
             )
             _insert_dim_job(
                 conn,
@@ -380,7 +408,13 @@ class TestJobsToReviewJoobleExclusion(unittest.TestCase):
             _insert_dim_job(conn, job_group_id=self.no_sources_id, sources=None)
 
     def tearDown(self) -> None:
-        ids = (self.jooble_only_id, self.jooble_and_other_id, self.no_sources_id)
+        ids = (
+            self.jooble_only_id,
+            self.reed_only_id,
+            self.jooble_and_reed_id,
+            self.jooble_and_other_id,
+            self.no_sources_id,
+        )
         with self.owner_engine.begin() as conn:
             conn.execute(
                 text(
@@ -403,6 +437,20 @@ class TestJobsToReviewJoobleExclusion(unittest.TestCase):
         )
         ids = {job["job_group_id"] for job in response.json()["jobs"]}
         self.assertNotIn(self.jooble_only_id, ids)
+
+    def test_excludes_a_job_whose_only_source_is_reed(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
+        self.assertNotIn(self.reed_only_id, ids)
+
+    def test_excludes_a_job_whose_sources_are_jooble_and_reed_only(self) -> None:
+        response = self.client.get(
+            "/classification/jobs-to-review", params={"limit": 100_000}
+        )
+        ids = {job["job_group_id"] for job in response.json()["jobs"]}
+        self.assertNotIn(self.jooble_and_reed_id, ids)
 
     def test_keeps_a_job_with_jooble_plus_another_source(self) -> None:
         response = self.client.get(
