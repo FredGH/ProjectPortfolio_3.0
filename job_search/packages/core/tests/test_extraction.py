@@ -27,7 +27,14 @@ class _FakeAdapter:
     def __init__(self, response_text: str) -> None:
         self._response_text = response_text
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Return the pre-baked response, ignoring the prompt content."""
         return LLMResponse(
             text=self._response_text,
@@ -41,7 +48,14 @@ class _FakeAdapter:
 class _RaisingAdapter:
     """A test double that always fails, to prove callers degrade gracefully."""
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Always raise, simulating an unreachable LLM provider."""
         raise RuntimeError("provider unreachable")
 

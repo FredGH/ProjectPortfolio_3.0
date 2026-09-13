@@ -69,10 +69,10 @@ _UPSERT = text(
     """
     INSERT INTO silver.job_category (
         job_group_id, category, category_confidence, category_method,
-        qa_category, seniority_band
+        qa_category, seniority_band, prompt_version, model_id
     ) VALUES (
         :job_group_id, :category, :category_confidence, :category_method,
-        :qa_category, :seniority_band
+        :qa_category, :seniority_band, :prompt_version, :model_id
     )
     ON CONFLICT (job_group_id) DO UPDATE SET
         category = EXCLUDED.category,
@@ -80,6 +80,8 @@ _UPSERT = text(
         category_method = EXCLUDED.category_method,
         qa_category = EXCLUDED.qa_category,
         seniority_band = EXCLUDED.seniority_band,
+        prompt_version = EXCLUDED.prompt_version,
+        model_id = EXCLUDED.model_id,
         computed_at = now()
     """
 )
@@ -154,6 +156,8 @@ def write_job_category(
                     "category_method": classification.category_method,
                     "qa_category": classification.qa_category,
                     "seniority_band": classification.seniority_band,
+                    "prompt_version": classification.prompt_version,
+                    "model_id": classification.model_id,
                 },
             )
             written += 1

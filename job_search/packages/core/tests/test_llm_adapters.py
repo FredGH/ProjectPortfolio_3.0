@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from unittest import mock
 
@@ -41,6 +42,44 @@ class TestOllamaAdapter(unittest.TestCase):
         self.assertEqual(result.input_tokens, 12)
         self.assertEqual(result.output_tokens, 7)
 
+    def test_complete_sends_temperature_and_seed_in_options(self) -> None:
+        """Verify Ollama adapter forwards temperature and seed as options."""
+        captured_json: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal captured_json
+            captured_json = json.loads(request.content)
+            return httpx.Response(
+                200, json={"response": "ok", "prompt_eval_count": 1, "eval_count": 1}
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        adapter = OllamaAdapter(base_url="http://ollama:11434", client=client)
+
+        adapter.complete(model="llama3.1:8b", prompt="hi", temperature=0.2, seed=42)
+
+        self.assertEqual(captured_json["options"]["temperature"], 0.2)
+        self.assertEqual(captured_json["options"]["seed"], 42)
+
+    def test_complete_without_seed_omits_it_from_options(self) -> None:
+        """Verify Ollama adapter omits seed and defaults temperature to 0.0."""
+        captured_json: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal captured_json
+            captured_json = json.loads(request.content)
+            return httpx.Response(
+                200, json={"response": "ok", "prompt_eval_count": 1, "eval_count": 1}
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        adapter = OllamaAdapter(base_url="http://ollama:11434", client=client)
+
+        adapter.complete(model="llama3.1:8b", prompt="hi")
+
+        self.assertNotIn("seed", captured_json["options"])
+        self.assertEqual(captured_json["options"]["temperature"], 0.0)
+
 
 class TestAnthropicAdapter(unittest.TestCase):
     """Test Anthropic adapter request/response parsing."""
@@ -65,6 +104,28 @@ class TestAnthropicAdapter(unittest.TestCase):
             model="claude-sonnet-5",
             max_tokens=4096,
             messages=[{"role": "user", "content": "say hello"}],
+            temperature=0.0,
+        )
+
+    def test_complete_sends_temperature_but_not_seed(self) -> None:
+        """Verify Anthropic adapter forwards temperature but drops seed."""
+        fake_message = mock.Mock()
+        fake_message.content = [mock.Mock(text="hello from claude")]
+        fake_message.usage = mock.Mock(input_tokens=20, output_tokens=9)
+
+        fake_client = mock.Mock()
+        fake_client.messages.create.return_value = fake_message
+
+        adapter = AnthropicAdapter(api_key="test-key", client=fake_client)
+        adapter.complete(
+            model="claude-sonnet-5", prompt="say hello", temperature=0.5, seed=42
+        )
+
+        fake_client.messages.create.assert_called_once_with(
+            model="claude-sonnet-5",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": "say hello"}],
+            temperature=0.5,
         )
 
 

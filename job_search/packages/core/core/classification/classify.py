@@ -38,6 +38,11 @@ class Classification:
             `None` when `category` has no reasonable question-bank
             equivalent (currently only 'other').
         seniority_band: One of the 5-value seniority taxonomy.
+        prompt_version: The prompt version that produced `category`,
+            when `category_method == 'llm'`. `None` for 'rules'/
+            'embedding' rows, which never called an LLM.
+        model_id: The model that produced `category`, when
+            `category_method == 'llm'`. `None` otherwise.
     """
 
     category: str
@@ -45,6 +50,8 @@ class Classification:
     category_method: str
     qa_category: str | None
     seniority_band: str
+    prompt_version: str | None = None
+    model_id: str | None = None
 
 
 def load_qa_category_map(path: Path | None = None) -> dict[str, str | None]:
@@ -130,8 +137,19 @@ def classify_title(
             category, confidence = embedding_result
             method = "embedding"
         else:
-            category, confidence = classify_by_llm(title, adapters=adapters)
+            category, confidence, prompt_version, model_id = classify_by_llm(
+                title, adapters=adapters
+            )
             method = "llm"
+            return Classification(
+                category=category,
+                category_confidence=confidence,
+                category_method=method,
+                qa_category=qa_category_map.get(category),
+                seniority_band=seniority_band,
+                prompt_version=prompt_version,
+                model_id=model_id,
+            )
 
     return Classification(
         category=category,

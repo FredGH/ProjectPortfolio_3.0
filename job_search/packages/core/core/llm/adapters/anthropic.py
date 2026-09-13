@@ -31,12 +31,25 @@ class AnthropicAdapter:
         self.api_key = api_key
         self.client = client
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Run one completion call against Claude.
 
         Args:
             model: The Anthropic model identifier, e.g. "claude-sonnet-5".
             prompt: The prompt text.
+            temperature: Sampling temperature, passed straight through.
+            seed: Ignored — the Anthropic Messages API has no seed
+                parameter, and Anthropic does not guarantee bit-for-bit
+                reproducibility even at `temperature=0`. Accepted (not
+                rejected) so this adapter satisfies the same `LLMAdapter`
+                Protocol as `OllamaAdapter`, which does support it.
 
         Returns:
             The normalised `LLMResponse`.
@@ -45,6 +58,7 @@ class AnthropicAdapter:
             model=model,
             max_tokens=_MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
         )
         return LLMResponse(
             text=message.content[0].text,

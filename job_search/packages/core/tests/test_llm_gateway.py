@@ -21,11 +21,18 @@ class _FakeAdapter:
     """Fake adapter for testing gateway routing."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, float, int | None]] = []
 
-    def complete(self, *, model: str, prompt: str) -> LLMResponse:
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
         """Record call and return fake response."""
-        self.calls.append((model, prompt))
+        self.calls.append((model, prompt, temperature, seed))
         return LLMResponse(
             text=f"echo: {prompt}",
             provider="fake",
@@ -65,7 +72,7 @@ class TestGatewayComplete(unittest.TestCase):
         self.assertEqual(result.text, "echo: extract skills from this JD")
         self.assertEqual(
             self.fake_adapter.calls,
-            [("fake-model-v1", "extract skills from this JD")],
+            [("fake-model-v1", "extract skills from this JD", 0.0, None)],
         )
 
     def test_raises_when_task_has_no_config_entry(self) -> None:
@@ -91,6 +98,56 @@ class TestGatewayComplete(unittest.TestCase):
                 adapters={},  # no "fake" adapter provided
                 config_path=self.config_path,
             )
+
+    def test_defaults_to_zero_temperature_and_no_seed(self) -> None:
+        """Test complete defaults to temperature 0.0 and no seed."""
+        complete(
+            "skill_extraction",
+            "prompt",
+            prompt_version="local.v1",
+            adapters={"fake": self.fake_adapter},
+            config_path=self.config_path,
+        )
+        self.assertEqual(
+            self.fake_adapter.calls, [("fake-model-v1", "prompt", 0.0, None)]
+        )
+
+    def test_passes_through_a_given_temperature_and_seed(self) -> None:
+        """Test complete passes a given temperature and seed to the adapter."""
+        complete(
+            "skill_extraction",
+            "prompt",
+            prompt_version="local.v1",
+            adapters={"fake": self.fake_adapter},
+            config_path=self.config_path,
+            temperature=0.7,
+            seed=42,
+        )
+        self.assertEqual(
+            self.fake_adapter.calls, [("fake-model-v1", "prompt", 0.7, 42)]
+        )
+
+    def test_provider_and_model_override_bypass_task_config_resolution(
+        self,
+    ) -> None:
+        """Test provider/model overrides bypass task config resolution.
+
+        `skill_extraction`'s config_path entry routes to "fake" — override
+        to a different adapter/model entirely, proving the override takes
+        precedence over what the task's own config says.
+        """
+        other_adapter = _FakeAdapter()
+        complete(
+            "skill_extraction",
+            "prompt",
+            prompt_version="local.v1",
+            adapters={"fake": self.fake_adapter, "other": other_adapter},
+            config_path=self.config_path,
+            provider="other",
+            model="other-model-v9",
+        )
+        self.assertEqual(self.fake_adapter.calls, [])
+        self.assertEqual(other_adapter.calls, [("other-model-v9", "prompt", 0.0, None)])
 
 
 if __name__ == "__main__":

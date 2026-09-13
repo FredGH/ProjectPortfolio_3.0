@@ -16,6 +16,12 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  job_categorisation:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+    eval_metric: exact_match
+    eval_regression_threshold: 0.05
 """
 
 
@@ -58,6 +64,72 @@ class TestLoadTaskConfig(unittest.TestCase):
         """Test that TaskConfigError is raised for missing tasks."""
         with self.assertRaises(TaskConfigError):
             load_task_config("does_not_exist", config_path=self.config_path)
+
+    def test_resolves_eval_fields_when_present(self) -> None:
+        """Test that eval_metric and eval_regression_threshold resolve.
+
+        `job_categorisation` has both eval fields configured but no
+        `local_*` fields, so those must default to `None`.
+        """
+        config = load_task_config("job_categorisation", config_path=self.config_path)
+        self.assertEqual(config.eval_metric, "exact_match")
+        self.assertEqual(config.eval_regression_threshold, 0.05)
+        self.assertIsNone(config.local_provider)
+        self.assertIsNone(config.local_model)
+        self.assertIsNone(config.local_prompt_family)
+
+    def test_eval_fields_default_to_none_when_absent(self) -> None:
+        """Test that eval fields default to None when not in the YAML."""
+        config = load_task_config("skill_extraction", config_path=self.config_path)
+        self.assertIsNone(config.eval_metric)
+        self.assertIsNone(config.eval_regression_threshold)
+
+    def test_raises_when_eval_metric_set_without_regression_threshold(
+        self,
+    ) -> None:
+        """An `eval_metric` without a matching `eval_regression_threshold`
+        must raise, not silently load — otherwise regression detection
+        for that task would never fire.
+
+        Returns:
+            None.
+
+        Raises:
+            AssertionError: If `load_task_config` does not raise
+                `TaskConfigError` for this misconfigured entry.
+        """
+        yaml_text = """
+tasks:
+  half_configured_task:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+    eval_metric: exact_match
+"""
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".yml", delete=False, encoding="utf-8"
+        )
+        tmp.write(yaml_text)
+        tmp.close()
+        config_path = Path(tmp.name)
+        try:
+            with self.assertRaises(TaskConfigError):
+                load_task_config("half_configured_task", config_path=config_path)
+        finally:
+            config_path.unlink(missing_ok=True)
+
+    def test_job_categorisation_real_config_still_loads(self) -> None:
+        """The real `config/llm_tasks.yml` entry for `job_categorisation`
+        (which sets both `eval_metric` and `eval_regression_threshold`)
+        must still load without raising, now that both fields are
+        validated together.
+
+        Returns:
+            None.
+        """
+        config = load_task_config("job_categorisation")
+        self.assertEqual(config.eval_metric, "exact_match")
+        self.assertIsNotNone(config.eval_regression_threshold)
 
 
 if __name__ == "__main__":
