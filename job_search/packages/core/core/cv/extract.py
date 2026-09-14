@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from functools import lru_cache
 
 from docling.datamodel.base_models import DocumentStream
@@ -60,6 +61,28 @@ class _RawCVTruthBase(BaseModel):
     education: list[Education] = []
     certifications: list[Certification] = []
     publications: list[Publication] = []
+
+
+_CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```$", re.DOTALL)
+
+
+def _strip_code_fence(text: str) -> str:
+    """Strip a wrapping markdown code fence, if present.
+
+    Local models routinely wrap a JSON response in a ```json ... ``` fence
+    despite being asked for raw JSON (observed with llama3.1:8b) — this
+    makes `json.loads` see the same JSON either way instead of failing on
+    the leading backtick.
+
+    Args:
+        text: The raw response text, already `.strip()`-ped.
+
+    Returns:
+        `text` with a wrapping code fence removed, or `text` unchanged if
+        it wasn't fenced.
+    """
+    match = _CODE_FENCE_RE.match(text)
+    return match.group(1).strip() if match else text
 
 
 @lru_cache
@@ -144,7 +167,7 @@ def extract_truth_base(
         model=model,
     )
     try:
-        parsed = json.loads(response.text.strip())
+        parsed = json.loads(_strip_code_fence(response.text.strip()))
         raw = _RawCVTruthBase.model_validate(parsed)
     except (json.JSONDecodeError, ValueError) as exc:
         raise ValueError(f"could not parse cv_extraction response: {exc}") from exc

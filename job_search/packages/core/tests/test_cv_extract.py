@@ -126,6 +126,22 @@ class TestExtractTruthBase(unittest.TestCase):
                 prompt_family="local",
             )
 
+    def test_strips_markdown_code_fence_before_parsing(self) -> None:
+        payload = {"identity": "Jane Doe", "headline": "Senior Test Engineer"}
+        fenced_response = f"```json\n{json.dumps(payload)}\n```"
+        fake_adapter = _FakeAdapter(fenced_response)
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.identity, "Jane Doe")
+        self.assertEqual(result.headline, "Senior Test Engineer")
+
 
 if __name__ == "__main__":
     unittest.main()
