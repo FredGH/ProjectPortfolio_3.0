@@ -7,6 +7,8 @@ action instead of bespoke per-field UI.
 
 from __future__ import annotations
 
+import time
+
 import httpx
 import pandas as pd
 import streamlit as st
@@ -34,6 +36,62 @@ def _fetch_truth_base() -> dict | None:
     return response.json()
 
 
+_STEP_LABELS: dict[str, str] = {
+    "parsing_document": "Parsing document",
+    "extracting_fields": "Extracting fields",
+    "saving": "Saving",
+}
+
+_STEP_ICONS: dict[str, str] = {
+    "pending": "⬜",
+    "running": "⏳",
+    "done": "✅",
+    "failed": "❌",
+}
+
+
+def _poll_extraction_job(job_id: str) -> dict:
+    """Fetch one extraction job's current status.
+
+    Args:
+        job_id: The job id returned by `POST /cv/extract`.
+
+    Returns:
+        The parsed `GET /cv/extract/jobs/{job_id}` response body.
+
+    Raises:
+        httpx.HTTPError: If the request fails, including a 404 for an
+            unknown/expired job id.
+    """
+    response = httpx.get(
+        f"{_settings.api_base_url}/cv/extract/jobs/{job_id}", timeout=10.0
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def _render_job_progress(job: dict) -> None:
+    """Render an extraction job's steps as a live checklist.
+
+    Args:
+        job: A `GET /cv/extract/jobs/{job_id}` response body.
+    """
+    state = {
+        "queued": "running",
+        "running": "running",
+        "succeeded": "complete",
+        "failed": "error",
+    }[job["status"]]
+    with st.status(f"Extracting CV — {job['status']}", state=state, expanded=True):
+        for step in job["steps"]:
+            label = _STEP_LABELS.get(step["name"], step["name"])
+            icon = _STEP_ICONS[step["status"]]
+            if step["duration_seconds"] is not None:
+                st.write(f"{icon} {label} ({step['duration_seconds']:.1f}s)")
+            else:
+                st.write(f"{icon} {label}")
+
+
 try:
     current = _fetch_truth_base()
 except httpx.HTTPError as exc:
@@ -42,19 +100,41 @@ except httpx.HTTPError as exc:
 
 if current is None:
     st.info("No CV on file yet — upload one to extract a truth base.")
-    uploaded = st.file_uploader("Upload CV (PDF)", type=["pdf"])
-    if uploaded is not None and st.button("Extract"):
+
+    job_id = st.session_state.get("cv_extraction_job_id")
+    if job_id is not None:
         try:
-            response = httpx.post(
-                f"{_settings.api_base_url}/cv/extract",
-                files={"file": (uploaded.name, uploaded.getvalue())},
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            st.success(f"Extracted as version {response.json()['version']}.")
-            st.rerun()
+            job = _poll_extraction_job(job_id)
         except httpx.HTTPError as exc:
-            st.error(f"Extraction failed: {exc}")
+            st.error(f"Lost track of the extraction job — please retry: {exc}")
+            del st.session_state["cv_extraction_job_id"]
+        else:
+            _render_job_progress(job)
+            if job["status"] in {"queued", "running"}:
+                time.sleep(1)
+                st.rerun()
+            elif job["status"] == "succeeded":
+                del st.session_state["cv_extraction_job_id"]
+                st.success(f"Extracted as version {job['version']}.")
+                st.rerun()
+            else:
+                del st.session_state["cv_extraction_job_id"]
+                failed_step = _STEP_LABELS.get(job["failed_step"], job["failed_step"])
+                st.error(f"Extraction failed at {failed_step}: {job['error']}")
+    else:
+        uploaded = st.file_uploader("Upload CV (PDF)", type=["pdf"])
+        if uploaded is not None and st.button("Extract"):
+            try:
+                response = httpx.post(
+                    f"{_settings.api_base_url}/cv/extract",
+                    files={"file": (uploaded.name, uploaded.getvalue())},
+                    timeout=10.0,
+                )
+                response.raise_for_status()
+                st.session_state["cv_extraction_job_id"] = response.json()["job_id"]
+                st.rerun()
+            except httpx.HTTPError as exc:
+                st.error(f"Failed to start extraction: {exc}")
 else:
     truth_base = current["truth_base"]
     st.caption(f"Version {current['version']}")
