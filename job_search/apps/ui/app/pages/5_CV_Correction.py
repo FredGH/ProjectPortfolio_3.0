@@ -1,0 +1,157 @@
+"""CV correction pass (PLAN.md Step 13) — upload a CV to extract a
+truth base, or edit and re-save an existing one. Uses `st.data_editor`
+for the list-shaped sections (skills, experience bullets) rather than
+one widget per nested field, so adding/removing a row is a native grid
+action instead of bespoke per-field UI.
+"""
+
+from __future__ import annotations
+
+import httpx
+import pandas as pd
+import streamlit as st
+
+from core.cv.bullet_id import compute_bullet_id
+from core.settings import get_settings
+
+st.set_page_config(page_title="CV Correction", layout="wide")
+st.title("CV Correction")
+
+_settings = get_settings()
+
+
+def _fetch_truth_base() -> dict | None:
+    """Fetch the current CV truth base, if one has been extracted yet.
+
+    Returns:
+        The parsed `GET /cv/truth-base` response body.
+
+    Raises:
+        httpx.HTTPError: If the request fails.
+    """
+    response = httpx.get(f"{_settings.api_base_url}/cv/truth-base", timeout=10.0)
+    response.raise_for_status()
+    return response.json()
+
+
+try:
+    current = _fetch_truth_base()
+except httpx.HTTPError as exc:
+    st.error(f"Failed to load CV truth base: {exc}")
+    current = None
+
+if current is None:
+    st.info("No CV on file yet — upload one to extract a truth base.")
+    uploaded = st.file_uploader("Upload CV (PDF)", type=["pdf"])
+    if uploaded is not None and st.button("Extract"):
+        try:
+            response = httpx.post(
+                f"{_settings.api_base_url}/cv/extract",
+                files={"file": (uploaded.name, uploaded.getvalue())},
+                timeout=120.0,
+            )
+            response.raise_for_status()
+            st.success(f"Extracted as version {response.json()['version']}.")
+            st.rerun()
+        except httpx.HTTPError as exc:
+            st.error(f"Extraction failed: {exc}")
+else:
+    truth_base = current["truth_base"]
+    st.caption(f"Version {current['version']}")
+
+    identity = st.text_input("Identity", value=truth_base["identity"])
+    headline = st.text_input("Headline", value=truth_base["headline"])
+
+    st.subheader("Skills")
+    skills_df = pd.DataFrame(
+        [
+            {
+                "name": s["name"],
+                "years": s["years"],
+                "last_used": s["last_used"],
+            }
+            for s in truth_base["skills"]
+        ]
+    )
+    edited_skills = st.data_editor(skills_df, num_rows="dynamic", key="skills_editor")
+
+    st.subheader("Experience")
+    experience_rows = []
+    for exp_index, exp in enumerate(truth_base["experience"]):
+        with st.expander(f"{exp['company']} — {exp['title']}", expanded=False):
+            company = st.text_input(
+                "Company", value=exp["company"], key=f"company_{exp_index}"
+            )
+            title = st.text_input("Title", value=exp["title"], key=f"title_{exp_index}")
+            start = st.text_input("Start", value=exp["start"], key=f"start_{exp_index}")
+            end = st.text_input("End", value=exp["end"] or "", key=f"end_{exp_index}")
+            bullets_df = pd.DataFrame([{"text": b["text"]} for b in exp["bullets"]])
+            edited_bullets = st.data_editor(
+                bullets_df, num_rows="dynamic", key=f"bullets_{exp_index}"
+            )
+            experience_rows.append(
+                {
+                    "company": company,
+                    "title": title,
+                    "start": start,
+                    "end": end or None,
+                    "bullets": edited_bullets["text"].tolist(),
+                    "tech": exp["tech"],
+                    "metrics": exp["metrics"],
+                }
+            )
+
+    if st.button("Save corrections"):
+        new_truth_base = {
+            "identity": identity,
+            "headline": headline,
+            "locations": truth_base["locations"],
+            "work_auth": truth_base["work_auth"],
+            "skills": [
+                {
+                    "name": row["name"],
+                    "canonical_id": None,
+                    "years": row["years"],
+                    "last_used": row["last_used"],
+                    "evidence_refs": [],
+                }
+                for row in edited_skills.to_dict("records")
+            ],
+            "experience": [
+                {
+                    **row,
+                    # Recomputed, not carried over from the pre-edit
+                    # bullets: compute_bullet_id is deterministic, so an
+                    # unedited bullet gets back the exact ID it already
+                    # had, and an edited or reordered one correctly gets
+                    # a new one (see core.cv.bullet_id's docstring).
+                    # The first argument is the *experience entry's*
+                    # index (matching extract.py's own call), not the
+                    # bullet's position within it — every bullet in one
+                    # experience entry shares the same experience_index
+                    # and is distinguished from its siblings by text.
+                    "bullets": [
+                        {"bullet_id": compute_bullet_id(exp_index, text), "text": text}
+                        for text in row["bullets"]
+                    ],
+                }
+                for exp_index, row in enumerate(experience_rows)
+            ],
+            "education": truth_base["education"],
+            "certifications": truth_base["certifications"],
+            "publications": truth_base["publications"],
+        }
+        try:
+            response = httpx.put(
+                f"{_settings.api_base_url}/cv/truth-base",
+                json={
+                    "extracted_markdown": current["extracted_markdown"],
+                    "truth_base": new_truth_base,
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            st.success(f"Saved as version {response.json()['version']}.")
+            st.rerun()
+        except httpx.HTTPError as exc:
+            st.error(f"Save failed: {exc}")
