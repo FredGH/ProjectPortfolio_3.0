@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 import uuid
@@ -55,6 +56,39 @@ class _UnparseableAdapter:
         """
         return LLMResponse(
             text="not json",
+            provider="ollama",
+            model=model,
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+
+class _WorkingAdapter:
+    """A fake `LLMAdapter` that returns a minimal, valid CV extraction
+    response — the success-path counterpart to `_UnparseableAdapter`.
+    """
+
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
+        """Return a fixed, valid extraction payload regardless of input.
+
+        Args:
+            model: The provider-specific model identifier (unused).
+            prompt: The prompt text (unused).
+            temperature: Sampling temperature (unused by the fake).
+            seed: A fixed seed (unused by the fake).
+
+        Returns:
+            An `LLMResponse` whose `text` is valid `_RawCVTruthBase` JSON.
+        """
+        return LLMResponse(
+            text=json.dumps({"identity": "Jane Doe", "headline": "Engineer"}),
             provider="ollama",
             model=model,
             input_tokens=1,
@@ -135,22 +169,61 @@ class TestCvRouter(unittest.TestCase):
         self.assertEqual(body["truth_base"]["identity"], "Jane Doe")
         self.assertEqual(body["version"], 1)
 
-    def test_extract_returns_422_when_llm_response_is_unparseable(self) -> None:
+    def test_extract_job_succeeds_and_saves_the_truth_base(self) -> None:
+        app.dependency_overrides[get_llm_adapters] = lambda: {
+            "ollama": _WorkingAdapter()
+        }
+        html = b"<html><body><h1>Jane Doe</h1><p>Engineer.</p></body></html>"
+
+        accept_response = self.client.post(
+            "/cv/extract", files={"file": ("cv.html", html, "text/html")}
+        )
+        self.assertEqual(accept_response.status_code, 202)
+        job_id = accept_response.json()["job_id"]
+
+        status_response = self.client.get(f"/cv/extract/jobs/{job_id}")
+        self.assertEqual(status_response.status_code, 200)
+        body = status_response.json()
+        self.assertEqual(body["status"], "succeeded")
+        self.assertEqual(body["version"], 1)
+        self.assertEqual(
+            [step["name"] for step in body["steps"]],
+            ["parsing_document", "extracting_fields", "saving"],
+        )
+        for step in body["steps"]:
+            self.assertEqual(step["status"], "done")
+            self.assertIsNotNone(step["duration_seconds"])
+
+        get_response = self.client.get("/cv/truth-base")
+        self.assertEqual(get_response.json()["truth_base"]["identity"], "Jane Doe")
+
+    def test_extract_job_fails_at_extracting_fields_for_unparseable_llm_response(
+        self,
+    ) -> None:
         app.dependency_overrides[get_llm_adapters] = lambda: {
             "ollama": _UnparseableAdapter()
         }
         html = b"<html><body><h1>Jane Doe</h1><p>Engineer.</p></body></html>"
 
-        response = self.client.post(
-            "/cv/extract",
-            files={"file": ("cv.html", html, "text/html")},
+        accept_response = self.client.post(
+            "/cv/extract", files={"file": ("cv.html", html, "text/html")}
         )
+        self.assertEqual(accept_response.status_code, 202)
+        job_id = accept_response.json()["job_id"]
 
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("could not extract", response.json()["detail"])
+        status_response = self.client.get(f"/cv/extract/jobs/{job_id}")
+        body = status_response.json()
+        self.assertEqual(body["status"], "failed")
+        self.assertEqual(body["failed_step"], "extracting_fields")
+        self.assertIn("could not extract", body["error"])
+
         # Nothing should have been written on a failed extraction.
         get_response = self.client.get("/cv/truth-base")
         self.assertIsNone(get_response.json())
+
+    def test_extract_job_status_returns_404_for_unknown_job_id(self) -> None:
+        response = self.client.get(f"/cv/extract/jobs/{uuid.uuid4()}")
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

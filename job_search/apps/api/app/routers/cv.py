@@ -1,9 +1,19 @@
-"""GET/PUT /cv/truth-base, POST /cv/extract — the request-serving layer
-for PLAN.md Step 13's CV truth base. The first per-user-tenancy router
-in this API: every handler resolves `user_id` via `get_current_user_id`
-(501s until Step 22a's auth lands, same seam every other per-user
-endpoint will use) and reads/writes exclusively through
-`core.cv.store`, never raw SQL of its own against `cv_truth_base`.
+"""GET/PUT /cv/truth-base, POST /cv/extract, GET /cv/extract/jobs/{job_id}
+— the request-serving layer for PLAN.md Step 13's CV truth base. The
+first per-user-tenancy router in this API: every handler resolves
+`user_id` via `get_current_user_id` (501s until Step 22a's auth lands,
+same seam every other per-user endpoint will use) and reads/writes
+exclusively through `core.cv.store`, never raw SQL of its own against
+`cv_truth_base`.
+
+`POST /cv/extract` does not run the extraction pipeline inline: it
+creates a job via `core.cv.jobs.create_job` and schedules
+`core.cv.jobs.run_extraction_job` as a `BackgroundTasks` callback,
+returning the job id immediately. `GET /cv/extract/jobs/{job_id}` is
+how a caller (the Streamlit correction page) observes that job's
+progress and final result — see
+docs/superpowers/specs/2026-09-14-cv-extraction-progress-design.md for
+why extraction moved off the request/response cycle.
 """
 
 from __future__ import annotations
@@ -11,12 +21,11 @@ from __future__ import annotations
 import uuid
 
 from app.dependencies import get_app_db_engine, get_llm_adapters
-from docling.exceptions import BaseError as DoclingError
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import Engine
 
-from core.cv.extract import docling_to_markdown, extract_truth_base
+from core.cv.jobs import ExtractionJob, create_job, get_job, run_extraction_job
 from core.cv.schema import CVTruthBase
 from core.cv.store import read_truth_base, write_truth_base
 from core.db.session import get_current_user_id
@@ -59,6 +68,79 @@ class WriteResult(BaseModel):
     """
 
     version: int
+
+
+class ExtractAcceptedResponse(BaseModel):
+    """The immediate response to `POST /cv/extract`.
+
+    Attributes:
+        job_id: The id of the background extraction job that was
+            scheduled — poll `GET /cv/extract/jobs/{job_id}` with it.
+    """
+
+    job_id: uuid.UUID
+
+
+class ExtractionStepResponse(BaseModel):
+    """One extraction step's status, over the wire.
+
+    Attributes:
+        name: The step's identifier (`core.cv.jobs.STEP_NAMES`).
+        status: "pending", "running", "done", or "failed".
+        duration_seconds: Elapsed time — final once the step is done or
+            failed, elapsed-so-far while running, None while pending.
+    """
+
+    name: str
+    status: str
+    duration_seconds: float | None
+
+
+class ExtractionJobResponse(BaseModel):
+    """An extraction job's current state, over the wire.
+
+    Attributes:
+        job_id: The job's id.
+        status: "queued", "running", "succeeded", or "failed".
+        steps: Every step's current status, in pipeline order.
+        version: The new truth-base version — set once `status` is
+            "succeeded".
+        error: The failure message — set once `status` is "failed".
+        failed_step: Which step failed — set once `status` is "failed".
+    """
+
+    job_id: uuid.UUID
+    status: str
+    steps: list[ExtractionStepResponse]
+    version: int | None = None
+    error: str | None = None
+    failed_step: str | None = None
+
+
+def _job_to_response(job: ExtractionJob) -> ExtractionJobResponse:
+    """Shape an `ExtractionJob` into its wire response.
+
+    Args:
+        job: The job snapshot to shape (from `core.cv.jobs.get_job`).
+
+    Returns:
+        The equivalent `ExtractionJobResponse`.
+    """
+    return ExtractionJobResponse(
+        job_id=job.job_id,
+        status=job.status,
+        steps=[
+            ExtractionStepResponse(
+                name=step.name,
+                status=step.status.value,
+                duration_seconds=step.duration_seconds,
+            )
+            for step in job.steps
+        ],
+        version=job.result_version,
+        error=job.error,
+        failed_step=job.failed_step,
+    )
 
 
 @router.get("/truth-base", response_model=TruthBaseResponse | None)
@@ -110,44 +192,58 @@ def put_truth_base(
     return WriteResult(version=version)
 
 
-@router.post("/extract", response_model=WriteResult)
+@router.post("/extract", response_model=ExtractAcceptedResponse, status_code=202)
 async def post_extract(
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     user_id: uuid.UUID = Depends(get_current_user_id),
     engine: Engine = Depends(get_app_db_engine),
     adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
-) -> WriteResult:
-    """Extract a CV PDF and store the result as a new version.
+) -> ExtractAcceptedResponse:
+    """Schedule a CV PDF extraction as a background job.
 
     Args:
         file: The uploaded CV document.
+        background_tasks: Injected by FastAPI — used to run the actual
+            pipeline after this response is sent.
         user_id: Injected by `get_current_user_id`.
         engine: Injected via `get_app_db_engine`.
         adapters: Injected via `get_llm_adapters`.
 
     Returns:
-        The new version number.
-
-    Raises:
-        fastapi.HTTPException: 422, if Docling can't convert the upload
-            (unsupported format, corrupt file) or if the LLM's
-            extraction response can't be parsed into a `CVTruthBase`
-            (`extract_truth_base`'s documented `ValueError` case).
+        The scheduled job's id — poll `GET /cv/extract/jobs/{job_id}`
+        for progress and the eventual result.
     """
     file_bytes = await file.read()
-    try:
-        markdown = docling_to_markdown(file_bytes, file.filename or "cv.pdf")
-    except DoclingError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"could not read the uploaded document: {exc}",
-        ) from exc
-    try:
-        truth_base = extract_truth_base(markdown, adapters=adapters)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"could not extract a CV from the uploaded document: {exc}",
-        ) from exc
-    version = write_truth_base(engine, user_id, markdown, truth_base)
-    return WriteResult(version=version)
+    job_id = create_job()
+    background_tasks.add_task(
+        run_extraction_job,
+        job_id,
+        file_bytes,
+        file.filename or "cv.pdf",
+        adapters=adapters,
+        engine=engine,
+        user_id=user_id,
+    )
+    return ExtractAcceptedResponse(job_id=job_id)
+
+
+@router.get("/extract/jobs/{job_id}", response_model=ExtractionJobResponse)
+def get_extract_job(job_id: uuid.UUID) -> ExtractionJobResponse:
+    """Return one extraction job's current progress and result.
+
+    Args:
+        job_id: The job id returned by `POST /cv/extract`.
+
+    Returns:
+        The job's current `ExtractionJobResponse`.
+
+    Raises:
+        fastapi.HTTPException: 404, if `job_id` is unknown — never
+            created, or lost to an API restart (job state is
+            in-memory only; see the design spec's Non-goals).
+    """
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown extraction job")
+    return _job_to_response(job)
