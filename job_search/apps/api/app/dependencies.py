@@ -40,6 +40,30 @@ def get_http_client() -> httpx.Client:
 
 
 @lru_cache
+def get_ollama_http_client() -> httpx.Client:
+    """Return the process-wide HTTP client for Ollama completions.
+
+    A local model generating a full completion (e.g. `cv_extraction`'s
+    whole-CV prompt) on CPU inference routinely takes well over the
+    general-purpose client's 10-second timeout — that timeout is
+    appropriate for the small, fast calls `get_http_client` otherwise
+    serves, but not for this. Kept as its own client, not a shared one,
+    so a slow Ollama call can never be starved by a timeout tuned for
+    unrelated fast requests. 300s (rather than the 120s this client
+    started with) because extraction now runs as a background job
+    (JOB-202's extraction-progress work) — nothing blocks on this call
+    waiting for an HTTP response anymore, so the only cost of a longer
+    timeout is how long a genuinely stuck call takes to be reported as
+    failed, not how long a user waits.
+
+    Returns:
+        A shared `httpx.Client` with a 300-second timeout, reused across
+        requests rather than rebuilt per call.
+    """
+    return httpx.Client(timeout=300.0)
+
+
+@lru_cache
 def get_llm_adapters() -> dict[str, LLMAdapter]:
     """Build the process-wide LLM adapter registry.
 
@@ -53,7 +77,7 @@ def get_llm_adapters() -> dict[str, LLMAdapter]:
     settings = get_settings()
     adapters: dict[str, LLMAdapter] = {
         "ollama": OllamaAdapter(
-            base_url=settings.ollama_base_url, client=get_http_client()
+            base_url=settings.ollama_base_url, client=get_ollama_http_client()
         ),
     }
     if settings.anthropic_api_key:
