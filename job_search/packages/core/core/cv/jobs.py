@@ -32,7 +32,14 @@ _StepResult = TypeVar("_StepResult")
 
 
 class StepStatus(str, Enum):
-    """One extraction step's lifecycle state."""
+    """One extraction step's lifecycle state.
+
+    Attributes:
+        PENDING: Step has not yet started.
+        RUNNING: Step is currently executing.
+        DONE: Step completed successfully.
+        FAILED: Step raised an exception.
+    """
 
     PENDING = "pending"
     RUNNING = "running"
@@ -198,6 +205,17 @@ def _fail_job(job_id: uuid.UUID, step_name: str, message: str) -> None:
         job.error = message
 
 
+def _set_status(job_id: uuid.UUID, status: str) -> None:
+    """Set a job's overall status.
+
+    Args:
+        job_id: The job whose status to update.
+        status: The new status value.
+    """
+    with _LOCK:
+        _JOBS[job_id].status = status
+
+
 def run_extraction_job(
     job_id: uuid.UUID,
     file_bytes: bytes,
@@ -224,8 +242,7 @@ def run_extraction_job(
         engine: The app-role (RLS-enforced) database engine.
         user_id: The user this CV belongs to.
     """
-    with _LOCK:
-        _JOBS[job_id].status = "running"
+    _set_status(job_id, "running")
 
     try:
         markdown = _run_step(
@@ -237,6 +254,9 @@ def run_extraction_job(
         _fail_job(
             job_id, "parsing_document", f"could not read the uploaded document: {exc}"
         )
+        return
+    except Exception as exc:  # noqa: BLE001
+        _fail_job(job_id, "parsing_document", str(exc))
         return
 
     try:
@@ -252,6 +272,9 @@ def run_extraction_job(
             f"could not extract a CV from the uploaded document: {exc}",
         )
         return
+    except Exception as exc:  # noqa: BLE001
+        _fail_job(job_id, "extracting_fields", str(exc))
+        return
 
     try:
         version = _run_step(
@@ -263,7 +286,6 @@ def run_extraction_job(
         _fail_job(job_id, "saving", str(exc))
         return
 
+    _set_status(job_id, "succeeded")
     with _LOCK:
-        job = _JOBS[job_id]
-        job.status = "succeeded"
-        job.result_version = version
+        _JOBS[job_id].result_version = version
