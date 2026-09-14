@@ -51,8 +51,9 @@ def read_truth_base(engine: Engine, user_id: uuid.UUID) -> StoredTruthBase | Non
         row = conn.execute(
             text(
                 "SELECT version, extracted_markdown, truth_base, updated_at "
-                "FROM cv_truth_base"
-            )
+                "FROM cv_truth_base WHERE user_id = :user_id"
+            ),
+            {"user_id": user_id},
         ).one_or_none()
     if row is None:
         return None
@@ -85,7 +86,10 @@ def write_truth_base(
     """
     truth_base_json = truth_base.model_dump_json()
     with session_scope(engine, user_id=user_id) as conn:
-        current = conn.execute(text("SELECT version FROM cv_truth_base")).one_or_none()
+        current = conn.execute(
+            text("SELECT version FROM cv_truth_base WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        ).one_or_none()
         new_version = (current.version + 1) if current else 1
 
         conn.execute(
@@ -109,9 +113,11 @@ def write_truth_base(
                     "version = :version, "
                     "extracted_markdown = :markdown, "
                     "truth_base = CAST(:truth_base AS jsonb), "
-                    "updated_at = now()"
+                    "updated_at = now() "
+                    "WHERE user_id = :user_id"
                 ),
                 {
+                    "user_id": user_id,
                     "version": new_version,
                     "markdown": extracted_markdown,
                     "truth_base": truth_base_json,

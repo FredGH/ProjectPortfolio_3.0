@@ -71,7 +71,8 @@ else:
                 "last_used": s["last_used"],
             }
             for s in truth_base["skills"]
-        ]
+        ],
+        columns=["name", "years", "last_used"],
     )
     edited_skills = st.data_editor(skills_df, num_rows="dynamic", key="skills_editor")
 
@@ -85,7 +86,9 @@ else:
             title = st.text_input("Title", value=exp["title"], key=f"title_{exp_index}")
             start = st.text_input("Start", value=exp["start"], key=f"start_{exp_index}")
             end = st.text_input("End", value=exp["end"] or "", key=f"end_{exp_index}")
-            bullets_df = pd.DataFrame([{"text": b["text"]} for b in exp["bullets"]])
+            bullets_df = pd.DataFrame(
+                [{"text": b["text"]} for b in exp["bullets"]], columns=["text"]
+            )
             edited_bullets = st.data_editor(
                 bullets_df, num_rows="dynamic", key=f"bullets_{exp_index}"
             )

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+from functools import lru_cache
 
 from docling.datamodel.base_models import DocumentStream
 from docling.document_converter import DocumentConverter
@@ -61,6 +62,21 @@ class _RawCVTruthBase(BaseModel):
     publications: list[Publication] = []
 
 
+@lru_cache
+def _converter() -> DocumentConverter:
+    """Build (once) and cache the shared `DocumentConverter`.
+
+    Constructing a `DocumentConverter` loads layout/table models and can
+    trigger a runtime model download, so it must not happen on every
+    `docling_to_markdown` call — this lazily-created singleton pays that
+    cost once per process.
+
+    Returns:
+        The process-wide `DocumentConverter` instance.
+    """
+    return DocumentConverter()
+
+
 def docling_to_markdown(file_bytes: bytes, filename: str) -> str:
     """Convert a CV document to markdown via Docling.
 
@@ -76,7 +92,7 @@ def docling_to_markdown(file_bytes: bytes, filename: str) -> str:
         The document's content as markdown text.
     """
     stream = DocumentStream(name=filename, stream=io.BytesIO(file_bytes))
-    result = DocumentConverter().convert(stream)
+    result = _converter().convert(stream)
     return result.document.export_to_markdown()
 
 
