@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "apps" / "api"))
 
-from app.dependencies import get_app_db_engine  # noqa: E402
+from app.dependencies import get_app_db_engine, get_llm_adapters  # noqa: E402
 from app.main import app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -20,7 +20,46 @@ from core.db.session import (  # noqa: E402
     get_current_user_id,
     session_scope,
 )
+from core.llm.types import LLMResponse  # noqa: E402
 from core.settings import get_settings  # noqa: E402
+
+
+class _UnparseableAdapter:
+    """A fake `LLMAdapter` whose `complete` always returns non-JSON text.
+
+    Mirrors `test_cv_extract.py`'s own `_FakeAdapter` pattern — this
+    codebase's tests implement `core.llm.types.LLMAdapter` directly
+    rather than mocking it. Used to drive `extract_truth_base`'s
+    documented `ValueError` path through `POST /cv/extract` without
+    needing a real LLM call.
+    """
+
+    def complete(
+        self,
+        *,
+        model: str,
+        prompt: str,
+        temperature: float = 0.0,
+        seed: int | None = None,
+    ) -> LLMResponse:
+        """Return a fixed, unparseable response regardless of input.
+
+        Args:
+            model: The provider-specific model identifier (unused).
+            prompt: The prompt text (unused).
+            temperature: Sampling temperature (unused).
+            seed: A fixed seed (unused).
+
+        Returns:
+            An `LLMResponse` whose `text` is not valid JSON.
+        """
+        return LLMResponse(
+            text="not json",
+            provider="ollama",
+            model=model,
+            input_tokens=1,
+            output_tokens=1,
+        )
 
 
 def _live_migration_engine():
@@ -95,6 +134,23 @@ class TestCvRouter(unittest.TestCase):
         body = get_response.json()
         self.assertEqual(body["truth_base"]["identity"], "Jane Doe")
         self.assertEqual(body["version"], 1)
+
+    def test_extract_returns_422_when_llm_response_is_unparseable(self) -> None:
+        app.dependency_overrides[get_llm_adapters] = lambda: {
+            "ollama": _UnparseableAdapter()
+        }
+        html = b"<html><body><h1>Jane Doe</h1><p>Engineer.</p></body></html>"
+
+        response = self.client.post(
+            "/cv/extract",
+            files={"file": ("cv.html", html, "text/html")},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("could not extract", response.json()["detail"])
+        # Nothing should have been written on a failed extraction.
+        get_response = self.client.get("/cv/truth-base")
+        self.assertIsNone(get_response.json())
 
 
 if __name__ == "__main__":

@@ -11,7 +11,8 @@ from __future__ import annotations
 import uuid
 
 from app.dependencies import get_app_db_engine, get_llm_adapters
-from fastapi import APIRouter, Depends, UploadFile
+from docling.exceptions import BaseError as DoclingError
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import Engine
 
@@ -126,9 +127,27 @@ async def post_extract(
 
     Returns:
         The new version number.
+
+    Raises:
+        fastapi.HTTPException: 422, if Docling can't convert the upload
+            (unsupported format, corrupt file) or if the LLM's
+            extraction response can't be parsed into a `CVTruthBase`
+            (`extract_truth_base`'s documented `ValueError` case).
     """
     file_bytes = await file.read()
-    markdown = docling_to_markdown(file_bytes, file.filename or "cv.pdf")
-    truth_base = extract_truth_base(markdown, adapters=adapters)
+    try:
+        markdown = docling_to_markdown(file_bytes, file.filename or "cv.pdf")
+    except DoclingError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"could not read the uploaded document: {exc}",
+        ) from exc
+    try:
+        truth_base = extract_truth_base(markdown, adapters=adapters)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"could not extract a CV from the uploaded document: {exc}",
+        ) from exc
     version = write_truth_base(engine, user_id, markdown, truth_base)
     return WriteResult(version=version)
