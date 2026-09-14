@@ -65,9 +65,7 @@ def upgrade() -> None:
         USING (user_id = current_setting('app.current_user_id', true)::uuid)
         """
     )
-    op.execute(
-        "GRANT SELECT, INSERT, UPDATE ON cv_truth_base TO job_search_app"
-    )
+    op.execute("GRANT SELECT, INSERT, UPDATE ON cv_truth_base TO job_search_app")
 
     op.create_table(
         "cv_truth_base_history",
@@ -92,7 +90,11 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("now()"),
         ),
-        sa.UniqueConstraint("user_id", "version", name="uq_cv_truth_base_history_version"),
+        sa.UniqueConstraint(
+            "user_id",
+            "version",
+            name="uq_cv_truth_base_history_version",
+        ),
     )
     op.execute("ALTER TABLE cv_truth_base_history ENABLE ROW LEVEL SECURITY")
     op.execute(
@@ -101,9 +103,7 @@ def upgrade() -> None:
         USING (user_id = current_setting('app.current_user_id', true)::uuid)
         """
     )
-    op.execute(
-        "GRANT SELECT, INSERT ON cv_truth_base_history TO job_search_app"
-    )
+    op.execute("GRANT SELECT, INSERT ON cv_truth_base_history TO job_search_app")
 
 
 def downgrade() -> None:
