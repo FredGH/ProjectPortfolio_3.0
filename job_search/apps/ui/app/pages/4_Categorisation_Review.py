@@ -204,7 +204,7 @@ try:
         rate = summary["agreement_rate"]
         st.metric(
             "Agreement so far",
-            f"{rate:.0%}",
+            f"{rate:.1%}",
             help=(
                 f"{summary['agree_count']} of {summary['reviewed_count']} "
                 "reviewed jobs so far have a reviewer-chosen category that "
@@ -322,7 +322,7 @@ else:
 
     if reviewed_count >= target:
         rate = summary["agreement_rate"] if summary else None
-        rate_text = f"{rate:.0%}" if rate is not None else "n/a"
+        rate_text = f"{rate:.1%}" if rate is not None else "n/a"
         if rate is not None and rate >= 0.90:
             st.success(
                 f"{reviewed_count} of {target} reviewed at {rate_text} "
