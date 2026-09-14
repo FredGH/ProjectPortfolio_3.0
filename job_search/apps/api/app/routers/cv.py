@@ -229,11 +229,18 @@ async def post_extract(
 
 
 @router.get("/extract/jobs/{job_id}", response_model=ExtractionJobResponse)
-def get_extract_job(job_id: uuid.UUID) -> ExtractionJobResponse:
+def get_extract_job(
+    job_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> ExtractionJobResponse:
     """Return one extraction job's current progress and result.
 
     Args:
         job_id: The job id returned by `POST /cv/extract`.
+        user_id: Injected by `get_current_user_id` — gates this route
+            behind auth like every other `/cv` route. The job registry
+            itself is not user-scoped (job_id alone is the poll key by
+            design), so this value isn't otherwise used here.
 
     Returns:
         The job's current `ExtractionJobResponse`.

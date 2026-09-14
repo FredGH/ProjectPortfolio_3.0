@@ -72,6 +72,45 @@ class TestRunExtractionJob(unittest.TestCase):
             _ENGINE, _USER_ID, "# Jane Doe", mock_extract.return_value
         )
 
+    @patch("core.cv.jobs.write_truth_base")
+    @patch("core.cv.jobs.extract_truth_base")
+    @patch("core.cv.jobs.docling_to_markdown")
+    def test_run_extraction_job_reports_running_status_mid_step(
+        self, mock_docling, mock_extract, mock_write
+    ) -> None:
+        job_id = create_job()
+
+        def _observe_mid_step(*args: object, **kwargs: object) -> str:
+            job = get_job(job_id)
+            self.assertEqual(job.status, "running")
+            steps_by_name = {step.name: step for step in job.steps}
+            self.assertEqual(
+                steps_by_name["parsing_document"].status, StepStatus.RUNNING
+            )
+            self.assertEqual(
+                steps_by_name["extracting_fields"].status, StepStatus.PENDING
+            )
+            self.assertEqual(steps_by_name["saving"].status, StepStatus.PENDING)
+            return "# Jane Doe"
+
+        mock_docling.side_effect = _observe_mid_step
+        mock_extract.return_value = CVTruthBase(
+            identity="Jane Doe", headline="Engineer"
+        )
+        mock_write.return_value = 1
+
+        run_extraction_job(
+            job_id,
+            b"bytes",
+            "cv.pdf",
+            adapters=_ADAPTERS,
+            engine=_ENGINE,
+            user_id=_USER_ID,
+        )
+
+        job = get_job(job_id)
+        self.assertEqual(job.status, "succeeded")
+
     @patch("core.cv.jobs.docling_to_markdown")
     def test_docling_failure_marks_job_failed_at_parsing_document(
         self, mock_docling
