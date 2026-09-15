@@ -142,6 +142,7 @@ else:
 
     identity = st.text_input("Identity", value=truth_base["identity"])
     headline = st.text_input("Headline", value=truth_base["headline"])
+    summary = st.text_area("Summary", value=truth_base["summary"] or "", height=120)
 
     st.subheader("Skills")
     skills_df = pd.DataFrame(
@@ -220,10 +221,50 @@ else:
         publications_df, num_rows="dynamic", key="publications_editor"
     )
 
+    st.subheader("Continuous Development")
+    continuous_development_df = pd.DataFrame(
+        [
+            {"name": c["name"], "year": c["year"]}
+            for c in truth_base["continuous_development"]
+        ],
+        columns=["name", "year"],
+    )
+    edited_continuous_development = st.data_editor(
+        continuous_development_df,
+        num_rows="dynamic",
+        key="continuous_development_editor",
+    )
+
+    st.subheader("Projects")
+    projects_df = pd.DataFrame(
+        [
+            {
+                "name": p["name"],
+                "description": p["description"],
+                "tech": ", ".join(p["tech"]),
+                "url": p["url"] or "",
+            }
+            for p in truth_base["projects"]
+        ],
+        columns=["name", "description", "tech", "url"],
+    )
+    edited_projects = st.data_editor(
+        projects_df, num_rows="dynamic", key="projects_editor"
+    )
+
+    st.subheader("Activities & Interests")
+    activities_interests_df = pd.DataFrame(
+        [{"text": a} for a in truth_base["activities_interests"]], columns=["text"]
+    )
+    edited_activities_interests = st.data_editor(
+        activities_interests_df, num_rows="dynamic", key="activities_interests_editor"
+    )
+
     if st.button("Save corrections"):
         new_truth_base = {
             "identity": identity,
             "headline": headline,
+            "summary": summary or None,
             "locations": truth_base["locations"],
             "work_auth": truth_base["work_auth"],
             "skills": [
@@ -273,6 +314,20 @@ else:
                 {"citation": row["citation"]}
                 for row in edited_publications.to_dict("records")
             ],
+            "continuous_development": [
+                {"name": row["name"], "year": row["year"]}
+                for row in edited_continuous_development.to_dict("records")
+            ],
+            "projects": [
+                {
+                    "name": row["name"],
+                    "description": row["description"],
+                    "tech": [t.strip() for t in row["tech"].split(",") if t.strip()],
+                    "url": row["url"] or None,
+                }
+                for row in edited_projects.to_dict("records")
+            ],
+            "activities_interests": edited_activities_interests["text"].tolist(),
         }
         try:
             response = httpx.put(

@@ -101,27 +101,53 @@ class Publication(BaseModel):
     citation: str
 
 
+class Project(BaseModel):
+    """One personal/side project (as distinct from paid `Experience`).
+
+    Attributes:
+        name: The project's name.
+        description: What it does, verbatim from the CV.
+        tech: Technologies used.
+        url: A link to the project, if given.
+    """
+
+    name: str
+    description: str = ""
+    tech: list[str] = []
+    url: str | None = None
+
+
 class CVTruthBase(BaseModel):
     """The full CV truth base — one user's canonical CV representation.
 
     Attributes:
         identity: Full name.
         headline: Professional headline, e.g. "Senior Data Engineer".
+        summary: Professional summary/profile paragraph, if present.
         locations: Locations associated with this CV.
         work_auth: Work authorization statement, if present.
         skills: Every skill entry.
         experience: Every work-experience entry, in CV order.
         education: Every education entry.
-        certifications: Every certification.
+        certifications: Every professional certification.
+        continuous_development: Non-certification training/courses (e.g.
+            short programmes) — same shape as `certifications`, kept as
+            a separate list since they're a distinct CV section.
         publications: Every publication.
+        projects: Every personal/side project.
+        activities_interests: Activities and interests, verbatim entries.
     """
 
     identity: str
     headline: str
+    summary: str | None = None
     locations: list[str] = []
     work_auth: str | None = None
     skills: list[Skill] = []
     experience: list[Experience] = []
     education: list[Education] = []
     certifications: list[Certification] = []
+    continuous_development: list[Certification] = []
     publications: list[Publication] = []
+    projects: list[Project] = []
+    activities_interests: list[str] = []

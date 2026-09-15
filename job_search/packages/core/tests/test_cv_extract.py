@@ -115,6 +115,42 @@ class TestExtractTruthBase(unittest.TestCase):
             compute_bullet_id(0, "Wrote extensive test fixtures."),
         )
 
+    def test_parses_summary_projects_continuous_development_and_activities(
+        self,
+    ) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "summary": "Test engineer with 10 years of experience.",
+            "continuous_development": [{"name": "AI Engineering Track", "year": 2025}],
+            "projects": [
+                {
+                    "name": "Test Fixture Generator",
+                    "description": "Generates synthetic test fixtures.",
+                    "tech": ["Python"],
+                    "url": "https://example.com/fixtures",
+                }
+            ],
+            "activities_interests": ["Mentor at MyJobGlasses"],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.summary, "Test engineer with 10 years of experience.")
+        self.assertEqual(len(result.continuous_development), 1)
+        self.assertEqual(result.continuous_development[0].name, "AI Engineering Track")
+        self.assertEqual(len(result.projects), 1)
+        self.assertEqual(result.projects[0].name, "Test Fixture Generator")
+        self.assertEqual(result.projects[0].tech, ["Python"])
+        self.assertEqual(result.activities_interests, ["Mentor at MyJobGlasses"])
+
     def test_raises_value_error_on_unparseable_response(self) -> None:
         fake_adapter = _FakeAdapter("not json")
         with self.assertRaises(ValueError):

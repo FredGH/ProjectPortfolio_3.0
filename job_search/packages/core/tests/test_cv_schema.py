@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import unittest
 
-from core.cv.schema import Bullet, CVTruthBase, Experience, Skill
+from core.cv.schema import (
+    Bullet,
+    Certification,
+    CVTruthBase,
+    Experience,
+    Project,
+    Skill,
+)
 
 
 class TestCVTruthBaseRoundTrip(unittest.TestCase):
@@ -12,6 +19,7 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
         original = CVTruthBase(
             identity="Jane Doe",
             headline="Senior Data Engineer",
+            summary="Data engineer with 10 years of experience.",
             locations=["London, UK"],
             work_auth="UK citizen",
             skills=[Skill(name="Python", years=10.0)],
@@ -26,6 +34,18 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
                     metrics=["50% faster"],
                 )
             ],
+            continuous_development=[
+                Certification(name="AI Engineering Track", year=2025)
+            ],
+            projects=[
+                Project(
+                    name="CV Intelligence Agent",
+                    description="LLM-powered chatbot answering career questions.",
+                    tech=["Python", "LangChain"],
+                    url="https://example.com/cv-agent",
+                )
+            ],
+            activities_interests=["Mentor at MyJobGlasses"],
         )
         restored = CVTruthBase.model_validate_json(original.model_dump_json())
         self.assertEqual(restored, original)
@@ -35,6 +55,10 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
         self.assertEqual(minimal.skills, [])
         self.assertEqual(minimal.experience, [])
         self.assertIsNone(minimal.work_auth)
+        self.assertIsNone(minimal.summary)
+        self.assertEqual(minimal.continuous_development, [])
+        self.assertEqual(minimal.projects, [])
+        self.assertEqual(minimal.activities_interests, [])
 
 
 if __name__ == "__main__":
