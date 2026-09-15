@@ -63,26 +63,49 @@ class _RawCVTruthBase(BaseModel):
     publications: list[Publication] = []
 
 
-_CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```$", re.DOTALL)
+_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
 
 
-def _strip_code_fence(text: str) -> str:
-    """Strip a wrapping markdown code fence, if present.
+def _parse_json_response(text: str) -> dict[str, object]:
+    """Parse an LLM response into a JSON dict, tolerating common wrapping.
 
-    Local models routinely wrap a JSON response in a ```json ... ``` fence
-    despite being asked for raw JSON (observed with llama3.1:8b) — this
-    makes `json.loads` see the same JSON either way instead of failing on
-    the leading backtick.
+    Local models routinely don't return bare JSON despite being asked for
+    it (all observed from llama3.1:8b on this task, across different
+    calls): a ```json ... ``` fence, a fence preceded by explanatory
+    prose, or no fence at all with the JSON object embedded in prose.
+    Tries, in order: the text as-is; the first fenced code block anywhere
+    in the text; the substring from the first "{" to the last "}". Each
+    candidate is a plain `json.loads` attempt — a candidate that happens
+    to parse but isn't the right shape still fails
+    `_RawCVTruthBase.model_validate` afterward, so this never turns a
+    genuinely malformed response into a false success.
 
     Args:
         text: The raw response text, already `.strip()`-ped.
 
     Returns:
-        `text` with a wrapping code fence removed, or `text` unchanged if
-        it wasn't fenced.
+        The parsed JSON value from the first candidate that parses.
+
+    Raises:
+        json.JSONDecodeError: If no candidate parses as JSON.
     """
-    match = _CODE_FENCE_RE.match(text)
-    return match.group(1).strip() if match else text
+    candidates = [text]
+    fence_match = _CODE_FENCE_RE.search(text)
+    if fence_match:
+        candidates.append(fence_match.group(1).strip())
+    brace_start = text.find("{")
+    brace_end = text.rfind("}")
+    if brace_start != -1 and brace_end > brace_start:
+        candidates.append(text[brace_start : brace_end + 1])
+
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+    assert last_error is not None  # `candidates` always has >= 1 entry
+    raise last_error
 
 
 @lru_cache
@@ -166,11 +189,16 @@ def extract_truth_base(
         provider=provider,
         model=model,
     )
+    response_text = response.text.strip()
     try:
-        parsed = json.loads(_strip_code_fence(response.text.strip()))
+        parsed = _parse_json_response(response_text)
         raw = _RawCVTruthBase.model_validate(parsed)
     except (json.JSONDecodeError, ValueError) as exc:
-        raise ValueError(f"could not parse cv_extraction response: {exc}") from exc
+        snippet = response_text[:200]
+        raise ValueError(
+            f"could not parse cv_extraction response: {exc} "
+            f"(response started with: {snippet!r})"
+        ) from exc
 
     experience = [
         Experience(

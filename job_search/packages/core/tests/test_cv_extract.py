@@ -142,6 +142,51 @@ class TestExtractTruthBase(unittest.TestCase):
         self.assertEqual(result.identity, "Jane Doe")
         self.assertEqual(result.headline, "Senior Test Engineer")
 
+    def test_extracts_json_from_a_fenced_block_preceded_by_prose(self) -> None:
+        payload = {"identity": "Jane Doe", "headline": "Senior Test Engineer"}
+        response_text = (
+            f"Here is the extracted JSON:\n```json\n{json.dumps(payload)}\n```\n"
+            "Let me know if you need anything else!"
+        )
+        fake_adapter = _FakeAdapter(response_text)
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.identity, "Jane Doe")
+
+    def test_extracts_json_surrounded_by_prose_with_no_fence(self) -> None:
+        payload = {"identity": "Jane Doe", "headline": "Senior Test Engineer"}
+        response_text = f"Sure, here you go: {json.dumps(payload)} Hope that helps!"
+        fake_adapter = _FakeAdapter(response_text)
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.identity, "Jane Doe")
+
+    def test_error_includes_a_snippet_of_the_unparseable_response(self) -> None:
+        fake_adapter = _FakeAdapter("Sorry, I can't help with that request.")
+        with self.assertRaises(ValueError) as ctx:
+            extract_truth_base(
+                "# Jane Doe CV",
+                adapters={"ollama": fake_adapter},
+                provider="ollama",
+                model="llama3.1:8b",
+                prompt_family="local",
+            )
+        self.assertIn("Sorry, I can't help", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
