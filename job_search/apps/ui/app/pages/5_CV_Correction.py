@@ -1,8 +1,9 @@
 """CV correction pass (PLAN.md Step 13) — upload a CV to extract a
 truth base, or edit and re-save an existing one. Uses `st.data_editor`
-for the list-shaped sections (skills, experience bullets) rather than
-one widget per nested field, so adding/removing a row is a native grid
-action instead of bespoke per-field UI.
+for every list-shaped section (skills, experience bullets, education,
+certifications, publications) rather than one widget per nested field,
+so adding/removing a row is a native grid action instead of bespoke
+per-field UI.
 """
 
 from __future__ import annotations
@@ -184,6 +185,41 @@ else:
                 }
             )
 
+    st.subheader("Education")
+    education_df = pd.DataFrame(
+        [
+            {
+                "institution": e["institution"],
+                "qualification": e["qualification"],
+                "start": e["start"],
+                "end": e["end"],
+            }
+            for e in truth_base["education"]
+        ],
+        columns=["institution", "qualification", "start", "end"],
+    )
+    edited_education = st.data_editor(
+        education_df, num_rows="dynamic", key="education_editor"
+    )
+
+    st.subheader("Certifications")
+    certifications_df = pd.DataFrame(
+        [{"name": c["name"], "year": c["year"]} for c in truth_base["certifications"]],
+        columns=["name", "year"],
+    )
+    edited_certifications = st.data_editor(
+        certifications_df, num_rows="dynamic", key="certifications_editor"
+    )
+
+    st.subheader("Publications")
+    publications_df = pd.DataFrame(
+        [{"citation": p["citation"]} for p in truth_base["publications"]],
+        columns=["citation"],
+    )
+    edited_publications = st.data_editor(
+        publications_df, num_rows="dynamic", key="publications_editor"
+    )
+
     if st.button("Save corrections"):
         new_truth_base = {
             "identity": identity,
@@ -220,9 +256,23 @@ else:
                 }
                 for exp_index, row in enumerate(experience_rows)
             ],
-            "education": truth_base["education"],
-            "certifications": truth_base["certifications"],
-            "publications": truth_base["publications"],
+            "education": [
+                {
+                    "institution": row["institution"],
+                    "qualification": row["qualification"],
+                    "start": row["start"],
+                    "end": row["end"],
+                }
+                for row in edited_education.to_dict("records")
+            ],
+            "certifications": [
+                {"name": row["name"], "year": row["year"]}
+                for row in edited_certifications.to_dict("records")
+            ],
+            "publications": [
+                {"citation": row["citation"]}
+                for row in edited_publications.to_dict("records")
+            ],
         }
         try:
             response = httpx.put(
