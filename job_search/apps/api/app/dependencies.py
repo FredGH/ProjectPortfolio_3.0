@@ -49,18 +49,24 @@ def get_ollama_http_client() -> httpx.Client:
     appropriate for the small, fast calls `get_http_client` otherwise
     serves, but not for this. Kept as its own client, not a shared one,
     so a slow Ollama call can never be starved by a timeout tuned for
-    unrelated fast requests. 300s (rather than the 120s this client
-    started with) because extraction now runs as a background job
-    (JOB-202's extraction-progress work) — nothing blocks on this call
-    waiting for an HTTP response anymore, so the only cost of a longer
-    timeout is how long a genuinely stuck call takes to be reported as
-    failed, not how long a user waits.
+    unrelated fast requests.
+
+    900s (rather than the 120s this client started with) because
+    extraction now runs as a background job (JOB-202's
+    extraction-progress work) — nothing blocks on this call waiting for
+    an HTTP response anymore, so the only cost of a longer timeout is
+    how long a genuinely stuck call takes to be reported as failed, not
+    how long a user waits. The value itself is empirically grounded, not
+    a guess: llama3.1:8b on CPU-only inference (no GPU passthrough into
+    Docker on macOS) was measured taking 435s and 775s for real CVs
+    against this task's prompt, so 300s was demonstrably too short —
+    900s leaves comfortable headroom above the slower observed run.
 
     Returns:
-        A shared `httpx.Client` with a 300-second timeout, reused across
+        A shared `httpx.Client` with a 900-second timeout, reused across
         requests rather than rebuilt per call.
     """
-    return httpx.Client(timeout=300.0)
+    return httpx.Client(timeout=900.0)
 
 
 @lru_cache
