@@ -663,9 +663,9 @@ def _cmd_classify_jobs(args: argparse.Namespace) -> int:
         http_client.close()
 
 
-# Tasks with an eval configured — extend as future steps (13, 15-17,
+# Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
-_EVAL_TASKS = ["job_categorisation"]
+_EVAL_TASKS = ["job_categorisation", "cv_extraction"]
 
 
 def _report_eval_result(result: EvalRunResult) -> None:

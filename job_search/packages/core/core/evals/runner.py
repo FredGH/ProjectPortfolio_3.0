@@ -136,10 +136,67 @@ def _predict_job_categorisation(
     return {"category": category}, prompt_version
 
 
+def _predict_cv_extraction(
+    case: GoldenCase,
+    *,
+    provider: str,
+    model: str,
+    prompt_family: str,
+    adapters: dict[str, LLMAdapter],
+) -> tuple[dict[str, object], str | None]:
+    """Predict a `cv_extraction` case's flattened fields via the LLM.
+
+    Args:
+        case: The golden case to predict — `case.input["markdown"]` is
+            the CV markdown snippet to extract from.
+        provider: The provider to force `extract_truth_base` to use.
+        model: The model to use with `provider`.
+        prompt_family: The prompt variant to load for `provider`.
+        adapters: Every available LLM adapter, keyed by provider name.
+
+    Returns:
+        A tuple of (flattened predicted fields matching this task's
+        golden-set expected-key shape, `for field_f1` to compare) and
+        the `prompt_version` `extract_truth_base` used. Falls back to
+        `({}, None)` if extraction raises `ValueError` — one malformed
+        response should not crash a whole eval run.
+    """
+    from core.cv.extract import extract_truth_base
+
+    try:
+        result = extract_truth_base(
+            case.input["markdown"],
+            adapters=adapters,
+            provider=provider,
+            model=model,
+            prompt_family=prompt_family,
+        )
+    except ValueError:
+        return {}, None
+
+    first_experience = result.experience[0] if result.experience else None
+    first_skill = result.skills[0] if result.skills else None
+    predicted = {
+        "company": first_experience.company if first_experience else None,
+        "title": first_experience.title if first_experience else None,
+        "start": first_experience.start if first_experience else None,
+        "end": first_experience.end if first_experience else None,
+        "first_bullet": (
+            first_experience.bullets[0].text
+            if first_experience and first_experience.bullets
+            else None
+        ),
+        "first_skill": first_skill.name if first_skill else None,
+    }
+    prompt_version = f"{prompt_family}.v1"
+    return predicted, prompt_version
+
+
 _Predictor = Callable[..., tuple[dict[str, object], str | None]]
 
 _PREDICTORS: dict[str, _Predictor] = {
     "job_categorisation": _predict_job_categorisation,
+    "cv_extraction": _predict_cv_extraction,
 }
 
 
