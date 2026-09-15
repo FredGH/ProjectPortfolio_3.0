@@ -211,6 +211,78 @@ class TestExtractTruthBase(unittest.TestCase):
 
         self.assertEqual(result.identity, "Jane Doe")
 
+    def test_tolerates_null_start_on_an_old_experience_entry(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "experience": [
+                {
+                    "company": "Old Corp",
+                    "title": "Junior Engineer",
+                    "start": None,
+                    "end": "1998-06",
+                    "bullets": [],
+                    "tech": [],
+                    "metrics": [],
+                }
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertIsNone(result.experience[0].start)
+        self.assertEqual(result.experience[0].end, "1998-06")
+
+    def test_tolerates_education_entry_missing_qualification(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "education": [
+                {"institution": "The Open University", "start": "2002-08", "end": None}
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.education[0].institution, "The Open University")
+        self.assertIsNone(result.education[0].qualification)
+
+    def test_recovers_publication_citation_keyed_as_title(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "publications": [
+                {"title": "On XLE Index Construction, Springer"},
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(
+            result.publications[0].citation, "On XLE Index Construction, Springer"
+        )
+
     def test_error_includes_a_snippet_of_the_unparseable_response(self) -> None:
         fake_adapter = _FakeAdapter("Sorry, I can't help with that request.")
         with self.assertRaises(ValueError) as ctx:

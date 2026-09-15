@@ -28,7 +28,8 @@ class Experience(BaseModel):
     Attributes:
         company: Employer name.
         title: Job title held.
-        start: Start date, "YYYY-MM".
+        start: Start date, "YYYY-MM", or None if the CV doesn't state
+            one clearly (common for older, loosely-dated roles).
         end: End date, "YYYY-MM", or None for "present".
         bullets: This role's bullet points.
         tech: Technologies mentioned for this role.
@@ -37,7 +38,7 @@ class Experience(BaseModel):
 
     company: str
     title: str
-    start: str
+    start: str | None = None
     end: str | None = None
     bullets: list[Bullet] = []
     tech: list[str] = []
@@ -68,13 +69,13 @@ class Education(BaseModel):
 
     Attributes:
         institution: School/university name.
-        qualification: Degree or qualification name.
+        qualification: Degree or qualification name, if statable.
         start: Start date, "YYYY" or "YYYY-MM", if statable.
         end: End date, "YYYY" or "YYYY-MM", if statable.
     """
 
     institution: str
-    qualification: str
+    qualification: str | None = None
     start: str | None = None
     end: str | None = None
 

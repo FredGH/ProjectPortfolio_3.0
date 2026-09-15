@@ -43,7 +43,7 @@ class _RawExperience(BaseModel):
 
     company: str
     title: str
-    start: str
+    start: str | None = None
     end: str | None = None
     bullets: list[str] = []
     tech: list[str] = []
@@ -111,6 +111,28 @@ def _parse_json_response(text: str) -> dict[str, object]:
             last_error = exc
     assert last_error is not None  # `candidates` always has >= 1 entry
     raise last_error
+
+
+def _recover_publication_citations(parsed: dict[str, object]) -> None:
+    """Recover a publication's citation text keyed as "title" instead.
+
+    Observed from llama3.1:8b on a real CV: instead of the documented
+    `{"citation": "..."}` shape, some publication entries came back as
+    `{"title": "..."}` with the full citation text under that key —
+    the model substituting its own natural key for the requested one
+    rather than omitting the data. Mutates `parsed["publications"]` in
+    place; a no-op if "publications" is absent or entries are already
+    well-formed.
+
+    Args:
+        parsed: The LLM response, already parsed as JSON.
+    """
+    publications = parsed.get("publications")
+    if not isinstance(publications, list):
+        return
+    for entry in publications:
+        if isinstance(entry, dict) and "citation" not in entry and "title" in entry:
+            entry["citation"] = entry.pop("title")
 
 
 @lru_cache
@@ -197,6 +219,7 @@ def extract_truth_base(
     response_text = response.text.strip()
     try:
         parsed = _parse_json_response(response_text)
+        _recover_publication_citations(parsed)
         raw = _RawCVTruthBase.model_validate(parsed)
     except (json.JSONDecodeError, ValueError) as exc:
         snippet = response_text[:200]
