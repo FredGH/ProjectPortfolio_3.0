@@ -238,32 +238,104 @@ else:
     edited_skills = st.data_editor(skills_df, num_rows="dynamic", key="skills_editor")
 
     st.subheader("Experience")
+
+    # Experience entries are edited by stable id (not list position), so
+    # reordering never disturbs which widget key holds which entry's
+    # data. Re-seeded whenever a different version loads (a fresh
+    # extraction, a save, or a restore) so stale local edits/additions
+    # from a prior version never leak into the newly loaded one.
+    if st.session_state.get("experience_version") != current["version"]:
+        st.session_state["experience_ids"] = list(range(len(truth_base["experience"])))
+        st.session_state["new_experience_entries"] = {}
+        st.session_state["experience_version"] = current["version"]
+
+    experience_ids = st.session_state["experience_ids"]
+    new_experience_entries = st.session_state["new_experience_entries"]
+
     experience_rows = []
-    for exp_index, exp in enumerate(truth_base["experience"]):
-        with st.expander(f"{exp['company']} — {exp['title']}", expanded=False):
-            company = st.text_input(
-                "Company", value=exp["company"], key=f"company_{exp_index}"
+    for position, exp_id in enumerate(experience_ids):
+        if exp_id < len(truth_base["experience"]):
+            exp = truth_base["experience"][exp_id]
+        else:
+            exp = new_experience_entries.setdefault(
+                exp_id,
+                {
+                    "company": "",
+                    "title": "",
+                    "start": "",
+                    "end": None,
+                    "bullets": [],
+                    "tech": [],
+                    "metrics": [],
+                },
             )
-            title = st.text_input("Title", value=exp["title"], key=f"title_{exp_index}")
-            start = st.text_input("Start", value=exp["start"], key=f"start_{exp_index}")
-            end = st.text_input("End", value=exp["end"] or "", key=f"end_{exp_index}")
+        company_for_header = st.session_state.get(f"company_{exp_id}", exp["company"])
+        title_for_header = st.session_state.get(f"title_{exp_id}", exp["title"])
+        header = (
+            f"{company_for_header} — {title_for_header}"
+            if company_for_header or title_for_header
+            else "New experience entry"
+        )
+        with st.expander(header, expanded=not (company_for_header or title_for_header)):
+            move_up, move_down, _spacer = st.columns([1, 1, 6])
+            if move_up.button(
+                "↑ Move up", key=f"move_up_{exp_id}", disabled=position == 0
+            ):
+                experience_ids[position - 1], experience_ids[position] = (
+                    experience_ids[position],
+                    experience_ids[position - 1],
+                )
+                st.rerun()
+            if move_down.button(
+                "↓ Move down",
+                key=f"move_down_{exp_id}",
+                disabled=position == len(experience_ids) - 1,
+            ):
+                experience_ids[position + 1], experience_ids[position] = (
+                    experience_ids[position],
+                    experience_ids[position + 1],
+                )
+                st.rerun()
+
+            company = st.text_input(
+                "Company", value=exp["company"], key=f"company_{exp_id}"
+            )
+            title = st.text_input("Title", value=exp["title"], key=f"title_{exp_id}")
+            start = st.text_input(
+                "Start", value=exp["start"] or "", key=f"start_{exp_id}"
+            )
+            end = st.text_input("End", value=exp["end"] or "", key=f"end_{exp_id}")
             bullets_df = pd.DataFrame(
                 [{"text": b["text"]} for b in exp["bullets"]], columns=["text"]
             )
             edited_bullets = st.data_editor(
-                bullets_df, num_rows="dynamic", key=f"bullets_{exp_index}"
+                bullets_df, num_rows="dynamic", key=f"bullets_{exp_id}"
             )
             experience_rows.append(
                 {
                     "company": company,
                     "title": title,
-                    "start": start,
+                    "start": start or None,
                     "end": end or None,
                     "bullets": _clean_editor_rows(edited_bullets)["text"].tolist(),
                     "tech": exp["tech"],
                     "metrics": exp["metrics"],
                 }
             )
+
+    if st.button("+ Add experience"):
+        next_id = max(experience_ids, default=-1) + 1
+        new_experience_entries[next_id] = {
+            "company": "",
+            "title": "",
+            "start": "",
+            "end": None,
+            "bullets": [],
+            "tech": [],
+            "metrics": [],
+        }
+        experience_ids.append(next_id)
+        st.rerun()
 
     st.subheader("Education")
     education_df = pd.DataFrame(
