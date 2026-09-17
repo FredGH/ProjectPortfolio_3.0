@@ -17,8 +17,8 @@ import streamlit as st
 from core.cv.bullet_id import compute_bullet_id
 from core.settings import get_settings
 
-st.set_page_config(page_title="CV Correction", layout="wide")
-st.title("CV Correction")
+st.set_page_config(page_title="CV Editor", layout="wide")
+st.title("CV Editor")
 
 _settings = get_settings()
 
