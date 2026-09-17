@@ -22,6 +22,50 @@ st.title("CV Editor")
 
 _settings = get_settings()
 
+_USER_GUIDE_MARKDOWN = """
+**What this page does:** upload a CV (PDF) to extract it into
+structured fields — identity, skills, experience, education, and so
+on. Review and correct any field, then **Save** — every save creates
+a new version you can name and come back to later.
+
+**Sections:**
+- **Identity, Headline, Email, Phone, LinkedIn URL, Nationality** —
+  the header block under your name; edit directly.
+- **Summary** — the professional summary/profile paragraph, if the CV
+  has one.
+- **Skills** — one row per skill; add or remove rows freely.
+- **Experience** — one accordion per role.
+  - **+ Add experience** adds a blank entry for a role extraction
+    missed — fill it in by hand.
+  - **↑ Move up / ↓ Move down** on each entry reorders it.
+- **Education** — institution, grade, qualification, start/end year.
+- **Publications** — citation, authors (comma-separated), year.
+- **Professional Qualifications & Continuous Personal Development** —
+  certifications and courses, in one merged list.
+- **Projects** and **Activities & Interests** — free-form rows.
+- **Re-extract from a new CV** — upload a different or updated CV
+  file to run extraction again from scratch.
+- **Version history** — every save is kept. **Restore** copies an
+  older version's content forward as a new current version — nothing
+  is ever overwritten in place.
+
+**If a section comes back empty, blank, or wrong:** just edit it —
+every field here is a normal editable box or table, whether or not
+extraction filled it in. For a missing role, use **+ Add experience**
+rather than waiting on a re-extract to catch it.
+
+**Why this happens, and how to reduce it:** CV extraction always runs
+on a local, free model (Ollama's llama3.1:8b), by design — it keeps
+every extraction private and free of API cost, but it's noticeably
+weaker than a larger hosted model at faithfully parsing a long, dense
+CV, and can drop or garble a section rather than just mis-format it.
+If manual correction is costing you real time on every extraction,
+the fix isn't another prompt tweak — it's routing CV extraction to a
+stronger model instead. That's a deliberate, recorded architecture
+choice (see `DECISIONS.md`), so it's worth raising explicitly as its
+own decision rather than working around indefinitely.
+"""
+
 
 def _fetch_truth_base() -> dict | None:
     """Fetch the current CV truth base, if one has been extracted yet.
@@ -152,6 +196,9 @@ def _upload_and_start_extraction() -> None:
         except httpx.HTTPError as exc:
             st.error(f"Failed to start extraction: {exc}")
 
+
+with st.expander("User Guide"):
+    st.markdown(_USER_GUIDE_MARKDOWN)
 
 try:
     current = _fetch_truth_base()
