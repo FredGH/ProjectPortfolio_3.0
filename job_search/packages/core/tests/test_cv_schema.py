@@ -19,6 +19,10 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
         original = CVTruthBase(
             identity="Jane Doe",
             headline="Senior Data Engineer",
+            email="jane.doe@example.com",
+            phone="+44 7700 900000",
+            linkedin_url="https://linkedin.com/in/janedoe",
+            nationality="British",
             summary="Data engineer with 10 years of experience.",
             locations=["London, UK"],
             work_auth="UK citizen",
@@ -34,9 +38,7 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
                     metrics=["50% faster"],
                 )
             ],
-            continuous_development=[
-                Certification(name="AI Engineering Track", year=2025)
-            ],
+            qualifications=[Certification(name="AI Engineering Track", year=2025)],
             projects=[
                 Project(
                     name="CV Intelligence Agent",
@@ -56,7 +58,11 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
         self.assertEqual(minimal.experience, [])
         self.assertIsNone(minimal.work_auth)
         self.assertIsNone(minimal.summary)
-        self.assertEqual(minimal.continuous_development, [])
+        self.assertIsNone(minimal.email)
+        self.assertIsNone(minimal.phone)
+        self.assertIsNone(minimal.linkedin_url)
+        self.assertIsNone(minimal.nationality)
+        self.assertEqual(minimal.qualifications, [])
         self.assertEqual(minimal.projects, [])
         self.assertEqual(minimal.activities_interests, [])
 

@@ -81,10 +81,13 @@ class Education(BaseModel):
 
 
 class Certification(BaseModel):
-    """One professional certification.
+    """One professional qualification or continuous-development item —
+    a formal certification or a non-certification course/programme;
+    both render under the CV's single "Professional Qualifications &
+    Continuous Personal Development" section.
 
     Attributes:
-        name: Certification name.
+        name: Certification or course/programme name.
         year: Year obtained, if statable.
     """
 
@@ -124,31 +127,38 @@ class CVTruthBase(BaseModel):
     Attributes:
         identity: Full name.
         headline: Professional headline, e.g. "Senior Data Engineer".
+        email: Contact email address, if present.
+        phone: Contact phone number, if present.
+        linkedin_url: LinkedIn profile URL, if present.
+        nationality: Nationality, if stated.
         summary: Professional summary/profile paragraph, if present.
         locations: Locations associated with this CV.
         work_auth: Work authorization statement, if present.
         skills: Every skill entry.
         experience: Every work-experience entry, in CV order.
-        education: Every education entry.
-        certifications: Every professional certification.
-        continuous_development: Non-certification training/courses (e.g.
-            short programmes) — same shape as `certifications`, kept as
-            a separate list since they're a distinct CV section.
-        publications: Every publication.
         projects: Every personal/side project.
+        publications: Every publication.
+        education: Every education entry.
+        qualifications: Professional certifications and non-certification
+            continuous-development items (short courses, programmes) —
+            both render under the CV's single "Professional
+            Qualifications & Continuous Personal Development" section.
         activities_interests: Activities and interests, verbatim entries.
     """
 
     identity: str
     headline: str
+    email: str | None = None
+    phone: str | None = None
+    linkedin_url: str | None = None
+    nationality: str | None = None
     summary: str | None = None
     locations: list[str] = []
     work_auth: str | None = None
     skills: list[Skill] = []
     experience: list[Experience] = []
-    education: list[Education] = []
-    certifications: list[Certification] = []
-    continuous_development: list[Certification] = []
-    publications: list[Publication] = []
     projects: list[Project] = []
+    publications: list[Publication] = []
+    education: list[Education] = []
+    qualifications: list[Certification] = []
     activities_interests: list[str] = []

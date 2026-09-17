@@ -1,7 +1,7 @@
 """CV correction pass (PLAN.md Step 13) — upload a CV to extract a
 truth base, or edit and re-save an existing one. Uses `st.data_editor`
 for every list-shaped section (skills, experience bullets, education,
-certifications, publications) rather than one widget per nested field,
+qualifications, publications) rather than one widget per nested field,
 so adding/removing a row is a native grid action instead of bespoke
 per-field UI.
 """
@@ -142,6 +142,10 @@ else:
 
     identity = st.text_input("Identity", value=truth_base["identity"])
     headline = st.text_input("Headline", value=truth_base["headline"])
+    email = st.text_input("Email", value=truth_base["email"] or "")
+    phone = st.text_input("Phone", value=truth_base["phone"] or "")
+    linkedin_url = st.text_input("LinkedIn URL", value=truth_base["linkedin_url"] or "")
+    nationality = st.text_input("Nationality", value=truth_base["nationality"] or "")
     summary = st.text_area("Summary", value=truth_base["summary"] or "", height=120)
 
     st.subheader("Skills")
@@ -203,15 +207,6 @@ else:
         education_df, num_rows="dynamic", key="education_editor"
     )
 
-    st.subheader("Certifications")
-    certifications_df = pd.DataFrame(
-        [{"name": c["name"], "year": c["year"]} for c in truth_base["certifications"]],
-        columns=["name", "year"],
-    )
-    edited_certifications = st.data_editor(
-        certifications_df, num_rows="dynamic", key="certifications_editor"
-    )
-
     st.subheader("Publications")
     publications_df = pd.DataFrame(
         [{"citation": p["citation"]} for p in truth_base["publications"]],
@@ -221,18 +216,13 @@ else:
         publications_df, num_rows="dynamic", key="publications_editor"
     )
 
-    st.subheader("Continuous Development")
-    continuous_development_df = pd.DataFrame(
-        [
-            {"name": c["name"], "year": c["year"]}
-            for c in truth_base["continuous_development"]
-        ],
+    st.subheader("Professional Qualifications & Continuous Personal Development")
+    qualifications_df = pd.DataFrame(
+        [{"name": q["name"], "year": q["year"]} for q in truth_base["qualifications"]],
         columns=["name", "year"],
     )
-    edited_continuous_development = st.data_editor(
-        continuous_development_df,
-        num_rows="dynamic",
-        key="continuous_development_editor",
+    edited_qualifications = st.data_editor(
+        qualifications_df, num_rows="dynamic", key="qualifications_editor"
     )
 
     st.subheader("Projects")
@@ -264,6 +254,10 @@ else:
         new_truth_base = {
             "identity": identity,
             "headline": headline,
+            "email": email or None,
+            "phone": phone or None,
+            "linkedin_url": linkedin_url or None,
+            "nationality": nationality or None,
             "summary": summary or None,
             "locations": truth_base["locations"],
             "work_auth": truth_base["work_auth"],
@@ -306,17 +300,13 @@ else:
                 }
                 for row in edited_education.to_dict("records")
             ],
-            "certifications": [
-                {"name": row["name"], "year": row["year"]}
-                for row in edited_certifications.to_dict("records")
-            ],
             "publications": [
                 {"citation": row["citation"]}
                 for row in edited_publications.to_dict("records")
             ],
-            "continuous_development": [
+            "qualifications": [
                 {"name": row["name"], "year": row["year"]}
-                for row in edited_continuous_development.to_dict("records")
+                for row in edited_qualifications.to_dict("records")
             ],
             "projects": [
                 {

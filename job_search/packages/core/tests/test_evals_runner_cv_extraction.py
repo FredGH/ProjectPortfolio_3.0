@@ -90,7 +90,7 @@ class TestCvExtractionGoldenSet(unittest.TestCase):
                 }
             ],
             "education": [],
-            "certifications": [],
+            "qualifications": [],
             "publications": [],
         }
         fake_adapter = _FakeAdapter(json.dumps(payload))

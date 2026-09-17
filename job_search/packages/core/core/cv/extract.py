@@ -33,7 +33,7 @@ from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
 _PROMPT_FAMILY = "local"
-_PROMPT_VERSION_NUMBER = 2
+_PROMPT_VERSION_NUMBER = 3
 
 
 class _RawExperience(BaseModel):
@@ -55,16 +55,19 @@ class _RawCVTruthBase(BaseModel):
 
     identity: str
     headline: str
+    email: str | None = None
+    phone: str | None = None
+    linkedin_url: str | None = None
+    nationality: str | None = None
     summary: str | None = None
     locations: list[str] = []
     work_auth: str | None = None
     skills: list[Skill] = []
     experience: list[_RawExperience] = []
-    education: list[Education] = []
-    certifications: list[Certification] = []
-    continuous_development: list[Certification] = []
-    publications: list[Publication] = []
     projects: list[Project] = []
+    publications: list[Publication] = []
+    education: list[Education] = []
+    qualifications: list[Certification] = []
     activities_interests: list[str] = []
 
 
@@ -246,15 +249,18 @@ def extract_truth_base(
     return CVTruthBase(
         identity=raw.identity,
         headline=raw.headline,
+        email=raw.email,
+        phone=raw.phone,
+        linkedin_url=raw.linkedin_url,
+        nationality=raw.nationality,
         summary=raw.summary,
         locations=raw.locations,
         work_auth=raw.work_auth,
         skills=raw.skills,
         experience=experience,
-        education=raw.education,
-        certifications=raw.certifications,
-        continuous_development=raw.continuous_development,
-        publications=raw.publications,
         projects=raw.projects,
+        publications=raw.publications,
+        education=raw.education,
+        qualifications=raw.qualifications,
         activities_interests=raw.activities_interests,
     )
