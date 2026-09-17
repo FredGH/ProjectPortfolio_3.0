@@ -93,52 +93,62 @@ def _render_job_progress(job: dict) -> None:
                 st.write(f"{icon} {label}")
 
 
+def _upload_and_start_extraction() -> None:
+    """Render a CV uploader and, on submit, start an extraction job.
+
+    Stores the returned job id in session state and reruns so the
+    top-level polling block picks it up immediately.
+    """
+    uploaded = st.file_uploader("Upload CV (PDF)", type=["pdf"], key="cv_uploader")
+    if uploaded is not None and st.button("Extract", key="extract_button"):
+        try:
+            response = httpx.post(
+                f"{_settings.api_base_url}/cv/extract",
+                files={"file": (uploaded.name, uploaded.getvalue())},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            st.session_state["cv_extraction_job_id"] = response.json()["job_id"]
+            st.rerun()
+        except httpx.HTTPError as exc:
+            st.error(f"Failed to start extraction: {exc}")
+
+
 try:
     current = _fetch_truth_base()
 except httpx.HTTPError as exc:
     st.error(f"Failed to load CV truth base: {exc}")
     current = None
 
-if current is None:
-    st.info("No CV on file yet — upload one to extract a truth base.")
-
-    job_id = st.session_state.get("cv_extraction_job_id")
-    if job_id is not None:
-        try:
-            job = _poll_extraction_job(job_id)
-        except httpx.HTTPError as exc:
-            st.error(f"Lost track of the extraction job — please retry: {exc}")
-            del st.session_state["cv_extraction_job_id"]
-        else:
-            _render_job_progress(job)
-            if job["status"] in {"queued", "running"}:
-                time.sleep(1)
-                st.rerun()
-            elif job["status"] == "succeeded":
-                del st.session_state["cv_extraction_job_id"]
-                st.success(f"Extracted as version {job['version']}.")
-                st.rerun()
-            else:
-                del st.session_state["cv_extraction_job_id"]
-                failed_step = _STEP_LABELS.get(job["failed_step"], job["failed_step"])
-                st.error(f"Extraction failed at {failed_step}: {job['error']}")
+job_id = st.session_state.get("cv_extraction_job_id")
+if job_id is not None:
+    try:
+        job = _poll_extraction_job(job_id)
+    except httpx.HTTPError as exc:
+        st.error(f"Lost track of the extraction job — please retry: {exc}")
+        del st.session_state["cv_extraction_job_id"]
     else:
-        uploaded = st.file_uploader("Upload CV (PDF)", type=["pdf"])
-        if uploaded is not None and st.button("Extract"):
-            try:
-                response = httpx.post(
-                    f"{_settings.api_base_url}/cv/extract",
-                    files={"file": (uploaded.name, uploaded.getvalue())},
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                st.session_state["cv_extraction_job_id"] = response.json()["job_id"]
-                st.rerun()
-            except httpx.HTTPError as exc:
-                st.error(f"Failed to start extraction: {exc}")
+        _render_job_progress(job)
+        if job["status"] in {"queued", "running"}:
+            time.sleep(1)
+            st.rerun()
+        elif job["status"] == "succeeded":
+            del st.session_state["cv_extraction_job_id"]
+            st.success(f"Extracted as version {job['version']}.")
+            st.rerun()
+        else:
+            del st.session_state["cv_extraction_job_id"]
+            failed_step = _STEP_LABELS.get(job["failed_step"], job["failed_step"])
+            st.error(f"Extraction failed at {failed_step}: {job['error']}")
+elif current is None:
+    st.info("No CV on file yet — upload one to extract a truth base.")
+    _upload_and_start_extraction()
 else:
     truth_base = current["truth_base"]
     st.caption(f"Version {current['version']}")
+
+    with st.expander("Re-extract from a new CV"):
+        _upload_and_start_extraction()
 
     identity = st.text_input("Identity", value=truth_base["identity"])
     headline = st.text_input("Headline", value=truth_base["headline"])
