@@ -48,12 +48,16 @@ class TruthBaseResponse(BaseModel):
         extracted_markdown: The markdown this version was parsed from.
         truth_base: The structured truth base.
         label: The name given to this version at save time, if any.
+        extraction_seconds: How long this version's extraction
+            pipeline took end-to-end, or None for a correction-pass
+            save.
     """
 
     version: int
     extracted_markdown: str
     truth_base: CVTruthBase
     label: str | None = None
+    extraction_seconds: float | None = None
 
 
 class TruthBaseWriteRequest(BaseModel):
@@ -77,11 +81,15 @@ class HistoryEntryResponse(BaseModel):
     Attributes:
         version: This version's number.
         label: The name given to this version at save time, if any.
+        extraction_seconds: How long this version's extraction
+            pipeline took end-to-end, or None for a correction-pass
+            save.
         created_at: When this version was written.
     """
 
     version: int
     label: str | None
+    extraction_seconds: float | None
     created_at: datetime
 
 
@@ -190,6 +198,7 @@ def get_truth_base(
         extracted_markdown=stored.extracted_markdown,
         truth_base=stored.truth_base,
         label=stored.label,
+        extraction_seconds=stored.extraction_seconds,
     )
 
 
@@ -238,7 +247,10 @@ def list_versions(
     """
     return [
         HistoryEntryResponse(
-            version=entry.version, label=entry.label, created_at=entry.created_at
+            version=entry.version,
+            label=entry.label,
+            extraction_seconds=entry.extraction_seconds,
+            created_at=entry.created_at,
         )
         for entry in list_truth_base_history(engine, user_id)
     ]
@@ -272,7 +284,12 @@ def restore_version(
     if old is None:
         raise HTTPException(status_code=404, detail="unknown CV version")
     new_version = write_truth_base(
-        engine, user_id, old.extracted_markdown, old.truth_base, label=old.label
+        engine,
+        user_id,
+        old.extracted_markdown,
+        old.truth_base,
+        label=old.label,
+        extraction_seconds=old.extraction_seconds,
     )
     return WriteResult(version=new_version)
 

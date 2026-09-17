@@ -30,6 +30,10 @@ class StoredTruthBase:
         extracted_markdown: The markdown this version was parsed from.
         truth_base: The parsed `CVTruthBase`.
         label: The name given to this version at save time, if any.
+        extraction_seconds: How long this version's extraction
+            pipeline took end-to-end (Docling parse through the DB
+            write), or None for a version written by a correction-pass
+            save rather than an extraction.
         updated_at: When this version was written.
     """
 
@@ -37,6 +41,7 @@ class StoredTruthBase:
     extracted_markdown: str
     truth_base: CVTruthBase
     label: str | None
+    extraction_seconds: float | None
     updated_at: datetime
 
 
@@ -48,11 +53,15 @@ class HistoryEntry:
     Attributes:
         version: This version's number.
         label: The name given to this version at save time, if any.
+        extraction_seconds: How long this version's extraction
+            pipeline took end-to-end, or None for a correction-pass
+            save.
         created_at: When this version was written.
     """
 
     version: int
     label: str | None
+    extraction_seconds: float | None
     created_at: datetime
 
 
@@ -69,7 +78,8 @@ def read_truth_base(engine: Engine, user_id: uuid.UUID) -> StoredTruthBase | Non
     with session_scope(engine, user_id=user_id) as conn:
         row = conn.execute(
             text(
-                "SELECT version, extracted_markdown, truth_base, label, updated_at "
+                "SELECT version, extracted_markdown, truth_base, label, "
+                "extraction_seconds, updated_at "
                 "FROM cv_truth_base WHERE user_id = :user_id"
             ),
             {"user_id": user_id},
@@ -81,6 +91,7 @@ def read_truth_base(engine: Engine, user_id: uuid.UUID) -> StoredTruthBase | Non
         extracted_markdown=row.extracted_markdown,
         truth_base=CVTruthBase.model_validate(row.truth_base),
         label=row.label,
+        extraction_seconds=row.extraction_seconds,
         updated_at=row.updated_at,
     )
 
@@ -98,13 +109,19 @@ def list_truth_base_history(engine: Engine, user_id: uuid.UUID) -> list[HistoryE
     with session_scope(engine, user_id=user_id) as conn:
         rows = conn.execute(
             text(
-                "SELECT version, label, created_at FROM cv_truth_base_history "
+                "SELECT version, label, extraction_seconds, created_at "
+                "FROM cv_truth_base_history "
                 "WHERE user_id = :user_id ORDER BY version DESC"
             ),
             {"user_id": user_id},
         ).all()
     return [
-        HistoryEntry(version=row.version, label=row.label, created_at=row.created_at)
+        HistoryEntry(
+            version=row.version,
+            label=row.label,
+            extraction_seconds=row.extraction_seconds,
+            created_at=row.created_at,
+        )
         for row in rows
     ]
 
@@ -126,7 +143,8 @@ def read_truth_base_version(
     with session_scope(engine, user_id=user_id) as conn:
         row = conn.execute(
             text(
-                "SELECT version, extracted_markdown, truth_base, label, created_at "
+                "SELECT version, extracted_markdown, truth_base, label, "
+                "extraction_seconds, created_at "
                 "FROM cv_truth_base_history "
                 "WHERE user_id = :user_id AND version = :version"
             ),
@@ -139,6 +157,7 @@ def read_truth_base_version(
         extracted_markdown=row.extracted_markdown,
         truth_base=CVTruthBase.model_validate(row.truth_base),
         label=row.label,
+        extraction_seconds=row.extraction_seconds,
         updated_at=row.created_at,
     )
 
@@ -149,6 +168,7 @@ def write_truth_base(
     extracted_markdown: str,
     truth_base: CVTruthBase,
     label: str | None = None,
+    extraction_seconds: float | None = None,
 ) -> int:
     """Write a new version of a user's CV truth base.
 
@@ -161,6 +181,9 @@ def write_truth_base(
         truth_base: The truth base to store as the new current version.
         label: An optional name for this version (e.g. "Before I added
             the AI section"), shown when browsing history.
+        extraction_seconds: How long this version's extraction
+            pipeline took end-to-end, if this write came from one —
+            omitted (None) for a correction-pass save.
 
     Returns:
         The new version number (1 for a user's first CV).
@@ -176,9 +199,10 @@ def write_truth_base(
         conn.execute(
             text(
                 "INSERT INTO cv_truth_base_history "
-                "(user_id, version, extracted_markdown, truth_base, label) "
+                "(user_id, version, extracted_markdown, truth_base, label, "
+                "extraction_seconds) "
                 "VALUES (:user_id, :version, :markdown, CAST(:truth_base AS jsonb), "
-                ":label)"
+                ":label, :extraction_seconds)"
             ),
             {
                 "user_id": user_id,
@@ -186,6 +210,7 @@ def write_truth_base(
                 "markdown": extracted_markdown,
                 "truth_base": truth_base_json,
                 "label": label,
+                "extraction_seconds": extraction_seconds,
             },
         )
 
@@ -197,6 +222,7 @@ def write_truth_base(
                     "extracted_markdown = :markdown, "
                     "truth_base = CAST(:truth_base AS jsonb), "
                     "label = :label, "
+                    "extraction_seconds = :extraction_seconds, "
                     "updated_at = now() "
                     "WHERE user_id = :user_id"
                 ),
@@ -206,15 +232,17 @@ def write_truth_base(
                     "markdown": extracted_markdown,
                     "truth_base": truth_base_json,
                     "label": label,
+                    "extraction_seconds": extraction_seconds,
                 },
             )
         else:
             conn.execute(
                 text(
                     "INSERT INTO cv_truth_base "
-                    "(user_id, version, extracted_markdown, truth_base, label) "
+                    "(user_id, version, extracted_markdown, truth_base, label, "
+                    "extraction_seconds) "
                     "VALUES (:user_id, :version, :markdown, "
-                    "CAST(:truth_base AS jsonb), :label)"
+                    "CAST(:truth_base AS jsonb), :label, :extraction_seconds)"
                 ),
                 {
                     "user_id": user_id,
@@ -222,6 +250,7 @@ def write_truth_base(
                     "markdown": extracted_markdown,
                     "truth_base": truth_base_json,
                     "label": label,
+                    "extraction_seconds": extraction_seconds,
                 },
             )
     return new_version

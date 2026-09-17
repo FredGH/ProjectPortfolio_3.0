@@ -178,6 +178,26 @@ class TestCvStore(unittest.TestCase):
         )
         self.assertIsNone(read_truth_base_version(self.app_engine, self.user_id, 99))
 
+    def test_write_persists_and_returns_the_given_extraction_seconds(self) -> None:
+        write_truth_base(
+            self.app_engine,
+            self.user_id,
+            "# v1",
+            _sample_truth_base("Jane Doe"),
+            extraction_seconds=42.5,
+        )
+        current = read_truth_base(self.app_engine, self.user_id)
+        assert current is not None
+        self.assertEqual(current.extraction_seconds, 42.5)
+
+    def test_write_without_extraction_seconds_defaults_to_none(self) -> None:
+        write_truth_base(
+            self.app_engine, self.user_id, "# v1", _sample_truth_base("Jane Doe")
+        )
+        current = read_truth_base(self.app_engine, self.user_id)
+        assert current is not None
+        self.assertIsNone(current.extraction_seconds)
+
 
 if __name__ == "__main__":
     unittest.main()

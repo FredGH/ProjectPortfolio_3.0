@@ -243,6 +243,7 @@ def run_extraction_job(
         user_id: The user this CV belongs to.
     """
     _set_status(job_id, "running")
+    job_started_at = time.monotonic()
 
     try:
         markdown = _run_step(
@@ -276,11 +277,23 @@ def run_extraction_job(
         _fail_job(job_id, "extracting_fields", str(exc))
         return
 
+    # Measured here, not inside the "saving" step below: this is the
+    # end-to-end time to *extract* the CV (parsing + the LLM call) that
+    # gets persisted alongside the row it describes, not including the
+    # DB write's own (much smaller) duration.
+    extraction_seconds = time.monotonic() - job_started_at
+
     try:
         version = _run_step(
             job_id,
             "saving",
-            lambda: write_truth_base(engine, user_id, markdown, truth_base),
+            lambda: write_truth_base(
+                engine,
+                user_id,
+                markdown,
+                truth_base,
+                extraction_seconds=extraction_seconds,
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         _fail_job(job_id, "saving", str(exc))

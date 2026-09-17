@@ -195,7 +195,10 @@ class TestCvRouter(unittest.TestCase):
             self.assertIsNotNone(step["duration_seconds"])
 
         get_response = self.client.get("/cv/truth-base")
-        self.assertEqual(get_response.json()["truth_base"]["identity"], "Jane Doe")
+        get_body = get_response.json()
+        self.assertEqual(get_body["truth_base"]["identity"], "Jane Doe")
+        self.assertIsNotNone(get_body["extraction_seconds"])
+        self.assertGreaterEqual(get_body["extraction_seconds"], 0.0)
 
     def test_extract_job_fails_at_extracting_fields_for_unparseable_llm_response(
         self,

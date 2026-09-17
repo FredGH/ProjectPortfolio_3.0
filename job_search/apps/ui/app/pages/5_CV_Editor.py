@@ -45,9 +45,11 @@ a new version you can name and come back to later.
 - **Projects** and **Activities & Interests** — free-form rows.
 - **Re-extract from a new CV** — upload a different or updated CV
   file to run extraction again from scratch.
-- **Version history** — every save is kept. **Restore** copies an
-  older version's content forward as a new current version — nothing
-  is ever overwritten in place.
+- **Version history** — every save is kept, each showing how long its
+  extraction took end-to-end (blank for a version from a manual Save,
+  since no extraction ran). **Restore** copies an older version's
+  content forward as a new current version — nothing is ever
+  overwritten in place.
 
 **If a section comes back empty, blank, or wrong:** just edit it —
 every field here is a normal editable box or table, whether or not
@@ -231,7 +233,10 @@ elif current is None:
     _upload_and_start_extraction()
 else:
     truth_base = current["truth_base"]
-    st.caption(f"Version {current['version']}")
+    version_caption = f"Version {current['version']}"
+    if current["extraction_seconds"] is not None:
+        version_caption += f" — extracted in {current['extraction_seconds']:.1f}s"
+    st.caption(version_caption)
 
     with st.expander("Re-extract from a new CV"):
         _upload_and_start_extraction()
@@ -242,14 +247,26 @@ else:
         except httpx.HTTPError as exc:
             st.error(f"Failed to load version history: {exc}")
             history = []
+        if history:
+            header_cols = st.columns([1, 3, 2, 3, 2])
+            for col, label in zip(
+                header_cols,
+                ["Version", "Name", "Extraction time", "Saved at", ""],
+                strict=True,
+            ):
+                col.markdown(f"**{label}**")
         for entry in history:
-            cols = st.columns([1, 3, 3, 2])
+            cols = st.columns([1, 3, 2, 3, 2])
             cols[0].write(f"v{entry['version']}")
             cols[1].write(entry["label"] or "—")
-            cols[2].write(entry["created_at"])
+            extraction_seconds = entry["extraction_seconds"]
+            cols[2].write(
+                f"{extraction_seconds:.1f}s" if extraction_seconds is not None else "—"
+            )
+            cols[3].write(entry["created_at"])
             if entry["version"] == current["version"]:
-                cols[3].write("current")
-            elif cols[3].button("Restore", key=f"restore_{entry['version']}"):
+                cols[4].write("current")
+            elif cols[4].button("Restore", key=f"restore_{entry['version']}"):
                 try:
                     response = httpx.post(
                         f"{_settings.api_base_url}/cv/truth-base/versions/"

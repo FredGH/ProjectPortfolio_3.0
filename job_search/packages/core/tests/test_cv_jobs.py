@@ -68,9 +68,12 @@ class TestRunExtractionJob(unittest.TestCase):
             self.assertEqual(step.status, StepStatus.DONE)
             self.assertIsNotNone(step.duration_seconds)
             self.assertGreaterEqual(step.duration_seconds, 0.0)
-        mock_write.assert_called_once_with(
-            _ENGINE, _USER_ID, "# Jane Doe", mock_extract.return_value
+        mock_write.assert_called_once()
+        call_args = mock_write.call_args
+        self.assertEqual(
+            call_args.args, (_ENGINE, _USER_ID, "# Jane Doe", mock_extract.return_value)
         )
+        self.assertGreaterEqual(call_args.kwargs["extraction_seconds"], 0.0)
 
     @patch("core.cv.jobs.write_truth_base")
     @patch("core.cv.jobs.extract_truth_base")
