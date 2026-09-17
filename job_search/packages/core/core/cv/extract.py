@@ -116,6 +116,32 @@ def _parse_json_response(text: str) -> dict[str, object]:
     raise last_error
 
 
+def _recover_education_qualification_keyed_as_degree(parsed: dict[str, object]) -> None:
+    """Recover an education entry's qualification keyed as "degree" instead.
+
+    Observed from llama3.1:8b on a real CV: instead of the documented
+    `"qualification"` key, education entries routinely come back as
+    `"degree"` — the model substituting its own natural key for the
+    requested one rather than omitting the data. Mutates
+    `parsed["education"]` in place; a no-op if "education" is absent
+    or entries are already well-formed.
+
+    Args:
+        parsed: The LLM response, already parsed as JSON.
+    """
+    education = parsed.get("education")
+    if not isinstance(education, list):
+        return
+    for entry in education:
+        has_degree_not_qualification = (
+            isinstance(entry, dict)
+            and "qualification" not in entry
+            and "degree" in entry
+        )
+        if has_degree_not_qualification:
+            entry["qualification"] = entry.pop("degree")
+
+
 def _recover_publication_citations(parsed: dict[str, object]) -> None:
     """Recover a publication's citation text keyed as "title" instead.
 
@@ -250,6 +276,7 @@ def extract_truth_base(
     try:
         parsed = _parse_json_response(response_text)
         _recover_publication_citations(parsed)
+        _recover_education_qualification_keyed_as_degree(parsed)
         raw = _RawCVTruthBase.model_validate(parsed)
     except (json.JSONDecodeError, ValueError) as exc:
         snippet = response_text[:200]
