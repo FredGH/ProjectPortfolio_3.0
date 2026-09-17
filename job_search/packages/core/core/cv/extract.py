@@ -33,7 +33,7 @@ from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
 _PROMPT_FAMILY = "local"
-_PROMPT_VERSION_NUMBER = 3
+_PROMPT_VERSION_NUMBER = 4
 
 
 class _RawExperience(BaseModel):
@@ -136,6 +136,33 @@ def _recover_publication_citations(parsed: dict[str, object]) -> None:
     for entry in publications:
         if isinstance(entry, dict) and "citation" not in entry and "title" in entry:
             entry["citation"] = entry.pop("title")
+
+
+_COMBINED_YEAR_RANGE_RE = re.compile(r"^(\d{4}(?:-\d{2})?)\s*-\s*(\d{4}(?:-\d{2})?)$")
+
+
+def _split_combined_education_range(entry: Education) -> Education:
+    """Split a "start" field like "2016-2017" into separate start/end.
+
+    Observed from llama3.1:8b on a real CV: a combined date range is
+    routinely extracted whole into "start", with "end" left null,
+    instead of split per the documented shape. A no-op unless "start"
+    is a bare range and "end" wasn't already given.
+
+    Args:
+        entry: One raw `Education` entry, as parsed from the LLM
+            response.
+
+    Returns:
+        `entry` unchanged, or with "start"/"end" split apart.
+    """
+    if entry.end is None and entry.start is not None:
+        match = _COMBINED_YEAR_RANGE_RE.match(entry.start.strip())
+        if match:
+            return entry.model_copy(
+                update={"start": match.group(1), "end": match.group(2)}
+            )
+    return entry
 
 
 @lru_cache
@@ -260,7 +287,7 @@ def extract_truth_base(
         experience=experience,
         projects=raw.projects,
         publications=raw.publications,
-        education=raw.education,
+        education=[_split_combined_education_range(e) for e in raw.education],
         qualifications=raw.qualifications,
         activities_interests=raw.activities_interests,
     )

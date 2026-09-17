@@ -109,6 +109,29 @@ def _render_job_progress(job: dict) -> None:
                 st.write(f"{icon} {label}")
 
 
+def _clean_editor_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Clean up `st.data_editor` output before building the save payload.
+
+    `num_rows="dynamic"` always leaves one unfilled row at the bottom
+    for adding new entries, and needs a starter row to infer column
+    dtypes when a section starts out empty — both come back as
+    all-NaN records, dropped here. Every remaining NaN cell (a single
+    field left blank on an otherwise-filled row) is normalized to
+    `None`, so a numeric column like "year" round-trips as JSON `null`
+    instead of the non-standard `NaN`, and downstream field access
+    never has to special-case pandas' NaN.
+
+    Args:
+        df: The edited DataFrame, as returned by `st.data_editor`.
+
+    Returns:
+        `df` with all-blank rows removed and every NaN replaced by
+        `None`.
+    """
+    df = df[~df.isna().all(axis=1)].reset_index(drop=True)
+    return df.where(pd.notnull(df), None)
+
+
 def _upload_and_start_extraction() -> None:
     """Render a CV uploader and, on submit, start an extraction job.
 
@@ -236,7 +259,7 @@ else:
                     "title": title,
                     "start": start,
                     "end": end or None,
-                    "bullets": edited_bullets["text"].tolist(),
+                    "bullets": _clean_editor_rows(edited_bullets)["text"].tolist(),
                     "tech": exp["tech"],
                     "metrics": exp["metrics"],
                 }
@@ -261,11 +284,21 @@ else:
 
     st.subheader("Publications")
     publications_df = pd.DataFrame(
-        [{"citation": p["citation"]} for p in truth_base["publications"]],
-        columns=["citation"],
+        [
+            {
+                "citation": p["citation"],
+                "authors": ", ".join(p["authors"]),
+                "year": p["year"],
+            }
+            for p in truth_base["publications"]
+        ],
+        columns=["citation", "authors", "year"],
     )
     edited_publications = st.data_editor(
-        publications_df, num_rows="dynamic", key="publications_editor"
+        publications_df,
+        num_rows="dynamic",
+        key="publications_editor",
+        column_config={"year": st.column_config.NumberColumn("year", format="%d")},
     )
 
     st.subheader("Professional Qualifications & Continuous Personal Development")
@@ -274,7 +307,10 @@ else:
         columns=["name", "year"],
     )
     edited_qualifications = st.data_editor(
-        qualifications_df, num_rows="dynamic", key="qualifications_editor"
+        qualifications_df,
+        num_rows="dynamic",
+        key="qualifications_editor",
+        column_config={"year": st.column_config.NumberColumn("year", format="%d")},
     )
 
     st.subheader("Projects")
@@ -326,7 +362,7 @@ else:
                     "last_used": row["last_used"],
                     "evidence_refs": [],
                 }
-                for row in edited_skills.to_dict("records")
+                for row in _clean_editor_rows(edited_skills).to_dict("records")
             ],
             "experience": [
                 {
@@ -355,26 +391,38 @@ else:
                     "start": row["start"],
                     "end": row["end"],
                 }
-                for row in edited_education.to_dict("records")
+                for row in _clean_editor_rows(edited_education).to_dict("records")
             ],
             "publications": [
-                {"citation": row["citation"]}
-                for row in edited_publications.to_dict("records")
+                {
+                    "citation": row["citation"],
+                    "authors": [
+                        a.strip()
+                        for a in (row["authors"] or "").split(",")
+                        if a.strip()
+                    ],
+                    "year": row["year"],
+                }
+                for row in _clean_editor_rows(edited_publications).to_dict("records")
             ],
             "qualifications": [
                 {"name": row["name"], "year": row["year"]}
-                for row in edited_qualifications.to_dict("records")
+                for row in _clean_editor_rows(edited_qualifications).to_dict("records")
             ],
             "projects": [
                 {
                     "name": row["name"],
                     "description": row["description"],
-                    "tech": [t.strip() for t in row["tech"].split(",") if t.strip()],
+                    "tech": [
+                        t.strip() for t in (row["tech"] or "").split(",") if t.strip()
+                    ],
                     "url": row["url"] or None,
                 }
-                for row in edited_projects.to_dict("records")
+                for row in _clean_editor_rows(edited_projects).to_dict("records")
             ],
-            "activities_interests": edited_activities_interests["text"].tolist(),
+            "activities_interests": _clean_editor_rows(edited_activities_interests)[
+                "text"
+            ].tolist(),
         }
         try:
             response = httpx.put(

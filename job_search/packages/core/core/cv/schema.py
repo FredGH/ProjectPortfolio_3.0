@@ -100,9 +100,13 @@ class Publication(BaseModel):
 
     Attributes:
         citation: The publication's citation text, verbatim.
+        authors: The publication's authors, as listed in the citation.
+        year: Year published, if statable.
     """
 
     citation: str
+    authors: list[str] = []
+    year: int | None = None
 
 
 class Project(BaseModel):

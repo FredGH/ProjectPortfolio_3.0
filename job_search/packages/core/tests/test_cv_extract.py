@@ -291,6 +291,83 @@ class TestExtractTruthBase(unittest.TestCase):
             result.publications[0].citation, "On XLE Index Construction, Springer"
         )
 
+    def test_parses_publication_authors_and_year(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "publications": [
+                {
+                    "citation": "On XLE Index Construction, Springer",
+                    "authors": ["Smith J.", "Doe A."],
+                    "year": 2019,
+                },
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.publications[0].authors, ["Smith J.", "Doe A."])
+        self.assertEqual(result.publications[0].year, 2019)
+
+    def test_splits_a_combined_education_date_range(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "education": [
+                {
+                    "institution": "University of London",
+                    "qualification": "MSc in Data Science",
+                    "start": "2016-2017",
+                    "end": None,
+                }
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.education[0].start, "2016")
+        self.assertEqual(result.education[0].end, "2017")
+
+    def test_does_not_split_a_start_date_that_is_not_a_combined_range(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "education": [
+                {
+                    "institution": "University of London",
+                    "qualification": "MSc in Data Science",
+                    "start": "2016",
+                    "end": None,
+                }
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.education[0].start, "2016")
+        self.assertIsNone(result.education[0].end)
+
     def test_error_includes_a_snippet_of_the_unparseable_response(self) -> None:
         fake_adapter = _FakeAdapter("Sorry, I can't help with that request.")
         with self.assertRaises(ValueError) as ctx:

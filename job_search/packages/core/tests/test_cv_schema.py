@@ -10,6 +10,7 @@ from core.cv.schema import (
     CVTruthBase,
     Experience,
     Project,
+    Publication,
     Skill,
 )
 
@@ -39,6 +40,13 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
                 )
             ],
             qualifications=[Certification(name="AI Engineering Track", year=2025)],
+            publications=[
+                Publication(
+                    citation="On XLE Index Construction, Springer",
+                    authors=["Smith J.", "Doe A."],
+                    year=2019,
+                )
+            ],
             projects=[
                 Project(
                     name="CV Intelligence Agent",
