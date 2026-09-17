@@ -247,10 +247,21 @@ else:
     if st.session_state.get("experience_version") != current["version"]:
         st.session_state["experience_ids"] = list(range(len(truth_base["experience"])))
         st.session_state["new_experience_entries"] = {}
+        # Whether each entry starts expanded — set once, here or when an
+        # entry is added below, and never recomputed afterward. Streamlit
+        # 1.39's `st.expander` has no `key`, so it can't remember a
+        # user's own expand/collapse click the way a keyed widget can;
+        # recomputing this from the live company/title values would
+        # force the expander shut the instant those fields go from
+        # blank to filled, fighting anyone typing into a new entry.
+        st.session_state["experience_expanded"] = {
+            i: False for i in range(len(truth_base["experience"]))
+        }
         st.session_state["experience_version"] = current["version"]
 
     experience_ids = st.session_state["experience_ids"]
     new_experience_entries = st.session_state["new_experience_entries"]
+    experience_expanded = st.session_state["experience_expanded"]
 
     experience_rows = []
     for position, exp_id in enumerate(experience_ids):
@@ -276,7 +287,7 @@ else:
             if company_for_header or title_for_header
             else "New experience entry"
         )
-        with st.expander(header, expanded=not (company_for_header or title_for_header)):
+        with st.expander(header, expanded=experience_expanded.setdefault(exp_id, True)):
             move_up, move_down, _spacer = st.columns([1, 1, 6])
             if move_up.button(
                 "↑ Move up", key=f"move_up_{exp_id}", disabled=position == 0
@@ -342,13 +353,14 @@ else:
         [
             {
                 "institution": e["institution"],
+                "grade": e["grade"],
                 "qualification": e["qualification"],
                 "start": e["start"],
                 "end": e["end"],
             }
             for e in truth_base["education"]
         ],
-        columns=["institution", "qualification", "start", "end"],
+        columns=["institution", "grade", "qualification", "start", "end"],
     )
     edited_education = st.data_editor(
         education_df, num_rows="dynamic", key="education_editor"
@@ -459,6 +471,7 @@ else:
             "education": [
                 {
                     "institution": row["institution"],
+                    "grade": row["grade"],
                     "qualification": row["qualification"],
                     "start": row["start"],
                     "end": row["end"],

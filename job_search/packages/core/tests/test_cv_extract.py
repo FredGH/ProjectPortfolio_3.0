@@ -300,6 +300,33 @@ class TestExtractTruthBase(unittest.TestCase):
 
         self.assertEqual(result.education[0].qualification, "MSc in Data Science")
 
+    def test_parses_education_grade_separately_from_qualification(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "education": [
+                {
+                    "institution": "University of London",
+                    "grade": "Distinction",
+                    "qualification": "MSc in Data Science",
+                    "start": "2016",
+                    "end": "2017",
+                }
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.education[0].grade, "Distinction")
+        self.assertEqual(result.education[0].qualification, "MSc in Data Science")
+
     def test_recovers_publication_citation_keyed_as_title(self) -> None:
         payload = {
             "identity": "Jane Doe",

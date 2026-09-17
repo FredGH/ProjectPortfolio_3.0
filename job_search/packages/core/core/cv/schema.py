@@ -69,12 +69,16 @@ class Education(BaseModel):
 
     Attributes:
         institution: School/university name.
+        grade: Classification/grade awarded (e.g. "Distinction", "First
+            Class", "2:1"), if statable — kept separate from
+            `qualification` rather than embedded in its text.
         qualification: Degree or qualification name, if statable.
         start: Start date, "YYYY" or "YYYY-MM", if statable.
         end: End date, "YYYY" or "YYYY-MM", if statable.
     """
 
     institution: str
+    grade: str | None = None
     qualification: str | None = None
     start: str | None = None
     end: str | None = None

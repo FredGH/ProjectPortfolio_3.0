@@ -34,7 +34,7 @@ from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
 _PROMPT_FAMILY = "local"
-_PROMPT_VERSION_NUMBER = 4
+_PROMPT_VERSION_NUMBER = 5
 
 
 class _RawExperience(BaseModel):
