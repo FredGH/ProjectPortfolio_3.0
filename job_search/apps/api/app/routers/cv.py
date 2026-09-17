@@ -19,6 +19,7 @@ why extraction moved off the request/response cycle.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 from app.dependencies import get_app_db_engine, get_llm_adapters
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile
@@ -27,7 +28,12 @@ from sqlalchemy import Engine
 
 from core.cv.jobs import ExtractionJob, create_job, get_job, run_extraction_job
 from core.cv.schema import CVTruthBase
-from core.cv.store import read_truth_base, write_truth_base
+from core.cv.store import (
+    list_truth_base_history,
+    read_truth_base,
+    read_truth_base_version,
+    write_truth_base,
+)
 from core.db.session import get_current_user_id
 from core.llm.types import LLMAdapter
 
@@ -41,11 +47,13 @@ class TruthBaseResponse(BaseModel):
         version: The current version number.
         extracted_markdown: The markdown this version was parsed from.
         truth_base: The structured truth base.
+        label: The name given to this version at save time, if any.
     """
 
     version: int
     extracted_markdown: str
     truth_base: CVTruthBase
+    label: str | None = None
 
 
 class TruthBaseWriteRequest(BaseModel):
@@ -54,10 +62,27 @@ class TruthBaseWriteRequest(BaseModel):
     Attributes:
         extracted_markdown: The markdown to store alongside this version.
         truth_base: The truth base to store as the new current version.
+        label: An optional name for this version (e.g. "Before I added
+            the AI section"), shown when browsing history.
     """
 
     extracted_markdown: str
     truth_base: CVTruthBase
+    label: str | None = None
+
+
+class HistoryEntryResponse(BaseModel):
+    """One version's history-listing entry, over the wire.
+
+    Attributes:
+        version: This version's number.
+        label: The name given to this version at save time, if any.
+        created_at: When this version was written.
+    """
+
+    version: int
+    label: str | None
+    created_at: datetime
 
 
 class WriteResult(BaseModel):
@@ -164,6 +189,7 @@ def get_truth_base(
         version=stored.version,
         extracted_markdown=stored.extracted_markdown,
         truth_base=stored.truth_base,
+        label=stored.label,
     )
 
 
@@ -187,9 +213,68 @@ def put_truth_base(
         The new version number.
     """
     version = write_truth_base(
-        engine, user_id, request.extracted_markdown, request.truth_base
+        engine,
+        user_id,
+        request.extracted_markdown,
+        request.truth_base,
+        label=request.label,
     )
     return WriteResult(version=version)
+
+
+@router.get("/truth-base/versions", response_model=list[HistoryEntryResponse])
+def list_versions(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    engine: Engine = Depends(get_app_db_engine),
+) -> list[HistoryEntryResponse]:
+    """List every version of the caller's CV, newest first.
+
+    Args:
+        user_id: Injected by `get_current_user_id`.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        Every `HistoryEntryResponse`, ordered by version descending.
+    """
+    return [
+        HistoryEntryResponse(
+            version=entry.version, label=entry.label, created_at=entry.created_at
+        )
+        for entry in list_truth_base_history(engine, user_id)
+    ]
+
+
+@router.post("/truth-base/versions/{version}/restore", response_model=WriteResult)
+def restore_version(
+    version: int,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    engine: Engine = Depends(get_app_db_engine),
+) -> WriteResult:
+    """Restore an old version of the caller's CV as the new current one.
+
+    Copies that version's content forward as a brand-new version —
+    history is never rewritten in place, so this is itself a new,
+    traceable entry rather than a rollback.
+
+    Args:
+        version: The historical version number to restore.
+        user_id: Injected by `get_current_user_id`.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        The new version number.
+
+    Raises:
+        fastapi.HTTPException: 404, if `version` doesn't exist for
+            this user.
+    """
+    old = read_truth_base_version(engine, user_id, version)
+    if old is None:
+        raise HTTPException(status_code=404, detail="unknown CV version")
+    new_version = write_truth_base(
+        engine, user_id, old.extracted_markdown, old.truth_base, label=old.label
+    )
+    return WriteResult(version=new_version)
 
 
 @router.post("/extract", response_model=ExtractAcceptedResponse, status_code=202)

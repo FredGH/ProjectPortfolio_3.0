@@ -8,7 +8,12 @@ import uuid
 from sqlalchemy import text
 
 from core.cv.schema import Bullet, CVTruthBase, Experience
-from core.cv.store import read_truth_base, write_truth_base
+from core.cv.store import (
+    list_truth_base_history,
+    read_truth_base,
+    read_truth_base_version,
+    write_truth_base,
+)
 from core.db.session import build_engine, session_scope
 from core.settings import get_settings
 
@@ -115,6 +120,63 @@ class TestCvStore(unittest.TestCase):
         )
         other_user_id = uuid.uuid4()
         self.assertIsNone(read_truth_base(self.app_engine, other_user_id))
+
+    def test_write_persists_and_returns_the_given_label(self) -> None:
+        write_truth_base(
+            self.app_engine,
+            self.user_id,
+            "# v1",
+            _sample_truth_base("Jane Doe"),
+            label="Before I added the AI section",
+        )
+        current = read_truth_base(self.app_engine, self.user_id)
+        assert current is not None
+        self.assertEqual(current.label, "Before I added the AI section")
+
+    def test_write_without_a_label_defaults_to_none(self) -> None:
+        write_truth_base(
+            self.app_engine, self.user_id, "# v1", _sample_truth_base("Jane Doe")
+        )
+        current = read_truth_base(self.app_engine, self.user_id)
+        assert current is not None
+        self.assertIsNone(current.label)
+
+    def test_list_history_returns_every_version_newest_first(self) -> None:
+        write_truth_base(
+            self.app_engine,
+            self.user_id,
+            "# v1",
+            _sample_truth_base("Jane Doe"),
+            label="First draft",
+        )
+        write_truth_base(
+            self.app_engine, self.user_id, "# v2", _sample_truth_base("Jane A. Doe")
+        )
+
+        history = list_truth_base_history(self.app_engine, self.user_id)
+
+        self.assertEqual([entry.version for entry in history], [2, 1])
+        self.assertIsNone(history[0].label)
+        self.assertEqual(history[1].label, "First draft")
+
+    def test_read_version_returns_that_specific_historical_snapshot(self) -> None:
+        first = _sample_truth_base("Jane Doe")
+        second = _sample_truth_base("Jane A. Doe")
+        write_truth_base(self.app_engine, self.user_id, "# v1", first, label="v1")
+        write_truth_base(self.app_engine, self.user_id, "# v2", second)
+
+        old = read_truth_base_version(self.app_engine, self.user_id, 1)
+
+        assert old is not None
+        self.assertEqual(old.version, 1)
+        self.assertEqual(old.label, "v1")
+        self.assertEqual(old.truth_base.identity, "Jane Doe")
+
+    def test_read_version_returns_none_for_an_unknown_version(self) -> None:
+        write_truth_base(
+            self.app_engine, self.user_id, "# v1", _sample_truth_base("Jane Doe")
+        )
+        self.assertIsNone(read_truth_base_version(self.app_engine, self.user_id, 99))
 
 
 if __name__ == "__main__":

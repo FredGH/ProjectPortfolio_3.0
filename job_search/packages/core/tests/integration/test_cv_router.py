@@ -225,6 +225,83 @@ class TestCvRouter(unittest.TestCase):
         response = self.client.get(f"/cv/extract/jobs/{uuid.uuid4()}")
         self.assertEqual(response.status_code, 404)
 
+    def test_put_persists_and_returns_the_given_label(self) -> None:
+        payload = {
+            "extracted_markdown": "# Jane Doe",
+            "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+            "label": "Before I added the AI section",
+        }
+        self.client.put("/cv/truth-base", json=payload)
+
+        get_response = self.client.get("/cv/truth-base")
+        self.assertEqual(get_response.json()["label"], "Before I added the AI section")
+
+    def test_list_versions_returns_every_version_newest_first(self) -> None:
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v1",
+                "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+                "label": "First draft",
+            },
+        )
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v2",
+                "truth_base": {"identity": "Jane A. Doe", "headline": "Engineer"},
+            },
+        )
+
+        response = self.client.get("/cv/truth-base/versions")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual([entry["version"] for entry in body], [2, 1])
+        self.assertIsNone(body[0]["label"])
+        self.assertEqual(body[1]["label"], "First draft")
+
+    def test_restore_creates_a_new_version_with_the_old_content(self) -> None:
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v1",
+                "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+                "label": "First draft",
+            },
+        )
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v2",
+                "truth_base": {"identity": "Jane A. Doe", "headline": "Engineer"},
+            },
+        )
+
+        restore_response = self.client.post("/cv/truth-base/versions/1/restore")
+
+        self.assertEqual(restore_response.status_code, 200)
+        self.assertEqual(restore_response.json()["version"], 3)
+        get_response = self.client.get("/cv/truth-base")
+        body = get_response.json()
+        self.assertEqual(body["version"], 3)
+        self.assertEqual(body["truth_base"]["identity"], "Jane Doe")
+        self.assertEqual(body["label"], "First draft")
+
+        history = self.client.get("/cv/truth-base/versions").json()
+        self.assertEqual([entry["version"] for entry in history], [3, 2, 1])
+
+    def test_restore_returns_404_for_an_unknown_version(self) -> None:
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v1",
+                "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+            },
+        )
+        response = self.client.post("/cv/truth-base/versions/99/restore")
+        self.assertEqual(response.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

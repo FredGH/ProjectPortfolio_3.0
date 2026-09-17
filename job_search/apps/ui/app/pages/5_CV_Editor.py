@@ -37,6 +37,22 @@ def _fetch_truth_base() -> dict | None:
     return response.json()
 
 
+def _fetch_version_history() -> list[dict]:
+    """Fetch every version of the CV, newest first.
+
+    Returns:
+        The parsed `GET /cv/truth-base/versions` response body.
+
+    Raises:
+        httpx.HTTPError: If the request fails.
+    """
+    response = httpx.get(
+        f"{_settings.api_base_url}/cv/truth-base/versions", timeout=10.0
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 _STEP_LABELS: dict[str, str] = {
     "parsing_document": "Parsing document",
     "extracting_fields": "Extracting fields",
@@ -150,6 +166,32 @@ else:
     with st.expander("Re-extract from a new CV"):
         _upload_and_start_extraction()
 
+    with st.expander("Version history"):
+        try:
+            history = _fetch_version_history()
+        except httpx.HTTPError as exc:
+            st.error(f"Failed to load version history: {exc}")
+            history = []
+        for entry in history:
+            cols = st.columns([1, 3, 3, 2])
+            cols[0].write(f"v{entry['version']}")
+            cols[1].write(entry["label"] or "—")
+            cols[2].write(entry["created_at"])
+            if entry["version"] == current["version"]:
+                cols[3].write("current")
+            elif cols[3].button("Restore", key=f"restore_{entry['version']}"):
+                try:
+                    response = httpx.post(
+                        f"{_settings.api_base_url}/cv/truth-base/versions/"
+                        f"{entry['version']}/restore",
+                        timeout=30.0,
+                    )
+                    response.raise_for_status()
+                    st.success(f"Restored as version {response.json()['version']}.")
+                    st.rerun()
+                except httpx.HTTPError as exc:
+                    st.error(f"Restore failed: {exc}")
+
     identity = st.text_input("Identity", value=truth_base["identity"])
     headline = st.text_input("Headline", value=truth_base["headline"])
     email = st.text_input("Email", value=truth_base["email"] or "")
@@ -260,6 +302,11 @@ else:
         activities_interests_df, num_rows="dynamic", key="activities_interests_editor"
     )
 
+    version_label = st.text_input(
+        "Version name (optional)",
+        value="",
+        help='Shown in Version history, e.g. "Before I added the AI section".',
+    )
     if st.button("Save"):
         new_truth_base = {
             "identity": identity,
@@ -335,6 +382,7 @@ else:
                 json={
                     "extracted_markdown": current["extracted_markdown"],
                     "truth_base": new_truth_base,
+                    "label": version_label or None,
                 },
                 timeout=30.0,
             )
