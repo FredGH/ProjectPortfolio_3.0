@@ -234,6 +234,8 @@ elif current is None:
 else:
     truth_base = current["truth_base"]
     version_caption = f"Version {current['version']}"
+    if current["label"]:
+        version_caption += f' — "{current["label"]}"'
     if current["extraction_seconds"] is not None:
         version_caption += f" — extracted in {current['extraction_seconds']:.1f}s"
     st.caption(version_caption)

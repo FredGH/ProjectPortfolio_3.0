@@ -254,6 +254,35 @@ class TestExtractTruthBase(unittest.TestCase):
         self.assertIsNone(result.experience[0].start)
         self.assertEqual(result.experience[0].end, "1998-06")
 
+    def test_tolerates_null_title_on_an_experience_entry(self) -> None:
+        payload = {
+            "identity": "Jane Doe",
+            "headline": "Senior Test Engineer",
+            "experience": [
+                {
+                    "company": "Fixture Corp",
+                    "title": None,
+                    "start": "2020-01",
+                    "end": None,
+                    "bullets": [],
+                    "tech": [],
+                    "metrics": [],
+                }
+            ],
+        }
+        fake_adapter = _FakeAdapter(json.dumps(payload))
+
+        result = extract_truth_base(
+            "# Jane Doe CV",
+            adapters={"ollama": fake_adapter},
+            provider="ollama",
+            model="llama3.1:8b",
+            prompt_family="local",
+        )
+
+        self.assertEqual(result.experience[0].company, "Fixture Corp")
+        self.assertEqual(result.experience[0].title, "")
+
     def test_tolerates_education_entry_missing_qualification(self) -> None:
         payload = {
             "identity": "Jane Doe",

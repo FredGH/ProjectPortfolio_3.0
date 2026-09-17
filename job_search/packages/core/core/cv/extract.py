@@ -40,10 +40,19 @@ _PROMPT_VERSION_NUMBER = 5
 class _RawExperience(BaseModel):
     """One experience entry as the LLM returns it — bullets are plain
     strings here; `extract_truth_base` attaches stable IDs afterward.
+
+    `company`/`title` are optional here even though `Experience`
+    itself requires them: llama3.1:8b occasionally returns null for
+    one on a real CV (observed on an entry deep in a long experience
+    list) rather than omitting the entry or supplying an empty
+    string — validating that null as a required `str` would fail
+    `_RawCVTruthBase.model_validate` and abort the whole extraction
+    over one field on one entry. `extract_truth_base` coerces a null
+    to "" when building the final `Experience`.
     """
 
-    company: str
-    title: str
+    company: str | None = None
+    title: str | None = None
     start: str | None = None
     end: str | None = None
     bullets: list[str] = []
@@ -293,8 +302,8 @@ def extract_truth_base(
 
     experience = [
         Experience(
-            company=exp.company,
-            title=exp.title,
+            company=exp.company or "",
+            title=exp.title or "",
             start=exp.start,
             end=exp.end,
             bullets=[
