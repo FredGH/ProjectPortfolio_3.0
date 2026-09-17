@@ -470,11 +470,12 @@ else:
     )
 
     version_label = st.text_input(
-        "Version name (optional)",
+        "Version name",
         value="",
-        help='Shown in Version history, e.g. "Before I added the AI section".',
+        help='Required — shown in Version history, e.g. "Before I added the AI '
+        'section".',
     )
-    if st.button("Save"):
+    if st.button("Save", disabled=not version_label.strip()):
         new_truth_base = {
             "identity": identity,
             "headline": headline,
@@ -562,7 +563,7 @@ else:
                 json={
                     "extracted_markdown": current["extracted_markdown"],
                     "truth_base": new_truth_base,
-                    "label": version_label or None,
+                    "label": version_label.strip(),
                 },
                 timeout=30.0,
             )
