@@ -260,7 +260,7 @@ else:
         activities_interests_df, num_rows="dynamic", key="activities_interests_editor"
     )
 
-    if st.button("Save corrections"):
+    if st.button("Save"):
         new_truth_base = {
             "identity": identity,
             "headline": headline,
