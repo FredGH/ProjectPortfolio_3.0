@@ -8,6 +8,7 @@ output — see `core.cv.bullet_id.compute_bullet_id`.
 
 from __future__ import annotations
 
+import html
 import io
 import json
 import re
@@ -218,11 +219,16 @@ def docling_to_markdown(file_bytes: bytes, filename: str) -> str:
             which format to parse.
 
     Returns:
-        The document's content as markdown text.
+        The document's content as markdown text, with HTML entities
+        (e.g. "&amp;" for a literal "&") decoded — Docling's exporter
+        HTML-escapes the source text, and everything downstream copies
+        this markdown verbatim, so an entity left encoded here would
+        leak into every bullet, citation, and name that contains it.
     """
     stream = DocumentStream(name=filename, stream=io.BytesIO(file_bytes))
     result = _converter().convert(stream)
-    return result.document.export_to_markdown()
+    markdown = result.document.export_to_markdown()
+    return html.unescape(markdown)
 
 
 def extract_truth_base(

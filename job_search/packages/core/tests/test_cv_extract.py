@@ -69,6 +69,12 @@ class TestDoclingToMarkdown(unittest.TestCase):
         self.assertIn("Test Document", markdown)
         self.assertIn("Hello world.", markdown)
 
+    def test_decodes_html_entities(self) -> None:
+        html = b"<html><body><p>Banking &amp; Finance, S&amp;P 500</p></body></html>"
+        markdown = docling_to_markdown(html, "test.html")
+        self.assertIn("Banking & Finance, S&P 500", markdown)
+        self.assertNotIn("&amp;", markdown)
+
 
 class TestExtractTruthBase(unittest.TestCase):
     def test_parses_llm_response_and_assigns_stable_bullet_ids(self) -> None:
