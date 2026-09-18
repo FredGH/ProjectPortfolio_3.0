@@ -305,6 +305,52 @@ class TestCvRouter(unittest.TestCase):
         response = self.client.post("/cv/truth-base/versions/99/restore")
         self.assertEqual(response.status_code, 404)
 
+    def test_delete_removes_an_old_version_from_history(self) -> None:
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v1",
+                "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+            },
+        )
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v2",
+                "truth_base": {"identity": "Jane A. Doe", "headline": "Engineer"},
+            },
+        )
+
+        delete_response = self.client.delete("/cv/truth-base/versions/1")
+
+        self.assertEqual(delete_response.status_code, 204)
+        history = self.client.get("/cv/truth-base/versions").json()
+        self.assertEqual([entry["version"] for entry in history], [2])
+
+    def test_delete_returns_400_for_the_current_version(self) -> None:
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v1",
+                "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+            },
+        )
+        response = self.client.delete("/cv/truth-base/versions/1")
+        self.assertEqual(response.status_code, 400)
+        history = self.client.get("/cv/truth-base/versions").json()
+        self.assertEqual([entry["version"] for entry in history], [1])
+
+    def test_delete_returns_404_for_an_unknown_version(self) -> None:
+        self.client.put(
+            "/cv/truth-base",
+            json={
+                "extracted_markdown": "# v1",
+                "truth_base": {"identity": "Jane Doe", "headline": "Engineer"},
+            },
+        )
+        response = self.client.delete("/cv/truth-base/versions/99")
+        self.assertEqual(response.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

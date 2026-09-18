@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from core.cv.schema import Bullet, CVTruthBase, Experience
 from core.cv.store import (
+    delete_truth_base_version,
     list_truth_base_history,
     read_truth_base,
     read_truth_base_version,
@@ -236,6 +237,24 @@ class TestCvStore(unittest.TestCase):
         history = list_truth_base_history(self.app_engine, self.user_id)
         self.assertEqual(len(history), 4)
         self.assertIn("Named", [entry.label for entry in history])
+
+    def test_delete_version_removes_it_from_history(self) -> None:
+        sample = _sample_truth_base("Jane Doe")
+        write_truth_base(self.app_engine, self.user_id, "# v1", sample)
+        write_truth_base(self.app_engine, self.user_id, "# v2", sample)
+
+        deleted = delete_truth_base_version(self.app_engine, self.user_id, 1)
+
+        self.assertTrue(deleted)
+        history = list_truth_base_history(self.app_engine, self.user_id)
+        self.assertEqual([entry.version for entry in history], [2])
+
+    def test_delete_unknown_version_returns_false(self) -> None:
+        write_truth_base(
+            self.app_engine, self.user_id, "# v1", _sample_truth_base("Jane Doe")
+        )
+        deleted = delete_truth_base_version(self.app_engine, self.user_id, 99)
+        self.assertFalse(deleted)
 
 
 if __name__ == "__main__":

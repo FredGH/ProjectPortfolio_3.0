@@ -29,6 +29,7 @@ from sqlalchemy import Engine
 from core.cv.jobs import ExtractionJob, create_job, get_job, run_extraction_job
 from core.cv.schema import CVTruthBase
 from core.cv.store import (
+    delete_truth_base_version,
     list_truth_base_history,
     read_truth_base,
     read_truth_base_version,
@@ -292,6 +293,36 @@ def restore_version(
         extraction_seconds=old.extraction_seconds,
     )
     return WriteResult(version=new_version)
+
+
+@router.delete("/truth-base/versions/{version}", status_code=204, response_model=None)
+def delete_version(
+    version: int,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    engine: Engine = Depends(get_app_db_engine),
+) -> None:
+    """Delete one historical version of the caller's CV.
+
+    The current version can never be deleted this way — restore an
+    older one first, or just keep saving; there must always be a
+    current version once one exists.
+
+    Args:
+        version: The historical version number to delete.
+        user_id: Injected by `get_current_user_id`.
+        engine: Injected via `get_app_db_engine`.
+
+    Raises:
+        fastapi.HTTPException: 400, if `version` is the caller's
+            current version. 404, if `version` doesn't exist for this
+            user.
+    """
+    current = read_truth_base(engine, user_id)
+    if current is not None and current.version == version:
+        raise HTTPException(status_code=400, detail="cannot delete the current version")
+    deleted = delete_truth_base_version(engine, user_id, version)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="unknown CV version")
 
 
 @router.post("/extract", response_model=ExtractAcceptedResponse, status_code=202)

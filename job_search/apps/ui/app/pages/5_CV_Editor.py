@@ -52,7 +52,8 @@ a new version you can name and come back to later.
   extraction took end-to-end (blank for a version from a manual Save,
   since no extraction ran). **Restore** copies an older version's
   content forward as a new current version — nothing is ever
-  overwritten in place.
+  overwritten in place. **Delete** permanently removes an old version
+  after you confirm (the current version can't be deleted this way).
 
 **If a section comes back empty, blank, or wrong:** just edit it —
 every field here is a normal editable box or table, whether or not
@@ -204,6 +205,32 @@ def _upload_and_start_extraction() -> None:
             st.error(f"Failed to start extraction: {exc}")
 
 
+@st.dialog("Delete this version?")
+def _confirm_delete_version(version: int, label: str | None) -> None:
+    """Ask for confirmation, then delete one historical version.
+
+    Args:
+        version: The version number to delete.
+        label: That version's name, if any — shown in the prompt.
+    """
+    described = f'v{version} — "{label}"' if label else f"v{version}"
+    st.write(f"Delete {described}? This cannot be undone.")
+    confirm_col, cancel_col = st.columns(2)
+    if confirm_col.button("Delete", type="primary", key=f"confirm_delete_{version}"):
+        try:
+            response = httpx.delete(
+                f"{_settings.api_base_url}/cv/truth-base/versions/{version}",
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            st.success(f"Deleted v{version}.")
+            st.rerun()
+        except httpx.HTTPError as exc:
+            st.error(f"Delete failed: {exc}")
+    if cancel_col.button("Cancel", key=f"cancel_delete_{version}"):
+        st.rerun()
+
+
 with st.expander("User Guide"):
     st.markdown(_USER_GUIDE_MARKDOWN)
 
@@ -256,15 +283,15 @@ else:
 
     with st.expander("Version history"):
         if history:
-            header_cols = st.columns([1, 3, 2, 3, 2])
+            header_cols = st.columns([1, 3, 2, 3, 2, 2])
             for col, label in zip(
                 header_cols,
-                ["Version", "Name", "Extraction time", "Saved at", ""],
+                ["Version", "Name", "Extraction time", "Saved at", "", ""],
                 strict=True,
             ):
                 col.markdown(f"**{label}**")
         for entry in history:
-            cols = st.columns([1, 3, 2, 3, 2])
+            cols = st.columns([1, 3, 2, 3, 2, 2])
             cols[0].write(f"v{entry['version']}")
             cols[1].write(entry["label"] or "—")
             extraction_seconds = entry["extraction_seconds"]
@@ -286,6 +313,10 @@ else:
                     st.rerun()
                 except httpx.HTTPError as exc:
                     st.error(f"Restore failed: {exc}")
+            if entry["version"] != current["version"] and cols[5].button(
+                "Delete", key=f"delete_{entry['version']}"
+            ):
+                _confirm_delete_version(entry["version"], entry["label"])
 
     identity = st.text_input("Identity", value=truth_base["identity"])
     headline = st.text_input("Headline", value=truth_base["headline"])

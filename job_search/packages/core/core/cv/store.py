@@ -162,6 +162,33 @@ def read_truth_base_version(
     )
 
 
+def delete_truth_base_version(engine: Engine, user_id: uuid.UUID, version: int) -> bool:
+    """Delete one historical version of a user's CV.
+
+    Never touches `cv_truth_base` — the caller (the router) is
+    responsible for refusing to delete whichever version is current,
+    since this function has no way to know that on its own.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: The user whose history to delete from.
+        version: The version number to delete.
+
+    Returns:
+        True if a row was deleted, False if no such version existed
+        for this user.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        result = conn.execute(
+            text(
+                "DELETE FROM cv_truth_base_history "
+                "WHERE user_id = :user_id AND version = :version"
+            ),
+            {"user_id": user_id, "version": version},
+        )
+    return result.rowcount > 0
+
+
 _MAX_VERSIONS_PER_LABEL = 3
 
 
