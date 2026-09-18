@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Connection, Engine, text
 
 from core.cv.schema import CVTruthBase
 from core.db.session import session_scope
@@ -162,6 +162,41 @@ def read_truth_base_version(
     )
 
 
+_MAX_VERSIONS_PER_LABEL = 3
+
+
+def _prune_named_history(conn: Connection, user_id: uuid.UUID, label: str) -> None:
+    """Keep only the newest `_MAX_VERSIONS_PER_LABEL` versions per label.
+
+    Scoped to `label`, never to unlabeled ("Before I added the AI
+    section" but not None) history — a name only means something once
+    reused, so repeatedly saving under the same name (e.g. retrying an
+    extraction and naming every attempt "Latest extraction") doesn't
+    accumulate history forever. The version just written by this call
+    is always among the newest for its own label, so it's never the
+    one pruned.
+
+    Args:
+        conn: The open connection inside `write_truth_base`'s
+            transaction — runs as part of the same write, never on its
+            own.
+        user_id: The user whose history to prune.
+        label: The label whose versions to cap.
+    """
+    conn.execute(
+        text(
+            "DELETE FROM cv_truth_base_history "
+            "WHERE user_id = :user_id AND label = :label "
+            "AND version NOT IN ("
+            "    SELECT version FROM cv_truth_base_history "
+            "    WHERE user_id = :user_id AND label = :label "
+            "    ORDER BY version DESC LIMIT :keep"
+            ")"
+        ),
+        {"user_id": user_id, "label": label, "keep": _MAX_VERSIONS_PER_LABEL},
+    )
+
+
 def write_truth_base(
     engine: Engine,
     user_id: uuid.UUID,
@@ -171,6 +206,9 @@ def write_truth_base(
     extraction_seconds: float | None = None,
 ) -> int:
     """Write a new version of a user's CV truth base.
+
+    When `label` is given, also prunes that label's own history down
+    to `_MAX_VERSIONS_PER_LABEL` — see `_prune_named_history`.
 
     Args:
         engine: The app-role engine (RLS-enforced).
@@ -213,6 +251,9 @@ def write_truth_base(
                 "extraction_seconds": extraction_seconds,
             },
         )
+
+        if label:
+            _prune_named_history(conn, user_id, label)
 
         if current:
             conn.execute(

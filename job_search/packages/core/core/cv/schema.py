@@ -129,6 +129,24 @@ class Project(BaseModel):
     url: str | None = None
 
 
+class Activity(BaseModel):
+    """One activity or interest entry.
+
+    Attributes:
+        name: The activity's name or role (e.g. "Mentor", "Board
+            Advisor", "Marathon running").
+        organisation: The associated organisation, if any.
+        start: Start date, "YYYY" or "YYYY-MM", if statable.
+        end: End date, "YYYY" or "YYYY-MM", if statable — None for an
+            ongoing activity as well as a plain interest with no dates.
+    """
+
+    name: str
+    organisation: str | None = None
+    start: str | None = None
+    end: str | None = None
+
+
 class CVTruthBase(BaseModel):
     """The full CV truth base — one user's canonical CV representation.
 
@@ -151,7 +169,7 @@ class CVTruthBase(BaseModel):
             continuous-development items (short courses, programmes) —
             both render under the CV's single "Professional
             Qualifications & Continuous Personal Development" section.
-        activities_interests: Activities and interests, verbatim entries.
+        activities: Activities and interests.
     """
 
     identity: str
@@ -169,4 +187,4 @@ class CVTruthBase(BaseModel):
     publications: list[Publication] = []
     education: list[Education] = []
     qualifications: list[Certification] = []
-    activities_interests: list[str] = []
+    activities: list[Activity] = []

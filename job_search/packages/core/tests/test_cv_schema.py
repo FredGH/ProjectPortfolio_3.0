@@ -5,6 +5,7 @@ from __future__ import annotations
 import unittest
 
 from core.cv.schema import (
+    Activity,
     Bullet,
     Certification,
     CVTruthBase,
@@ -55,7 +56,14 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
                     url="https://example.com/cv-agent",
                 )
             ],
-            activities_interests=["Mentor at MyJobGlasses"],
+            activities=[
+                Activity(
+                    name="Mentor",
+                    organisation="MyJobGlasses",
+                    start="2020",
+                    end=None,
+                )
+            ],
         )
         restored = CVTruthBase.model_validate_json(original.model_dump_json())
         self.assertEqual(restored, original)
@@ -72,7 +80,7 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
         self.assertIsNone(minimal.nationality)
         self.assertEqual(minimal.qualifications, [])
         self.assertEqual(minimal.projects, [])
-        self.assertEqual(minimal.activities_interests, [])
+        self.assertEqual(minimal.activities, [])
 
 
 if __name__ == "__main__":

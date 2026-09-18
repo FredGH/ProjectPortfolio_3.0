@@ -42,7 +42,9 @@ a new version you can name and come back to later.
 - **Publications** — citation, authors (comma-separated), year.
 - **Professional Qualifications & Continuous Personal Development** —
   certifications and courses, in one merged list.
-- **Projects** and **Activities & Interests** — free-form rows.
+- **Projects** — free-form rows.
+- **Activities & Interests** — name, organisation, start/end per entry
+  (e.g. "Mentor" / "MyJobGlasses" / "2020" / blank for ongoing).
 - **Re-extract from a new CV** — upload a different or updated CV
   file to run extraction again from scratch.
 - **Version history** — every save is kept, each showing how long its
@@ -481,11 +483,20 @@ else:
     )
 
     st.subheader("Activities & Interests")
-    activities_interests_df = pd.DataFrame(
-        [{"text": a} for a in truth_base["activities_interests"]], columns=["text"]
+    activities_df = pd.DataFrame(
+        [
+            {
+                "name": a["name"],
+                "organisation": a["organisation"],
+                "start": a["start"],
+                "end": a["end"],
+            }
+            for a in truth_base["activities"]
+        ],
+        columns=["name", "organisation", "start", "end"],
     )
-    edited_activities_interests = st.data_editor(
-        activities_interests_df, num_rows="dynamic", key="activities_interests_editor"
+    edited_activities = st.data_editor(
+        activities_df, num_rows="dynamic", key="activities_editor"
     )
 
     version_label = st.text_input(
@@ -572,9 +583,15 @@ else:
                 }
                 for row in _clean_editor_rows(edited_projects).to_dict("records")
             ],
-            "activities_interests": _clean_editor_rows(edited_activities_interests)[
-                "text"
-            ].tolist(),
+            "activities": [
+                {
+                    "name": row["name"],
+                    "organisation": row["organisation"],
+                    "start": row["start"],
+                    "end": row["end"],
+                }
+                for row in _clean_editor_rows(edited_activities).to_dict("records")
+            ],
         }
         try:
             response = httpx.put(

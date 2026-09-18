@@ -198,6 +198,45 @@ class TestCvStore(unittest.TestCase):
         assert current is not None
         self.assertIsNone(current.extraction_seconds)
 
+    def test_a_fourth_save_under_the_same_label_prunes_the_oldest(self) -> None:
+        sample = _sample_truth_base("Jane Doe")
+        for _ in range(4):
+            write_truth_base(
+                self.app_engine, self.user_id, "# v", sample, label="Retry"
+            )
+
+        history = list_truth_base_history(self.app_engine, self.user_id)
+        retry_versions = sorted(
+            entry.version for entry in history if entry.label == "Retry"
+        )
+        self.assertEqual(retry_versions, [2, 3, 4])
+
+    def test_pruning_is_scoped_to_its_own_label(self) -> None:
+        sample = _sample_truth_base("Jane Doe")
+        write_truth_base(self.app_engine, self.user_id, "# v1", sample, label="A")
+        write_truth_base(self.app_engine, self.user_id, "# v2", sample, label="B")
+        write_truth_base(self.app_engine, self.user_id, "# v3", sample, label="A")
+        write_truth_base(self.app_engine, self.user_id, "# v4", sample, label="A")
+        write_truth_base(self.app_engine, self.user_id, "# v5", sample, label="A")
+
+        history = list_truth_base_history(self.app_engine, self.user_id)
+        by_label = {}
+        for entry in history:
+            by_label.setdefault(entry.label, []).append(entry.version)
+
+        self.assertEqual(sorted(by_label["A"]), [3, 4, 5])
+        self.assertEqual(by_label["B"], [2])
+
+    def test_an_unlabeled_save_never_prunes_anything(self) -> None:
+        sample = _sample_truth_base("Jane Doe")
+        write_truth_base(self.app_engine, self.user_id, "# v1", sample, label="Named")
+        for _ in range(3):
+            write_truth_base(self.app_engine, self.user_id, "# v", sample)
+
+        history = list_truth_base_history(self.app_engine, self.user_id)
+        self.assertEqual(len(history), 4)
+        self.assertIn("Named", [entry.label for entry in history])
+
 
 if __name__ == "__main__":
     unittest.main()

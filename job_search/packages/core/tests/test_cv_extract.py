@@ -145,7 +145,14 @@ class TestExtractTruthBase(unittest.TestCase):
                     "url": "https://example.com/fixtures",
                 }
             ],
-            "activities_interests": ["Mentor at MyJobGlasses"],
+            "activities": [
+                {
+                    "name": "Mentor",
+                    "organisation": "MyJobGlasses",
+                    "start": "2020",
+                    "end": None,
+                }
+            ],
         }
         fake_adapter = _FakeAdapter(json.dumps(payload))
 
@@ -163,7 +170,10 @@ class TestExtractTruthBase(unittest.TestCase):
         self.assertEqual(len(result.projects), 1)
         self.assertEqual(result.projects[0].name, "Test Fixture Generator")
         self.assertEqual(result.projects[0].tech, ["Python"])
-        self.assertEqual(result.activities_interests, ["Mentor at MyJobGlasses"])
+        self.assertEqual(len(result.activities), 1)
+        self.assertEqual(result.activities[0].name, "Mentor")
+        self.assertEqual(result.activities[0].organisation, "MyJobGlasses")
+        self.assertEqual(result.activities[0].start, "2020")
 
     def test_raises_value_error_on_unparseable_response(self) -> None:
         fake_adapter = _FakeAdapter("not json")

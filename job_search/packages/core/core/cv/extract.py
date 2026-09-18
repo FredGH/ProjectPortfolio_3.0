@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from core.cv.bullet_id import compute_bullet_id
 from core.cv.schema import (
+    Activity,
     Bullet,
     Certification,
     CVTruthBase,
@@ -34,7 +35,7 @@ from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
 _PROMPT_FAMILY = "local"
-_PROMPT_VERSION_NUMBER = 5
+_PROMPT_VERSION_NUMBER = 6
 
 
 class _RawExperience(BaseModel):
@@ -78,7 +79,7 @@ class _RawCVTruthBase(BaseModel):
     publications: list[Publication] = []
     education: list[Education] = []
     qualifications: list[Certification] = []
-    activities_interests: list[str] = []
+    activities: list[Activity] = []
 
 
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
@@ -331,5 +332,5 @@ def extract_truth_base(
         publications=raw.publications,
         education=[_split_combined_education_range(e) for e in raw.education],
         qualifications=raw.qualifications,
-        activities_interests=raw.activities_interests,
+        activities=raw.activities,
     )
