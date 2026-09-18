@@ -108,6 +108,8 @@ _STEP_LABELS: dict[str, str] = {
     "saving": "Saving",
 }
 
+_NEW_VERSION_NAME_OPTION = "+ New name"
+
 _STEP_ICONS: dict[str, str] = {
     "pending": "⬜",
     "running": "⏳",
@@ -243,15 +245,16 @@ else:
         version_caption += f" — extracted in {current['extraction_seconds']:.1f}s"
     st.caption(version_caption)
 
+    try:
+        history = _fetch_version_history()
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load version history: {exc}")
+        history = []
+
     with st.expander("Re-extract from a new CV"):
         _upload_and_start_extraction()
 
     with st.expander("Version history"):
-        try:
-            history = _fetch_version_history()
-        except httpx.HTTPError as exc:
-            st.error(f"Failed to load version history: {exc}")
-            history = []
         if history:
             header_cols = st.columns([1, 3, 2, 3, 2])
             for col, label in zip(
@@ -501,12 +504,21 @@ else:
         activities_df, num_rows="dynamic", key="activities_editor"
     )
 
-    version_label = st.text_input(
+    existing_labels = sorted({entry["label"] for entry in history if entry["label"]})
+    name_choice = st.selectbox(
         "Version name",
-        value="",
-        help='Required — shown in Version history, e.g. "Before I added the AI '
-        'section".',
+        options=[_NEW_VERSION_NAME_OPTION, *existing_labels],
+        help="Required before Save — reuse an existing name (keeps only the "
+        "newest 3 versions under it) or add a new one.",
     )
+    if name_choice == _NEW_VERSION_NAME_OPTION:
+        version_label = st.text_input(
+            "New version name",
+            value="",
+            help='E.g. "Before I added the AI section".',
+        )
+    else:
+        version_label = name_choice
     if st.button("Save", disabled=not version_label.strip()):
         new_truth_base = {
             "identity": identity,
