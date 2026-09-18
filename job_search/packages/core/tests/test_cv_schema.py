@@ -45,6 +45,7 @@ class TestCVTruthBaseRoundTrip(unittest.TestCase):
                 Publication(
                     citation="On XLE Index Construction, Springer",
                     authors=["Smith J.", "Doe A."],
+                    conference="10th Int. Conference on Data Science",
                     year=2019,
                 )
             ],

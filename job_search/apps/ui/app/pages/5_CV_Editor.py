@@ -39,7 +39,8 @@ a new version you can name and come back to later.
     missed — fill it in by hand.
   - **↑ Move up / ↓ Move down** on each entry reorders it.
 - **Education** — institution, grade, qualification, start/end year.
-- **Publications** — citation, authors (comma-separated), year.
+- **Publications** — citation, authors (comma-separated), conference,
+  year.
 - **Professional Qualifications & Continuous Personal Development** —
   certifications and courses, in one merged list.
 - **Projects** — free-form rows.
@@ -440,11 +441,12 @@ else:
             {
                 "citation": p["citation"],
                 "authors": ", ".join(p["authors"]),
+                "conference": p["conference"],
                 "year": p["year"],
             }
             for p in truth_base["publications"]
         ],
-        columns=["citation", "authors", "year"],
+        columns=["citation", "authors", "conference", "year"],
     )
     edited_publications = st.data_editor(
         publications_df,
@@ -564,6 +566,7 @@ else:
                         for a in (row["authors"] or "").split(",")
                         if a.strip()
                     ],
+                    "conference": row["conference"],
                     "year": row["year"],
                 }
                 for row in _clean_editor_rows(edited_publications).to_dict("records")

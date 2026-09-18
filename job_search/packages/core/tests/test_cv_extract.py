@@ -388,7 +388,7 @@ class TestExtractTruthBase(unittest.TestCase):
             result.publications[0].citation, "On XLE Index Construction, Springer"
         )
 
-    def test_parses_publication_authors_and_year(self) -> None:
+    def test_parses_publication_authors_conference_and_year(self) -> None:
         payload = {
             "identity": "Jane Doe",
             "headline": "Senior Test Engineer",
@@ -396,6 +396,7 @@ class TestExtractTruthBase(unittest.TestCase):
                 {
                     "citation": "On XLE Index Construction, Springer",
                     "authors": ["Smith J.", "Doe A."],
+                    "conference": "10th Int. Conference on Data Science",
                     "year": 2019,
                 },
             ],
@@ -411,6 +412,9 @@ class TestExtractTruthBase(unittest.TestCase):
         )
 
         self.assertEqual(result.publications[0].authors, ["Smith J.", "Doe A."])
+        self.assertEqual(
+            result.publications[0].conference, "10th Int. Conference on Data Science"
+        )
         self.assertEqual(result.publications[0].year, 2019)
 
     def test_splits_a_combined_education_date_range(self) -> None:

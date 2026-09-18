@@ -105,11 +105,14 @@ class Publication(BaseModel):
     Attributes:
         citation: The publication's citation text, verbatim.
         authors: The publication's authors, as listed in the citation.
+        conference: The conference or journal it was published in, if
+            statable.
         year: Year published, if statable.
     """
 
     citation: str
     authors: list[str] = []
+    conference: str | None = None
     year: int | None = None
 
 
