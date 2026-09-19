@@ -42,6 +42,31 @@ def _get(path: str, params: dict | None = None) -> list[dict]:
     return response.json()
 
 
+def _error_message(exc: httpx.HTTPStatusError) -> str:
+    """Build a readable message from an HTTP error response.
+
+    Uses the API's JSON ``detail`` when there is one (joining the ``msg`` of
+    each item for a request-validation error), and falls back to the
+    exception text for a non-JSON body such as a plain-text 500 or a proxy 502.
+
+    Args:
+        exc: The status error raised for the response.
+
+    Returns:
+        The message to show the user.
+    """
+    try:
+        detail = exc.response.json().get("detail")
+    except (ValueError, AttributeError):
+        detail = None
+    if isinstance(detail, list):
+        detail = "; ".join(
+            str(item.get("msg", item)) if isinstance(item, dict) else str(item)
+            for item in detail
+        )
+    return str(detail) if detail else str(exc)
+
+
 def _post(path: str, payload: dict) -> bool:
     """POST an action to the API, showing any error on the page.
 
@@ -50,13 +75,14 @@ def _post(path: str, payload: dict) -> bool:
         payload: The JSON body.
 
     Returns:
-        True if the action succeeded.
+        True if the action succeeded; False if it failed, in which case the
+        error (including a non-JSON error body) is shown instead of raised.
     """
     try:
         response = httpx.post(f"{_API}{path}", json=payload, timeout=10.0)
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        st.error(exc.response.json().get("detail", str(exc)))
+        st.error(_error_message(exc))
         return False
     except httpx.HTTPError as exc:
         st.error(f"Request failed: {exc}")

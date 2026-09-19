@@ -68,5 +68,52 @@ class TestSkillReviewPage(unittest.TestCase):
         self.assertGreaterEqual(len(app.error), 1)
 
 
+def _dismiss_with(post_response: httpx.Response) -> tuple[AppTest, mock.MagicMock]:
+    """Render the page, click Dismiss, and return the app and the post mock."""
+    with (
+        mock.patch("httpx.get", side_effect=_fake_get),
+        mock.patch("httpx.post", return_value=post_response) as post,
+    ):
+        app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        (button,) = [b for b in app.button if b.label == "Dismiss"]
+        app = button.click().run()
+    return app, post
+
+
+def _post_response(status: int, **kwargs) -> httpx.Response:
+    request = httpx.Request("POST", "http://api/skills/review/dismiss")
+    return httpx.Response(status, request=request, **kwargs)
+
+
+class TestSkillReviewActions(unittest.TestCase):
+    def test_a_successful_action_posts_the_raw_norm_and_shows_no_error(self) -> None:
+        app, post = _dismiss_with(_post_response(200, json={"status": "ok"}))
+        post.assert_called_once()
+        self.assertTrue(post.call_args.args[0].endswith("/skills/review/dismiss"))
+        self.assertEqual(post.call_args.kwargs["json"], {"raw_norm": "zzfixture thing"})
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.error), 0)
+
+    def test_shows_the_api_detail_when_the_action_is_rejected(self) -> None:
+        detail = "unknown skill string 'zzfixture thing'"
+        app, _ = _dismiss_with(_post_response(404, json={"detail": detail}))
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual([e.value for e in app.error], [detail])
+
+    def test_shows_an_error_instead_of_crashing_on_a_plain_text_500(self) -> None:
+        app, _ = _dismiss_with(_post_response(500, text="Internal Server Error"))
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.error), 1)
+        self.assertIn("500", app.error[0].value)
+
+    def test_joins_the_messages_of_a_request_validation_error(self) -> None:
+        detail = [{"msg": "field required"}, {"msg": "value is not valid"}]
+        app, _ = _dismiss_with(_post_response(422, json={"detail": detail}))
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(
+            [e.value for e in app.error], ["field required; value is not valid"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
