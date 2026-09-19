@@ -12,7 +12,8 @@ from sqlalchemy import text
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "apps" / "api"))
 
 from app.dependencies import get_app_db_engine  # noqa: E402
-from app.main import app  # noqa: E402
+from app.routers import skills  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from tests.integration.skills_fixtures import (  # noqa: E402
     FIXTURE_ESCO_DIR,
@@ -24,6 +25,11 @@ from tests.integration.skills_fixtures import (  # noqa: E402
 )
 
 from core.skills.esco_load import load_esco  # noqa: E402
+
+# Mount only the skills router: the full app (app.main) also imports the cv
+# router, which needs docling / python-multipart that this test does not.
+app = FastAPI()
+app.include_router(skills.router)
 
 _UNMAPPED = "zzfixture unmapped one"
 _MATCHED = "zzfixture matched"
