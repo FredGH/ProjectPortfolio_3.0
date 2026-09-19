@@ -48,6 +48,7 @@ from core.skills.aliases import sync_seed_aliases
 from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import EscoLoadError, load_esco
 from core.skills.mapper import EmbeddingModelMismatch, map_pending, remap_unresolved
+from core.skills.write_job_skills import write_job_skills
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -777,6 +778,33 @@ def _cmd_map_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
+    """Run the `extract-job-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — optional `limit`.
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    # A local 8B model generating on CPU routinely takes far longer than the
+    # 30s used elsewhere here (see apps/api/app/dependencies.py's
+    # get_ollama_http_client for the measured numbers).
+    http_client = httpx.Client(timeout=2000.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        summary = write_job_skills(engine, adapters=adapters, limit=args.limit)
+    finally:
+        http_client.close()
+    print(
+        f"extract-job-skills complete: extracted_jobs={summary.extracted_jobs} "
+        f"skill_rows={summary.skill_rows} failed_jobs={summary.failed_jobs}"
+    )
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction"]
@@ -953,6 +981,14 @@ def main(argv: list[str] | None = None) -> int:
         help="First clear auto-made (embedding / open) mappings so they re-map",
     )
 
+    extract_parser = subparsers.add_parser(
+        "extract-job-skills",
+        help="Extract skills + must/nice-to-have levels for every dedup survivor",
+    )
+    extract_parser.add_argument(
+        "--limit", type=int, default=None, help="Process at most this many jobs"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -977,6 +1013,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_embed_esco(args)
     if args.command == "map-skills":
         return _cmd_map_skills(args)
+    if args.command == "extract-job-skills":
+        return _cmd_extract_job_skills(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
