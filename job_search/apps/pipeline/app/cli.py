@@ -17,6 +17,7 @@ import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -42,6 +43,7 @@ from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.settings import Settings, get_settings
+from core.skills.esco_load import EscoLoadError, load_esco
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -663,6 +665,31 @@ def _cmd_classify_jobs(args: argparse.Namespace) -> int:
         http_client.close()
 
 
+def _cmd_load_esco(args: argparse.Namespace) -> int:
+    """Run the `load-esco` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `directory`, the ESCO release folder.
+
+    Returns:
+        0 on success, 1 if the release directory is missing a file or column.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    try:
+        counts = load_esco(engine, Path(args.directory))
+    except EscoLoadError as exc:
+        print(f"load-esco: {exc}")
+        return 1
+    print(
+        f"load-esco complete: skills={counts.skills} "
+        f"skill_labels={counts.skill_labels} occupations={counts.occupations} "
+        f"occupation_skills={counts.occupation_skills} "
+        f"skipped_relations={counts.skipped_relations}"
+    )
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction"]
@@ -818,6 +845,12 @@ def main(argv: list[str] | None = None) -> int:
         "--provider", required=True, choices=["target", "local", "both"]
     )
 
+    load_esco_parser = subparsers.add_parser(
+        "load-esco",
+        help="Load an ESCO English CSV release directory into the esco schema",
+    )
+    load_esco_parser.add_argument("directory")
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -836,6 +869,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compute_survivorship(args)
     if args.command == "classify-jobs":
         return _cmd_classify_jobs(args)
+    if args.command == "load-esco":
+        return _cmd_load_esco(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

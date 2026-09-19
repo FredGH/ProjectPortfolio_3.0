@@ -1,0 +1,5 @@
+conceptType,conceptUri,skillType,reuseLevel,preferredLabel,altLabels,hiddenLabels,status,modifiedDate,scopeNote,definition,inScheme,description
+KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/fixture-cloud,knowledge,sector-specific,zzfixture cloud technologies,"zzfixture cloud platforms
+zzfixture cloud computing",,released,2024-01-01T00:00:00Z,,,http://data.europa.eu/esco/concept-scheme/skills,Deploy and operate services on cloud infrastructure.
+KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/fixture-python,skill/competence,cross-sectoral,zzfixture python,zzfixture python programming,,released,2024-01-01T00:00:00Z,,,http://data.europa.eu/esco/concept-scheme/skills,Write programs in Python.
+KnowledgeSkillCompetence,http://data.europa.eu/esco/skill/fixture-sql,knowledge,cross-sectoral,zzfixture sql,zzfixture structured query language,,released,2024-01-01T00:00:00Z,,,http://data.europa.eu/esco/concept-scheme/skills,Query relational databases.

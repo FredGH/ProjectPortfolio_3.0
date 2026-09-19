@@ -1,0 +1,3 @@
+conceptType,conceptUri,iscoGroup,preferredLabel,altLabels,hiddenLabels,status,modifiedDate,regulatedProfessionNote,scopeNote,definition,inScheme,description,code
+Occupation,http://data.europa.eu/esco/occupation/fixture-occ-data-engineer,2521,zzfixture data engineer,,,released,2024-01-01T00:00:00Z,,,,http://data.europa.eu/esco/concept-scheme/occupations,Builds data pipelines.,2521.1
+Occupation,http://data.europa.eu/esco/occupation/fixture-occ-cloud-engineer,2523,zzfixture cloud engineer,,,released,2024-01-01T00:00:00Z,,,,http://data.europa.eu/esco/concept-scheme/occupations,Runs cloud platforms.,2523.1
