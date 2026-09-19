@@ -102,7 +102,9 @@ def purge_fixtures(engine: Engine) -> None:
         )
         conn.execute(
             text(
-                "DELETE FROM silver.custom_skill WHERE skill_id LIKE 'custom:fixture-%'"
+                "DELETE FROM silver.custom_skill "
+                "WHERE skill_id LIKE 'custom:fixture-%' "
+                "OR skill_id LIKE 'custom:zzfixture-%'"
             )
         )
         conn.execute(
