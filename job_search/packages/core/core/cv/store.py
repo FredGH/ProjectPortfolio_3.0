@@ -3,7 +3,7 @@
 A write is always one transaction: insert the new content into
 `cv_truth_base_history` at `version = current + 1` (or `1` for a first
 write), then make `cv_truth_base` mirror it — never a second live row
-in `cv_truth_base`, per the DB's own `user_id UNIQUE` constraint (0017).
+in `cv_truth_base`, per the DB's own `user_id UNIQUE` constraint (0018).
 Both a fresh extraction and a correction-pass save go through this same
 path, so both produce a new version and both are traceable in history.
 """

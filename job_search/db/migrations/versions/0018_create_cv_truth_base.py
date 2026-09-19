@@ -1,7 +1,7 @@
 """create cv_truth_base and cv_truth_base_history
 
-Revision ID: 0017
-Revises: 0016
+Revision ID: 0018
+Revises: 0017
 Create Date: 2026-09-13
 
 cv_truth_base (PLAN.md Step 13, JOB-202) holds one user's current CV
@@ -26,8 +26,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision = "0017"
-down_revision = "0016"
+revision = "0018"
+down_revision = "0017"
 branch_labels = None
 depends_on = None
 
