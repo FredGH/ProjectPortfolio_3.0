@@ -61,8 +61,9 @@ def map_cv_skills(
             match (see `core.skills.mapper.map_skill`).
 
     Returns:
-        The `CvMapResult`. An existing `canonical_id` (e.g. hand-corrected
-        in the CV Editor) is never overwritten.
+        The `CvMapResult`. A skill that already has a `canonical_id` (e.g.
+        hand-corrected in the CV Editor) is neither re-mapped nor queued for
+        review, and its id is never overwritten.
 
     Raises:
         LookupError: If the user has no CV truth base.
@@ -74,9 +75,12 @@ def map_cv_skills(
         raise LookupError(f"user {user_id} has no CV truth base")
     truth_base = stored.truth_base
 
+    # Only skills still without an id are mapped: an already-mapped skill
+    # (e.g. hand-corrected in the CV Editor) must not be re-embedded or land
+    # in the review queue.
     resolved = map_strings(
         owner_engine,
-        [skill.name for skill in truth_base.skills],
+        [skill.name for skill in truth_base.skills if skill.canonical_id is None],
         embed=embed,
         embedding_model=embedding_model,
         seen_in_cv=True,

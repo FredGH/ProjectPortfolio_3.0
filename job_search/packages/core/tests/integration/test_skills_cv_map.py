@@ -56,7 +56,7 @@ class TestMapCvSkills(unittest.TestCase):
                 skills=[
                     Skill(name="ZZFixture Cloud Platforms"),
                     Skill(name="zzfixture unheard of thing"),
-                    Skill(name="Kept", canonical_id="manual:1"),
+                    Skill(name="zzfixture kept", canonical_id="manual:1"),
                 ],
                 experience=[
                     Experience(
@@ -101,7 +101,7 @@ class TestMapCvSkills(unittest.TestCase):
             {
                 "ZZFixture Cloud Platforms": "fixture-cloud",
                 "zzfixture unheard of thing": None,
-                "Kept": "manual:1",
+                "zzfixture kept": "manual:1",
             },
         )
         self.assertEqual(stored.label, CV_MAP_LABEL)
@@ -131,12 +131,47 @@ class TestMapCvSkills(unittest.TestCase):
                     "ORDER BY raw_norm"
                 )
             ).all()
+        # The already-mapped "zzfixture kept" must have no row at all: it is
+        # neither re-mapped nor queued for review.
         self.assertEqual(
             [(r.raw_norm, r.seen_in_cv, r.review_status) for r in rows],
             [
                 ("zzfixture cloud platforms", True, None),
                 ("zzfixture unheard of thing", True, "open"),
             ],
+        )
+
+    def test_never_overwrites_an_existing_canonical_id_even_when_a_mapping_exists(
+        self,
+    ) -> None:
+        # "zzfixture cloud platforms" label-matches fixture-cloud, so only the
+        # `canonical_id is None` guard keeps the hand-set id.
+        write_truth_base(
+            self.app,
+            self.user_id,
+            "# markdown",
+            CVTruthBase(
+                identity="Jane Doe",
+                headline="Engineer",
+                skills=[
+                    Skill(name="zzfixture cloud platforms", canonical_id="manual:2"),
+                    Skill(name="zzfixture python programming"),
+                ],
+                experience=[],
+            ),
+        )
+        result = self._run()
+        self.assertEqual(
+            (result.new_version, result.mapped, result.unmapped), (3, 2, 0)
+        )
+        stored = read_truth_base(self.app, self.user_id)
+        ids = {s.name: s.canonical_id for s in stored.truth_base.skills}
+        self.assertEqual(
+            ids,
+            {
+                "zzfixture cloud platforms": "manual:2",
+                "zzfixture python programming": "fixture-python",
+            },
         )
 
     def test_a_user_without_a_cv_raises_lookup_error(self) -> None:
