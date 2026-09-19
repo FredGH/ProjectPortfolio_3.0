@@ -1,0 +1,96 @@
+version: 2
+
+sources:
+  - name: esco_ingest
+    schema: esco
+    tables:
+      - name: skill
+        description: >
+          ESCO skills, loaded by the load-esco pipeline CLI subcommand
+          (core.skills.esco_load), not dbt.
+        columns:
+          - name: skill_id
+            description: "Trailing UUID of the ESCO concept URI."
+  - name: silver_ingest
+    schema: silver
+    tables:
+      - name: custom_skill
+        description: >
+          Skills ESCO lacks (`custom:<slug>`), written by the seed-alias sync
+          and the Skill Review page (Step 14).
+      - name: skill_mapping
+        description: >
+          One row per distinct normalised skill string, written by the
+          map-skills / map-cv-skills subcommands (core.skills.mapper) and the
+          Skill Review page. skill_id is NULL while unmapped.
+      - name: job_skill_extraction
+        description: >
+          One row per (job_group_id, prompt_version) extraction run, written
+          by extract-job-skills (core.skills.write_job_skills).
+      - name: job_skill_raw
+        description: >
+          The LLM's raw skill strings per extraction run, with their
+          must_have / nice_to_have level.
+
+models:
+  - name: silver__skill
+    description: >
+      The unified skill vocabulary: every ESCO skill plus every custom skill
+      (PLAN.md Step 14). The target of silver__bridge_job_skill.skill_id.
+    columns:
+      - name: skill_id
+        description: "ESCO skill UUID, or `custom:<slug>`."
+        data_type: text
+        tests:
+          - unique
+          - not_null
+      - name: canonical_label
+        description: "The skill's display name."
+        data_type: text
+        tests: [not_null]
+      - name: source
+        description: "'esco' or 'custom'."
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['esco', 'custom']
+
+  - name: silver__bridge_job_skill
+    description: >
+      Which normalised skills each deduplicated job asks for, and whether each
+      is a must-have or nice-to-have (PLAN.md Step 14). Built from each job's
+      latest extraction run and mapped strings only; a skill is must_have if
+      any mapped mention is. Feeds Step 15's coverage score and Step 21's gap
+      ranking.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [job_group_id, skill_id]
+    columns:
+      - name: job_group_id
+        description: "The deduplicated job (silver.job_survivorship)."
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: source('silver_ingest', 'job_survivorship')
+              field: job_group_id
+      - name: skill_id
+        description: "The mapped skill (silver__skill)."
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('silver__skill')
+              field: skill_id
+      - name: requirement_level
+        description: "'must_have' if any mapped mention is, else 'nice_to_have'."
+        data_type: text
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['must_have', 'nice_to_have']
+      - name: mention_count
+        description: "How many extracted strings for this job mapped to this skill."
+        data_type: bigint
+        tests: [not_null]
