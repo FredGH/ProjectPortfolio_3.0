@@ -28,6 +28,7 @@ from core.dedup.write_job_identity_map import write_job_identity_map
 from core.dedup.write_job_survivorship import write_job_survivorship
 from core.dedup.write_similarity_features import write_similarity_features
 from core.dedup.write_title_similarity_scores import write_title_similarity_scores
+from core.embedding.ollama import embed_text
 from core.enrichment.write_engagement_terms import write_engagement_terms
 from core.evals.runner import EvalRunResult, run_eval
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
@@ -43,6 +44,7 @@ from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.settings import Settings, get_settings
+from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import EscoLoadError, load_esco
 
 
@@ -690,6 +692,54 @@ def _cmd_load_esco(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_embedder(
+    http_client: httpx.Client, settings: Settings
+) -> Callable[[str], list[float]]:
+    """Build the text-to-vector function used by the skill commands.
+
+    Args:
+        http_client: The shared HTTP client for Ollama calls.
+        settings: Application settings (Ollama URL and embedding model).
+
+    Returns:
+        A function embedding one string via the local Ollama server.
+    """
+
+    def embed(text: str) -> list[float]:
+        return embed_text(
+            text,
+            base_url=settings.ollama_base_url,
+            model=settings.embedding_model,
+            client=http_client,
+        )
+
+    return embed
+
+
+def _cmd_embed_esco(args: argparse.Namespace) -> int:
+    """Run the `embed-esco` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        written = embed_esco_skills(
+            engine,
+            embed=_build_embedder(http_client, settings),
+            model=settings.embedding_model,
+        )
+        print(f"embed-esco complete: embeddings_written={written}")
+        return 0
+    finally:
+        http_client.close()
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction"]
@@ -851,6 +901,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     load_esco_parser.add_argument("directory")
 
+    subparsers.add_parser(
+        "embed-esco",
+        help="Embed every ESCO skill's preferred label (resumable; ~14k Ollama calls)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -871,6 +926,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_classify_jobs(args)
     if args.command == "load-esco":
         return _cmd_load_esco(args)
+    if args.command == "embed-esco":
+        return _cmd_embed_esco(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

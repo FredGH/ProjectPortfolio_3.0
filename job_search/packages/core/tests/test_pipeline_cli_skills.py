@@ -28,5 +28,16 @@ class TestLoadEscoSubcommand(unittest.TestCase):
         self.assertIn("skills_en.csv", out.getvalue())
 
 
+class TestSkillSubcommandsAreRegistered(unittest.TestCase):
+    def _help_exits_zero(self, command: str) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                main([command, "--help"])
+        self.assertEqual(ctx.exception.code, 0)
+
+    def test_embed_esco_is_registered(self) -> None:
+        self._help_exits_zero("embed-esco")
+
+
 if __name__ == "__main__":
     unittest.main()
