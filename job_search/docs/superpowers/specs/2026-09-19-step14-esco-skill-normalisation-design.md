@@ -93,7 +93,9 @@ silver.skill_mapping(raw_norm TEXT PK,
                      skill_id TEXT NULL,
                      method TEXT NOT NULL,        -- 'alias'|'label'|'embedding'|'none'
                      score NUMERIC NULL,          -- cosine, embedding method only
-                     review_status TEXT NULL,     -- NULL|'open'|'resolved'|'dismissed'
+                     candidate_skill_id TEXT NULL, -- best below-threshold neighbour
+                     candidate_score NUMERIC NULL,
+                     review_status TEXT NULL,     -- NULL|'open'|'rejected'|'resolved'|'dismissed'
                      seen_in_cv BOOL NOT NULL DEFAULT false,
                      mapped_at TIMESTAMPTZ)
 silver.job_skill_extraction(job_group_id TEXT, prompt_version TEXT,
@@ -107,7 +109,7 @@ silver.job_skill_raw(job_group_id TEXT, prompt_version TEXT, raw_skill TEXT,
 
 Invariants (CHECK constraints):
 - `method = 'none'` if and only if `skill_id IS NULL`.
-- `review_status = 'open'` only while `skill_id IS NULL`.
+- `review_status` of `open`, `rejected` or `dismissed` only while `skill_id IS NULL`; `resolved` only when it is set.
 - `requirement_level IN ('must_have', 'nice_to_have')`.
 
 `job_skill_extraction` exists so a job that yields zero skills is still
@@ -251,8 +253,10 @@ Python-written tables, read as plain `source()`s, following the
   `custom_skill` row if the user marks it custom) and updates the
   `skill_mapping` row to `resolved` in one transaction. **Dismiss** sets
   `dismissed` and the string is never re-queued. **Reject** (on an
-  embedding match) clears `skill_id`, sets method `none` and
-  `review_status = 'open'`, so a bad auto-match is correctable rather than
+  embedding match) clears `skill_id`, keeps the rejected skill as
+  `candidate_skill_id`, sets method `none` and `review_status = 'rejected'`
+  (shown in the Unmapped tab, never re-mapped by `--remap-unresolved`), so a
+  bad auto-match is correctable rather than
   silently permanent.
 - **UI** `apps/ui/app/pages/6_Skill_Review.py`, following the
   Categorisation Review page: an "Unmapped" tab and an "Embedding matches
