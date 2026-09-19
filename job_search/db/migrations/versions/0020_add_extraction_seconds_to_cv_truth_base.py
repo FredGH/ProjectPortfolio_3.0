@@ -1,7 +1,7 @@
 """add extraction_seconds to cv_truth_base and cv_truth_base_history
 
-Revision ID: 0019
-Revises: 0018
+Revision ID: 0020
+Revises: 0019
 Create Date: 2026-09-17
 
 Records how long a version's extraction pipeline took end-to-end
@@ -9,7 +9,7 @@ Records how long a version's extraction pipeline took end-to-end
 only a version produced by `POST /cv/extract` has one; a
 correction-pass save via `PUT /cv/truth-base` didn't run an
 extraction, so its rows leave this null. Present on both tables,
-mirroring `label` (0018) and every other column core.cv.store's write
+mirroring `label` (0019) and every other column core.cv.store's write
 path keeps in lockstep between them.
 """
 
@@ -18,8 +18,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0019"
-down_revision = "0018"
+revision = "0020"
+down_revision = "0019"
 branch_labels = None
 depends_on = None
 

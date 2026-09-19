@@ -1,7 +1,7 @@
 """add label to cv_truth_base and cv_truth_base_history
 
-Revision ID: 0018
-Revises: 0017
+Revision ID: 0019
+Revises: 0018
 Create Date: 2026-09-17
 
 Adds an optional `label` a user can attach to a CV version when saving
@@ -16,8 +16,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0018"
-down_revision = "0017"
+revision = "0019"
+down_revision = "0018"
 branch_labels = None
 depends_on = None
 
