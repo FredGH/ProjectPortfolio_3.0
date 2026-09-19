@@ -164,13 +164,23 @@ ESCO neighbours, and the acceptance activity is hand-checking about 100
 embedding matches through the review page. The knob is a named constant
 with a docstring saying so.
 
-`map_pending(engine)` maps every distinct `raw_norm` in `job_skill_raw`
-(and `seen_in_cv`-flagged CV strings) that has no `skill_mapping` row.
-Existing rows are never re-mapped implicitly, so a human resolution is
-never overwritten. `--remap-unresolved` deletes rows with method
-`embedding`, or method `none` with `review_status = 'open'` (never
-`rejected`, `resolved` or `dismissed`), then maps again (used after
-re-embedding or changing the threshold).
+`map_pending(engine, *, embed, embedding_model)` maps every distinct
+`raw_norm` in `job_skill_raw` that has no `skill_mapping` row. CV strings
+are mapped and flagged through `map_strings(..., seen_in_cv=True)`, called
+from `map-cv-skills`. Existing rows are never re-mapped implicitly, so a
+human resolution is never overwritten.
+
+`map_strings` works in chunks (100 strings by default). Per chunk it reads
+the existing rows, runs the cascade, including the embedding calls, on a
+read-only connection, then commits one short write transaction. No write
+transaction is held open across Ollama calls, and a failed run (for
+example an Ollama timeout) keeps every chunk already committed, so
+re-running `map-skills` resumes where it stopped.
+
+`--remap-unresolved` deletes rows with method `embedding`, or method
+`none` with `review_status = 'open'` (never `rejected`, `resolved` or
+`dismissed`), then maps again (used after re-embedding or changing the
+threshold).
 
 ## Seed aliases — `config/skill_aliases.yml`
 

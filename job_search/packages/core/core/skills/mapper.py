@@ -91,6 +91,16 @@ _INSERT_MAPPING = text(
     ":candidate_skill_id, :candidate_score, :review_status, :seen_in_cv) "
     "ON CONFLICT (raw_norm) DO NOTHING"
 )
+_SELECT_EXISTING = text(
+    "SELECT raw_norm, skill_id FROM silver.skill_mapping "
+    "WHERE raw_norm = ANY(:norms)"
+)
+_FLAG_SEEN_IN_CV = text(
+    "UPDATE silver.skill_mapping SET seen_in_cv = true WHERE raw_norm = ANY(:norms)"
+)
+_MAP_CHUNK_SIZE = 100
+"""Strings per `map_strings` chunk: one commit per chunk, so a failure
+(e.g. an Ollama timeout) loses at most this many strings of work."""
 
 
 def check_embedding_model(conn: Connection, embedding_model: str) -> None:
@@ -169,8 +179,17 @@ def map_strings(
     embedding_model: str,
     seen_in_cv: bool = False,
     accept_threshold: float = EMBEDDING_ACCEPT_COSINE,
+    chunk_size: int = _MAP_CHUNK_SIZE,
 ) -> dict[str, str | None]:
     """Map raw strings and persist a `silver.skill_mapping` row for new ones.
+
+    Works in chunks so a slow or failing embedding call never rolls back
+    finished work and never holds a write transaction open: per chunk it
+    reads the existing rows, maps the new strings on a read-only
+    connection (the embedding calls happen here), then commits one short
+    write transaction. A failure loses at most the current chunk, and a
+    re-run resumes because already-mapped strings are found as existing
+    rows.
 
     Args:
         engine: The owner-role engine.
@@ -181,6 +200,7 @@ def map_strings(
         seen_in_cv: True when the strings come from a CV — flags the
             mapping rows (new or existing) as seen in a CV.
         accept_threshold: See `map_skill`.
+        chunk_size: Strings processed (and committed) per chunk.
 
     Returns:
         Map of normalised string to its skill id (None if unmapped),
@@ -198,53 +218,54 @@ def map_strings(
     if not first_spelling:
         return {}
 
-    result: dict[str, str | None] = {}
-    with engine.begin() as conn:
+    with engine.connect() as conn:
         check_embedding_model(conn, embedding_model)
-        existing = {
-            row.raw_norm: row.skill_id
-            for row in conn.execute(
-                text(
-                    "SELECT raw_norm, skill_id FROM silver.skill_mapping "
-                    "WHERE raw_norm = ANY(:norms)"
-                ),
-                {"norms": sorted(first_spelling)},
-            )
-        }
-        for norm, raw in first_spelling.items():
-            if norm in existing:
-                result[norm] = existing[norm]
-                if seen_in_cv:
+
+    items = list(first_spelling.items())
+    result: dict[str, str | None] = {}
+    for start in range(0, len(items), chunk_size):
+        chunk = items[start : start + chunk_size]
+        with engine.connect() as conn:
+            existing = {
+                row.raw_norm: row.skill_id
+                for row in conn.execute(
+                    _SELECT_EXISTING, {"norms": [norm for norm, _ in chunk]}
+                )
+            }
+            matches = {
+                norm: map_skill(
+                    conn,
+                    raw,
+                    embed=embed,
+                    embedding_model=embedding_model,
+                    accept_threshold=accept_threshold,
+                )
+                for norm, raw in chunk
+                if norm not in existing
+            }
+        with engine.begin() as conn:
+            if seen_in_cv and existing:
+                conn.execute(_FLAG_SEEN_IN_CV, {"norms": sorted(existing)})
+            for norm, raw in chunk:
+                if norm in matches:
+                    match = matches[norm]
                     conn.execute(
-                        text(
-                            "UPDATE silver.skill_mapping SET seen_in_cv = true "
-                            "WHERE raw_norm = :n"
-                        ),
-                        {"n": norm},
+                        _INSERT_MAPPING,
+                        {
+                            "raw_norm": norm,
+                            "raw_example": raw.strip(),
+                            "skill_id": match.skill_id,
+                            "method": match.method,
+                            "score": match.score,
+                            "candidate_skill_id": match.candidate_skill_id,
+                            "candidate_score": match.candidate_score,
+                            "review_status": "open" if match.skill_id is None else None,
+                            "seen_in_cv": seen_in_cv,
+                        },
                     )
-                continue
-            match = map_skill(
-                conn,
-                raw,
-                embed=embed,
-                embedding_model=embedding_model,
-                accept_threshold=accept_threshold,
-            )
-            conn.execute(
-                _INSERT_MAPPING,
-                {
-                    "raw_norm": norm,
-                    "raw_example": raw.strip(),
-                    "skill_id": match.skill_id,
-                    "method": match.method,
-                    "score": match.score,
-                    "candidate_skill_id": match.candidate_skill_id,
-                    "candidate_score": match.candidate_score,
-                    "review_status": "open" if match.skill_id is None else None,
-                    "seen_in_cv": seen_in_cv,
-                },
-            )
-            result[norm] = match.skill_id
+                    result[norm] = match.skill_id
+                else:
+                    result[norm] = existing[norm]
     return result
 
 

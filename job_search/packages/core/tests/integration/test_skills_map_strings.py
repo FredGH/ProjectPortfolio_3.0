@@ -133,6 +133,29 @@ class TestMapStrings(unittest.TestCase):
                 self.engine, ["zzfixture x"], embed=_far_embed, embedding_model=_MODEL
             )
 
+    def test_a_failing_embed_keeps_the_chunks_already_committed(self) -> None:
+        calls: list[str] = []
+
+        def embed_then_fail(text_: str) -> list[float]:
+            calls.append(text_)
+            if len(calls) == 2:
+                raise RuntimeError("ollama went away")
+            return _far_embed(text_)
+
+        with self.assertRaises(RuntimeError):
+            map_strings(
+                self.engine,
+                ["zzfixture first novel", "zzfixture second novel"],
+                embed=embed_then_fail,
+                embedding_model=_MODEL,
+                chunk_size=1,
+            )
+        self.assertEqual(len(calls), 2)
+        first = self._row("zzfixture first novel")
+        self.assertIsNotNone(first)
+        self.assertEqual((first.method, first.review_status), ("none", "open"))
+        self.assertIsNone(self._row("zzfixture second novel"))
+
 
 class TestMapPendingAndRemap(unittest.TestCase):
     @classmethod
