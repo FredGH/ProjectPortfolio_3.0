@@ -38,6 +38,9 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
     def test_embed_esco_is_registered(self) -> None:
         self._help_exits_zero("embed-esco")
 
+    def test_map_skills_is_registered(self) -> None:
+        self._help_exits_zero("map-skills")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -44,8 +44,10 @@ from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.settings import Settings, get_settings
+from core.skills.aliases import sync_seed_aliases
 from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import EscoLoadError, load_esco
+from core.skills.mapper import EmbeddingModelMismatch, map_pending, remap_unresolved
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -740,6 +742,41 @@ def _cmd_embed_esco(args: argparse.Namespace) -> int:
         http_client.close()
 
 
+def _cmd_map_skills(args: argparse.Namespace) -> int:
+    """Run the `map-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `remap_unresolved`.
+
+    Returns:
+        0 on success, 1 if the stored ESCO embeddings are from a different
+        model than the configured one.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        synced = sync_seed_aliases(engine)
+        if args.remap_unresolved:
+            cleared = remap_unresolved(engine)
+            print(f"map-skills: cleared {cleared} auto-made mappings for re-mapping")
+        summary = map_pending(
+            engine,
+            embed=_build_embedder(http_client, settings),
+            embedding_model=settings.embedding_model,
+        )
+    except EmbeddingModelMismatch as exc:
+        print(f"map-skills: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    print(
+        f"map-skills complete: seed_aliases={synced} "
+        f"mapped={summary.mapped} unmapped={summary.unmapped}"
+    )
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction"]
@@ -906,6 +943,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Embed every ESCO skill's preferred label (resumable; ~14k Ollama calls)",
     )
 
+    map_skills_parser = subparsers.add_parser(
+        "map-skills",
+        help="Sync seed aliases, then map every extracted JD skill string",
+    )
+    map_skills_parser.add_argument(
+        "--remap-unresolved",
+        action="store_true",
+        help="First clear auto-made (embedding / open) mappings so they re-map",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -928,6 +975,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_load_esco(args)
     if args.command == "embed-esco":
         return _cmd_embed_esco(args)
+    if args.command == "map-skills":
+        return _cmd_map_skills(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

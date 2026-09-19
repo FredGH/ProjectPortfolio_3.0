@@ -135,16 +135,16 @@ stemming or stop-word removal: "Google Cloud" vs "Google Cloud Platform"
 is handled by alias entries, not by fuzzy string rules that would also
 merge "Java" and "JavaScript".
 
-## The mapper — `core/skills/normalise.py`
+## The mapper — `core/skills/mapper.py`
 
-`map_skill(engine, raw, *, embed) -> SkillMatch` (`skill_id | None`,
-`method`, `score`), a cascade:
+`map_skill(conn, raw, *, embed, embedding_model) -> SkillMatch`
+(`skill_id | None`, `method`, `score`), a cascade:
 
 1. **Alias**: `skill_alias.alias_norm = raw_norm` (method `alias`).
 2. **ESCO label**: `esco.skill_label.label_norm = raw_norm` (method
-   `label`). If several skills share a label, pick the one with the
-   lexicographically smallest `skill_id` and log it; ambiguity is
-   resolved by an alias entry.
+   `label`). If several skills share a label, prefer a skill whose
+   *preferred* label is the match, then the lexicographically smallest
+   `skill_id`; ambiguity is resolved by an alias entry.
 3. **Embedding**: `embed(raw)` (the existing Ollama helper), then
    `ORDER BY embedding <=> :q LIMIT 1` over `esco.skill_embedding`.
    Accepted if cosine similarity ≥ the accept threshold (method
@@ -152,6 +152,9 @@ merge "Java" and "JavaScript".
 4. Otherwise `skill_id = NULL`, method `none`, `review_status = 'open'`.
    The nearest below-threshold ESCO neighbour, if any, is stored as
    `candidate_skill_id` / `candidate_score` for the review page.
+
+The string normaliser, `normalise_skill`, lives separately in
+`core/skills/normalise.py`.
 
 Aliases outrank ESCO labels so a curated correction can override ESCO.
 
