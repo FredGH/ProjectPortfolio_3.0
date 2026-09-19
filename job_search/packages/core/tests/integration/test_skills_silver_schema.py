@@ -32,28 +32,28 @@ class TestSkillMappingConstraints(unittest.TestCase):
         with self.engine.begin() as conn:
             insert_mapping(conn, f"zzfixture {self.suffix}", **kwargs)
 
-    def _stored(self) -> tuple[str | None, str, str | None]:
+    def _stored(self) -> tuple[str | None, str, str | None, str | None]:
         with self.engine.connect() as conn:
             row = conn.execute(
                 text(
-                    "SELECT skill_id, method, review_status "
+                    "SELECT skill_id, method, review_status, candidate_skill_id "
                     "FROM silver.skill_mapping WHERE raw_norm = :raw_norm"
                 ),
                 {"raw_norm": f"zzfixture {self.suffix}"},
             ).one()
-        return row.skill_id, row.method, row.review_status
+        return row.skill_id, row.method, row.review_status, row.candidate_skill_id
 
     def test_accepts_an_unmapped_open_row(self) -> None:
         self._insert()
-        self.assertEqual(self._stored(), (None, "none", "open"))
+        self.assertEqual(self._stored(), (None, "none", "open", None))
 
     def test_accepts_a_mapped_label_row_with_no_review_status(self) -> None:
         self._insert(skill_id="fixture-x", method="label", review_status=None)
-        self.assertEqual(self._stored(), ("fixture-x", "label", None))
+        self.assertEqual(self._stored(), ("fixture-x", "label", None, None))
 
     def test_accepts_a_rejected_row_with_no_skill(self) -> None:
         self._insert(review_status="rejected", candidate_skill_id="fixture-x")
-        self.assertEqual(self._stored(), (None, "none", "rejected"))
+        self.assertEqual(self._stored(), (None, "none", "rejected", "fixture-x"))
 
     def test_rejects_method_none_with_a_skill(self) -> None:
         with self.assertRaises(IntegrityError):

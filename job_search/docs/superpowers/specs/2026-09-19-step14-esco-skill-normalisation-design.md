@@ -83,7 +83,8 @@ similarity silently).
 
 ```
 silver.custom_skill(skill_id TEXT PK,   -- 'custom:<slug>'
-                    canonical_label TEXT NOT NULL)
+                    canonical_label TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now())
 silver.skill_alias(alias_norm TEXT PK,
                    skill_id TEXT NOT NULL,     -- ESCO id or 'custom:<slug>'
                    source TEXT NOT NULL,       -- 'seed' | 'review'
@@ -97,7 +98,7 @@ silver.skill_mapping(raw_norm TEXT PK,
                      candidate_score NUMERIC NULL,
                      review_status TEXT NULL,     -- NULL|'open'|'rejected'|'resolved'|'dismissed'
                      seen_in_cv BOOL NOT NULL DEFAULT false,
-                     mapped_at TIMESTAMPTZ)
+                     mapped_at TIMESTAMPTZ NOT NULL DEFAULT now())
 silver.job_skill_extraction(job_group_id TEXT, prompt_version TEXT,
                             model TEXT, extracted_at TIMESTAMPTZ,
                             PK (job_group_id, prompt_version))
@@ -149,6 +150,8 @@ merge "Java" and "JavaScript".
    Accepted if cosine similarity ≥ the accept threshold (method
    `embedding`, score stored).
 4. Otherwise `skill_id = NULL`, method `none`, `review_status = 'open'`.
+   The nearest below-threshold ESCO neighbour, if any, is stored as
+   `candidate_skill_id` / `candidate_score` for the review page.
 
 Aliases outrank ESCO labels so a curated correction can override ESCO.
 
@@ -162,8 +165,9 @@ with a docstring saying so.
 (and `seen_in_cv`-flagged CV strings) that has no `skill_mapping` row.
 Existing rows are never re-mapped implicitly, so a human resolution is
 never overwritten. `--remap-unresolved` deletes rows with method
-`embedding` or `none` and `review_status` not `resolved`/`dismissed`, then
-maps again (used after re-embedding or changing the threshold).
+`embedding`, or method `none` with `review_status = 'open'` (never
+`rejected`, `resolved` or `dismissed`), then maps again (used after
+re-embedding or changing the threshold).
 
 ## Seed aliases — `config/skill_aliases.yml`
 
