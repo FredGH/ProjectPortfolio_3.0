@@ -44,6 +44,15 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
     def test_extract_job_skills_is_registered(self) -> None:
         self._help_exits_zero("extract-job-skills")
 
+    def test_map_cv_skills_is_registered(self) -> None:
+        self._help_exits_zero("map-cv-skills")
+
+    def test_map_cv_skills_rejects_a_malformed_user_id(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                main(["map-cv-skills", "--user-id", "not-a-uuid"])
+        self.assertEqual(ctx.exception.code, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

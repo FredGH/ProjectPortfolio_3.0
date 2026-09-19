@@ -15,6 +15,7 @@ import argparse
 import datetime
 import json
 import sys
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,7 @@ from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.settings import Settings, get_settings
 from core.skills.aliases import sync_seed_aliases
+from core.skills.cv_map import map_cv_skills
 from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import EscoLoadError, load_esco
 from core.skills.mapper import EmbeddingModelMismatch, map_pending, remap_unresolved
@@ -805,6 +807,41 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
+    """Run the `map-cv-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id`.
+
+    Returns:
+        0 on success, 1 if the user has no CV or the ESCO embeddings are
+        from a different model than the configured one.
+    """
+    settings = get_settings()
+    owner_engine = build_engine(settings.database_url)
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        result = map_cv_skills(
+            app_engine=app_engine,
+            owner_engine=owner_engine,
+            user_id=args.user_id,
+            embed=_build_embedder(http_client, settings),
+            embedding_model=settings.embedding_model,
+        )
+    except (LookupError, EmbeddingModelMismatch) as exc:
+        print(f"map-cv-skills: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    version = result.new_version if result.new_version is not None else "unchanged"
+    print(
+        f"map-cv-skills complete: mapped={result.mapped} "
+        f"unmapped={result.unmapped} truth_base_version={version}"
+    )
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction"]
@@ -989,6 +1026,12 @@ def main(argv: list[str] | None = None) -> int:
         "--limit", type=int, default=None, help="Process at most this many jobs"
     )
 
+    map_cv_parser = subparsers.add_parser(
+        "map-cv-skills",
+        help="Fill canonical_id on a user's CV skills (writes a new CV version)",
+    )
+    map_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1015,6 +1058,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_map_skills(args)
     if args.command == "extract-job-skills":
         return _cmd_extract_job_skills(args)
+    if args.command == "map-cv-skills":
+        return _cmd_map_cv_skills(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
