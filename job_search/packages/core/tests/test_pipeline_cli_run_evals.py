@@ -98,6 +98,52 @@ class TestRunEvalsSubcommand(unittest.TestCase):
         self.assertGreaterEqual(mock_run_eval.call_count, 1)
 
     @mock.patch("app.cli.run_eval")
+    def test_task_flag_accepts_cv_extraction(self, mock_run_eval: mock.Mock) -> None:
+        """`--task cv_extraction` is a valid argparse choice and dispatches.
+
+        Without `cv_extraction` in `_EVAL_TASKS`, argparse would reject
+        this choice outright before `run_eval` is ever called.
+
+        Args:
+            mock_run_eval: The patched `app.cli.run_eval`.
+        """
+        mock_run_eval.return_value = EvalRunResult(
+            task="cv_extraction",
+            provider="target",
+            status="ok",
+            score=0.9,
+            case_count=25,
+            previous_score=0.9,
+            delta=0.0,
+            regressed=False,
+        )
+        exit_code = main(
+            ["run-evals", "--task", "cv_extraction", "--provider", "target"]
+        )
+        self.assertEqual(exit_code, 0)
+        mock_run_eval.assert_called_once()
+        self.assertEqual(mock_run_eval.call_args.args, ("cv_extraction", "target"))
+
+    @mock.patch("app.cli.run_eval")
+    def test_all_flag_includes_cv_extraction(self, mock_run_eval: mock.Mock) -> None:
+        """`--all` reaches `cv_extraction`, not just `job_categorisation`.
+
+        Args:
+            mock_run_eval: The patched `app.cli.run_eval`.
+        """
+        mock_run_eval.return_value = EvalRunResult(
+            task="cv_extraction",
+            provider="target",
+            status="insufficient_data",
+            score=None,
+            case_count=0,
+        )
+        exit_code = main(["run-evals", "--all", "--provider", "target"])
+        self.assertEqual(exit_code, 0)
+        dispatched_tasks = [call.args[0] for call in mock_run_eval.call_args_list]
+        self.assertIn("cv_extraction", dispatched_tasks)
+
+    @mock.patch("app.cli.run_eval")
     def test_missing_adapter_prints_a_clear_message_and_exits_non_zero(
         self, mock_run_eval: mock.Mock
     ) -> None:

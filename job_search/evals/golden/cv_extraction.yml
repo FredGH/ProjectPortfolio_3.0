@@ -1,0 +1,381 @@
+cases:
+  - case_id: cv_001
+    input:
+      markdown: |
+        # Alex Chen
+        ## Senior Backend Engineer
+
+        ### Nimbus Systems — Backend Engineer
+        Jan 2019 - Dec 2022
+
+        - Rebuilt the checkout service, cutting p99 latency by 40%.
+
+        **Skills:** Go, Kubernetes, PostgreSQL
+    expected:
+      company: "Nimbus Systems"
+      title: "Backend Engineer"
+      start: "2019-01"
+      end: "2022-12"
+      first_bullet: "Rebuilt the checkout service, cutting p99 latency by 40%."
+      first_skill: "Go"
+  - case_id: cv_002
+    input:
+      markdown: |
+        # Priya Nair
+        ## Data Scientist
+
+        ### Alto Analytics — Data Scientist
+        Mar 2021 - Present
+
+        - Shipped a churn-prediction model adopted by 3 product teams.
+
+        **Skills:** Python, scikit-learn, SQL
+    expected:
+      company: "Alto Analytics"
+      title: "Data Scientist"
+      start: "2021-03"
+      end: null
+      first_bullet: "Shipped a churn-prediction model adopted by 3 product teams."
+      first_skill: "Python"
+  - case_id: cv_003
+    input:
+      markdown: |
+        # Marcus Webb
+        ## Customer Support Associate
+
+        ### Northgate Retail — Customer Support Associate
+        Jun 2018 – Aug 2019
+
+        - Resolved an average of 45 customer inquiries per shift while maintaining a 4.8/5 satisfaction rating.
+
+        **Skills:** Excel, Zendesk, Shopify POS
+    expected:
+      company: "Northgate Retail"
+      title: "Customer Support Associate"
+      start: "2018-06"
+      end: "2019-08"
+      first_bullet: "Resolved an average of 45 customer inquiries per shift while maintaining a 4.8/5 satisfaction rating."
+      first_skill: "Excel"
+  - case_id: cv_004
+    input:
+      markdown: |
+        # Amara Diallo
+        ## Senior DevOps Engineer
+
+        ### Vertex Cloud — DevOps Engineer
+        2019-04 – 2022-10
+
+        - Migrated the on-prem deployment pipeline to Kubernetes, reducing release cycle time from two weeks to two days.
+
+        **Skills:** Terraform, AWS, Docker
+    expected:
+      company: "Vertex Cloud"
+      title: "DevOps Engineer"
+      start: "2019-04"
+      end: "2022-10"
+      first_bullet: "Migrated the on-prem deployment pipeline to Kubernetes, reducing release cycle time from two weeks to two days."
+      first_skill: "Terraform"
+  - case_id: cv_005
+    input:
+      markdown: |
+        # Tom Fitzgerald
+        ## Growth Marketing Manager
+
+        ### Solstice Media — Growth Marketing Manager
+        February 2017 - November 2020
+
+        - Grew organic monthly traffic from 12,000 to 68,000 visitors within 18 months.
+
+        **Skills:** Google Analytics, HubSpot, SEO
+    expected:
+      company: "Solstice Media"
+      title: "Growth Marketing Manager"
+      start: "2017-02"
+      end: "2020-11"
+      first_bullet: "Grew organic monthly traffic from 12,000 to 68,000 visitors within 18 months."
+      first_skill: "Google Analytics"
+  - case_id: cv_006
+    input:
+      markdown: |
+        # Yuki Tanaka
+        ## Clinical Research Associate
+
+        ### Meridian Biosciences — Clinical Research Associate
+        09/2015 - 06/2018
+
+        - Coordinated site monitoring visits across 14 clinical trial locations, ensuring zero major protocol deviations.
+
+        **Skills:** GCP Compliance, CRF Review, SAS
+    expected:
+      company: "Meridian Biosciences"
+      title: "Clinical Research Associate"
+      start: "2015-09"
+      end: "2018-06"
+      first_bullet: "Coordinated site monitoring visits across 14 clinical trial locations, ensuring zero major protocol deviations."
+      first_skill: "GCP Compliance"
+  - case_id: cv_007
+    input:
+      markdown: |
+        # Diego Fernandez
+        ## Financial Analyst
+
+        ### Cobalt Capital Partners — Financial Analyst
+        January 2020 – present
+
+        - Built a discounted cash flow model that informed a $40M acquisition decision.
+
+        **Skills:** Financial Modeling, Bloomberg Terminal, VBA
+    expected:
+      company: "Cobalt Capital Partners"
+      title: "Financial Analyst"
+      start: "2020-01"
+      end: null
+      first_bullet: "Built a discounted cash flow model that informed a $40M acquisition decision."
+      first_skill: "Financial Modeling"
+  - case_id: cv_008
+    input:
+      markdown: |
+        # Lena Kowalski
+        ## Paralegal
+
+        ### Ashford & Vance LLP — Paralegal
+        03/2016 - 07/2019
+
+        - Managed discovery document review for a 200,000-document litigation matter.
+
+        **Skills:** Westlaw, Contract Review, Document Management
+    expected:
+      company: "Ashford & Vance LLP"
+      title: "Paralegal"
+      start: "2016-03"
+      end: "2019-07"
+      first_bullet: "Managed discovery document review for a 200,000-document litigation matter."
+      first_skill: "Westlaw"
+  - case_id: cv_009
+    input:
+      markdown: |
+        # Samuel Okafor
+        ## Site Engineer
+
+        ### Ironbridge Construction Group — Site Engineer
+        Apr 2014 - Dec 2018
+
+        - Supervised structural inspections on a 30-story mixed-use tower, delivering the project two months ahead of schedule.
+
+        **Skills:** AutoCAD, Primavera P6, Structural Analysis
+    expected:
+      company: "Ironbridge Construction Group"
+      title: "Site Engineer"
+      start: "2014-04"
+      end: "2018-12"
+      first_bullet: "Supervised structural inspections on a 30-story mixed-use tower, delivering the project two months ahead of schedule."
+      first_skill: "AutoCAD"
+  - case_id: cv_010
+    input:
+      markdown: |
+        # Hannah Brooks
+        ## Curriculum Designer
+
+        ### Lumen Learning Co — Curriculum Designer
+        August 2019 – June 2022
+
+        - Designed a blended-learning curriculum now used by over 5,000 students annually.
+
+        **Skills:** Instructional Design, Articulate Storyline, LMS Administration
+    expected:
+      company: "Lumen Learning Co"
+      title: "Curriculum Designer"
+      start: "2019-08"
+      end: "2022-06"
+      first_bullet: "Designed a blended-learning curriculum now used by over 5,000 students annually."
+      first_skill: "Instructional Design"
+  - case_id: cv_011
+    input:
+      markdown: |
+        # Rajesh Patel
+        ## VP of Engineering
+
+        ### Solace Robotics — VP of Engineering
+        Jan 2015 – Present
+
+        - Grew the engineering organization from 12 to 140 people across four continents.
+
+        **Skills:** Engineering Leadership, Systems Architecture, Rust
+    expected:
+      company: "Solace Robotics"
+      title: "VP of Engineering"
+      start: "2015-01"
+      end: null
+      first_bullet: "Grew the engineering organization from 12 to 140 people across four continents."
+      first_skill: "Engineering Leadership"
+  - case_id: cv_012
+    input:
+      markdown: |
+        # Chloe Martin
+        ## Hotel Operations Manager
+
+        ### Bellcrest Hotels — Operations Manager
+        05/2013 - 09/2017
+
+        - Cut guest-complaint volume by half after redesigning the front-desk check-in workflow.
+
+        **Skills:** Opera PMS, Staff Scheduling, Budget Forecasting
+    expected:
+      company: "Bellcrest Hotels"
+      title: "Operations Manager"
+      start: "2013-05"
+      end: "2017-09"
+      first_bullet: "Cut guest-complaint volume by half after redesigning the front-desk check-in workflow."
+      first_skill: "Opera PMS"
+  - case_id: cv_013
+    input:
+      markdown: |
+        # Ola Nordström
+        ## Security Analyst
+
+        ### Fjord Security Labs — SOC Analyst
+        Jul 2021 - Present
+
+        - Investigated and contained a phishing incident affecting 200 employee accounts within four hours.
+
+        **Skills:** SIEM, Threat Hunting, Python
+    expected:
+      company: "Fjord Security Labs"
+      title: "SOC Analyst"
+      start: "2021-07"
+      end: null
+      first_bullet: "Investigated and contained a phishing incident affecting 200 employee accounts within four hours."
+      first_skill: "SIEM"
+  - case_id: cv_014
+    input:
+      markdown: |
+        # Grace Liu
+        ## Senior UX Designer
+
+        ### Pixel & Pine Studio — Senior UX Designer
+        Oct 2018 - Feb 2022
+
+        - Led a research study of 40 users that reshaped the onboarding flow, lifting activation by 22%.
+
+        **Skills:** Figma, User Research, Prototyping
+    expected:
+      company: "Pixel & Pine Studio"
+      title: "Senior UX Designer"
+      start: "2018-10"
+      end: "2022-02"
+      first_bullet: "Led a research study of 40 users that reshaped the onboarding flow, lifting activation by 22%."
+      first_skill: "Figma"
+  - case_id: cv_015
+    input:
+      markdown: |
+        # Bram de Vries
+        ## Supply Chain Manager
+
+        ### Delta Logistics Group — Supply Chain Manager
+        2012-01 - 2016-03
+
+        - Reduced warehouse carrying costs by 18% through a revised demand-forecasting model.
+
+        **Skills:** SAP MM, Demand Planning, Six Sigma
+    expected:
+      company: "Delta Logistics Group"
+      title: "Supply Chain Manager"
+      start: "2012-01"
+      end: "2016-03"
+      first_bullet: "Reduced warehouse carrying costs by 18% through a revised demand-forecasting model."
+      first_skill: "SAP MM"
+  - case_id: cv_016
+    input:
+      markdown: |
+        # Fatima Al-Sayed
+        ## Program Coordinator
+
+        ### Horizon Relief Network — Program Coordinator
+        Jun 2020 - Present
+
+        - Coordinated relief distribution to over 3,000 households following a regional flooding emergency.
+
+        **Skills:** Grant Writing, Salesforce Nonprofit Cloud, Volunteer Management
+    expected:
+      company: "Horizon Relief Network"
+      title: "Program Coordinator"
+      start: "2020-06"
+      end: null
+      first_bullet: "Coordinated relief distribution to over 3,000 households following a regional flooding emergency."
+      first_skill: "Grant Writing"
+  - case_id: cv_017
+    input:
+      markdown: |
+        # Connor Walsh
+        ## Junior Software Developer
+
+        ### Brightline Software — Junior Developer
+        Jul 2022 - Present
+
+        - Built the team's first automated end-to-end test suite, catching regressions before three production releases.
+
+        **Skills:** JavaScript, React, Git
+    expected:
+      company: "Brightline Software"
+      title: "Junior Developer"
+      start: "2022-07"
+      end: null
+      first_bullet: "Built the team's first automated end-to-end test suite, catching regressions before three production releases."
+      first_skill: "JavaScript"
+  - case_id: cv_018
+    input:
+      markdown: |
+        # Isabella Rossi
+        ## Enterprise Account Executive
+
+        ### Quantum Peak Solutions — Enterprise Account Executive
+        Feb 2016 - Oct 2021
+
+        - Closed $2.3M in new annual recurring revenue across 15 enterprise accounts.
+
+        **Skills:** Salesforce, Solution Selling, Negotiation
+    expected:
+      company: "Quantum Peak Solutions"
+      title: "Enterprise Account Executive"
+      start: "2016-02"
+      end: "2021-10"
+      first_bullet: "Closed $2.3M in new annual recurring revenue across 15 enterprise accounts."
+      first_skill: "Salesforce"
+  - case_id: cv_019
+    input:
+      markdown: |
+        # Kwame Mensah
+        ## Senior Data Engineer
+
+        ### Baobab Data Systems — Senior Data Engineer
+        2017-03 - 2021-07
+
+        - Redesigned the batch ETL pipeline as streaming jobs, cutting data latency from 6 hours to 9 minutes.
+
+        **Skills:** Apache Spark, Airflow, Snowflake
+    expected:
+      company: "Baobab Data Systems"
+      title: "Senior Data Engineer"
+      start: "2017-03"
+      end: "2021-07"
+      first_bullet: "Redesigned the batch ETL pipeline as streaming jobs, cutting data latency from 6 hours to 9 minutes."
+      first_skill: "Apache Spark"
+  - case_id: cv_020
+    input:
+      markdown: |
+        # Sofia Petrova
+        ## Research Scientist
+
+        ### Northern Lights Institute — Research Scientist
+        Sep 2014 - Aug 2019
+
+        - Co-authored a peer-reviewed study on Bayesian forecasting cited over 80 times.
+
+        **Skills:** R, Bayesian Statistics, LaTeX
+    expected:
+      company: "Northern Lights Institute"
+      title: "Research Scientist"
+      start: "2014-09"
+      end: "2019-08"
+      first_bullet: "Co-authored a peer-reviewed study on Bayesian forecasting cited over 80 times."
+      first_skill: "R"
