@@ -144,8 +144,12 @@ class TestMapCvSkills(unittest.TestCase):
     def test_never_overwrites_an_existing_canonical_id_even_when_a_mapping_exists(
         self,
     ) -> None:
-        # "zzfixture cloud platforms" label-matches fixture-cloud, so only the
-        # `canonical_id is None` guard keeps the hand-set id.
+        # Two skills normalise to the same key ("zzfixture cloud platforms",
+        # which label-matches fixture-cloud). In the ordinary case the
+        # `canonical_id is None` filter keeps a preset skill out of
+        # `map_strings`; here the unset twin puts that key into `resolved`, so
+        # only the `canonical_id is None` guard in the fill loop keeps the
+        # preset skill's hand-set id.
         write_truth_base(
             self.app,
             self.user_id,
@@ -155,12 +159,14 @@ class TestMapCvSkills(unittest.TestCase):
                 headline="Engineer",
                 skills=[
                     Skill(name="zzfixture cloud platforms", canonical_id="manual:2"),
-                    Skill(name="zzfixture python programming"),
+                    Skill(name="ZZFixture Cloud Platforms"),
                 ],
                 experience=[],
             ),
         )
         result = self._run()
+        # Version 1 is setUp's, 2 is this test's own write, 3 is the run's.
+        # Both skills end with an id (manual:2 kept, fixture-cloud filled).
         self.assertEqual(
             (result.new_version, result.mapped, result.unmapped), (3, 2, 0)
         )
@@ -170,7 +176,7 @@ class TestMapCvSkills(unittest.TestCase):
             ids,
             {
                 "zzfixture cloud platforms": "manual:2",
-                "zzfixture python programming": "fixture-python",
+                "ZZFixture Cloud Platforms": "fixture-cloud",
             },
         )
 
