@@ -119,6 +119,113 @@ class TestLoadEsco(unittest.TestCase):
             0,
         )
 
+    def test_reload_drops_relations_removed_from_the_release(self) -> None:
+        load_esco(self.engine, FIXTURE_ESCO_DIR)
+        with tempfile.TemporaryDirectory() as tmp:
+            release = Path(tmp)
+            for source in FIXTURE_ESCO_DIR.glob("*.csv"):
+                shutil.copy(source, release / source.name)
+            relations_path = release / "occupationSkillRelations_en.csv"
+            kept = [
+                line
+                for line in relations_path.read_text().splitlines(keepends=True)
+                if "fixture-occ-data-engineer" not in line
+                or not line.rstrip().endswith("fixture-sql")
+            ]
+            # Header + 5 relation rows, minus the one dropped from the release.
+            self.assertEqual(len(kept), 5)
+            relations_path.write_text("".join(kept))
+            counts = load_esco(self.engine, release)
+        self.assertEqual(counts.occupation_skills, 3)
+        self.assertEqual(
+            self._count(
+                "SELECT count(*) FROM esco.occupation_skill "
+                "WHERE occupation_id = 'fixture-occ-data-engineer' "
+                "AND skill_id = 'fixture-sql'"
+            ),
+            0,
+        )
+        self.assertEqual(
+            self._count(
+                "SELECT count(*) FROM esco.occupation_skill "
+                "WHERE occupation_id LIKE 'fixture-%'"
+            ),
+            3,
+        )
+
+    def test_reload_leaves_skills_and_occupations_outside_the_release_alone(
+        self,
+    ) -> None:
+        other_skill_uri = "http://data.europa.eu/esco/skill/fixture-other-skill"
+        other_occ_uri = "http://data.europa.eu/esco/occupation/fixture-other-occ"
+        # The release must already be loaded so `fixture-python` exists for the
+        # cross-release relation below.
+        load_esco(self.engine, FIXTURE_ESCO_DIR)
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO esco.skill (skill_id, concept_uri, preferred_label) "
+                    "VALUES ('fixture-other-skill', :uri, 'zzfixture other skill')"
+                ),
+                {"uri": other_skill_uri},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO esco.skill_label "
+                    "(skill_id, label, label_norm, is_preferred) VALUES "
+                    "('fixture-other-skill', 'zzfixture other skill', "
+                    "'zzfixture other skill', TRUE)"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO esco.occupation "
+                    "(occupation_id, concept_uri, preferred_label) "
+                    "VALUES ('fixture-other-occ', :uri, 'zzfixture other occupation')"
+                ),
+                {"uri": other_occ_uri},
+            )
+            # One relation to a skill outside the release, one to a skill inside
+            # it: neither may be deleted, because the occupation is not in it.
+            conn.execute(
+                text(
+                    "INSERT INTO esco.occupation_skill "
+                    "(occupation_id, skill_id, relation_type) VALUES "
+                    "('fixture-other-occ', 'fixture-other-skill', 'essential'), "
+                    "('fixture-other-occ', 'fixture-python', 'optional')"
+                )
+            )
+        # A second load must leave the unrelated rows exactly as they were.
+        load_esco(self.engine, FIXTURE_ESCO_DIR)
+        self.assertEqual(
+            self._count(
+                "SELECT count(*) FROM esco.skill WHERE skill_id = 'fixture-other-skill'"
+            ),
+            1,
+        )
+        self.assertEqual(
+            self._count(
+                "SELECT count(*) FROM esco.skill_label "
+                "WHERE skill_id = 'fixture-other-skill' "
+                "AND label_norm = 'zzfixture other skill'"
+            ),
+            1,
+        )
+        self.assertEqual(
+            self._count(
+                "SELECT count(*) FROM esco.occupation "
+                "WHERE occupation_id = 'fixture-other-occ'"
+            ),
+            1,
+        )
+        self.assertEqual(
+            self._count(
+                "SELECT count(*) FROM esco.occupation_skill "
+                "WHERE occupation_id = 'fixture-other-occ'"
+            ),
+            2,
+        )
+
     def test_missing_file_raises_naming_the_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(EscoLoadError) as ctx:
