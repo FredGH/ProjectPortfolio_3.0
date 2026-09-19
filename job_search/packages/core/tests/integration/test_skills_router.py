@@ -109,9 +109,21 @@ class TestSkillReviewApi(unittest.TestCase):
         found = {o["skill_id"]: o["source"] for o in body}
         self.assertEqual(found.get("fixture-cloud"), "esco")
 
+    def _search_ids(self, query: str) -> list[str]:
+        body = self.client.get("/skills/search", params={"q": query}).json()
+        return [o["skill_id"] for o in body]
+
     def test_search_treats_wildcards_literally(self) -> None:
-        body = self.client.get("/skills/search", params={"q": "%"}).json()
-        self.assertNotIn("fixture-cloud", {o["skill_id"] for o in body})
+        # Positive control: a plain substring of the fixture label does match,
+        # so the empty results below are meaningful. Each wildcard query below
+        # would match the fixture labels if its metacharacter were left
+        # unescaped, and matches nothing when it is escaped: "%" is any run of
+        # characters, "_" is any one character, and "\ " (backslash-space) is
+        # a literal space to LIKE.
+        self.assertIn("fixture-cloud", self._search_ids("zzfixture cloud"))
+        for query in ("zzfixture%", "zzfixture_cloud", "zzfixture\\ cloud"):
+            with self.subTest(query=query):
+                self.assertEqual(self._search_ids(query), [])
 
     def test_resolving_to_an_esco_skill_maps_it_and_creates_a_review_alias(
         self,
@@ -136,6 +148,29 @@ class TestSkillReviewApi(unittest.TestCase):
             ).one()
         self.assertEqual((alias.skill_id, alias.source), ("fixture-cloud", "review"))
         self.assertNotIn(_UNMAPPED, self._review_norms())
+
+    def test_confirming_an_embedding_match_never_leaves_it_as_an_embedding_row(
+        self,
+    ) -> None:
+        # remap_unresolved deletes method='embedding' rows, so a resolved row
+        # that kept that method would silently undo the human decision.
+        response = self.client.post(
+            "/skills/review/resolve",
+            json={"raw_norm": _MATCHED, "skill_id": "fixture-python"},
+        )
+        self.assertEqual(response.status_code, 200)
+        row = self._mapping(_MATCHED)
+        self.assertEqual(
+            (row.skill_id, row.method, row.review_status),
+            ("fixture-python", "alias", "resolved"),
+        )
+        self.assertIsNone(row.score)
+        self.assertIsNone(row.candidate_skill_id)
+        self.assertIsNone(row.candidate_score)
+        matches = self.client.get(
+            "/skills/review/embedding-matches", params={"limit": 500}
+        ).json()
+        self.assertNotIn(_MATCHED, {m["raw_norm"] for m in matches})
 
     def test_resolving_as_a_custom_skill_creates_it(self) -> None:
         response = self.client.post(
@@ -199,6 +234,8 @@ class TestSkillReviewApi(unittest.TestCase):
             (row.skill_id, row.method, row.review_status, row.candidate_skill_id),
             (None, "none", "rejected", "fixture-python"),
         )
+        self.assertIsNone(row.score)
+        self.assertAlmostEqual(float(row.candidate_score), 0.86)
         self.assertIn(_MATCHED, self._review_norms())
         again = self.client.post("/skills/review/reject", json={"raw_norm": _MATCHED})
         self.assertEqual(again.status_code, 422)
