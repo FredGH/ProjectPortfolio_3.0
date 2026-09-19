@@ -1,0 +1,21 @@
+# Curated skill aliases for Step 14's skill mapper (silver.skill_alias,
+# source 'seed'). Aliases outrank ESCO's own labels, so an entry here can
+# correct or extend ESCO. Each entry maps a set of spellings to one skill:
+#   - a `custom:<slug>` id (with a `label`) for a tool ESCO lacks, or
+#   - an ESCO skill_id (the UUID at the end of its concept URI).
+# An entry's own `label` is always an alias too. This file is a starting
+# set; day-to-day additions come from the Skill Review page (source
+# 'review'), which is never overwritten by a re-sync of this file.
+skills:
+  - skill_id: "custom:google-cloud-platform"
+    label: "Google Cloud Platform"
+    aliases: ["GCP", "Google Cloud", "Google Cloud Platform (GCP)"]
+  - skill_id: "custom:amazon-web-services"
+    label: "Amazon Web Services"
+    aliases: ["AWS", "Amazon AWS"]
+  - skill_id: "custom:kubernetes"
+    label: "Kubernetes"
+    aliases: ["K8s"]
+  - skill_id: "custom:postgresql"
+    label: "PostgreSQL"
+    aliases: ["Postgres"]
