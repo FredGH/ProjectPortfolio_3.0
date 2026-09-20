@@ -43,10 +43,22 @@ The command lines below are written in the short
 
 ## One-off setup
 
-1. Download the ESCO **English CSV** release from the ESCO portal and unzip
-   it. Copy `skills_en.csv`, `occupations_en.csv` and
-   `occupationSkillRelations_en.csv` into `data/esco/` (mounted at `/data/esco`
-   in the pipeline container).
+1. Download the ESCO **English CSV** release and unzip it. Copy
+   `skills_en.csv`, `occupations_en.csv` and `occupationSkillRelations_en.csv`
+   into `data/esco/` (mounted at `/data/esco` in the pipeline container).
+
+   - **Download page:** <https://esco.ec.europa.eu/en/use-esco/download>
+   - **Version:** ESCO **v1.2.1** was the current release on that page as of
+     2026-09-20 (page dated 10/12/2025). Pick the latest version listed, and
+     note which one you loaded — a newer release may rename columns or files.
+   - **On the page:** choose the version, the content (occupations and
+     skills & competences — the loader also needs the occupation–skill
+     relations), file type **CSV**, and language **English**. You then accept
+     the privacy statement and enter your email address; the download link
+     is emailed to you (it is not a direct link, so it cannot be scripted).
+   - The portal does not list the CSV file names in the zip. The names above
+     are what `load-esco` expects; if yours differ, `load-esco` stops and
+     names the missing file or column.
 2. `alembic -c db/alembic.ini upgrade head` (migrations 0022, 0023).
 3. Load, then embed (about 14k Ollama calls, resumable — re-run if interrupted):
 
