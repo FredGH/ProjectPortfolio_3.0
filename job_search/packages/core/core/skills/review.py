@@ -32,6 +32,9 @@ class ReviewItem:
     Attributes:
         raw_norm: The normalised string (the review key).
         raw_example: One original spelling, for display.
+        review_status: "open" (never mapped) or "rejected" (an auto-match
+            the reviewer threw out — its candidate is the rejected skill,
+            so the UI must not offer it back as a one-click suggestion).
         seen_in_cv: Whether a CV contained it.
         jd_job_count: How many jobs' extractions contain it.
         sample_job_group_ids: Up to three such jobs.
@@ -42,6 +45,7 @@ class ReviewItem:
 
     raw_norm: str
     raw_example: str
+    review_status: str
     seen_in_cv: bool
     jd_job_count: int
     sample_job_group_ids: list[str]
@@ -105,7 +109,7 @@ def list_unmapped(conn: Connection, *, limit: int = 50) -> list[ReviewItem]:
     """
     rows = conn.execute(
         text(
-            f"SELECT m.raw_norm, m.raw_example, m.seen_in_cv, "
+            f"SELECT m.raw_norm, m.raw_example, m.review_status, m.seen_in_cv, "
             f"m.candidate_skill_id, m.candidate_score, "
             f"COALESCE(es.preferred_label, cs.canonical_label) AS candidate_label, "
             f"{_JD_COUNT} AS jd_job_count, "
@@ -126,6 +130,7 @@ def list_unmapped(conn: Connection, *, limit: int = 50) -> list[ReviewItem]:
         ReviewItem(
             raw_norm=r.raw_norm,
             raw_example=r.raw_example,
+            review_status=r.review_status,
             seen_in_cv=r.seen_in_cv,
             jd_job_count=r.jd_job_count,
             sample_job_group_ids=list(r.sample_job_group_ids),
@@ -176,6 +181,19 @@ def list_embedding_matches(conn: Connection, *, limit: int = 50) -> list[MatchIt
     ]
 
 
+def _escape_like(value: str) -> str:
+    """Escape the LIKE metacharacters in a literal string.
+
+    Args:
+        value: The literal text to match.
+
+    Returns:
+        `value` with backslash, ``%`` and ``_`` escaped for LIKE's default
+        (backslash) escape character.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _like_pattern(query: str) -> str:
     """Build a literal-substring LIKE pattern from a search query.
 
@@ -185,19 +203,49 @@ def _like_pattern(query: str) -> str:
     Returns:
         ``%<normalised query>%`` with LIKE wildcards escaped.
     """
-    escaped = (
-        normalise_skill(query)
-        .replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
-    return f"%{escaped}%"
+    return f"%{_escape_like(normalise_skill(query))}%"
+
+
+def _prefix_pattern(query: str) -> str:
+    """Build a literal-prefix LIKE pattern from a search query.
+
+    Built in Python rather than concatenated in SQL so the escaping is the
+    same as `_like_pattern`'s — a query containing ``%`` or ``_`` must not
+    turn into a wildcard here either.
+
+    Args:
+        query: The reviewer's search text.
+
+    Returns:
+        ``<normalised query>%`` with LIKE wildcards escaped.
+    """
+    return f"{_escape_like(normalise_skill(query))}%"
+
+
+# Ranks a matching row: exact label first, then a label starting with the
+# query, then the shortest label, then alphabetically. Booleans sort false
+# before true in Postgres, so each NOT-form puts its matches first. Without
+# this, a short, common query ("go", "sql") could push the skill the
+# reviewer wants past the UI's 10-result window purely on alphabetical
+# order.
+_ESCO_ORDER = (
+    "ORDER BY (NOT EXISTS (SELECT 1 FROM esco.skill_label AS x "
+    "WHERE x.skill_id = s.skill_id AND x.label_norm = :exact)), "
+    "(NOT EXISTS (SELECT 1 FROM esco.skill_label AS x "
+    "WHERE x.skill_id = s.skill_id AND x.label_norm LIKE :prefix)), "
+    "length(s.preferred_label), s.preferred_label"
+)
+_CUSTOM_ORDER = (
+    "ORDER BY (lower(canonical_label) <> :exact), "
+    "(lower(canonical_label) NOT LIKE :prefix), "
+    "length(canonical_label), canonical_label"
+)
 
 
 def search_skills(
     conn: Connection, query: str, *, limit: int = 20
 ) -> list[SkillOption]:
-    """Find skills whose label contains the query.
+    """Find skills whose label contains the query, best match first.
 
     Args:
         conn: An open connection.
@@ -206,26 +254,35 @@ def search_skills(
 
     Returns:
         Custom skills first, then ESCO skills matching on any label
-        (preferred, alt or hidden). Empty if the query normalises to nothing.
+        (preferred, alt or hidden). Within each group: an exact label
+        match, then a label starting with the query, then the shortest
+        label, then alphabetically. Empty if the query normalises to
+        nothing.
     """
-    if not normalise_skill(query):
+    exact = normalise_skill(query)
+    if not exact:
         return []
-    pattern = _like_pattern(query)
+    params = {
+        "p": _like_pattern(query),
+        "prefix": _prefix_pattern(query),
+        "exact": exact,
+        "limit": limit,
+    }
     custom = conn.execute(
         text(
             "SELECT skill_id, canonical_label AS label FROM silver.custom_skill "
-            "WHERE lower(canonical_label) LIKE :p ORDER BY canonical_label LIMIT :limit"
+            f"WHERE lower(canonical_label) LIKE :p {_CUSTOM_ORDER} LIMIT :limit"
         ),
-        {"p": pattern, "limit": limit},
+        params,
     ).all()
     esco = conn.execute(
         text(
             "SELECT s.skill_id, s.preferred_label AS label FROM esco.skill AS s "
             "WHERE EXISTS (SELECT 1 FROM esco.skill_label AS l "
-            "WHERE l.skill_id = s.skill_id AND l.label_norm LIKE :p) "
-            "ORDER BY s.preferred_label LIMIT :limit"
+            f"WHERE l.skill_id = s.skill_id AND l.label_norm LIKE :p) {_ESCO_ORDER} "
+            "LIMIT :limit"
         ),
-        {"p": pattern, "limit": limit},
+        params,
     ).all()
     options = [SkillOption(r.skill_id, r.label, "custom") for r in custom]
     options += [SkillOption(r.skill_id, r.label, "esco") for r in esco]
@@ -254,8 +311,38 @@ def _lock_mapping(conn: Connection, raw_norm: str) -> Row[Any]:
     return row
 
 
+_RESOLVABLE_STATUSES = ("open", "rejected")
+"""Review statuses a resolve may act on: the Unmapped tab's two states."""
+
+
+def _require_resolvable(row: Row[Any], raw_norm: str) -> None:
+    """Refuse a resolve on a mapping that already carries a decision.
+
+    Args:
+        row: The locked `skill_mapping` row.
+        raw_norm: The normalised string, for the message.
+
+    Raises:
+        ReviewError: Unless the row is unmapped (`open`/`rejected`) or is an
+            embedding auto-match awaiting confirmation.
+    """
+    if row.review_status not in _RESOLVABLE_STATUSES and row.method != "embedding":
+        raise ReviewError(
+            f"{raw_norm!r} is already settled (method {row.method!r}, "
+            f"review status {row.review_status!r}); only an unmapped string "
+            f"or an embedding auto-match can be resolved"
+        )
+
+
 def resolve_to_skill(conn: Connection, raw_norm: str, skill_id: str) -> None:
     """Map a string to a skill and remember it as a review alias.
+
+    Only the two states the review UI offers a resolve for are accepted: an
+    unmapped string (`open` or `rejected`) and an embedding auto-match being
+    confirmed. Anything else is already settled — re-pointing it would
+    silently move an alias every past and future string shares, and the
+    alias upsert's `source = 'review'` would then shield the new target from
+    the seed-alias sync.
 
     Args:
         conn: An open connection inside the caller's transaction.
@@ -264,10 +351,10 @@ def resolve_to_skill(conn: Connection, raw_norm: str, skill_id: str) -> None:
 
     Raises:
         ReviewNotFound: If the string has no mapping row.
-        ReviewError: If `skill_id` is in neither `esco.skill` nor
-            `silver.custom_skill`.
+        ReviewError: If the row is already settled, or if `skill_id` is in
+            neither `esco.skill` nor `silver.custom_skill`.
     """
-    _lock_mapping(conn, raw_norm)
+    _require_resolvable(_lock_mapping(conn, raw_norm), raw_norm)
     exists = conn.execute(
         text(
             "SELECT 1 FROM esco.skill WHERE skill_id = :i "
@@ -306,9 +393,10 @@ def resolve_to_custom(conn: Connection, raw_norm: str, canonical_label: str) -> 
 
     Raises:
         ReviewNotFound: If the string has no mapping row.
-        ReviewError: If the label yields an empty slug.
+        ReviewError: If the row is already settled (see `resolve_to_skill`)
+            or the label yields an empty slug.
     """
-    _lock_mapping(conn, raw_norm)
+    _require_resolvable(_lock_mapping(conn, raw_norm), raw_norm)
     slug = re.sub(
         r"[^a-z0-9]+",
         "-",

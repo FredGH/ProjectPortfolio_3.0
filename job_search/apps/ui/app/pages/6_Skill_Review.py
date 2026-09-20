@@ -109,7 +109,16 @@ with unmapped_tab:
             )
             if item["candidate_skill_id"]:
                 suggestion = item["candidate_label"] or item["candidate_skill_id"]
-                if st.button(
+                # On a rejected row the candidate IS the match the reviewer
+                # just threw out, so offering "Accept suggestion" would
+                # undo their decision in one click. Show what was rejected
+                # instead — it is still the useful context for choosing.
+                if item["review_status"] == "rejected":
+                    st.caption(
+                        f"Previously rejected: {suggestion} "
+                        f"({item['candidate_score']:.2f})"
+                    )
+                elif st.button(
                     f"Accept suggestion: {suggestion} ({item['candidate_score']:.2f})",
                     key=f"accept-{key}",
                 ):

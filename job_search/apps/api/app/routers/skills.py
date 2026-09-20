@@ -11,12 +11,37 @@ from dataclasses import asdict
 
 from app.dependencies import get_app_db_engine
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import Connection, Engine
 
 from core.skills import review
 
 router = APIRouter()
+
+MAX_INPUT_CHARS = 200
+"""Longest accepted request string.
+
+These endpoints are an unauthenticated shared-zone write surface (auth
+lands in Step 22a): every string is bounded so an oversized slug or
+`raw_norm` cannot reach Postgres and surface as an unhandled 500. Well
+above the longest real skill label."""
+
+
+def _reject_nul(*values: str | None) -> None:
+    """Refuse request strings containing a NUL character.
+
+    Postgres text values cannot hold a NUL byte, so one would come back as
+    a driver error (an unhandled 500) rather than a validation failure.
+
+    Args:
+        values: The strings to check; None values are ignored.
+
+    Raises:
+        ValueError: If any value contains a NUL character.
+    """
+    for value in values:
+        if value is not None and "\x00" in value:
+            raise ValueError("must not contain a NUL character")
 
 
 class ReviewItemModel(BaseModel):
@@ -24,6 +49,7 @@ class ReviewItemModel(BaseModel):
 
     raw_norm: str
     raw_example: str
+    review_status: str
     seen_in_cv: bool
     jd_job_count: int
     sample_job_group_ids: list[str]
@@ -60,9 +86,9 @@ class ResolveRequest(BaseModel):
         custom_label: A label for a new custom skill.
     """
 
-    raw_norm: str
-    skill_id: str | None = None
-    custom_label: str | None = None
+    raw_norm: str = Field(max_length=MAX_INPUT_CHARS)
+    skill_id: str | None = Field(default=None, max_length=MAX_INPUT_CHARS)
+    custom_label: str | None = Field(default=None, max_length=MAX_INPUT_CHARS)
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> ResolveRequest:
@@ -78,6 +104,19 @@ class ResolveRequest(BaseModel):
             raise ValueError("provide exactly one of skill_id or custom_label")
         return self
 
+    @model_validator(mode="after")
+    def _no_nul_characters(self) -> ResolveRequest:
+        """Reject a NUL character in any of this request's strings.
+
+        Returns:
+            This instance, if valid.
+
+        Raises:
+            ValueError: If any string contains a NUL character.
+        """
+        _reject_nul(self.raw_norm, self.skill_id, self.custom_label)
+        return self
+
 
 class RawNormRequest(BaseModel):
     """A request naming one normalised skill string.
@@ -86,7 +125,20 @@ class RawNormRequest(BaseModel):
         raw_norm: The normalised string.
     """
 
-    raw_norm: str
+    raw_norm: str = Field(max_length=MAX_INPUT_CHARS)
+
+    @model_validator(mode="after")
+    def _no_nul_characters(self) -> RawNormRequest:
+        """Reject a NUL character in `raw_norm`.
+
+        Returns:
+            This instance, if valid.
+
+        Raises:
+            ValueError: If `raw_norm` contains a NUL character.
+        """
+        _reject_nul(self.raw_norm)
+        return self
 
 
 def _act(engine: Engine, action: Callable[[Connection], None]) -> dict[str, str]:
@@ -153,7 +205,7 @@ def get_embedding_matches(
 
 @router.get("/skills/search", response_model=list[SkillOptionModel])
 def search_skills(
-    q: str = Query(min_length=1),
+    q: str = Query(min_length=1, max_length=MAX_INPUT_CHARS),
     limit: int = Query(default=20, ge=1, le=100),
     engine: Engine = Depends(get_app_db_engine),
 ) -> list[SkillOptionModel]:
@@ -165,8 +217,16 @@ def search_skills(
         engine: Injected via `get_app_db_engine`.
 
     Returns:
-        Matching skills.
+        Matching skills, best match first.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character (a query
+            parameter has no request model to validate it).
     """
+    if "\x00" in q:
+        raise HTTPException(
+            status_code=422, detail="q must not contain a NUL character"
+        )
     with engine.connect() as conn:
         options = review.search_skills(conn, q, limit=limit)
     return [SkillOptionModel(**asdict(option)) for option in options]

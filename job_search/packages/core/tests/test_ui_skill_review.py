@@ -21,12 +21,19 @@ _PAGE = (
 _UNMAPPED = {
     "raw_norm": "zzfixture thing",
     "raw_example": "ZZFixture Thing",
+    "review_status": "open",
     "seen_in_cv": True,
     "jd_job_count": 3,
     "sample_job_group_ids": ["j1"],
     "candidate_skill_id": "fixture-cloud",
     "candidate_label": "cloud technologies",
     "candidate_score": 0.62,
+}
+_REJECTED = {
+    **_UNMAPPED,
+    "raw_norm": "zzfixture rejected",
+    "raw_example": "ZZFixture Rejected",
+    "review_status": "rejected",
 }
 _MATCH = {
     "raw_norm": "zzfixture matched",
@@ -38,13 +45,28 @@ _MATCH = {
 }
 
 
-def _fake_get(url: str, **_kwargs) -> httpx.Response:
-    request = httpx.Request("GET", url)
-    if url.endswith("/skills/review/embedding-matches"):
-        return httpx.Response(200, json=[_MATCH], request=request)
-    if url.endswith("/skills/review"):
-        return httpx.Response(200, json=[_UNMAPPED], request=request)
-    return httpx.Response(200, json=[], request=request)
+def _get_returning(unmapped: list[dict]):
+    """Build an `httpx.get` stand-in serving a given unmapped list.
+
+    Args:
+        unmapped: The items `GET /skills/review` should return.
+
+    Returns:
+        A callable usable as `httpx.get`'s `side_effect`.
+    """
+
+    def _fake(url: str, **_kwargs) -> httpx.Response:
+        request = httpx.Request("GET", url)
+        if url.endswith("/skills/review/embedding-matches"):
+            return httpx.Response(200, json=[_MATCH], request=request)
+        if url.endswith("/skills/review"):
+            return httpx.Response(200, json=unmapped, request=request)
+        return httpx.Response(200, json=[], request=request)
+
+    return _fake
+
+
+_fake_get = _get_returning([_UNMAPPED])
 
 
 class TestSkillReviewPage(unittest.TestCase):
@@ -60,6 +82,23 @@ class TestSkillReviewPage(unittest.TestCase):
         self.assertIn("Dismiss", labels)
         self.assertIn("Confirm", labels)
         self.assertIn("Reject", labels)
+
+    def test_a_rejected_item_shows_what_was_rejected_and_no_accept_button(self) -> None:
+        # The candidate of a rejected row is the match the reviewer threw
+        # out, so a one-click "Accept suggestion" would hand it straight
+        # back; an open row must still offer it.
+        with mock.patch(
+            "httpx.get", side_effect=_get_returning([_UNMAPPED, _REJECTED])
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        labels = [b.label for b in app.button]
+        self.assertEqual(
+            [label for label in labels if label.startswith("Accept suggestion")],
+            ["Accept suggestion: cloud technologies (0.62)"],
+        )
+        captions = [c.value for c in app.caption]
+        self.assertIn("Previously rejected: cloud technologies (0.62)", captions)
 
     def test_shows_an_error_instead_of_crashing_when_the_api_is_down(self) -> None:
         with mock.patch("httpx.get", side_effect=httpx.ConnectError("down")):

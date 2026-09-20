@@ -82,11 +82,30 @@ class TestSkillReviewApi(unittest.TestCase):
         body = self.client.get("/skills/review", params={"limit": 500}).json()
         return {item["raw_norm"] for item in body}
 
+    def _insert_esco_skill(self, conn, skill_id: str, label: str) -> None:
+        """Insert one ESCO skill and its preferred label."""
+        conn.execute(
+            text(
+                "INSERT INTO esco.skill (skill_id, concept_uri, preferred_label) "
+                "VALUES (:i, :u, :l)"
+            ),
+            {"i": skill_id, "u": f"http://example.invalid/esco/{skill_id}", "l": label},
+        )
+        conn.execute(
+            text(
+                "INSERT INTO esco.skill_label "
+                "(skill_id, label, label_norm, is_preferred) "
+                "VALUES (:i, :l, :n, true)"
+            ),
+            {"i": skill_id, "l": label, "n": label},
+        )
+
     def test_review_list_shows_the_unmapped_string_with_context_and_suggestion(
         self,
     ) -> None:
         body = self.client.get("/skills/review", params={"limit": 500}).json()
         item = next(i for i in body if i["raw_norm"] == _UNMAPPED)
+        self.assertEqual(item["review_status"], "open")
         self.assertEqual(item["jd_job_count"], 1)
         self.assertEqual(item["sample_job_group_ids"], [self.job])
         self.assertTrue(item["seen_in_cv"])
@@ -124,6 +143,40 @@ class TestSkillReviewApi(unittest.TestCase):
         for query in ("zzfixture%", "zzfixture_cloud", "zzfixture\\ cloud"):
             with self.subTest(query=query):
                 self.assertEqual(self._search_ids(query), [])
+
+    def test_search_puts_an_exact_label_match_first(self) -> None:
+        # 12 decoys contain the query as a substring and sort alphabetically
+        # before the exact match, so a purely alphabetical ordering pushes
+        # the skill the reviewer wants out of the UI's 10-result window.
+        with self.owner.begin() as conn:
+            for index in range(1, 13):
+                self._insert_esco_skill(
+                    conn,
+                    f"fixture-rank-{index:02d}",
+                    f"a zzfixture ranktarget {index:02d}",
+                )
+            self._insert_esco_skill(conn, "fixture-rank-exact", "zzfixture ranktarget")
+        body = self.client.get(
+            "/skills/search", params={"q": "zzfixture ranktarget", "limit": 10}
+        ).json()
+        self.assertEqual(len(body), 10)
+        self.assertEqual(body[0]["skill_id"], "fixture-rank-exact")
+
+    def test_search_puts_a_prefix_match_before_a_mid_label_match(self) -> None:
+        with self.owner.begin() as conn:
+            self._insert_esco_skill(
+                conn, "fixture-rank-mid", "a zzfixture ranktarget tail"
+            )
+            self._insert_esco_skill(
+                conn, "fixture-rank-prefix", "zzfixture ranktarget tail"
+            )
+        body = self.client.get(
+            "/skills/search", params={"q": "zzfixture ranktarget"}
+        ).json()
+        self.assertEqual(
+            [o["skill_id"] for o in body],
+            ["fixture-rank-prefix", "fixture-rank-mid"],
+        )
 
     def test_resolving_to_an_esco_skill_maps_it_and_creates_a_review_alias(
         self,
@@ -236,9 +289,86 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertIsNone(row.score)
         self.assertAlmostEqual(float(row.candidate_score), 0.86)
-        self.assertIn(_MATCHED, self._review_norms())
+        listed = self.client.get("/skills/review", params={"limit": 500}).json()
+        rejected = next(i for i in listed if i["raw_norm"] == _MATCHED)
+        self.assertEqual(rejected["review_status"], "rejected")
         again = self.client.post("/skills/review/reject", json={"raw_norm": _MATCHED})
         self.assertEqual(again.status_code, 422)
+
+    def _resolve(self, **payload) -> int:
+        """POST a resolve and return its status code."""
+        return self.client.post("/skills/review/resolve", json=payload).status_code
+
+    def test_resolving_an_already_resolved_string_is_refused(self) -> None:
+        # Re-pointing a settled mapping would silently move the alias every
+        # past and future string shares, and source='review' then shields
+        # the new target from the seed-alias sync.
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-python"), 422
+        )
+        self.assertEqual(self._mapping(_UNMAPPED).skill_id, "fixture-cloud")
+        with self.owner.connect() as conn:
+            alias = conn.execute(
+                text("SELECT skill_id FROM silver.skill_alias WHERE alias_norm = :n"),
+                {"n": _UNMAPPED},
+            ).scalar_one()
+        self.assertEqual(alias, "fixture-cloud")
+
+    def test_resolving_a_dismissed_string_is_refused(self) -> None:
+        self.assertEqual(
+            self.client.post(
+                "/skills/review/dismiss", json={"raw_norm": _UNMAPPED}
+            ).status_code,
+            200,
+        )
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 422
+        )
+        self.assertEqual(self._mapping(_UNMAPPED).review_status, "dismissed")
+
+    def test_resolving_a_label_matched_string_is_refused(self) -> None:
+        # method='label' is a deterministic ESCO hit, not a review decision
+        # waiting to be made: nothing in the UI offers it, so accepting one
+        # here would only ever be an unintended re-point.
+        labelled = "zzfixture label matched"
+        with self.owner.begin() as conn:
+            insert_mapping(
+                conn,
+                labelled,
+                skill_id="fixture-python",
+                method="label",
+                review_status=None,
+            )
+        self.assertEqual(
+            self._resolve(raw_norm=labelled, skill_id="fixture-cloud"), 422
+        )
+        self.assertEqual(self._mapping(labelled).skill_id, "fixture-python")
+
+    def test_a_nul_character_is_rejected_rather_than_crashing(self) -> None:
+        self.assertEqual(self._resolve(raw_norm="zzfixture\x00x", skill_id="a"), 422)
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, custom_label="ZZFixture\x00Tool"), 422
+        )
+        self.assertEqual(
+            self.client.get(
+                "/skills/search", params={"q": "zzfixture\x00cloud"}
+            ).status_code,
+            422,
+        )
+
+    def test_an_over_long_input_is_rejected_rather_than_crashing(self) -> None:
+        too_long = "zzfixture " + "x" * 300
+        self.assertEqual(self._resolve(raw_norm=_UNMAPPED, custom_label=too_long), 422)
+        self.assertEqual(
+            self._resolve(raw_norm=too_long, skill_id="fixture-cloud"), 422
+        )
+        self.assertEqual(
+            self.client.get("/skills/search", params={"q": too_long}).status_code, 422
+        )
+        self.assertEqual(self._mapping(_UNMAPPED).review_status, "open")
 
 
 if __name__ == "__main__":
