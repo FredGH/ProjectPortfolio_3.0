@@ -1,9 +1,9 @@
 # Step 14 follow-up — matching quality, throughput and hardening
 
-**Status: proposal. Nothing in this document is implemented.** It records what the
-first real-data run of Step 14 (2026-09-20) showed, and the steps to fix it, so the
-work can be agreed before anyone writes code. Each work item below becomes its own
-spec/plan/PR once the decisions in section 5 are made.
+**Status: agreed plan, decisions recorded 2026-09-20 (section 5). Nothing in this
+document is implemented.** It records what the first real-data run of Step 14
+(2026-09-20) showed, and the steps to fix it. Each work item below becomes its own
+spec/plan/PR when it is picked up.
 
 Context: Step 14 (PR #20) shipped the ESCO vocabulary, mapper, review flow and CV/JD
 mapping (`docs/esco.md`, spec `2026-09-19-step14-esco-skill-normalisation-design.md`).
@@ -140,8 +140,8 @@ DECISIONS §1** unless that decision is revisited. Also decide what to do with t
 `test_source*` rows in the real DB (delete vs filter). Files: `core/skills/write_job_skills.py`, CLI.
 
 ### W7 — Operator runbook after the PRs merge (you)
-1. `git pull` on `main` (copy `job_search/CLAUDE.local.md` aside first if PR #21 has merged);
-   restart the api and ui containers so they load the new router/page.
+1. `git pull` on `main`; restart the api and ui containers so they load the new
+   router/page.
 2. Run the migrations if any PR adds one (none planned).
 3. `map-skills --remap-all-auto`, then `map-cv-skills --user-id <id> --refresh`, then
    `dbt run --select silver__skill silver__bridge_job_skill` and its tests.
@@ -161,17 +161,20 @@ database, then review.
 Effort (rough): W0 S; W1a S–M; W4a S; W2 M (mostly your review time); W3 M; W4b S;
 W4c M; W5 S; W6 M (measurement-heavy); W1b L.
 
-## 5. Decisions needed
+## 5. Decisions (recorded 2026-09-20)
 
-| # | Decision | Recommendation |
-|---|---|---|
-| D1 | Success targets (section 2) | Use them as a starting point; adjust after W0 |
-| D2 | Keep `normalise_skill` frozen and add fallback forms (W1) | Yes — avoids re-keying 100k+ rows |
-| D3 | For tools ESCO maps to a broad skill (NumPy, Scikit-Learn, Tableau, Kotlin, Visual Studio): specific `custom:` skills, or accept ESCO's generic skill? | Specific custom skills — gap analysis needs the tool, not the family |
-| D4 | Change Step 13 code for version-checked saves (W4c) now, or later? | Now — otherwise every editor save can wipe ids |
-| D5 | Extraction scope: categories/sources, parallelism, junk rows | Data/AI categories + Greenhouse only; measure 2–4 workers |
-| D6 | Compound-string expansion into several skills (W1b) | Defer until W1a results are known |
-| D7 | Authentication for the review router | Not in this plan — Step 22a checklist item |
+D3, D4 and D5 were answered explicitly. D1, D2, D6 and D7 were not individually
+answered; they were accepted as recommended together with the rest.
+
+| # | Decision | Recommendation | Outcome |
+|---|---|---|---|
+| D1 | Success targets (section 2) | Use them as a starting point; adjust after W0 | Recommendation followed |
+| D2 | Keep `normalise_skill` frozen and add fallback forms (W1) | Yes — avoids re-keying 100k+ rows | Recommendation followed |
+| D3 | For tools ESCO maps to a broad skill (NumPy, Scikit-Learn, Tableau, Kotlin, Visual Studio): specific `custom:` skills, or accept ESCO's generic skill? | Specific custom skills — gap analysis needs the tool, not the family | **Specific `custom:` skills** — confirmed for NumPy, scikit-learn, Kotlin and Visual Studio |
+| D4 | Change Step 13 code for version-checked saves (W4c) now, or later? | Now — otherwise every editor save can wipe ids | **Now** (recommendation followed) |
+| D5 | Extraction scope: categories/sources, parallelism, junk rows | Data/AI categories + Greenhouse only; measure 2–4 workers | **Recommendation followed**; the worker count is set by the W6 measurement |
+| D6 | Compound-string expansion into several skills (W1b) | Defer until W1a results are known | Recommendation followed |
+| D7 | Authentication for the review router | Not in this plan — Step 22a checklist item | Recommendation followed |
 
 ## 6. Out of scope
 
