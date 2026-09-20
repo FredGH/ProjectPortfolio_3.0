@@ -30,3 +30,6 @@ infra/terraform.tfvars
 infra/*.tfstate
 infra/*.tfstate.backup
 infra/.terraform.tfstate.lock.info
+
+# Personal overrides — never shared (CLAUDE.local.md documents itself as gitignored).
+CLAUDE.local.md
