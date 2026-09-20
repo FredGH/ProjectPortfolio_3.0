@@ -59,13 +59,16 @@ class ReviewItemModel(BaseModel):
 
 
 class MatchItemModel(BaseModel):
-    """An auto-mapped embedding match to verify (see `core.skills.review.MatchItem`)."""
+    """An auto-made match to verify (see `core.skills.review.MatchItem`)."""
 
     raw_norm: str
     raw_example: str
     skill_id: str
     skill_label: str | None
-    score: float
+    method: str
+    score: float | None
+    suspicious: bool
+    seen_in_cv: bool
     jd_job_count: int
 
 
@@ -184,22 +187,23 @@ def get_review_list(
     return [ReviewItemModel(**asdict(item)) for item in items]
 
 
-@router.get("/skills/review/embedding-matches", response_model=list[MatchItemModel])
-def get_embedding_matches(
+@router.get("/skills/review/auto-matches", response_model=list[MatchItemModel])
+def get_auto_matches(
     limit: int = Query(default=50, ge=1, le=500),
     engine: Engine = Depends(get_app_db_engine),
 ) -> list[MatchItemModel]:
-    """List embedding auto-matches for verification, least confident first.
+    """List the mapper's own matches (label and embedding) for verification.
 
     Args:
         limit: Maximum items.
         engine: Injected via `get_app_db_engine`.
 
     Returns:
-        Auto-mapped items with their scores.
+        Suspicious label matches first, then embedding matches least
+        confident first, then the remaining label matches.
     """
     with engine.connect() as conn:
-        items = review.list_embedding_matches(conn, limit=limit)
+        items = review.list_auto_matches(conn, limit=limit)
     return [MatchItemModel(**asdict(item)) for item in items]
 
 
@@ -277,7 +281,7 @@ def post_dismiss(
 def post_reject(
     request: RawNormRequest, engine: Engine = Depends(get_app_db_engine)
 ) -> dict[str, str]:
-    """Reject a wrong embedding auto-match.
+    """Reject a wrong auto-match (embedding or label).
 
     Args:
         request: The string.
@@ -286,6 +290,4 @@ def post_reject(
     Returns:
         ``{"status": "ok"}``.
     """
-    return _act(
-        engine, lambda conn: review.reject_embedding_match(conn, request.raw_norm)
-    )
+    return _act(engine, lambda conn: review.reject_auto_match(conn, request.raw_norm))

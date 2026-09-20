@@ -14,7 +14,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Row, text
 
-from core.skills.normalise import normalise_skill
+from core.skills.normalise import candidate_forms, normalise_skill
 
 
 class ReviewError(ValueError):
@@ -56,14 +56,21 @@ class ReviewItem:
 
 @dataclass(frozen=True)
 class MatchItem:
-    """A string the embedding stage auto-mapped, listed for verification.
+    """A string the mapper matched on its own, listed for verification.
 
     Attributes:
         raw_norm: The normalised string.
         raw_example: One original spelling.
         skill_id: The skill it was mapped to.
         skill_label: That skill's display label.
-        score: The cosine similarity that cleared the threshold.
+        method: "label" (an ESCO label matched exactly) or "embedding".
+        score: The cosine similarity that cleared the threshold; None for a
+            label match.
+        suspicious: For a label match, True when the string is not the
+            skill's own name (it matched through an alternative or hidden
+            label of a differently named skill). Always False for an
+            embedding match.
+        seen_in_cv: Whether a CV contained the string.
         jd_job_count: How many jobs' extractions contain it.
     """
 
@@ -71,7 +78,10 @@ class MatchItem:
     raw_example: str
     skill_id: str
     skill_label: str | None
-    score: float
+    method: str
+    score: float | None
+    suspicious: bool
+    seen_in_cv: bool
     jd_job_count: int
 
 
@@ -144,41 +154,91 @@ def list_unmapped(conn: Connection, *, limit: int = 50) -> list[ReviewItem]:
     ]
 
 
-def list_embedding_matches(conn: Connection, *, limit: int = 50) -> list[MatchItem]:
-    """List auto-mapped embedding matches, least confident first.
+def is_suspicious_label_match(raw_norm: str, skill_label: str | None) -> bool:
+    """Decide whether an exact-label match deserves a second look.
+
+    ESCO files many tools as hidden labels under a broad skill (`kotlin` under
+    "computer programming", `numpy` under "software components libraries"), so
+    an exact label hit says little. It is trustworthy when the string, or its
+    head with a parenthetical qualifier dropped, is the skill's own name —
+    `python` for "Python (computer programming)".
+
+    Args:
+        raw_norm: The normalised string that was matched.
+        skill_label: The matched skill's display label.
+
+    Returns:
+        True if neither form of the string is a form of the label. False when
+        there is no label to compare (it cannot be judged).
+    """
+    if not skill_label:
+        return False
+    return not set(candidate_forms(raw_norm)) & set(candidate_forms(skill_label))
+
+
+def list_auto_matches(conn: Connection, *, limit: int = 50) -> list[MatchItem]:
+    """List the mapper's own matches for a person to verify.
 
     Args:
         conn: An open connection.
         limit: Maximum items.
 
     Returns:
-        Rows whose method is `embedding` (a confirm or reject moves them out),
-        lowest cosine score first.
+        Rows whose method is `embedding` or `label` (a confirm or reject moves
+        them out; curated seed aliases are not listed). Order: label matches
+        that look suspicious first, then embedding matches least confident
+        first, then label matches that name the skill; within a label group
+        the most-used string first.
     """
     rows = conn.execute(
         text(
-            f"SELECT m.raw_norm, m.raw_example, m.skill_id, m.score, "
-            f"COALESCE(es.preferred_label, cs.canonical_label) AS skill_label, "
-            f"{_JD_COUNT} AS jd_job_count "
-            f"FROM silver.skill_mapping AS m "
-            f"LEFT JOIN esco.skill AS es ON es.skill_id = m.skill_id "
-            f"LEFT JOIN silver.custom_skill AS cs ON cs.skill_id = m.skill_id "
-            f"WHERE m.method = 'embedding' "
-            f"ORDER BY m.score ASC, m.raw_norm LIMIT :limit"
-        ),
-        {"limit": limit},
+            "SELECT m.raw_norm, m.raw_example, m.skill_id, m.method, m.score, "
+            "m.seen_in_cv, "
+            "COALESCE(es.preferred_label, cs.canonical_label) AS skill_label, "
+            "COALESCE(jc.job_count, 0) AS jd_job_count "
+            "FROM silver.skill_mapping AS m "
+            "LEFT JOIN esco.skill AS es ON es.skill_id = m.skill_id "
+            "LEFT JOIN silver.custom_skill AS cs ON cs.skill_id = m.skill_id "
+            "LEFT JOIN (SELECT raw_norm, count(DISTINCT job_group_id) AS job_count "
+            "FROM silver.job_skill_raw GROUP BY raw_norm) AS jc "
+            "ON jc.raw_norm = m.raw_norm "
+            "WHERE m.method IN ('embedding', 'label')"
+        )
     ).all()
-    return [
+    items = [
         MatchItem(
             raw_norm=r.raw_norm,
             raw_example=r.raw_example,
             skill_id=r.skill_id,
             skill_label=r.skill_label,
-            score=float(r.score),
+            method=r.method,
+            score=float(r.score) if r.score is not None else None,
+            suspicious=r.method == "label"
+            and is_suspicious_label_match(r.raw_norm, r.skill_label),
+            seen_in_cv=r.seen_in_cv,
             jd_job_count=r.jd_job_count,
         )
         for r in rows
     ]
+    items.sort(key=_match_sort_key)
+    return items[:limit]
+
+
+def _match_sort_key(item: MatchItem) -> tuple:
+    """Order auto-matches for review (see `list_auto_matches`).
+
+    Args:
+        item: One auto-match.
+
+    Returns:
+        A sort key: group first, then least confident (embedding) or
+        most used (label), then the string.
+    """
+    if item.method == "label" and item.suspicious:
+        return (0, -item.jd_job_count, item.raw_norm)
+    if item.method == "embedding":
+        return (1, item.score, item.raw_norm)
+    return (2, -item.jd_job_count, item.raw_norm)
 
 
 def _escape_like(value: str) -> str:
@@ -314,6 +374,9 @@ def _lock_mapping(conn: Connection, raw_norm: str) -> Row[Any]:
 _RESOLVABLE_STATUSES = ("open", "rejected")
 """Review statuses a resolve may act on: the Unmapped tab's two states."""
 
+_AUTO_METHODS = ("embedding", "label")
+"""Mapping methods the verify tab lists: the mapper's own, unreviewed matches."""
+
 
 def _require_resolvable(row: Row[Any], raw_norm: str) -> None:
     """Refuse a resolve on a mapping that already carries a decision.
@@ -323,14 +386,17 @@ def _require_resolvable(row: Row[Any], raw_norm: str) -> None:
         raw_norm: The normalised string, for the message.
 
     Raises:
-        ReviewError: Unless the row is unmapped (`open`/`rejected`) or is an
-            embedding auto-match awaiting confirmation.
+        ReviewError: Unless the row is unmapped (`open`/`rejected`) or an
+            auto-match awaiting confirmation (method `embedding` or `label`).
+            A curated seed alias is settled and refused.
     """
-    if row.review_status not in _RESOLVABLE_STATUSES and row.method != "embedding":
+    if row.review_status not in _RESOLVABLE_STATUSES and row.method not in (
+        _AUTO_METHODS
+    ):
         raise ReviewError(
             f"{raw_norm!r} is already settled (method {row.method!r}, "
             f"review status {row.review_status!r}); only an unmapped string "
-            f"or an embedding auto-match can be resolved"
+            f"or an auto-match (embedding or label) can be resolved"
         )
 
 
@@ -338,8 +404,8 @@ def resolve_to_skill(conn: Connection, raw_norm: str, skill_id: str) -> None:
     """Map a string to a skill and remember it as a review alias.
 
     Only the two states the review UI offers a resolve for are accepted: an
-    unmapped string (`open` or `rejected`) and an embedding auto-match being
-    confirmed. Anything else is already settled — re-pointing it would
+    unmapped string (`open` or `rejected`) and an auto-match (embedding or
+    label) being confirmed. Anything else is already settled — re-pointing it would
     silently move an alias every past and future string shares, and the
     alias upsert's `source = 'review'` would then shield the new target from
     the seed-alias sync.
@@ -441,7 +507,7 @@ def dismiss(conn: Connection, raw_norm: str) -> None:
     )
 
 
-def reject_embedding_match(conn: Connection, raw_norm: str) -> None:
+def reject_auto_match(conn: Connection, raw_norm: str) -> None:
     """Reject a wrong auto-match, returning the string to the review list.
 
     The rejected skill is kept as the row's candidate (a suggestion, not a
@@ -453,11 +519,12 @@ def reject_embedding_match(conn: Connection, raw_norm: str) -> None:
 
     Raises:
         ReviewNotFound: If the string has no mapping row.
-        ReviewError: If the row was not mapped by the embedding stage.
+        ReviewError: If the row was not auto-mapped by the embedding or label
+            stage.
     """
     row = _lock_mapping(conn, raw_norm)
-    if row.method != "embedding":
-        raise ReviewError(f"{raw_norm!r} was not auto-mapped by embedding")
+    if row.method not in _AUTO_METHODS:
+        raise ReviewError(f"{raw_norm!r} was not auto-mapped by embedding or label")
     conn.execute(
         text(
             "UPDATE silver.skill_mapping SET candidate_skill_id = skill_id, "

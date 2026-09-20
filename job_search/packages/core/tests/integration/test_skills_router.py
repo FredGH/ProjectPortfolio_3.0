@@ -25,6 +25,7 @@ from tests.integration.skills_fixtures import (  # noqa: E402
 )
 
 from core.skills.esco_load import load_esco  # noqa: E402
+from core.skills.mapper import remap_all_auto  # noqa: E402
 
 # Mount only the skills router: the full app (app.main) also imports the cv
 # router, which needs docling / python-multipart that this test does not.
@@ -114,14 +115,113 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertAlmostEqual(item["candidate_score"], 0.6)
         self.assertNotIn(_MATCHED, {i["raw_norm"] for i in body})
 
-    def test_embedding_matches_list_shows_the_auto_mapped_string(self) -> None:
+    def test_auto_matches_list_shows_the_embedding_matched_string(self) -> None:
         body = self.client.get(
-            "/skills/review/embedding-matches", params={"limit": 500}
+            "/skills/review/auto-matches", params={"limit": 500}
         ).json()
         item = next(i for i in body if i["raw_norm"] == _MATCHED)
         self.assertEqual(item["skill_id"], "fixture-python")
         self.assertEqual(item["skill_label"], "zzfixture python")
+        self.assertEqual(item["method"], "embedding")
         self.assertAlmostEqual(item["score"], 0.86)
+        self.assertFalse(item["suspicious"])
+        self.assertFalse(item["seen_in_cv"])
+
+    def _insert_label_match(
+        self, raw_norm: str, skill_id: str, *, seen_in_cv: bool = False
+    ) -> None:
+        """Insert an auto-made exact-label mapping (`method = 'label'`)."""
+        with self.owner.begin() as conn:
+            insert_mapping(
+                conn,
+                raw_norm,
+                skill_id=skill_id,
+                method="label",
+                review_status=None,
+                seen_in_cv=seen_in_cv,
+            )
+
+    def _auto_matches(self) -> list[dict]:
+        body = self.client.get(
+            "/skills/review/auto-matches", params={"limit": 500}
+        ).json()
+        return [m for m in body if m["raw_norm"].startswith("zzfixture")]
+
+    def test_auto_matches_lists_label_matches_flagging_the_suspicious_ones(
+        self,
+    ) -> None:
+        with self.owner.begin() as conn:
+            self._insert_esco_skill(
+                conn, "fixture-java", "zzfixture java (computer programming)"
+            )
+            # A curated seed alias is not an auto-match to verify.
+            insert_mapping(
+                conn,
+                "zzfixture seeded",
+                skill_id="fixture-python",
+                method="alias",
+                review_status=None,
+            )
+        self._insert_label_match("zzfixture kotlin", "fixture-cloud", seen_in_cv=True)
+        self._insert_label_match("zzfixture python", "fixture-python")
+        self._insert_label_match("zzfixture java", "fixture-java")
+        # Mapped through the head of a compound string (W1a).
+        self._insert_label_match("zzfixture cloud technologies (s3", "fixture-cloud")
+
+        matches = {m["raw_norm"]: m for m in self._auto_matches()}
+
+        self.assertNotIn("zzfixture seeded", matches)
+        kotlin = matches["zzfixture kotlin"]
+        self.assertEqual(
+            (kotlin["method"], kotlin["suspicious"], kotlin["seen_in_cv"]),
+            ("label", True, True),
+        )
+        self.assertIsNone(kotlin["score"])
+        self.assertEqual(kotlin["skill_label"], "zzfixture cloud technologies")
+        for name in (
+            "zzfixture python",
+            "zzfixture java",
+            "zzfixture cloud technologies (s3",
+        ):
+            self.assertFalse(matches[name]["suspicious"], name)
+
+    def test_auto_matches_puts_suspicious_labels_first_then_embeddings_then_exact(
+        self,
+    ) -> None:
+        with self.owner.begin() as conn:
+            self._insert_esco_skill(
+                conn, "fixture-java", "zzfixture java (computer programming)"
+            )
+        self._insert_label_match("zzfixture python", "fixture-python")
+        self._insert_label_match("zzfixture java", "fixture-java")
+        self._insert_label_match("zzfixture kotlin", "fixture-cloud")
+        self.assertEqual(
+            [m["raw_norm"] for m in self._auto_matches()],
+            [
+                "zzfixture kotlin",  # suspicious label match
+                _MATCHED,  # embedding match
+                "zzfixture java",  # exact-name label matches, most-used then A-Z
+                "zzfixture python",
+            ],
+        )
+
+    def test_auto_matches_orders_label_matches_by_how_many_jobs_use_them(self) -> None:
+        self._insert_label_match("zzfixture aaa quiet", "fixture-cloud")
+        self._insert_label_match("zzfixture zzz busy", "fixture-cloud")
+        with self.owner.begin() as conn:
+            for n in range(2):
+                insert_job_skills(
+                    conn,
+                    f"fixture-job-busy{n}",
+                    "local.v1",
+                    [("zzfixture zzz busy", "zzfixture zzz busy", "must_have")],
+                )
+        listed = [
+            m["raw_norm"]
+            for m in self._auto_matches()
+            if m["method"] == "label" and m["suspicious"]
+        ]
+        self.assertEqual(listed, ["zzfixture zzz busy", "zzfixture aaa quiet"])
 
     def test_search_finds_skills_by_any_label(self) -> None:
         body = self.client.get("/skills/search", params={"q": "zzfixture cloud"}).json()
@@ -221,7 +321,7 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertIsNone(row.candidate_skill_id)
         self.assertIsNone(row.candidate_score)
         matches = self.client.get(
-            "/skills/review/embedding-matches", params={"limit": 500}
+            "/skills/review/auto-matches", params={"limit": 500}
         ).json()
         self.assertNotIn(_MATCHED, {m["raw_norm"] for m in matches})
 
@@ -329,23 +429,100 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertEqual(self._mapping(_UNMAPPED).review_status, "dismissed")
 
-    def test_resolving_a_label_matched_string_is_refused(self) -> None:
-        # method='label' is a deterministic ESCO hit, not a review decision
-        # waiting to be made: nothing in the UI offers it, so accepting one
-        # here would only ever be an unintended re-point.
+    def test_confirming_a_label_match_saves_a_review_alias_and_leaves_the_list(
+        self,
+    ) -> None:
+        # Label matches are on the verify tab now, so Confirm must work on
+        # them and, like an embedding match, must not stay an auto row that
+        # `map-skills --remap-all-auto` would delete again.
         labelled = "zzfixture label matched"
+        self._insert_label_match(labelled, "fixture-python")
+        self.assertEqual(
+            self._resolve(raw_norm=labelled, skill_id="fixture-python"), 200
+        )
+        row = self._mapping(labelled)
+        self.assertEqual(
+            (row.skill_id, row.method, row.review_status),
+            ("fixture-python", "alias", "resolved"),
+        )
+        with self.owner.connect() as conn:
+            alias = conn.execute(
+                text(
+                    "SELECT skill_id, source FROM silver.skill_alias "
+                    "WHERE alias_norm = :n"
+                ),
+                {"n": labelled},
+            ).one()
+        self.assertEqual((alias.skill_id, alias.source), ("fixture-python", "review"))
+        self.assertNotIn(labelled, {m["raw_norm"] for m in self._auto_matches()})
+        self.assertEqual(remap_all_auto(self.owner, raw_norms=[labelled]), 0)
+
+    def test_resolving_a_curated_seed_alias_row_is_still_refused(self) -> None:
+        # method='alias' with no review status is a curated seed mapping, not
+        # something waiting for a decision: re-pointing it would only ever be
+        # unintended.
+        seeded = "zzfixture seed settled"
         with self.owner.begin() as conn:
             insert_mapping(
                 conn,
-                labelled,
+                seeded,
                 skill_id="fixture-python",
-                method="label",
+                method="alias",
+                review_status=None,
+            )
+        self.assertEqual(self._resolve(raw_norm=seeded, skill_id="fixture-cloud"), 422)
+        self.assertEqual(self._mapping(seeded).skill_id, "fixture-python")
+
+    def test_rejecting_a_label_match_returns_it_to_the_unmapped_list(self) -> None:
+        labelled = "zzfixture kotlin"
+        self._insert_label_match(labelled, "fixture-cloud")
+        response = self.client.post(
+            "/skills/review/reject", json={"raw_norm": labelled}
+        )
+        self.assertEqual(response.status_code, 200)
+        row = self._mapping(labelled)
+        self.assertEqual(
+            (row.skill_id, row.method, row.review_status, row.candidate_skill_id),
+            (None, "none", "rejected", "fixture-cloud"),
+        )
+        self.assertIsNone(row.score)
+        self.assertIsNone(row.candidate_score)  # a label match has no score
+        listed = self.client.get("/skills/review", params={"limit": 500}).json()
+        rejected = next(i for i in listed if i["raw_norm"] == labelled)
+        self.assertEqual(rejected["review_status"], "rejected")
+        self.assertIsNone(rejected["candidate_score"])
+        self.assertNotIn(labelled, {m["raw_norm"] for m in self._auto_matches()})
+        self.assertEqual(
+            self.client.post(
+                "/skills/review/reject", json={"raw_norm": labelled}
+            ).status_code,
+            422,
+        )
+
+    def test_a_rejected_label_match_is_protected_from_remap_all_auto(self) -> None:
+        labelled = "zzfixture kotlin"
+        self._insert_label_match(labelled, "fixture-cloud")
+        self.client.post("/skills/review/reject", json={"raw_norm": labelled})
+        self.assertEqual(remap_all_auto(self.owner, raw_norms=[labelled]), 0)
+        self.assertEqual(self._mapping(labelled).review_status, "rejected")
+
+    def test_rejecting_a_curated_seed_alias_row_is_refused(self) -> None:
+        seeded = "zzfixture seed settled"
+        with self.owner.begin() as conn:
+            insert_mapping(
+                conn,
+                seeded,
+                skill_id="fixture-python",
+                method="alias",
                 review_status=None,
             )
         self.assertEqual(
-            self._resolve(raw_norm=labelled, skill_id="fixture-cloud"), 422
+            self.client.post(
+                "/skills/review/reject", json={"raw_norm": seeded}
+            ).status_code,
+            422,
         )
-        self.assertEqual(self._mapping(labelled).skill_id, "fixture-python")
+        self.assertEqual(self._mapping(seeded).skill_id, "fixture-python")
 
     def test_a_nul_character_is_rejected_rather_than_crashing(self) -> None:
         self.assertEqual(self._resolve(raw_norm="zzfixture\x00x", skill_id="a"), 422)
