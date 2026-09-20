@@ -1,15 +1,20 @@
-"""Ephemeral text embeddings via a local Ollama server (PLAN.md Step
-11a, stage 2).
+"""Text embeddings via a local Ollama server (PLAN.md Step 11a, stage 2).
 
-Unlike core.llm's adapters (which return completions), this is used to
-compute a vector, compare it, and discard it — never persisted to a
-database column or indexed. This is deliberately outside DECISIONS.md
-§2.8 / PLAN.md Step 15's embedding-dimension-and-index-type deferral —
-that deferral is specifically about Step 15's persisted, indexed
-pgvector store (CV/JD chunk vectors reused across many future
-queries), not a one-shot nearest-centroid comparison that touches no
-database column. See the Step 11a plan's own scope note for the full
-reasoning.
+Unlike core.llm's adapters (which return completions), `embed_text`
+returns a vector. Step 11a uses it ephemerally: compute a vector,
+compare it, and discard it — no database column, no index. That use is
+deliberately outside DECISIONS.md §2.8 / PLAN.md Step 15's
+embedding-dimension-and-index-type deferral — that deferral is
+specifically about Step 15's persisted, indexed pgvector store (CV/JD
+chunk vectors reused across many future queries), not a one-shot
+nearest-centroid comparison. See the Step 11a plan's own scope note for
+the full reasoning.
+
+Since Step 14 (ESCO skill normalisation), `embed_text` is also the
+source of the persisted ESCO label vectors in `esco.skill_embedding`.
+That table is a derived, rebuildable cache (one vector per skill, with
+the embedding model recorded per row, no ANN index — see migration
+0022), not the Step 15 store, so the deferral above still stands.
 
 Separate from core.llm.adapters.ollama.OllamaAdapter deliberately:
 that class implements the LLMAdapter Protocol's `.complete()` method
