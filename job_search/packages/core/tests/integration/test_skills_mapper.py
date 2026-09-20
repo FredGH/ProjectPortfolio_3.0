@@ -128,6 +128,88 @@ class TestMapSkill(unittest.TestCase):
         match = self._map(" - ")
         self.assertEqual((match.skill_id, match.method), (None, "none"))
 
+    def _insert_custom(self, skill_id: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO silver.custom_skill (skill_id, canonical_label) "
+                    "VALUES (:id, 'fixture custom')"
+                ),
+                {"id": skill_id},
+            )
+
+    def _insert_alias(self, alias_norm: str, skill_id: str) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO silver.skill_alias (alias_norm, skill_id, source) "
+                    "VALUES (:a, :s, 'seed')"
+                ),
+                {"a": alias_norm, "s": skill_id},
+            )
+
+    def test_a_compound_string_falls_back_to_its_head_label(self) -> None:
+        # "(S3, Lambda)" is a qualifier; the head is an ESCO label. The
+        # default `_no_embed` proves the embedder is not consulted.
+        match = self._map("ZZFixture Cloud Platforms (S3, Lambda)")
+        self.assertEqual((match.skill_id, match.method), ("fixture-cloud", "label"))
+
+    def test_a_compound_string_falls_back_to_its_head_alias(self) -> None:
+        self._insert_custom("custom:fixture-head")
+        self._insert_alias("zzfixture cloud platforms", "custom:fixture-head")
+        match = self._map("ZZFixture Cloud Platforms (RDS)")
+        self.assertEqual(
+            (match.skill_id, match.method), ("custom:fixture-head", "alias")
+        )
+
+    def test_a_head_alias_outranks_a_head_label(self) -> None:
+        self._insert_custom("custom:fixture-head")
+        self._insert_alias("zzfixture cloud platforms", "custom:fixture-head")
+        # The head "zzfixture cloud platforms" is also an ESCO label of
+        # fixture-cloud; the alias must win, exactly as for a whole string.
+        match = self._map("ZZFixture Cloud Platforms (RDS)")
+        self.assertEqual(match.skill_id, "custom:fixture-head")
+
+    def test_a_whole_string_alias_outranks_a_head_alias(self) -> None:
+        self._insert_custom("custom:fixture-whole")
+        self._insert_custom("custom:fixture-head")
+        self._insert_alias("zzfixture cloud platforms (special", "custom:fixture-whole")
+        self._insert_alias("zzfixture cloud platforms", "custom:fixture-head")
+        match = self._map("ZZFixture Cloud Platforms (special)")
+        self.assertEqual(
+            (match.skill_id, match.method), ("custom:fixture-whole", "alias")
+        )
+
+    def test_a_whole_string_label_outranks_a_head_alias(self) -> None:
+        # ESCO labels carry qualifiers ("Java (computer programming)"): a
+        # label matching the WHOLE string must not lose to an alias on its head.
+        self._insert_custom("custom:fixture-head")
+        self._insert_alias("zzfixture cloud platforms", "custom:fixture-head")
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO esco.skill_label (skill_id, label, label_norm, "
+                    "is_preferred) VALUES ('fixture-python', "
+                    "'zzfixture cloud platforms (managed)', "
+                    "'zzfixture cloud platforms (managed', true)"
+                )
+            )
+        match = self._map("ZZFixture Cloud Platforms (managed)")
+        self.assertEqual((match.skill_id, match.method), ("fixture-python", "label"))
+
+    def test_a_compound_string_matching_nothing_is_embedded_as_the_whole_string(
+        self,
+    ) -> None:
+        seen: list[str] = []
+
+        def embed(text_: str) -> list[float]:
+            seen.append(text_)
+            return axis_vector(0)
+
+        match = self._map("ZZFixture Novel Tool (a, b)", embed=embed)
+        self.assertEqual(seen, ["zzfixture novel tool (a, b"])
+        self.assertEqual((match.skill_id, match.method), ("fixture-cloud", "embedding"))
+
 
 class TestGcpAcceptance(unittest.TestCase):
     """PLAN.md Step 14 "Done when": all three spellings resolve to one ID."""

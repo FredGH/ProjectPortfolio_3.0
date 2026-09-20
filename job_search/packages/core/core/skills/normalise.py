@@ -14,6 +14,7 @@ import re
 import unicodedata
 
 _WHITESPACE_RE = re.compile(r"\s+")
+_PAREN_GROUP_RE = re.compile(r"\([^()]*\)")
 
 # Punctuation stripped from both ends. "." is NOT here (a leading "." is
 # part of ".NET"); a trailing "." is stripped separately below. "+" and
@@ -51,6 +52,39 @@ def normalise_skill(raw: str) -> str:
     text = unicodedata.normalize("NFKC", raw).lower().replace("&", " and ")
     text = _WHITESPACE_RE.sub(" ", text).strip(_EDGE_CHARS)
     return text.rstrip(".").strip(_EDGE_CHARS)
+
+
+def candidate_forms(raw: str) -> list[str]:
+    """List the keys to look a skill string up under, most specific first.
+
+    `normalise_skill` is deliberately left alone: its output is a persisted
+    key (`skill_mapping`, `skill_alias`, `esco.skill_label`, `job_skill_raw`),
+    so changing it would mean re-keying all of them. Instead the mapper tries
+    these forms in order. Only a parenthetical qualifier is dropped —
+    "MySQL (RDS)" -> "mysql" — so a genuine slash term like "CI/CD" stays whole;
+    splitting a list such as "TypeScript/React" into several skills needs a
+    schema change and is not done here.
+
+    Args:
+        raw: The skill string as it appeared in a CV or JD.
+
+    Returns:
+        `[whole, head]`: `whole` is exactly `normalise_skill(raw)` (the
+        persisted key, whose trailing ")" is stripped); `head` is `whole` with
+        every parenthetical qualifier removed (an unclosed one runs to the
+        end), present only when it differs from `whole` and is not empty.
+        Empty if nothing meaningful remains.
+    """
+    whole = normalise_skill(raw)
+    if not whole:
+        return []
+    stripped = whole
+    previous = None
+    while previous != stripped:
+        previous = stripped
+        stripped = _PAREN_GROUP_RE.sub(" ", stripped)
+    head = normalise_skill(stripped.split("(", 1)[0])
+    return [whole, head] if head and head != whole else [whole]
 
 
 def is_plausible_skill(normalised: str) -> bool:

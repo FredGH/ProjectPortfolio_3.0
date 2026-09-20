@@ -1,4 +1,4 @@
-"""Integration tests for map_strings, map_pending and remap_unresolved."""
+"""Integration tests for map_strings, map_pending and the remap functions."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from core.skills.mapper import (
     EmbeddingModelMismatch,
     map_pending,
     map_strings,
+    remap_all_auto,
     remap_unresolved,
 )
 from core.skills.vector import to_pgvector
@@ -271,6 +272,160 @@ class TestMapPendingAndRemap(unittest.TestCase):
             left,
             {norms["rejected"], norms["resolved"], norms["dismissed"]},
         )
+
+    def _row(self, raw_norm: str):
+        with self.engine.connect() as conn:
+            return conn.execute(
+                text("SELECT * FROM silver.skill_mapping WHERE raw_norm = :n"),
+                {"n": raw_norm},
+            ).one_or_none()
+
+    def _remaining(self, prefix: str) -> set[str]:
+        with self.engine.connect() as conn:
+            return {
+                r.raw_norm
+                for r in conn.execute(
+                    text(
+                        "SELECT raw_norm FROM silver.skill_mapping "
+                        "WHERE raw_norm LIKE :p"
+                    ),
+                    {"p": f"{prefix}%"},
+                )
+            }
+
+    def test_remap_all_auto_clears_every_auto_row_and_keeps_human_decisions(
+        self,
+    ) -> None:
+        norms = {
+            "label": "zzfixture a label",
+            "embedding": "zzfixture a embedding",
+            "seed": "zzfixture a seed",
+            "open": "zzfixture a open",
+            "rejected": "zzfixture a rejected",
+            "resolved": "zzfixture a resolved",
+            "dismissed": "zzfixture a dismissed",
+        }
+        with self.engine.begin() as conn:
+            insert_mapping(
+                conn,
+                norms["label"],
+                skill_id="fixture-cloud",
+                method="label",
+                review_status=None,
+            )
+            insert_mapping(
+                conn,
+                norms["embedding"],
+                skill_id="fixture-cloud",
+                method="embedding",
+                score=0.9,
+                review_status=None,
+            )
+            insert_mapping(
+                conn,
+                norms["seed"],
+                skill_id="fixture-cloud",
+                method="alias",
+                review_status=None,
+            )
+            insert_mapping(conn, norms["open"])
+            insert_mapping(conn, norms["rejected"], review_status="rejected")
+            insert_mapping(
+                conn,
+                norms["resolved"],
+                skill_id="fixture-cloud",
+                method="alias",
+                review_status="resolved",
+            )
+            insert_mapping(conn, norms["dismissed"], review_status="dismissed")
+        deleted = remap_all_auto(self.engine, raw_norms=list(norms.values()))
+        self.assertEqual(deleted, 4)
+        self.assertEqual(
+            self._remaining("zzfixture a "),
+            {norms["rejected"], norms["resolved"], norms["dismissed"]},
+        )
+
+    def test_remap_all_auto_only_touches_the_named_strings(self) -> None:
+        with self.engine.begin() as conn:
+            for name in ("zzfixture b one", "zzfixture b two"):
+                insert_mapping(
+                    conn,
+                    name,
+                    skill_id="fixture-cloud",
+                    method="label",
+                    review_status=None,
+                )
+        self.assertEqual(remap_all_auto(self.engine, raw_norms=["zzfixture b one"]), 1)
+        self.assertEqual(self._remaining("zzfixture b "), {"zzfixture b two"})
+
+    def test_a_wrong_label_match_is_corrected_by_an_alias_plus_remap_all_auto(
+        self,
+    ) -> None:
+        # The F4 failure: an exact ESCO-label match that is wrong (here the
+        # label points at fixture-cloud) survives a later alias, because
+        # `remap_unresolved` only clears embedding/open rows.
+        norm = "zzfixture cloud platforms"
+        first = map_strings(
+            self.engine, [norm], embed=_far_embed, embedding_model=_MODEL
+        )
+        self.assertEqual(first[norm], "fixture-cloud")
+        self.assertEqual(self._row(norm).method, "label")
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO silver.custom_skill (skill_id, canonical_label) "
+                    "VALUES ('custom:fixture-fix', 'fix')"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO silver.skill_alias (alias_norm, skill_id, source) "
+                    "VALUES (:a, 'custom:fixture-fix', 'seed')"
+                ),
+                {"a": norm},
+            )
+        self.assertEqual(remap_unresolved(self.engine, raw_norms=[norm]), 0)
+        self.assertEqual(self._row(norm).skill_id, "fixture-cloud")
+
+        self.assertEqual(remap_all_auto(self.engine, raw_norms=[norm]), 1)
+        again = map_strings(
+            self.engine, [norm], embed=_far_embed, embedding_model=_MODEL
+        )
+        self.assertEqual(again[norm], "custom:fixture-fix")
+        self.assertEqual(self._row(norm).method, "alias")
+
+    def test_a_repointed_seed_alias_is_reapplied_by_remap_all_auto(self) -> None:
+        norm = "zzfixture repointed"
+        with self.engine.begin() as conn:
+            for skill_id in ("custom:fixture-old", "custom:fixture-new"):
+                conn.execute(
+                    text(
+                        "INSERT INTO silver.custom_skill (skill_id, canonical_label) "
+                        "VALUES (:i, 'x')"
+                    ),
+                    {"i": skill_id},
+                )
+            conn.execute(
+                text(
+                    "INSERT INTO silver.skill_alias (alias_norm, skill_id, source) "
+                    "VALUES (:a, 'custom:fixture-old', 'seed')"
+                ),
+                {"a": norm},
+            )
+        map_strings(self.engine, [norm], embed=_far_embed, embedding_model=_MODEL)
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE silver.skill_alias SET skill_id = 'custom:fixture-new' "
+                    "WHERE alias_norm = :a"
+                ),
+                {"a": norm},
+            )
+        remap_all_auto(self.engine, raw_norms=[norm])
+        result = map_strings(
+            self.engine, [norm], embed=_far_embed, embedding_model=_MODEL
+        )
+        self.assertEqual(result[norm], "custom:fixture-new")
 
 
 if __name__ == "__main__":

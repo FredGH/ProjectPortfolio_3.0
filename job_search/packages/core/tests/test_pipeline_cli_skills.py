@@ -41,6 +41,22 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
     def test_map_skills_is_registered(self) -> None:
         self._help_exits_zero("map-skills")
 
+    def test_map_skills_offers_remap_all_auto(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with self.assertRaises(SystemExit):
+                main(["map-skills", "--help"])
+        self.assertIn("--remap-all-auto", out.getvalue())
+        self.assertIn("--remap-unresolved", out.getvalue())
+
+    def test_map_skills_rejects_both_remap_flags_together(self) -> None:
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            with self.assertRaises(SystemExit) as ctx:
+                main(["map-skills", "--remap-unresolved", "--remap-all-auto"])
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn("not allowed with", err.getvalue())
+
     def test_extract_job_skills_is_registered(self) -> None:
         self._help_exits_zero("extract-job-skills")
 
