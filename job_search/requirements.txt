@@ -14,12 +14,9 @@ rapidfuzz==3.14.5
 dlt[postgres]==1.5.0
 fsspec==2024.10.0
 docling==2.126.0
-# dbt-postgres 1.8.1 is the newest available at pin time; it trails
-# dbt-core intentionally — both versions are verified working together
-# (`dbt build` passes against this pin) and re-pinning either requires
-# re-verifying a build.
-dbt-core==1.11.11
-dbt-postgres==1.8.1
+# dbt is deliberately NOT here: dbt-core 1.11 needs protobuf>=6 while
+# streamlit 1.39 needs protobuf<6, so the two cannot share one environment
+# (and every image installs this file). See requirements-dbt.txt.
 coverage==7.6.4
 pre-commit==4.0.1
 ruff==0.8.0

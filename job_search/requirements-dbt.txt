@@ -1,0 +1,14 @@
+# dbt toolchain. Install into its OWN virtual environment, not the one that
+# holds requirements.txt: dbt-core 1.11 needs protobuf>=6 while streamlit 1.39
+# (requirements.txt) needs protobuf<6, so pip cannot resolve them together.
+# No Docker image installs this file; dbt runs from a developer machine.
+#
+#   python3.11 -m venv venv-dbt
+#   venv-dbt/bin/pip install -r requirements-dbt.txt
+#
+# dbt-postgres 1.8.1 is the newest available at pin time; it trails
+# dbt-core intentionally — both versions are verified working together
+# (`dbt build` passes against this pin) and re-pinning either requires
+# re-verifying a build.
+dbt-core==1.11.11
+dbt-postgres==1.8.1
