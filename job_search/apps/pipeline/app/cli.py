@@ -844,7 +844,7 @@ def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
 
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
-_EVAL_TASKS = ["job_categorisation", "cv_extraction"]
+_EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
 
 
 def _report_eval_result(result: EvalRunResult) -> None:
@@ -885,7 +885,9 @@ def _cmd_run_evals(args: argparse.Namespace) -> int:
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
-    http_client = httpx.Client(timeout=30.0)
+    # skill_extraction evals a local 8B model generating on CPU, which
+    # routinely outlasts 30s (same reasoning as extract-job-skills above).
+    http_client = httpx.Client(timeout=2000.0)
     try:
         adapters = _build_llm_adapters(http_client)
         tasks = _EVAL_TASKS if args.all else [args.task]
