@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, Row, text
 
 from core.skills.normalise import normalise_skill
 
@@ -231,7 +232,7 @@ def search_skills(
     return options[:limit]
 
 
-def _lock_mapping(conn: Connection, raw_norm: str):
+def _lock_mapping(conn: Connection, raw_norm: str) -> Row[Any]:
     """Fetch and row-lock one mapping.
 
     Args:

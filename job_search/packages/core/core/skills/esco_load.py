@@ -220,7 +220,7 @@ def load_esco(engine: Engine, directory: Path) -> EscoLoadCounts:
                 }
             )
 
-    occupation_params = [
+    occupation_params: list[dict] = [
         {
             "occupation_id": concept_id(row["conceptUri"]),
             "concept_uri": row["conceptUri"],
