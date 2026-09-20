@@ -40,25 +40,43 @@ _MATCH = {
     "raw_example": "ZZFixture Matched",
     "skill_id": "fixture-python",
     "skill_label": "python",
+    "method": "embedding",
     "score": 0.86,
+    "suspicious": False,
+    "seen_in_cv": False,
     "jd_job_count": 1,
 }
+_LABEL_MATCH = {
+    "raw_norm": "zzfixture kotlin",
+    "raw_example": "ZZFixture Kotlin",
+    "skill_id": "fixture-cloud",
+    "skill_label": "computer programming",
+    "method": "label",
+    "score": None,
+    "suspicious": True,
+    "seen_in_cv": True,
+    "jd_job_count": 2,
+}
+_INJECTION = "[click me](http://evil.example) ![pixel](http://evil.example/p.png) **x**"
 
 
-def _get_returning(unmapped: list[dict]):
-    """Build an `httpx.get` stand-in serving a given unmapped list.
+def _get_returning(unmapped: list[dict], matches: list[dict] | None = None):
+    """Build an `httpx.get` stand-in serving given review lists.
 
     Args:
         unmapped: The items `GET /skills/review` should return.
+        matches: The items `GET /skills/review/auto-matches` should return
+            (default: one embedding match).
 
     Returns:
         A callable usable as `httpx.get`'s `side_effect`.
     """
+    served_matches = [_MATCH] if matches is None else matches
 
     def _fake(url: str, **_kwargs) -> httpx.Response:
         request = httpx.Request("GET", url)
-        if url.endswith("/skills/review/embedding-matches"):
-            return httpx.Response(200, json=[_MATCH], request=request)
+        if url.endswith("/skills/review/auto-matches"):
+            return httpx.Response(200, json=served_matches, request=request)
         if url.endswith("/skills/review"):
             return httpx.Response(200, json=unmapped, request=request)
         return httpx.Response(200, json=[], request=request)
@@ -99,6 +117,71 @@ class TestSkillReviewPage(unittest.TestCase):
         )
         captions = [c.value for c in app.caption]
         self.assertIn("Previously rejected: cloud technologies (0.62)", captions)
+
+    def test_the_tabs_are_unmapped_and_auto_matches(self) -> None:
+        with mock.patch("httpx.get", side_effect=_fake_get):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(
+            [tab.label for tab in app.tabs], ["Unmapped", "Auto-matches — verify"]
+        )
+
+    def test_the_verify_tab_shows_each_matchs_method_and_flags_suspicious_ones(
+        self,
+    ) -> None:
+        with mock.patch(
+            "httpx.get",
+            side_effect=_get_returning([_UNMAPPED], [_LABEL_MATCH, _MATCH]),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        shown = " ".join(m.value for m in app.markdown)
+        self.assertIn("exact ESCO label match", shown)
+        self.assertIn("similarity 0.86", shown)
+        self.assertIn("computer programming", shown)
+        self.assertIn("on your CV", shown)
+        # Only the suspicious label match carries a warning.
+        self.assertEqual(len(app.warning), 1)
+        self.assertIn("alternative ESCO label", app.warning[0].value)
+        labels = [b.label for b in app.button]
+        self.assertEqual(labels.count("Confirm"), 2)
+        self.assertEqual(labels.count("Reject"), 2)
+
+    def test_job_text_is_rendered_as_plain_text_not_markdown(self) -> None:
+        # A job description is third-party text: a link or image in a skill
+        # string must not become a live link or a tracking pixel.
+        hostile_unmapped = {**_UNMAPPED, "raw_example": _INJECTION}
+        hostile_match = {**_LABEL_MATCH, "raw_example": _INJECTION}
+        with mock.patch(
+            "httpx.get",
+            side_effect=_get_returning([hostile_unmapped], [hostile_match]),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        rendered = [m.value for m in app.markdown] + [c.value for c in app.caption]
+        for value in rendered:
+            self.assertNotIn("](http", value)
+            self.assertNotIn("![", value)
+        shown = " ".join(rendered)
+        self.assertIn("\\[click me\\]", shown)  # the escaped, literal form
+        self.assertIn("\\*\\*x\\*\\*", shown)
+
+    def test_a_rejected_label_match_with_no_score_renders_without_crashing(
+        self,
+    ) -> None:
+        # A rejected *label* match has no cosine score to show.
+        no_score = {**_REJECTED, "candidate_score": None}
+        open_no_score = {**_UNMAPPED, "candidate_score": None}
+        with mock.patch(
+            "httpx.get", side_effect=_get_returning([no_score, open_no_score])
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn(
+            "Previously rejected: cloud technologies", [c.value for c in app.caption]
+        )
+        self.assertIn(
+            "Accept suggestion: cloud technologies", [b.label for b in app.button]
+        )
 
     def test_shows_an_error_instead_of_crashing_when_the_api_is_down(self) -> None:
         with mock.patch("httpx.get", side_effect=httpx.ConnectError("down")):

@@ -137,8 +137,9 @@ Open the **Skill Review** page. Two tabs:
 
 - **Unmapped** — strings that matched nothing. Accept the suggestion, search
   ESCO for the right skill, mark it as a custom skill, or dismiss it.
-- **Embedding matches — verify** — strings matched by similarity. Confirm or
-  reject each; a wrong match is otherwise invisible.
+- **Auto-matches — verify** — strings the system matched on its own, by an
+  exact ESCO label or by similarity. Confirm or reject each; a wrong match is
+  otherwise invisible. Matches that look suspicious are listed first.
 
 A resolution becomes an alias, so it applies to every future CV and JD
 string that normalises the same way. Aliases are shared across users.
@@ -158,13 +159,20 @@ from the top.
 | **Mark as custom skill** | It is a real skill ESCO does not have (Terraform, dbt, Snowflake …). The box is pre-filled with the original text; edit it to the name you want. | A `custom:<slug>` skill is created (or reused) and the string maps to it. |
 | **Dismiss** | It is not a skill, or you do not care about it ("Strong work ethic"). | It leaves the queue for good and stays unmapped. Only unmapped strings can be dismissed. |
 
-**Embedding matches — verify tab** — each row shows the string, the skill it
-was mapped to, the similarity and the number of jobs it appears in.
+**Auto-matches — verify tab** — each row shows the string, the skill it was
+mapped to, how (an exact ESCO label, or the similarity), how many jobs it
+appears in, and whether it is on your CV. A yellow warning means the string is
+not the skill's own name — ESCO files many tools as hidden labels under a broad
+skill (`kotlin` under "computer programming", `numpy` under "software
+components libraries") — so check those first. Order: warned label matches,
+then similarity matches (least confident first), then the label matches that
+name their skill (`sql` -> "SQL"); most-used first among the label matches.
+Curated seed aliases are not listed.
 
 | Button | What happens |
 |---|---|
 | **Confirm** | Keeps the match and saves it as a permanent alias. |
-| **Reject** | Undoes the match; the string goes back to the Unmapped tab and is protected from being auto-mapped again. |
+| **Reject** | Undoes the match; the string goes back to the Unmapped tab and is protected from being auto-mapped again. Pick the right skill there (search, or create a custom skill). |
 
 Example: `distributed systems` shows *Accept suggestion: distributed computing
 (0.81)*. That is a reasonable match, so Accept. If you would rather keep the
@@ -187,14 +195,13 @@ shown under *Seed aliases*) and rebuilding. A seed-file entry cannot fix it: a
 review alias is protected from the seed sync, and a row a human resolved is
 never re-mapped (`--remap-all-auto` skips it). So choose deliberately.
 
-**The verify tab only lists embedding matches.** A wrong *exact-label* match
-(for example `kotlin` mapped to "computer programming", or `scikit-learn` to
-"software components libraries") never appears in either tab, so it has to be
-found by hand (`silver.skill_mapping` where `method = 'label'`). Correct one by
-adding an alias for the string to `config/skill_aliases.yml` and running
-`map-skills --remap-all-auto`, which clears the auto-made label row so the alias
-is applied. Showing these matches in the UI is item W3 of the Step 14 follow-up
-plan (`docs/superpowers/plans/2026-09-20-step14-matching-quality-followups.md`).
+**Correcting a wrong label match.** On the verify tab, Reject it, then pick the
+right skill on the Unmapped tab (*Map to selected*, or *Mark as custom skill*
+for a tool ESCO files under a broad skill, like `numpy`). To fix many at once,
+add aliases to `config/skill_aliases.yml` and run
+`map-skills --remap-all-auto`. Either way the jobs side follows after a dbt
+rebuild, but a CV skill that already holds the wrong id keeps it (see the next
+note).
 
 **No authentication yet.** These endpoints (`/skills/review*`, `/skills/search`)
 are unauthenticated writes to shared-zone taxonomy — anyone who can reach the

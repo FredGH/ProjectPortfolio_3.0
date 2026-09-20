@@ -1,5 +1,6 @@
 """Skill review (PLAN.md Step 14) — resolve skill strings that did not map to
-ESCO, and verify the ones the embedding stage mapped automatically.
+ESCO, and verify the ones the mapper matched on its own (by ESCO label or by
+embedding similarity).
 
 A resolution is remembered as an alias, so each string is fixed once and the
 fix applies to every future CV and job description. Aliases are shared across
@@ -7,6 +8,8 @@ users (docs/tenancy.md: taxonomy is a shared zone).
 """
 
 from __future__ import annotations
+
+import re
 
 import httpx
 import streamlit as st
@@ -17,11 +20,41 @@ st.set_page_config(page_title="Skill Review", layout="wide")
 st.title("Skill Review")
 st.write(
     "Skills from job descriptions and your CV that could not be matched to the "
-    "ESCO vocabulary, plus the matches the system made by similarity — check "
-    "those, since a wrong match is otherwise invisible."
+    "ESCO vocabulary, plus the matches the system made on its own (by ESCO label "
+    "or by similarity) — check those, since a wrong match is otherwise invisible."
 )
 
 _API = get_settings().api_base_url
+
+_ASCII_PUNCTUATION = re.compile(r"([!-/:-@\[-`{-~])")
+
+
+def _plain(value: object) -> str:
+    """Escape a value so Streamlit's markdown shows it literally.
+
+    Skill strings come from third-party job descriptions, so a link, image or
+    emphasis inside one must not become live markup. CommonMark lets any ASCII
+    punctuation character be backslash-escaped.
+
+    Args:
+        value: The text to display.
+
+    Returns:
+        The text with every ASCII punctuation character backslash-escaped.
+    """
+    return _ASCII_PUNCTUATION.sub(r"\\\1", str(value))
+
+
+def _score_suffix(score: float | None) -> str:
+    """Format a similarity score for display, if there is one.
+
+    Args:
+        score: A cosine similarity, or None (a label match has none).
+
+    Returns:
+        " (0.62)" or the empty string.
+    """
+    return f" ({score:.2f})" if score is not None else ""
 
 
 def _get(path: str, params: dict | None = None) -> list[dict]:
@@ -90,7 +123,7 @@ def _post(path: str, payload: dict) -> bool:
     return True
 
 
-unmapped_tab, verify_tab = st.tabs(["Unmapped", "Embedding matches — verify"])
+unmapped_tab, verify_tab = st.tabs(["Unmapped", "Auto-matches — verify"])
 
 with unmapped_tab:
     try:
@@ -102,24 +135,24 @@ with unmapped_tab:
     for item in unmapped:
         key = item["raw_norm"]
         with st.container(border=True):
-            st.markdown(f"**{item['raw_example']}**")
+            st.markdown(f"**{_plain(item['raw_example'])}**")
             st.caption(
                 f"In {item['jd_job_count']} job(s)"
                 + (" · on your CV" if item["seen_in_cv"] else "")
             )
             if item["candidate_skill_id"]:
-                suggestion = item["candidate_label"] or item["candidate_skill_id"]
+                suggestion = _plain(
+                    item["candidate_label"] or item["candidate_skill_id"]
+                )
+                score = _score_suffix(item["candidate_score"])
                 # On a rejected row the candidate IS the match the reviewer
                 # just threw out, so offering "Accept suggestion" would
                 # undo their decision in one click. Show what was rejected
                 # instead — it is still the useful context for choosing.
                 if item["review_status"] == "rejected":
-                    st.caption(
-                        f"Previously rejected: {suggestion} "
-                        f"({item['candidate_score']:.2f})"
-                    )
+                    st.caption(f"Previously rejected: {suggestion}{score}")
                 elif st.button(
-                    f"Accept suggestion: {suggestion} ({item['candidate_score']:.2f})",
+                    f"Accept suggestion: {suggestion}{score}",
                     key=f"accept-{key}",
                 ):
                     if _post(
@@ -163,19 +196,33 @@ with unmapped_tab:
 
 with verify_tab:
     try:
-        matches = _get("/skills/review/embedding-matches", {"limit": 25})
+        matches = _get("/skills/review/auto-matches", {"limit": 25})
     except httpx.HTTPError as exc:
-        st.error(f"Failed to load embedding matches: {exc}")
+        st.error(f"Failed to load auto-matches: {exc}")
         matches = []
-    st.caption(f"{len(matches)} shown, least confident first")
+    st.caption(
+        f"{len(matches)} shown — label matches whose skill has a different name "
+        "first, then similarity matches (least confident first), then the rest"
+    )
     for match in matches:
         key = match["raw_norm"]
         with st.container(border=True):
-            st.markdown(f"**{match['raw_example']}**")
-            st.write(
-                f"→ {match['skill_label'] or match['skill_id']} "
-                f"(similarity {match['score']:.2f}, in {match['jd_job_count']} job(s))"
+            st.markdown(f"**{_plain(match['raw_example'])}**")
+            how = (
+                "exact ESCO label match"
+                if match["method"] == "label"
+                else f"similarity {match['score']:.2f}"
             )
+            st.write(
+                f"→ {_plain(match['skill_label'] or match['skill_id'])} — {how}, "
+                f"in {match['jd_job_count']} job(s)"
+                + (" · on your CV" if match["seen_in_cv"] else "")
+            )
+            if match["suspicious"]:
+                st.warning(
+                    "Matched through an alternative ESCO label, not the skill's "
+                    "own name — check it really is the same thing."
+                )
             left, right = st.columns(2)
             if left.button("Confirm", key=f"confirm-{key}"):
                 if _post(
