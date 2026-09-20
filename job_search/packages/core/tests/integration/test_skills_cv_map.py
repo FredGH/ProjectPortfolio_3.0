@@ -180,6 +180,60 @@ class TestMapCvSkills(unittest.TestCase):
             },
         )
 
+    def test_an_edit_made_during_the_mapping_window_survives(self) -> None:
+        # map_strings spends one Ollama call per new string — seconds to
+        # minutes — between reading the truth base and writing it back. A
+        # CV Editor save landing in that window must not be overwritten, so
+        # the ids are applied to a re-read, fresh version.
+        edited = CVTruthBase(
+            identity="Jane Doe",
+            headline="Edited mid-mapping",
+            skills=[
+                Skill(name="ZZFixture Cloud Platforms"),
+                Skill(name="zzfixture unheard of thing"),
+                Skill(name="zzfixture kept", canonical_id="manual:1"),
+                Skill(name="zzfixture added while mapping"),
+            ],
+            experience=[],
+        )
+        calls: list[str] = []
+
+        def embed_and_edit(text_: str) -> list[float]:
+            if not calls:
+                calls.append(text_)
+                write_truth_base(
+                    self.app,
+                    self.user_id,
+                    "# markdown",
+                    edited,
+                    label="Saved while mapping",
+                )
+            return _far_embed(text_)
+
+        result = map_cv_skills(
+            app_engine=self.app,
+            owner_engine=self.owner,
+            user_id=self.user_id,
+            embed=embed_and_edit,
+            embedding_model=_MODEL,
+        )
+        self.assertEqual(len(calls), 1)
+        # Version 1 is setUp's, 2 the save made mid-mapping, 3 this run's.
+        self.assertEqual(result.new_version, 3)
+        stored = read_truth_base(self.app, self.user_id)
+        self.assertEqual(stored.truth_base.headline, "Edited mid-mapping")
+        self.assertEqual(
+            {s.name: s.canonical_id for s in stored.truth_base.skills},
+            {
+                "ZZFixture Cloud Platforms": "fixture-cloud",
+                "zzfixture unheard of thing": None,
+                "zzfixture kept": "manual:1",
+                # Added after the read, so it has no id yet: the next run
+                # maps it. What matters is that it is still there.
+                "zzfixture added while mapping": None,
+            },
+        )
+
     def test_a_user_without_a_cv_raises_lookup_error(self) -> None:
         with self.assertRaises(LookupError):
             map_cv_skills(
