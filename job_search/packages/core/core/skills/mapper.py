@@ -7,6 +7,11 @@ Cascade (deterministic, no LLM):
      or above `EMBEDDING_ACCEPT_COSINE` (method "embedding")
   4. otherwise unmapped -> `review_status = 'open'` for the review list.
 
+Stages 1-2 run over `core.skills.normalise.candidate_forms`: the whole
+normalised string first, then (for a string with a parenthetical qualifier,
+"MySQL (RDS)") its head with the qualifier removed. A whole-string hit always
+beats a head hit. Stage 3 embeds the whole string only.
+
 `map_skill` is read-only; `map_strings`/`map_pending` persist results in
 `silver.skill_mapping`, one row per distinct normalised string shared by
 CV and JD skills, and never overwrite an existing row — a human
@@ -20,7 +25,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, Engine, text
 
-from core.skills.normalise import is_plausible_skill, normalise_skill
+from core.skills.normalise import candidate_forms, is_plausible_skill, normalise_skill
 from core.skills.vector import to_pgvector
 
 EMBEDDING_ACCEPT_COSINE = 0.85
@@ -136,9 +141,11 @@ def map_skill(
 
     Args:
         conn: An open connection.
-        raw: The skill string as written in a CV or JD.
-        embed: Maps a string to its embedding (only called if the alias
-            and label stages miss).
+        raw: The skill string as written in a CV or JD. A parenthetical
+            qualifier is tolerated: "MySQL (RDS)" matches on "mysql" when the
+            whole string matches nothing.
+        embed: Maps the whole normalised string to its embedding (only
+            called if the alias and label stages miss on every form).
         embedding_model: The model `embed` uses; only embeddings from this
             model are searched.
         accept_threshold: Minimum cosine similarity to accept an embedding
@@ -147,16 +154,20 @@ def map_skill(
     Returns:
         The `SkillMatch`; `method == "none"` means unmapped.
     """
-    raw_norm = normalise_skill(raw)
-    if not raw_norm:
+    forms = candidate_forms(raw)
+    if not forms:
         return SkillMatch(None, "none")
+    raw_norm = forms[0]
 
-    alias = conn.execute(_ALIAS, {"n": raw_norm}).scalar_one_or_none()
-    if alias is not None:
-        return SkillMatch(alias, "alias")
-    label = conn.execute(_LABEL, {"n": raw_norm}).scalar_one_or_none()
-    if label is not None:
-        return SkillMatch(label, "label")
+    # Deterministic stages over every form, whole string first; within one
+    # form an alias outranks an ESCO label.
+    for form in forms:
+        alias = conn.execute(_ALIAS, {"n": form}).scalar_one_or_none()
+        if alias is not None:
+            return SkillMatch(alias, "alias")
+        label = conn.execute(_LABEL, {"n": form}).scalar_one_or_none()
+        if label is not None:
+            return SkillMatch(label, "label")
 
     nearest = conn.execute(
         _NEAREST, {"q": to_pgvector(embed(raw_norm)), "model": embedding_model}
@@ -338,6 +349,41 @@ def remap_unresolved(engine: Engine, *, raw_norms: list[str] | None = None) -> i
             text(
                 "DELETE FROM silver.skill_mapping "
                 "WHERE (method = 'embedding' "
+                "OR (method = 'none' AND review_status = 'open')) "
+                "AND (CAST(:raw_norms AS text[]) IS NULL "
+                "OR raw_norm = ANY(:raw_norms))"
+            ),
+            {"raw_norms": raw_norms},
+        )
+    return result.rowcount
+
+
+def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int:
+    """Delete every auto-made mapping so the next `map_pending` re-maps it.
+
+    Unlike `remap_unresolved`, this also clears exact-label and seed-alias
+    matches, so a correction made *after* a string was first mapped (a new
+    alias, a re-pointed seed entry) actually takes effect. An auto-made row is
+    one nobody decided: `review_status` NULL (alias, label or embedding) or an
+    `open` unmapped string. Rows a human decided — `resolved`, `rejected`,
+    `dismissed` — are never deleted.
+
+    Only `silver.skill_mapping` changes. A CV skill that already holds a
+    `canonical_id` keeps it (`map-cv-skills` never overwrites an id), and a
+    CV-only string is re-mapped by `map-cv-skills`, not `map-skills`.
+
+    Args:
+        engine: The owner-role engine.
+        raw_norms: Restrict to these strings; `None` covers all.
+
+    Returns:
+        The number of rows deleted.
+    """
+    with engine.begin() as conn:
+        result = conn.execute(
+            text(
+                "DELETE FROM silver.skill_mapping "
+                "WHERE (review_status IS NULL "
                 "OR (method = 'none' AND review_status = 'open')) "
                 "AND (CAST(:raw_norms AS text[]) IS NULL "
                 "OR raw_norm = ANY(:raw_norms))"

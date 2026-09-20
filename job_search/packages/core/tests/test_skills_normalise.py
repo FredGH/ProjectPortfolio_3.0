@@ -7,6 +7,7 @@ import unittest
 from core.skills.normalise import (
     MAX_SKILL_CHARS,
     MAX_SKILL_WORDS,
+    candidate_forms,
     is_plausible_skill,
     normalise_skill,
 )
@@ -45,6 +46,62 @@ class TestNormaliseSkill(unittest.TestCase):
 
     def test_does_not_merge_distinct_skills(self) -> None:
         self.assertNotEqual(normalise_skill("Java"), normalise_skill("JavaScript"))
+
+
+class TestCandidateForms(unittest.TestCase):
+    """`candidate_forms` is the mapper's lookup order for one raw string."""
+
+    def test_a_plain_skill_has_only_its_whole_form(self) -> None:
+        self.assertEqual(candidate_forms("Python"), ["python"])
+
+    def test_the_whole_normalised_string_always_comes_first(self) -> None:
+        # The whole form is the persisted `skill_mapping` key, so it must be
+        # exactly `normalise_skill` (including the stripped trailing paren).
+        forms = candidate_forms("MySQL (RDS)")
+        self.assertEqual(forms[0], normalise_skill("MySQL (RDS)"))
+        self.assertEqual(forms, ["mysql (rds", "mysql"])
+
+    def test_a_parenthetical_qualifier_is_dropped_for_the_head_form(self) -> None:
+        self.assertEqual(
+            candidate_forms("AWS (S3, ECS/Fargate, Lambda)"),
+            ["aws (s3, ecs/fargate, lambda", "aws"],
+        )
+
+    def test_a_slash_term_stays_whole_and_only_the_qualifier_is_dropped(self) -> None:
+        self.assertEqual(
+            candidate_forms("CI/CD (Jira+Git+Terraform)"),
+            ["ci/cd (jira+git+terraform", "ci/cd"],
+        )
+
+    def test_a_balanced_qualifier_mid_string_keeps_the_words_after_it(self) -> None:
+        self.assertEqual(
+            candidate_forms("Python (pandas) scripting"),
+            ["python (pandas) scripting", "python scripting"],
+        )
+
+    def test_nested_qualifiers_are_all_dropped(self) -> None:
+        self.assertEqual(
+            candidate_forms("Cloud (AWS (S3)) platforms"),
+            ["cloud (aws (s3)) platforms", "cloud platforms"],
+        )
+
+    def test_a_slash_or_comma_list_is_not_split_here(self) -> None:
+        # Splitting "TypeScript/React" into two skills is W1b, deliberately
+        # not done: it needs a new table and a bridge change.
+        self.assertEqual(candidate_forms("TypeScript/React"), ["typescript/react"])
+        self.assertEqual(candidate_forms("Hive, Impala"), ["hive, impala"])
+
+    def test_a_qualifier_only_string_has_no_separate_head(self) -> None:
+        # normalise_skill already strips the surrounding parentheses.
+        self.assertEqual(candidate_forms("(RDS)"), ["rds"])
+
+    def test_an_empty_parenthesis_pair_adds_no_extra_form(self) -> None:
+        self.assertEqual(candidate_forms("C++ ()"), ["c++"])
+
+    def test_blank_and_punctuation_only_input_has_no_forms(self) -> None:
+        self.assertEqual(candidate_forms(""), [])
+        self.assertEqual(candidate_forms("  ( ) "), [])
+        self.assertEqual(candidate_forms(" - "), [])
 
 
 class TestIsPlausibleSkill(unittest.TestCase):

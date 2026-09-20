@@ -49,7 +49,12 @@ from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
 from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import EscoLoadError, load_esco
-from core.skills.mapper import EmbeddingModelMismatch, map_pending, remap_unresolved
+from core.skills.mapper import (
+    EmbeddingModelMismatch,
+    map_pending,
+    remap_all_auto,
+    remap_unresolved,
+)
 from core.skills.write_job_skills import write_job_skills
 
 
@@ -749,7 +754,7 @@ def _cmd_map_skills(args: argparse.Namespace) -> int:
     """Run the `map-skills` subcommand.
 
     Args:
-        args: Parsed CLI arguments — `remap_unresolved`.
+        args: Parsed CLI arguments — `remap_unresolved`, `remap_all_auto`.
 
     Returns:
         0 on success, 1 if the stored ESCO embeddings are from a different
@@ -760,7 +765,10 @@ def _cmd_map_skills(args: argparse.Namespace) -> int:
     http_client = httpx.Client(timeout=30.0)
     try:
         synced = sync_seed_aliases(engine)
-        if args.remap_unresolved:
+        if args.remap_all_auto:
+            cleared = remap_all_auto(engine)
+            print(f"map-skills: cleared {cleared} auto-made mappings for re-mapping")
+        elif args.remap_unresolved:
             cleared = remap_unresolved(engine)
             print(f"map-skills: cleared {cleared} auto-made mappings for re-mapping")
         summary = map_pending(
@@ -1014,10 +1022,20 @@ def main(argv: list[str] | None = None) -> int:
         "map-skills",
         help="Sync seed aliases, then map every extracted JD skill string",
     )
-    map_skills_parser.add_argument(
+    remap_group = map_skills_parser.add_mutually_exclusive_group()
+    remap_group.add_argument(
         "--remap-unresolved",
         action="store_true",
-        help="First clear auto-made (embedding / open) mappings so they re-map",
+        help="First clear auto-made embedding / open mappings so they re-map",
+    )
+    remap_group.add_argument(
+        "--remap-all-auto",
+        action="store_true",
+        help=(
+            "First clear EVERY auto-made mapping (alias, label, embedding, open) "
+            "so a new alias or a fixed seed entry re-applies; never touches "
+            "resolved / rejected / dismissed rows or CV skill ids"
+        ),
     )
 
     extract_parser = subparsers.add_parser(

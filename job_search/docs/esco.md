@@ -104,6 +104,25 @@ python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>   # after a CV up
 normalisation" (only if something changed), so it is traceable and reversible
 in the CV Editor's history.
 
+## Strings with a qualifier
+
+A skill written with a parenthetical qualifier — `MySQL (RDS)`,
+`AWS (S3, ECS/Fargate, Lambda)`, `CI/CD (Jira+Git+Terraform)` — is looked up
+under two keys, whole string first: the whole normalised string, then the same
+string with the qualifier removed (`mysql`, `aws`, `ci/cd`). Alias and ESCO-label
+lookups use both; a hit on the whole string always beats a hit on the head. The
+embedding stage still sees the whole string only. The row in `skill_mapping` is
+keyed by the whole string, as before (`normalise_skill` is unchanged).
+
+Not done: splitting a list such as `TypeScript/React` or `Hive, Impala` into
+several skills. That needs a schema change and is a separate decision.
+
+This only applies to strings mapped from now on. To re-apply it to strings that
+are already mapped, run `map-skills --remap-all-auto` (below). A string a human
+already resolved (for example a compound string someone made its own custom
+skill) is never re-mapped: correct it by hand with the `UPDATE`s under *Seed
+aliases*.
+
 ## Evaluating skill extraction
 
 - `run-evals --task skill_extraction --provider target` runs the 20-case golden
@@ -165,15 +184,17 @@ python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>        # a CV
 There is no undo button. Correcting a wrong decision means updating
 `silver.skill_alias` and `silver.skill_mapping` by hand (the same two `UPDATE`s
 shown under *Seed aliases*) and rebuilding. A seed-file entry cannot fix it: a
-review alias is protected from the seed sync, and rows already mapped are not
-re-mapped. So choose deliberately.
+review alias is protected from the seed sync, and a row a human resolved is
+never re-mapped (`--remap-all-auto` skips it). So choose deliberately.
 
 **The verify tab only lists embedding matches.** A wrong *exact-label* match
 (for example `kotlin` mapped to "computer programming", or `scikit-learn` to
-"software components libraries") never appears in either tab and cannot be
-corrected from the UI today. This is tracked in the Step 14 follow-up plan
-(`docs/superpowers/plans/2026-09-20-step14-matching-quality-followups.md`,
-items W3 and W4a; PR #22).
+"software components libraries") never appears in either tab, so it has to be
+found by hand (`silver.skill_mapping` where `method = 'label'`). Correct one by
+adding an alias for the string to `config/skill_aliases.yml` and running
+`map-skills --remap-all-auto`, which clears the auto-made label row so the alias
+is applied. Showing these matches in the UI is item W3 of the Step 14 follow-up
+plan (`docs/superpowers/plans/2026-09-20-step14-matching-quality-followups.md`).
 
 **No authentication yet.** These endpoints (`/skills/review*`, `/skills/search`)
 are unauthenticated writes to shared-zone taxonomy — anyone who can reach the
@@ -181,7 +202,7 @@ API can re-point a skill for every user. Auth lands in **Step 22a**; this
 router must be on that step's checklist.
 
 **A reject does not correct a CV that already has the id.** `reject` and
-`map-skills --remap-unresolved` change `silver.skill_mapping` only. A CV whose
+`map-skills --remap-unresolved` / `--remap-all-auto` change `silver.skill_mapping` only. A CV whose
 `skills[].canonical_id` was already filled with the now-rejected id keeps it,
 because `map-cv-skills` never overwrites an existing `canonical_id`. To correct
 one: clear that skill's id — in the CV Editor, rename the skill and save, then
@@ -204,14 +225,25 @@ PostgreSQL). Once real ESCO data is loaded, check whether ESCO already has an
 equivalent skill for each `custom:` entry and, if so, re-point the entry at the
 ESCO skill id so the same skill does not exist under two ids.
 
-**Re-pointing a seed entry is not a migration.** The sync only updates
+**Re-pointing a seed entry does not migrate by itself.** The sync only updates
 `silver.skill_alias`, and the alias is consulted when a string is *first*
-mapped. Everything already mapped keeps the old id: `silver.skill_mapping`
+mapped, so everything already mapped keeps the old id: `silver.skill_mapping`
 rows, therefore the dbt bridge, and any CV `canonical_id` written from them.
-Migrate by hand, in this order:
+Re-apply it with:
+
+```bash
+# Syncs the seed file, clears every auto-made mapping, re-maps them.
+python -m apps.pipeline.app.cli map-skills --remap-all-auto
+(cd dbt && dbt run --select silver__skill silver__bridge_job_skill)
+```
+
+`--remap-all-auto` deletes alias-, label-, embedding- and open rows (anything
+nobody decided) and never touches `resolved`, `rejected` or `dismissed` rows.
+A string a human resolved to the old id keeps it, and its review alias is
+protected from the seed sync; migrate those by hand, in this order:
 
 ```sql
--- 1. The alias rows themselves (only if the sync has not already moved them).
+-- 1. The alias rows themselves.
 UPDATE silver.skill_alias SET skill_id = '<new-esco-id>'
 WHERE skill_id = 'custom:x';
 
@@ -220,10 +252,7 @@ UPDATE silver.skill_mapping SET skill_id = '<new-esco-id>'
 WHERE skill_id = 'custom:x';
 ```
 
-```bash
-# 3. Rebuild the derived models.
-(cd dbt && dbt run --select silver__skill silver__bridge_job_skill)
-```
+then rebuild the dbt models as above.
 
 CV `canonical_id`s are **not** covered by any of that: `map-cv-skills` never
 overwrites an id that is already set, so a CV holding `custom:x` keeps it until
