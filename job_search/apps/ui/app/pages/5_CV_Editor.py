@@ -16,6 +16,7 @@ import streamlit as st
 
 from core.cv.bullet_id import compute_bullet_id
 from core.settings import get_settings
+from core.skills.cv_map import carry_over_canonical_ids
 
 st.set_page_config(page_title="CV Editor", layout="wide")
 st.title("CV Editor")
@@ -561,16 +562,24 @@ else:
             "summary": summary or None,
             "locations": truth_base["locations"],
             "work_auth": truth_base["work_auth"],
-            "skills": [
-                {
-                    "name": row["name"],
-                    "canonical_id": None,
-                    "years": row["years"],
-                    "last_used": row["last_used"],
-                    "evidence_refs": [],
-                }
-                for row in _clean_editor_rows(edited_skills).to_dict("records")
-            ],
+            # The grid has no canonical_id column, so every row is rebuilt
+            # without one; carry_over_canonical_ids restores the id of each
+            # skill whose name is unchanged, so a save does not wipe what
+            # `map-cv-skills` filled in (a renamed or new skill keeps None
+            # and is mapped on the next run).
+            "skills": carry_over_canonical_ids(
+                truth_base["skills"],
+                [
+                    {
+                        "name": row["name"],
+                        "canonical_id": None,
+                        "years": row["years"],
+                        "last_used": row["last_used"],
+                        "evidence_refs": [],
+                    }
+                    for row in _clean_editor_rows(edited_skills).to_dict("records")
+                ],
+            ),
             "experience": [
                 {
                     **row,

@@ -15,8 +15,10 @@ import argparse
 import datetime
 import json
 import sys
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
@@ -27,6 +29,7 @@ from core.dedup.write_job_identity_map import write_job_identity_map
 from core.dedup.write_job_survivorship import write_job_survivorship
 from core.dedup.write_similarity_features import write_similarity_features
 from core.dedup.write_title_similarity_scores import write_title_similarity_scores
+from core.embedding.ollama import embed_text
 from core.enrichment.write_engagement_terms import write_engagement_terms
 from core.evals.runner import EvalRunResult, run_eval
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
@@ -42,6 +45,12 @@ from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.settings import Settings, get_settings
+from core.skills.aliases import sync_seed_aliases
+from core.skills.cv_map import map_cv_skills
+from core.skills.esco_embed import embed_esco_skills
+from core.skills.esco_load import EscoLoadError, load_esco
+from core.skills.mapper import EmbeddingModelMismatch, map_pending, remap_unresolved
+from core.skills.write_job_skills import write_job_skills
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -663,9 +672,179 @@ def _cmd_classify_jobs(args: argparse.Namespace) -> int:
         http_client.close()
 
 
+def _cmd_load_esco(args: argparse.Namespace) -> int:
+    """Run the `load-esco` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `directory`, the ESCO release folder.
+
+    Returns:
+        0 on success, 1 if the release directory is missing a file or column.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    try:
+        counts = load_esco(engine, Path(args.directory))
+    except EscoLoadError as exc:
+        print(f"load-esco: {exc}")
+        return 1
+    print(
+        f"load-esco complete: skills={counts.skills} "
+        f"skill_labels={counts.skill_labels} occupations={counts.occupations} "
+        f"occupation_skills={counts.occupation_skills} "
+        f"skipped_relations={counts.skipped_relations}"
+    )
+    return 0
+
+
+def _build_embedder(
+    http_client: httpx.Client, settings: Settings
+) -> Callable[[str], list[float]]:
+    """Build the text-to-vector function used by the skill commands.
+
+    Args:
+        http_client: The shared HTTP client for Ollama calls.
+        settings: Application settings (Ollama URL and embedding model).
+
+    Returns:
+        A function embedding one string via the local Ollama server.
+    """
+
+    def embed(text: str) -> list[float]:
+        return embed_text(
+            text,
+            base_url=settings.ollama_base_url,
+            model=settings.embedding_model,
+            client=http_client,
+        )
+
+    return embed
+
+
+def _cmd_embed_esco(args: argparse.Namespace) -> int:
+    """Run the `embed-esco` subcommand.
+
+    Args:
+        args: Parsed CLI arguments (none beyond the subcommand itself).
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        written = embed_esco_skills(
+            engine,
+            embed=_build_embedder(http_client, settings),
+            model=settings.embedding_model,
+        )
+        print(f"embed-esco complete: embeddings_written={written}")
+        return 0
+    finally:
+        http_client.close()
+
+
+def _cmd_map_skills(args: argparse.Namespace) -> int:
+    """Run the `map-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `remap_unresolved`.
+
+    Returns:
+        0 on success, 1 if the stored ESCO embeddings are from a different
+        model than the configured one.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        synced = sync_seed_aliases(engine)
+        if args.remap_unresolved:
+            cleared = remap_unresolved(engine)
+            print(f"map-skills: cleared {cleared} auto-made mappings for re-mapping")
+        summary = map_pending(
+            engine,
+            embed=_build_embedder(http_client, settings),
+            embedding_model=settings.embedding_model,
+        )
+    except EmbeddingModelMismatch as exc:
+        print(f"map-skills: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    print(
+        f"map-skills complete: seed_aliases={synced} "
+        f"mapped={summary.mapped} unmapped={summary.unmapped}"
+    )
+    return 0
+
+
+def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
+    """Run the `extract-job-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — optional `limit`.
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    # A local 8B model generating on CPU routinely takes far longer than the
+    # 30s used elsewhere here (see apps/api/app/dependencies.py's
+    # get_ollama_http_client for the measured numbers).
+    http_client = httpx.Client(timeout=2000.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        summary = write_job_skills(engine, adapters=adapters, limit=args.limit)
+    finally:
+        http_client.close()
+    print(
+        f"extract-job-skills complete: extracted_jobs={summary.extracted_jobs} "
+        f"skill_rows={summary.skill_rows} failed_jobs={summary.failed_jobs}"
+    )
+    return 0
+
+
+def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
+    """Run the `map-cv-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id`.
+
+    Returns:
+        0 on success, 1 if the user has no CV or the ESCO embeddings are
+        from a different model than the configured one.
+    """
+    settings = get_settings()
+    owner_engine = build_engine(settings.database_url)
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        result = map_cv_skills(
+            app_engine=app_engine,
+            owner_engine=owner_engine,
+            user_id=args.user_id,
+            embed=_build_embedder(http_client, settings),
+            embedding_model=settings.embedding_model,
+        )
+    except (LookupError, EmbeddingModelMismatch) as exc:
+        print(f"map-cv-skills: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    version = result.new_version if result.new_version is not None else "unchanged"
+    print(
+        f"map-cv-skills complete: mapped={result.mapped} "
+        f"unmapped={result.unmapped} truth_base_version={version}"
+    )
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
-_EVAL_TASKS = ["job_categorisation", "cv_extraction"]
+_EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
 
 
 def _report_eval_result(result: EvalRunResult) -> None:
@@ -706,7 +885,9 @@ def _cmd_run_evals(args: argparse.Namespace) -> int:
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
-    http_client = httpx.Client(timeout=30.0)
+    # skill_extraction evals a local 8B model generating on CPU, which
+    # routinely outlasts 30s (same reasoning as extract-job-skills above).
+    http_client = httpx.Client(timeout=2000.0)
     try:
         adapters = _build_llm_adapters(http_client)
         tasks = _EVAL_TASKS if args.all else [args.task]
@@ -818,6 +999,41 @@ def main(argv: list[str] | None = None) -> int:
         "--provider", required=True, choices=["target", "local", "both"]
     )
 
+    load_esco_parser = subparsers.add_parser(
+        "load-esco",
+        help="Load an ESCO English CSV release directory into the esco schema",
+    )
+    load_esco_parser.add_argument("directory")
+
+    subparsers.add_parser(
+        "embed-esco",
+        help="Embed every ESCO skill's preferred label (resumable; ~14k Ollama calls)",
+    )
+
+    map_skills_parser = subparsers.add_parser(
+        "map-skills",
+        help="Sync seed aliases, then map every extracted JD skill string",
+    )
+    map_skills_parser.add_argument(
+        "--remap-unresolved",
+        action="store_true",
+        help="First clear auto-made (embedding / open) mappings so they re-map",
+    )
+
+    extract_parser = subparsers.add_parser(
+        "extract-job-skills",
+        help="Extract skills + must/nice-to-have levels for every dedup survivor",
+    )
+    extract_parser.add_argument(
+        "--limit", type=int, default=None, help="Process at most this many jobs"
+    )
+
+    map_cv_parser = subparsers.add_parser(
+        "map-cv-skills",
+        help="Fill canonical_id on a user's CV skills (writes a new CV version)",
+    )
+    map_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -836,6 +1052,16 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_compute_survivorship(args)
     if args.command == "classify-jobs":
         return _cmd_classify_jobs(args)
+    if args.command == "load-esco":
+        return _cmd_load_esco(args)
+    if args.command == "embed-esco":
+        return _cmd_embed_esco(args)
+    if args.command == "map-skills":
+        return _cmd_map_skills(args)
+    if args.command == "extract-job-skills":
+        return _cmd_extract_job_skills(args)
+    if args.command == "map-cv-skills":
+        return _cmd_map_cv_skills(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

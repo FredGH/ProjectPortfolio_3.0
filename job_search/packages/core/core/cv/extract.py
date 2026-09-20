@@ -31,6 +31,7 @@ from core.cv.schema import (
     Skill,
 )
 from core.llm.gateway import complete
+from core.llm.json_response import parse_json_response
 from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
 
@@ -80,51 +81,6 @@ class _RawCVTruthBase(BaseModel):
     education: list[Education] = []
     qualifications: list[Certification] = []
     activities: list[Activity] = []
-
-
-_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
-
-
-def _parse_json_response(text: str) -> dict[str, object]:
-    """Parse an LLM response into a JSON dict, tolerating common wrapping.
-
-    Local models routinely don't return bare JSON despite being asked for
-    it (all observed from llama3.1:8b on this task, across different
-    calls): a ```json ... ``` fence, a fence preceded by explanatory
-    prose, or no fence at all with the JSON object embedded in prose.
-    Tries, in order: the text as-is; the first fenced code block anywhere
-    in the text; the substring from the first "{" to the last "}". Each
-    candidate is a plain `json.loads` attempt — a candidate that happens
-    to parse but isn't the right shape still fails
-    `_RawCVTruthBase.model_validate` afterward, so this never turns a
-    genuinely malformed response into a false success.
-
-    Args:
-        text: The raw response text, already `.strip()`-ped.
-
-    Returns:
-        The parsed JSON value from the first candidate that parses.
-
-    Raises:
-        json.JSONDecodeError: If no candidate parses as JSON.
-    """
-    candidates = [text]
-    fence_match = _CODE_FENCE_RE.search(text)
-    if fence_match:
-        candidates.append(fence_match.group(1).strip())
-    brace_start = text.find("{")
-    brace_end = text.rfind("}")
-    if brace_start != -1 and brace_end > brace_start:
-        candidates.append(text[brace_start : brace_end + 1])
-
-    last_error: json.JSONDecodeError | None = None
-    for candidate in candidates:
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError as exc:
-            last_error = exc
-    assert last_error is not None  # `candidates` always has >= 1 entry
-    raise last_error
 
 
 def _recover_education_qualification_keyed_as_degree(parsed: dict[str, object]) -> None:
@@ -290,7 +246,7 @@ def extract_truth_base(
     )
     response_text = response.text.strip()
     try:
-        parsed = _parse_json_response(response_text)
+        parsed = parse_json_response(response_text)
         _recover_publication_citations(parsed)
         _recover_education_qualification_keyed_as_degree(parsed)
         raw = _RawCVTruthBase.model_validate(parsed)

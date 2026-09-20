@@ -26,6 +26,12 @@ tasks:
     prompt_family: local
     eval_metric: field_f1
     eval_regression_threshold: 0.05
+  skill_extraction:
+    provider: ollama
+    model: llama3.1:8b
+    prompt_family: local
+    eval_metric: field_f1
+    eval_regression_threshold: 0.05
   eval_judge:
     provider: anthropic
     model: claude-sonnet-5

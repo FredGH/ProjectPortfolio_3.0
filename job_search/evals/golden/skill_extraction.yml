@@ -1,0 +1,176 @@
+cases:
+  - case_id: skill_001
+    input:
+      description: |
+        We need a Data Engineer with strong Python and SQL. You will build
+        pipelines on Airflow. Nice to have: dbt, Terraform.
+    expected:
+      "skill:python": must_have
+      "skill:sql": must_have
+      "skill:airflow": must_have
+      "skill:dbt": nice_to_have
+      "skill:terraform": nice_to_have
+  - case_id: skill_002
+    input:
+      description: |
+        Strong Go experience is essential. Kubernetes and PostgreSQL in
+        production. Bonus: Kafka.
+    expected:
+      "skill:go": must_have
+      "skill:kubernetes": must_have
+      "skill:postgresql": must_have
+      "skill:kafka": nice_to_have
+  - case_id: skill_003
+    input:
+      description: |
+        Join our friendly team in London. We offer 25 days holiday and a
+        great culture.
+    expected: {}
+  - case_id: skill_004
+    input:
+      description: |
+        You will build interfaces with React and TypeScript. Experience with
+        GraphQL is a plus.
+    expected:
+      "skill:react": must_have
+      "skill:typescript": must_have
+      "skill:graphql": nice_to_have
+  - case_id: skill_005
+    input:
+      description: |
+        Required: Python, PyTorch, and Docker for deploying models.
+        Preferred: Spark.
+    expected:
+      "skill:python": must_have
+      "skill:pytorch": must_have
+      "skill:docker": must_have
+      "skill:spark": nice_to_have
+  - case_id: skill_006
+    input:
+      description: |
+        Own our CI/CD pipelines. Terraform and AWS are essential. Ideally you
+        know Ansible.
+    expected:
+      "skill:ci/cd": must_have
+      "skill:terraform": must_have
+      "skill:aws": must_have
+      "skill:ansible": nice_to_have
+  - case_id: skill_007
+    input:
+      description: |
+        Write SQL daily and build dashboards in Tableau. Knowledge of R would
+        be an asset.
+    expected:
+      "skill:sql": must_have
+      "skill:tableau": must_have
+      "skill:r": nice_to_have
+  - case_id: skill_008
+    input:
+      description: |
+        Build our mobile app in Swift. Familiarity with Kotlin is desirable.
+    expected:
+      "skill:swift": must_have
+      "skill:kotlin": nice_to_have
+  - case_id: skill_009
+    input:
+      description: |
+        Day to day you will write Java services, tune PostgreSQL queries and
+        run everything on Kubernetes.
+    expected:
+      "skill:java": must_have
+      "skill:postgresql": must_have
+      "skill:kubernetes": must_have
+  - case_id: skill_010
+    input:
+      description: |
+        Requirements:
+        - Python
+        - Git
+
+        Nice to have:
+        - Rust
+    expected:
+      "skill:python": must_have
+      "skill:git": must_have
+      "skill:rust": nice_to_have
+  - case_id: skill_011
+    input:
+      description: |
+        Must know C++ and .NET. Node.js is a plus.
+    expected:
+      "skill:c++": must_have
+      "skill:.net": must_have
+      "skill:node.js": nice_to_have
+  - case_id: skill_012
+    input:
+      description: |
+        Salary 60k. Hybrid, two days in the office. You must be a great
+        communicator. Experience with Snowflake is required.
+    expected:
+      "skill:snowflake": must_have
+  - case_id: skill_013
+    input:
+      description: |
+        Required: SQL and Python. Bonus points for knowledge of dbt and Looker.
+    expected:
+      "skill:sql": must_have
+      "skill:python": must_have
+      "skill:dbt": nice_to_have
+      "skill:looker": nice_to_have
+  - case_id: skill_014
+    input:
+      description: |
+        Statistics and Python are core to this role. Experience with A/B
+        testing is preferred.
+    expected:
+      "skill:statistics": must_have
+      "skill:python": must_have
+      "skill:a/b testing": nice_to_have
+  - case_id: skill_015
+    input:
+      description: |
+        Experience with penetration testing and Burp Suite is required. A CISSP
+        certification is desirable.
+    expected:
+      "skill:penetration testing": must_have
+      "skill:burp suite": must_have
+      "skill:cissp": nice_to_have
+  - case_id: skill_016
+    input:
+      description: |
+        We run on Google Cloud Platform using BigQuery. Terraform experience
+        would be an asset.
+    expected:
+      "skill:google cloud platform": must_have
+      "skill:bigquery": must_have
+      "skill:terraform": nice_to_have
+  - case_id: skill_017
+    input:
+      description: |
+        Write automated tests in Cypress and Jest. Knowledge of Playwright is
+        a plus.
+    expected:
+      "skill:cypress": must_have
+      "skill:jest": must_have
+      "skill:playwright": nice_to_have
+  - case_id: skill_018
+    input:
+      description: |
+        Looking for an experienced Excel power user.
+    expected:
+      "skill:excel": must_have
+  - case_id: skill_019
+    input:
+      description: |
+        Must have: Scala and Spark. Nice to have: Databricks and Delta Lake.
+    expected:
+      "skill:scala": must_have
+      "skill:spark": must_have
+      "skill:databricks": nice_to_have
+      "skill:delta lake": nice_to_have
+  - case_id: skill_020
+    input:
+      description: |
+        The role reports to the Head of Operations. Location: Manchester.
+        Full-time.
+    expected: {}

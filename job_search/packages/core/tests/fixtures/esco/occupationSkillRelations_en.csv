@@ -1,0 +1,6 @@
+occupationUri,relationType,skillType,skillUri
+http://data.europa.eu/esco/occupation/fixture-occ-data-engineer,essential,knowledge,http://data.europa.eu/esco/skill/fixture-python
+http://data.europa.eu/esco/occupation/fixture-occ-data-engineer,essential,knowledge,http://data.europa.eu/esco/skill/fixture-sql
+http://data.europa.eu/esco/occupation/fixture-occ-data-engineer,optional,knowledge,http://data.europa.eu/esco/skill/fixture-cloud
+http://data.europa.eu/esco/occupation/fixture-occ-cloud-engineer,essential,knowledge,http://data.europa.eu/esco/skill/fixture-cloud
+http://data.europa.eu/esco/occupation/fixture-occ-cloud-engineer,essential,knowledge,http://data.europa.eu/esco/skill/fixture-unknown

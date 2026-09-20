@@ -192,11 +192,57 @@ def _predict_cv_extraction(
     return predicted, prompt_version
 
 
+def _predict_skill_extraction(
+    case: GoldenCase,
+    *,
+    provider: str,
+    model: str,
+    prompt_family: str,
+    adapters: dict[str, LLMAdapter],
+) -> tuple[dict[str, object], str | None]:
+    """Predict a `skill_extraction` case's skills and levels via the LLM.
+
+    Args:
+        case: The golden case to predict — `case.input["description"]` is
+            the job description to extract from.
+        provider: The provider to force `extract_jd_skills` to use.
+        model: The model to use with `provider`.
+        prompt_family: The prompt variant to load for `provider`.
+        adapters: Every available LLM adapter, keyed by provider name.
+
+    Returns:
+        A tuple of (`{"skill:<normalised name>": "<requirement level>"}` —
+        one flat key per skill, so `field_f1` scores (skill, level) pairs —
+        and the `prompt_version` `extract_jd_skills` used). Falls back to
+        `({}, None)` if extraction raises `ValueError`, so one malformed
+        response does not crash a whole eval run.
+    """
+    from core.skills.jd_extract import extract_jd_skills
+    from core.skills.normalise import normalise_skill
+
+    try:
+        extraction = extract_jd_skills(
+            str(case.input["description"]),
+            adapters=adapters,
+            provider=provider,
+            model=model,
+            prompt_family=prompt_family,
+        )
+    except ValueError:
+        return {}, None
+    predicted: dict[str, object] = {
+        f"skill:{normalise_skill(skill.skill)}": skill.requirement_level
+        for skill in extraction.skills
+    }
+    return predicted, extraction.prompt_version
+
+
 _Predictor = Callable[..., tuple[dict[str, object], str | None]]
 
 _PREDICTORS: dict[str, _Predictor] = {
     "job_categorisation": _predict_job_categorisation,
     "cv_extraction": _predict_cv_extraction,
+    "skill_extraction": _predict_skill_extraction,
 }
 
 
