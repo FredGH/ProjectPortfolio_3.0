@@ -124,6 +124,57 @@ Open the **Skill Review** page. Two tabs:
 A resolution becomes an alias, so it applies to every future CV and JD
 string that normalises the same way. Aliases are shared across users.
 
+### What to click
+
+Each card is one question: what should this string mean in the shared skill
+vocabulary? The list is sorted by how many jobs mention the string, so work
+from the top.
+
+**Unmapped tab**
+
+| Button | Use it when | What happens |
+|---|---|---|
+| **Accept suggestion: X (0.81)** | The closest ESCO skill is right. It is the best candidate that fell below the auto-accept threshold (0.85), so the system asks instead of guessing. Not offered for a string you already rejected. | The string maps to X and is saved as an alias. |
+| **Map to selected** | The suggestion is wrong but another ESCO (or existing custom) skill fits: type in *Search ESCO / custom skills*, pick a result. | The string maps to the chosen skill and is saved as an alias. |
+| **Mark as custom skill** | It is a real skill ESCO does not have (Terraform, dbt, Snowflake …). The box is pre-filled with the original text; edit it to the name you want. | A `custom:<slug>` skill is created (or reused) and the string maps to it. |
+| **Dismiss** | It is not a skill, or you do not care about it ("Strong work ethic"). | It leaves the queue for good and stays unmapped. Only unmapped strings can be dismissed. |
+
+**Embedding matches — verify tab** — each row shows the string, the skill it
+was mapped to, the similarity and the number of jobs it appears in.
+
+| Button | What happens |
+|---|---|
+| **Confirm** | Keeps the match and saves it as a permanent alias. |
+| **Reject** | Undoes the match; the string goes back to the Unmapped tab and is protected from being auto-mapped again. |
+
+Example: `distributed systems` shows *Accept suggestion: distributed computing
+(0.81)*. That is a reasonable match, so Accept. If you would rather keep the
+two apart, create a custom skill instead.
+
+### When a decision takes effect
+
+A decision changes `silver.skill_mapping` and the alias table immediately, but
+jobs and CVs already processed are not touched until you re-run the derived
+steps:
+
+```bash
+(cd dbt && dbt run --select silver__skill silver__bridge_job_skill)   # jobs
+python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>        # a CV
+```
+
+There is no undo button. Correcting a wrong decision means updating
+`silver.skill_alias` and `silver.skill_mapping` by hand (the same two `UPDATE`s
+shown under *Seed aliases*) and rebuilding. A seed-file entry cannot fix it: a
+review alias is protected from the seed sync, and rows already mapped are not
+re-mapped. So choose deliberately.
+
+**The verify tab only lists embedding matches.** A wrong *exact-label* match
+(for example `kotlin` mapped to "computer programming", or `scikit-learn` to
+"software components libraries") never appears in either tab and cannot be
+corrected from the UI today. This is tracked in the Step 14 follow-up plan
+(`docs/superpowers/plans/2026-09-20-step14-matching-quality-followups.md`,
+items W3 and W4a; PR #22).
+
 **No authentication yet.** These endpoints (`/skills/review*`, `/skills/search`)
 are unauthenticated writes to shared-zone taxonomy — anyone who can reach the
 API can re-point a skill for every user. Auth lands in **Step 22a**; this
