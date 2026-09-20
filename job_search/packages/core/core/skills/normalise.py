@@ -20,6 +20,22 @@ _WHITESPACE_RE = re.compile(r"\s+")
 # "#" are never stripped ("C++", "C#").
 _EDGE_CHARS = " ,;:!?\"'()[]{}<>-–—/\\|*•·"
 
+MAX_SKILL_CHARS = 100
+"""Longest plausible skill name, in characters.
+
+A local 8B model sometimes answers with a sentence ("experience with
+distributed systems at scale in a fast-paced environment") rather than a
+skill. Such a string is nobody's skill, floods the review list and costs
+an embedding call; past ~2.7 KB it also overflows the `job_skill_raw`
+primary-key index and raises an uncaught `OperationalError`. The longest
+real ESCO preferred label is far below this bound."""
+
+MAX_SKILL_WORDS = 8
+"""Most whitespace-separated words a plausible skill name has.
+
+Catches a short-but-still-sentence answer that slips under
+`MAX_SKILL_CHARS`."""
+
 
 def normalise_skill(raw: str) -> str:
     """Reduce a skill string to its canonical comparison key.
@@ -35,3 +51,24 @@ def normalise_skill(raw: str) -> str:
     text = unicodedata.normalize("NFKC", raw).lower().replace("&", " and ")
     text = _WHITESPACE_RE.sub(" ", text).strip(_EDGE_CHARS)
     return text.rstrip(".").strip(_EDGE_CHARS)
+
+
+def is_plausible_skill(normalised: str) -> bool:
+    """Decide whether a normalised string can be a skill name at all.
+
+    A cheap sanity bound, not a taxonomy check: it only rejects what no
+    skill name ever looks like, so a real skill is never dropped.
+
+    Args:
+        normalised: A string already through `normalise_skill`.
+
+    Returns:
+        True if the string is non-empty and within both
+        `MAX_SKILL_CHARS` and `MAX_SKILL_WORDS`.
+    """
+    if not normalised:
+        return False
+    return (
+        len(normalised) <= MAX_SKILL_CHARS
+        and len(normalised.split()) <= MAX_SKILL_WORDS
+    )

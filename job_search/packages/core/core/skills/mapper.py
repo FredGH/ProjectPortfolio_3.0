@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import Connection, Engine, text
 
-from core.skills.normalise import normalise_skill
+from core.skills.normalise import is_plausible_skill, normalise_skill
 from core.skills.vector import to_pgvector
 
 EMBEDDING_ACCEPT_COSINE = 0.85
@@ -193,8 +193,12 @@ def map_strings(
 
     Args:
         engine: The owner-role engine.
-        raws: Raw skill strings; duplicates (after normalisation) and
-            strings that normalise to empty are ignored.
+        raws: Raw skill strings; duplicates (after normalisation), strings
+            that normalise to empty, and strings no skill name could be
+            (`core.skills.normalise.is_plausible_skill`) are ignored — the
+            last get no mapping row and are absent from the result, so a
+            sentence an LLM returned as a "skill" never reaches the review
+            list or costs an embedding call.
         embed: Maps a string to its embedding.
         embedding_model: The embedding model in use.
         seen_in_cv: True when the strings come from a CV — flags the
@@ -213,7 +217,7 @@ def map_strings(
     first_spelling: dict[str, str] = {}
     for raw in raws:
         norm = normalise_skill(raw)
-        if norm:
+        if is_plausible_skill(norm):
             first_spelling.setdefault(norm, raw)
     if not first_spelling:
         return {}

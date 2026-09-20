@@ -140,6 +140,22 @@ class TestMergeSkills(unittest.TestCase):
         )
         self.assertEqual(merged, [])
 
+    def test_drops_a_sentence_the_model_returned_as_a_skill(self) -> None:
+        merged = merge_skills(
+            [
+                ExtractedSkill(skill="Python", requirement_level="must_have"),
+                ExtractedSkill(
+                    skill=(
+                        "Experience working with distributed systems at scale in "
+                        "a fast-paced agile environment alongside product teams"
+                    ),
+                    requirement_level="must_have",
+                ),
+                ExtractedSkill(skill="Kubernetes", requirement_level="nice_to_have"),
+            ]
+        )
+        self.assertEqual([m.skill for m in merged], ["Python", "Kubernetes"])
+
 
 if __name__ == "__main__":
     unittest.main()

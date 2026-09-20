@@ -120,6 +120,34 @@ class TestMapStrings(unittest.TestCase):
             {},
         )
 
+    def test_an_implausibly_long_string_gets_no_row_and_no_embed_call(self) -> None:
+        # An 8B model sometimes answers with a sentence instead of a skill.
+        # It must not reach the review list, cost an embedding call, or (past
+        # ~2.7 KB) overflow the job_skill_raw primary-key index.
+        sentence = "zzfixture " + "long " * 60
+        calls: list[str] = []
+
+        def counting_embed(text_: str) -> list[float]:
+            calls.append(text_)
+            return _far_embed(text_)
+
+        result = map_strings(
+            self.engine,
+            [sentence, "ZZFixture Cloud Platforms"],
+            embed=counting_embed,
+            embedding_model=_MODEL,
+        )
+        self.assertEqual(result, {"zzfixture cloud platforms": "fixture-cloud"})
+        self.assertEqual(calls, [])
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT count(*) FROM silver.skill_mapping "
+                    "WHERE raw_norm LIKE 'zzfixture long%'"
+                )
+            ).scalar_one()
+        self.assertEqual(rows, 0)
+
     def test_refuses_when_stored_embeddings_use_a_different_model(self) -> None:
         with self.engine.begin() as conn:
             conn.execute(

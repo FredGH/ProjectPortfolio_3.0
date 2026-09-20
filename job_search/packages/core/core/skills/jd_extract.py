@@ -24,7 +24,7 @@ from core.llm.gateway import complete
 from core.llm.json_response import parse_json_response
 from core.llm.prompts import load_prompt
 from core.llm.types import LLMAdapter
-from core.skills.normalise import normalise_skill
+from core.skills.normalise import is_plausible_skill, normalise_skill
 from core.text import readable_description
 
 _PROMPT_FAMILY = "local"
@@ -125,12 +125,14 @@ def merge_skills(skills: Iterable[ExtractedSkill]) -> list[ExtractedSkill]:
 
     Returns:
         One entry per normalised name, in first-seen order and spelling.
-        Names that normalise to nothing are dropped.
+        Names that normalise to nothing, and ones no skill name could be
+        (`core.skills.normalise.is_plausible_skill` — a sentence the model
+        answered with instead of a skill), are dropped.
     """
     merged: dict[str, ExtractedSkill] = {}
     for item in skills:
         key = normalise_skill(item.skill)
-        if not key:
+        if not is_plausible_skill(key):
             continue
         existing = merged.get(key)
         if existing is None:

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import unittest
 
-from core.skills.normalise import normalise_skill
+from core.skills.normalise import (
+    MAX_SKILL_CHARS,
+    MAX_SKILL_WORDS,
+    is_plausible_skill,
+    normalise_skill,
+)
 
 
 class TestNormaliseSkill(unittest.TestCase):
@@ -40,6 +45,30 @@ class TestNormaliseSkill(unittest.TestCase):
 
     def test_does_not_merge_distinct_skills(self) -> None:
         self.assertNotEqual(normalise_skill("Java"), normalise_skill("JavaScript"))
+
+
+class TestIsPlausibleSkill(unittest.TestCase):
+    def test_accepts_an_ordinary_skill_name(self) -> None:
+        self.assertTrue(is_plausible_skill("google cloud platform"))
+
+    def test_rejects_an_empty_string(self) -> None:
+        self.assertFalse(is_plausible_skill(""))
+
+    def test_accepts_exactly_the_character_limit_and_rejects_one_more(self) -> None:
+        self.assertTrue(is_plausible_skill("a" * MAX_SKILL_CHARS))
+        self.assertFalse(is_plausible_skill("a" * (MAX_SKILL_CHARS + 1)))
+
+    def test_accepts_exactly_the_word_limit_and_rejects_one_more(self) -> None:
+        self.assertTrue(is_plausible_skill(" ".join(["ab"] * MAX_SKILL_WORDS)))
+        self.assertFalse(is_plausible_skill(" ".join(["ab"] * (MAX_SKILL_WORDS + 1))))
+
+    def test_rejects_a_sentence_an_llm_returned_as_a_skill(self) -> None:
+        self.assertFalse(
+            is_plausible_skill(
+                "experience working with distributed systems at scale in a "
+                "fast-paced agile environment"
+            )
+        )
 
 
 if __name__ == "__main__":
