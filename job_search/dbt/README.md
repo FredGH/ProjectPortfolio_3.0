@@ -3,6 +3,21 @@
 Transforms `bronze.raw_jobs` (raw JSONB payloads from the ingestion
 connectors) into typed, contract-enforced models.
 
+## Installing dbt
+
+dbt is not part of `requirements.txt` (its `protobuf>=6` requirement conflicts
+with Streamlit's `protobuf<6`, so pip cannot install both, and the Docker
+images install `requirements.txt`). Give it its own virtual environment from
+the `job_search/` root:
+
+```bash
+python3.11 -m venv venv-dbt
+venv-dbt/bin/pip install -r requirements-dbt.txt
+```
+
+Then run dbt from this directory with `../venv-dbt/bin/dbt`, or activate that
+environment first. Commands below assume `dbt` is on your `PATH`.
+
 ## Layers
 
 - **staging** (`models/staging/`, views, schema `staging`) — one
