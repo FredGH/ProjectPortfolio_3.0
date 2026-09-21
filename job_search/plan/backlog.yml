@@ -731,6 +731,29 @@ epics:
     - "Handle unmapped skills with a review list rather than silent drops"
 
     jira_key: JOB-215
+  - id: STEP-14A
+    summary: "Step 14a — Skill Review: reopen a resolved or dismissed decision, with
+      a User Guide"
+    description: >
+      A resolved or dismissed skill string could not be corrected without
+      hand-written SQL: the review flow refuses to re-point a settled alias.
+      Add a Decisions tab to the Skill Review page with a Reopen action (a
+      resolved string loses its review alias and returns as rejected with the
+      old target kept as a note; a dismissed string returns as open), the
+      GET /skills/review/decisions and POST /skills/review/reopen endpoints,
+      migration 0024 granting the API role DELETE on silver.skill_alias, a
+      "Show up to" page-size selector, and a collapsed User Guide accordion
+      describing every action in the review flow and its consequences.
+    acceptance: >
+      A resolved string can be reopened, its review alias is removed, and it
+      can then be re-resolved to a different skill. A dismissed string returns
+      to the Unmapped tab. A seed alias, an auto-match and an unmapped string
+      are refused. Every decision is reachable from the Decisions tab. The
+      page opens with a collapsed User Guide that names every action.
+    labels: [cv, ui]
+    points: 3
+
+    jira_key: JOB-460
   - id: STEP-15
     summary: "Step 15 — Scoring funnel"
     description: >
