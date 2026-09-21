@@ -1,7 +1,10 @@
 """Batch write path for silver.job_skill_extraction / job_skill_raw (Step 14).
 
 Extracts skills for every dedup survivor (silver.job_survivorship) that has
-a description and no extraction at the current prompt version. Same
+a description and no extraction at the current prompt version, optionally
+restricted to some sources and gold categories (extraction is the slow step: a
+local model on CPU takes minutes per job, so a run is scoped to what matters).
+Same
 "only new work" pattern as `write_job_category`: a routine run never
 re-calls the LLM for already-extracted jobs. Each job commits on its own —
 local 8B generation on CPU is slow, so a long batch must keep its progress
@@ -22,16 +25,25 @@ from core.skills.normalise import normalise_skill
 
 logger = logging.getLogger(__name__)
 
-_SELECT_PENDING = text(
-    "SELECT js.job_group_id, js.winning_description AS description "
+_PENDING_FROM_WHERE = (
     "FROM silver.job_survivorship AS js "
     "LEFT JOIN silver.job_skill_extraction AS e "
     "ON e.job_group_id = js.job_group_id AND e.prompt_version = :prompt_version "
     "WHERE e.job_group_id IS NULL AND js.winning_description IS NOT NULL "
     "AND (CAST(:job_group_ids AS text[]) IS NULL "
     "OR js.job_group_id = ANY(:job_group_ids)) "
+    "AND (CAST(:sources AS text[]) IS NULL "
+    "OR js.apply_source_name = ANY(:sources)) "
+    "AND (CAST(:categories AS text[]) IS NULL OR EXISTS ("
+    "SELECT 1 FROM gold.dim_job AS d WHERE d.job_group_id = js.job_group_id "
+    "AND d.category = ANY(:categories)))"
+)
+_SELECT_PENDING = text(
+    "SELECT js.job_group_id, js.winning_description AS description "
+    f"{_PENDING_FROM_WHERE} "
     "ORDER BY js.job_group_id LIMIT CAST(:limit AS integer)"
 )
+_COUNT_PENDING = text(f"SELECT count(*) {_PENDING_FROM_WHERE}")
 _INSERT_EXTRACTION = text(
     "INSERT INTO silver.job_skill_extraction (job_group_id, prompt_version, model) "
     "VALUES (:job_group_id, :prompt_version, :model) "
@@ -59,12 +71,63 @@ class WriteSummary:
     failed_jobs: int
 
 
+def _pending_params(
+    job_group_ids: list[str] | None,
+    sources: list[str] | None,
+    categories: list[str] | None,
+) -> dict[str, object]:
+    """Build the bind parameters shared by the pending-jobs queries.
+
+    Args:
+        job_group_ids: Restrict to these jobs, or None.
+        sources: Restrict to jobs whose winning source is one of these, or None.
+        categories: Restrict to jobs whose gold category is one of these, or
+            None.
+
+    Returns:
+        The parameter dict (an empty list is treated as no filter).
+    """
+    return {
+        "prompt_version": CURRENT_PROMPT_VERSION,
+        "job_group_ids": job_group_ids,
+        "sources": sources or None,
+        "categories": categories or None,
+    }
+
+
+def count_pending_jobs(
+    engine: Engine,
+    *,
+    job_group_ids: list[str] | None = None,
+    sources: list[str] | None = None,
+    categories: list[str] | None = None,
+) -> int:
+    """Count the jobs a `write_job_skills` run with these filters would process.
+
+    Args:
+        engine: The owner-role engine.
+        job_group_ids: Restrict to these jobs; None for all.
+        sources: Restrict to jobs whose winning source is one of these.
+        categories: Restrict to jobs whose gold category is one of these; a
+            job with no `gold.dim_job` row does not match.
+
+    Returns:
+        The number of pending jobs (before any `limit`).
+    """
+    with engine.connect() as conn:
+        return conn.execute(
+            _COUNT_PENDING, _pending_params(job_group_ids, sources, categories)
+        ).scalar_one()
+
+
 def write_job_skills(
     engine: Engine,
     *,
     adapters: dict[str, LLMAdapter],
     job_group_ids: list[str] | None = None,
     limit: int | None = None,
+    sources: list[str] | None = None,
+    categories: list[str] | None = None,
 ) -> WriteSummary:
     """Extract and store skills for every not-yet-extracted dedup survivor.
 
@@ -75,6 +138,12 @@ def write_job_skills(
             covers every pending survivor. Exists so tests never extract
             unrelated rows in the shared dev DB.
         limit: Process at most this many jobs; `None` for all.
+        sources: Only jobs whose winning source (`apply_source_name`) is one
+            of these, e.g. `["greenhouse"]`; `None` for every source. This also
+            keeps leaked test rows and snippet-only sources out of a run.
+        categories: Only jobs whose `gold.dim_job.category` is one of these;
+            `None` for every category. A job with no `gold.dim_job` row does
+            not match.
 
     Returns:
         The `WriteSummary`.
@@ -82,11 +151,7 @@ def write_job_skills(
     with engine.connect() as conn:
         pending = conn.execute(
             _SELECT_PENDING,
-            {
-                "prompt_version": CURRENT_PROMPT_VERSION,
-                "job_group_ids": job_group_ids,
-                "limit": limit,
-            },
+            {**_pending_params(job_group_ids, sources, categories), "limit": limit},
         ).all()
 
     extracted = skill_rows = failed = 0

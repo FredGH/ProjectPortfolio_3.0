@@ -166,6 +166,35 @@ aliases*.
   many ids repeat, how many of those differ in content, and up to five of them.
   The `skills=` figure counts distinct skills, not CSV rows.
 
+## Scoping extraction (the slow step)
+
+`extract-job-skills` is the expensive command: a local 8B model on CPU took about
+150 s per Greenhouse job (roughly two LLM calls each) on the first real run, so
+"every pending job" was about 90 hours. Scope it instead:
+
+```bash
+python -m apps.pipeline.app.cli extract-job-skills --source greenhouse \
+    --category data_engineer --category analytics_engineer \
+    --category data_scientist --category ai_ml_engineer
+```
+
+- `--source NAME` (repeatable) keeps only jobs whose winning source is `NAME`.
+  Name the sources you want and everything else is skipped: the snippet-only
+  sources (`adzuna`, `jooble`, `reed`: 300–500 characters, too short to yield many
+  skills) and any leaked `test_source*` rows in a dev database.
+- `--category NAME` (repeatable) keeps only jobs whose `gold.dim_job.category` is
+  one of the names. A job that has not been categorised yet never matches, so run
+  `classify-jobs` and the gold dbt models first. See the categories and their
+  counts with `SELECT category, count(*) FROM gold.dim_job GROUP BY 1`.
+- `--limit N` caps the run, which is a good way to time a trial before a long one.
+- Filters combine (source AND category; several categories are OR-ed). The
+  command prints how many pending jobs match before it starts, so a typo shows up
+  as `0 pending job(s) match` immediately.
+
+As measured on 2026-09-21, the pending Greenhouse jobs were 2,117, of which the four
+data and AI categories above are 257. Extraction is resumable: each job commits on
+its own, and a re-run only picks up jobs without an extraction.
+
 ## Reviewing what did not map
 
 Open the **Skill Review** page. It opens with a collapsed **User Guide**
