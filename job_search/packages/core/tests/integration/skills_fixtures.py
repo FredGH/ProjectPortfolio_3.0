@@ -95,6 +95,9 @@ def purge_fixtures(engine: Engine) -> None:
             )
         )
         conn.execute(
+            text("DELETE FROM gold.dim_job WHERE job_group_id LIKE 'fixture-job-%'")
+        )
+        conn.execute(
             text("DELETE FROM silver.skill_mapping WHERE raw_norm LIKE 'zzfixture%'")
         )
         conn.execute(

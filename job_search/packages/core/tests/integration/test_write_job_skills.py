@@ -10,7 +10,7 @@ from sqlalchemy import text
 from tests.integration.skills_fixtures import live_owner_engine, purge_fixtures
 from tests.skills_fakes import FakeAdapter
 
-from core.skills.write_job_skills import write_job_skills
+from core.skills.write_job_skills import count_pending_jobs, write_job_skills
 
 
 def _reply(*skills: tuple[str, str]) -> str:
@@ -31,17 +31,33 @@ class TestWriteJobSkills(unittest.TestCase):
     def tearDown(self) -> None:
         purge_fixtures(self.engine)
 
-    def _add_survivor(self, job: str, description: str | None) -> None:
+    def _add_survivor(
+        self,
+        job: str,
+        description: str | None,
+        *,
+        source: str = "greenhouse",
+        category: str | None = None,
+    ) -> None:
+        """Insert a survivor and, if `category` is given, its gold.dim_job row."""
         with self.engine.begin() as conn:
             conn.execute(
                 text(
                     "INSERT INTO silver.job_survivorship (job_group_id, "
                     "winning_description, apply_source_name, apply_source_job_id, "
                     "apply_job_url, apply_title_for_display) VALUES (:g, :d, "
-                    "'greenhouse', :s, 'https://example.test/x', 'Data Engineer')"
+                    ":src, :s, 'https://example.test/x', 'Data Engineer')"
                 ),
-                {"g": job, "d": description, "s": f"src-{job}"},
+                {"g": job, "d": description, "s": f"src-{job}", "src": source},
             )
+            if category is not None:
+                conn.execute(
+                    text(
+                        "INSERT INTO gold.dim_job (job_group_id, category) "
+                        "VALUES (:g, :c)"
+                    ),
+                    {"g": job, "c": category},
+                )
 
     def _write(self, adapter: FakeAdapter, jobs: list[str], **kwargs):
         return write_job_skills(
@@ -130,6 +146,91 @@ class TestWriteJobSkills(unittest.TestCase):
             FakeAdapter(_reply(("Python", "must_have"))), [self.job, other], limit=1
         )
         self.assertEqual(summary.extracted_jobs, 1)
+
+    def _two_jobs(self, **second) -> tuple[str, str]:
+        """Add a data_engineer greenhouse job and a second job; return both ids."""
+        first = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        other = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        self._add_survivor(first, "Python.", category="data_engineer")
+        self._add_survivor(other, "Python.", **second)
+        return first, other
+
+    def test_the_source_filter_leaves_other_sources_pending(self) -> None:
+        first, other = self._two_jobs(source="adzuna", category="data_engineer")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(adapter, [first, other], sources=["greenhouse"])
+        self.assertEqual(summary.extracted_jobs, 1)
+        self.assertEqual(self._extractions(first), 1)
+        self.assertEqual(self._extractions(other), 0)
+
+    def test_the_source_filter_excludes_leaked_test_sources(self) -> None:
+        first, other = self._two_jobs(source="test_source_ab12", category="other")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        self._write(adapter, [first, other], sources=["greenhouse", "adzuna"])
+        self.assertEqual(self._extractions(other), 0)
+
+    def test_the_category_filter_leaves_other_categories_pending(self) -> None:
+        first, other = self._two_jobs(category="other")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(adapter, [first, other], categories=["data_engineer"])
+        self.assertEqual(summary.extracted_jobs, 1)
+        self.assertEqual(self._extractions(first), 1)
+        self.assertEqual(self._extractions(other), 0)
+
+    def test_several_categories_are_or_ed(self) -> None:
+        first, other = self._two_jobs(category="ai_ml_engineer")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(
+            adapter, [first, other], categories=["data_engineer", "ai_ml_engineer"]
+        )
+        self.assertEqual(summary.extracted_jobs, 2)
+
+    def test_a_job_with_no_category_row_is_excluded_by_a_category_filter(self) -> None:
+        first, other = self._two_jobs()  # `other` has no gold.dim_job row
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        self._write(adapter, [first, other], categories=["data_engineer"])
+        self.assertEqual(self._extractions(other), 0)
+
+    def test_source_and_category_filters_both_apply(self) -> None:
+        first, other = self._two_jobs(source="adzuna", category="data_engineer")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(
+            adapter,
+            [first, other],
+            sources=["greenhouse"],
+            categories=["data_engineer"],
+        )
+        self.assertEqual(summary.extracted_jobs, 1)
+        self.assertEqual(self._extractions(other), 0)
+
+    def test_no_filter_still_extracts_every_pending_job(self) -> None:
+        first, other = self._two_jobs(source="adzuna")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        self.assertEqual(self._write(adapter, [first, other]).extracted_jobs, 2)
+
+    def test_count_pending_jobs_matches_what_a_run_would_process(self) -> None:
+        first, other = self._two_jobs(source="adzuna", category="other")
+        ids = [first, other]
+        self.assertEqual(count_pending_jobs(self.engine, job_group_ids=ids), 2)
+        self.assertEqual(
+            count_pending_jobs(self.engine, job_group_ids=ids, sources=["greenhouse"]),
+            1,
+        )
+        self.assertEqual(
+            count_pending_jobs(
+                self.engine, job_group_ids=ids, categories=["data_engineer"]
+            ),
+            1,
+        )
+        self.assertEqual(
+            count_pending_jobs(
+                self.engine, job_group_ids=ids, categories=["software_engineer"]
+            ),
+            0,
+        )
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        self._write(adapter, [first])
+        self.assertEqual(count_pending_jobs(self.engine, job_group_ids=ids), 1)
 
 
 if __name__ == "__main__":

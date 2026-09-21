@@ -59,7 +59,11 @@ from core.skills.mapper import (
     remap_all_auto,
     remap_unresolved,
 )
-from core.skills.write_job_skills import WriteSummary, write_job_skills
+from core.skills.write_job_skills import (
+    WriteSummary,
+    count_pending_jobs,
+    write_job_skills,
+)
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -851,7 +855,7 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     """Run the `extract-job-skills` subcommand.
 
     Args:
-        args: Parsed CLI arguments — optional `limit`.
+        args: Parsed CLI arguments — optional `limit`, `source` and `category`.
 
     Returns:
         0 on success (including a partial failure), 1 if every attempted job
@@ -859,13 +863,33 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
+    pending = count_pending_jobs(engine, sources=args.source, categories=args.category)
+    scope = " ".join(
+        part
+        for part in (
+            f"sources={','.join(args.source)}" if args.source else "",
+            f"categories={','.join(args.category)}" if args.category else "",
+            f"limit={args.limit}" if args.limit is not None else "",
+        )
+        if part
+    )
+    print(
+        f"extract-job-skills: {pending} pending job(s) match"
+        + (f" ({scope})" if scope else "")
+    )
     # A local 8B model generating on CPU routinely takes far longer than the
     # 30s used elsewhere here (see apps/api/app/dependencies.py's
     # get_ollama_http_client for the measured numbers).
     http_client = httpx.Client(timeout=2000.0)
     try:
         adapters = _build_llm_adapters(http_client)
-        summary = write_job_skills(engine, adapters=adapters, limit=args.limit)
+        summary = write_job_skills(
+            engine,
+            adapters=adapters,
+            limit=args.limit,
+            sources=args.source,
+            categories=args.category,
+        )
     finally:
         http_client.close()
     print(
@@ -1106,6 +1130,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     extract_parser.add_argument(
         "--limit", type=int, default=None, help="Process at most this many jobs"
+    )
+    extract_parser.add_argument(
+        "--source",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Only jobs whose winning source is NAME (repeatable), e.g. "
+            "greenhouse. Snippet-only sources (adzuna, jooble, reed) and test "
+            "rows are skipped by naming only the sources you want"
+        ),
+    )
+    extract_parser.add_argument(
+        "--category",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help=(
+            "Only jobs whose gold.dim_job category is NAME (repeatable), e.g. "
+            "data_engineer; a job not yet categorised never matches"
+        ),
     )
 
     map_cv_parser = subparsers.add_parser(

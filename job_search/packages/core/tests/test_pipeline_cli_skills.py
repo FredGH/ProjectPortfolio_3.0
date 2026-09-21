@@ -63,6 +63,14 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
     def test_extract_job_skills_is_registered(self) -> None:
         self._help_exits_zero("extract-job-skills")
 
+    def test_extract_job_skills_offers_scope_filters(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with self.assertRaises(SystemExit):
+                main(["extract-job-skills", "--help"])
+        for flag in ("--source", "--category", "--limit"):
+            self.assertIn(flag, out.getvalue())
+
     def test_map_cv_skills_is_registered(self) -> None:
         self._help_exits_zero("map-cv-skills")
 
