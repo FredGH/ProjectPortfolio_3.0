@@ -369,7 +369,8 @@ def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int
     `dismissed` — are never deleted.
 
     Only `silver.skill_mapping` changes. A CV skill that already holds a
-    `canonical_id` keeps it (`map-cv-skills` never overwrites an id), and a
+    `canonical_id` keeps it (a plain `map-cv-skills` never overwrites an id; use
+    `--refresh`), and a
     CV-only string is re-mapped by `map-cv-skills`, not `map-skills`.
 
     Args:

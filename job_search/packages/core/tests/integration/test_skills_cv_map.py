@@ -18,7 +18,7 @@ from core.cv.schema import Bullet, CVTruthBase, Experience, Skill
 from core.cv.store import read_truth_base, write_truth_base
 from core.db.session import session_scope
 from core.settings import get_settings
-from core.skills.cv_map import CV_MAP_LABEL, map_cv_skills
+from core.skills.cv_map import CV_MAP_LABEL, CV_REFRESH_LABEL, map_cv_skills
 from core.skills.esco_load import load_esco
 
 _MODEL = get_settings().embedding_model
@@ -80,14 +80,42 @@ class TestMapCvSkills(unittest.TestCase):
                 text("DELETE FROM app_user WHERE id = :id"), {"id": self.user_id}
             )
 
-    def _run(self):
+    def _run(self, *, refresh: bool = False):
         return map_cv_skills(
             app_engine=self.app,
             owner_engine=self.owner,
             user_id=self.user_id,
             embed=_far_embed,
             embedding_model=_MODEL,
+            refresh=refresh,
         )
+
+    def _set_mapping(self, raw_norm: str, skill_id: str | None) -> None:
+        """Change what a string maps to, as a Skill Review decision would."""
+        with self.owner.begin() as conn:
+            if skill_id is None:
+                conn.execute(
+                    text(
+                        "UPDATE silver.skill_mapping SET skill_id = NULL, "
+                        "method = 'none', review_status = 'rejected', "
+                        "candidate_skill_id = 'fixture-cloud' WHERE raw_norm = :n"
+                    ),
+                    {"n": raw_norm},
+                )
+            else:
+                conn.execute(
+                    text(
+                        "UPDATE silver.skill_mapping SET skill_id = :s, "
+                        "method = 'alias', review_status = 'resolved' "
+                        "WHERE raw_norm = :n"
+                    ),
+                    {"s": skill_id, "n": raw_norm},
+                )
+
+    def _ids(self) -> dict[str, str | None]:
+        """Return the stored CV's skill ids by skill name."""
+        stored = read_truth_base(self.app, self.user_id)
+        return {s.name: s.canonical_id for s in stored.truth_base.skills}
 
     def test_fills_canonical_ids_and_writes_a_labelled_new_version(self) -> None:
         result = self._run()
@@ -231,6 +259,125 @@ class TestMapCvSkills(unittest.TestCase):
                 # Added after the read, so it has no id yet: the next run
                 # maps it. What matters is that it is still there.
                 "zzfixture added while mapping": None,
+            },
+        )
+
+    def test_without_refresh_a_stale_id_is_kept(self) -> None:
+        self._run()
+        self._set_mapping("zzfixture cloud platforms", "fixture-python")
+        result = self._run()
+        self.assertIsNone(result.new_version)
+        self.assertEqual(self._ids()["ZZFixture Cloud Platforms"], "fixture-cloud")
+
+    def test_refresh_replaces_a_stale_id_with_the_current_mapping(self) -> None:
+        self._run()
+        self._set_mapping("zzfixture cloud platforms", "fixture-python")
+        result = self._run(refresh=True)
+        # Version 1 is setUp's, 2 the first run's, 3 the refresh.
+        self.assertEqual(result.new_version, 3)
+        self.assertEqual(self._ids()["ZZFixture Cloud Platforms"], "fixture-python")
+        stored = read_truth_base(self.app, self.user_id)
+        self.assertEqual(stored.label, CV_REFRESH_LABEL)
+
+    def test_refresh_clears_an_id_whose_mapping_no_longer_resolves(self) -> None:
+        # A decision that was reopened (or dismissed) leaves the string with
+        # no skill; the CV must not keep pointing at the old one.
+        self._run()
+        self._set_mapping("zzfixture cloud platforms", None)
+        result = self._run(refresh=True)
+        self.assertEqual(result.new_version, 3)
+        self.assertIsNone(self._ids()["ZZFixture Cloud Platforms"])
+
+    def test_refresh_recomputes_every_skill_including_one_with_a_preset_id(
+        self,
+    ) -> None:
+        # "zzfixture kept" carries an id but no mapping row: refresh maps it
+        # from scratch, so the preset id is replaced by what the mapper says
+        # (here: nothing, so the string is queued for review).
+        result = self._run(refresh=True)
+        self.assertEqual(
+            self._ids(),
+            {
+                "ZZFixture Cloud Platforms": "fixture-cloud",
+                "zzfixture unheard of thing": None,
+                "zzfixture kept": None,
+            },
+        )
+        self.assertEqual((result.mapped, result.unmapped), (1, 2))
+        with self.owner.connect() as conn:
+            status = conn.execute(
+                text(
+                    "SELECT review_status FROM silver.skill_mapping "
+                    "WHERE raw_norm = 'zzfixture kept'"
+                )
+            ).scalar_one()
+        self.assertEqual(status, "open")
+
+    def test_refresh_reports_how_many_ids_it_changed(self) -> None:
+        self._run()
+        self._set_mapping("zzfixture cloud platforms", "fixture-python")
+        # The stale cloud id is replaced and the preset "kept" id cleared.
+        self.assertEqual(self._run(refresh=True).changed, 2)
+        self.assertEqual(self._run(refresh=True).changed, 0)
+
+    def test_a_second_refresh_writes_no_new_version(self) -> None:
+        self._run()
+        self._set_mapping("zzfixture cloud platforms", "fixture-python")
+        first = self._run(refresh=True)
+        second = self._run(refresh=True)
+        self.assertEqual(first.new_version, 3)
+        self.assertIsNone(second.new_version)
+        self.assertEqual(read_truth_base(self.app, self.user_id).version, 3)
+
+    def test_refresh_leaves_a_skill_added_during_the_mapping_window_alone(
+        self,
+    ) -> None:
+        # Same window as the default run: a skill saved after the read was
+        # not part of this refresh, so its id must survive untouched.
+        edited = CVTruthBase(
+            identity="Jane Doe",
+            headline="Edited mid-mapping",
+            skills=[
+                Skill(name="ZZFixture Cloud Platforms"),
+                Skill(name="zzfixture unheard of thing"),
+                Skill(name="zzfixture kept", canonical_id="manual:1"),
+                Skill(name="zzfixture added while mapping", canonical_id="manual:9"),
+            ],
+            experience=[],
+        )
+        calls: list[str] = []
+
+        def embed_and_edit(text_: str) -> list[float]:
+            if not calls:
+                calls.append(text_)
+                write_truth_base(
+                    self.app,
+                    self.user_id,
+                    "# markdown",
+                    edited,
+                    label="Saved while mapping",
+                )
+            return _far_embed(text_)
+
+        result = map_cv_skills(
+            app_engine=self.app,
+            owner_engine=self.owner,
+            user_id=self.user_id,
+            embed=embed_and_edit,
+            embedding_model=_MODEL,
+            refresh=True,
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result.new_version, 3)
+        stored = read_truth_base(self.app, self.user_id)
+        self.assertEqual(stored.truth_base.headline, "Edited mid-mapping")
+        self.assertEqual(
+            self._ids(),
+            {
+                "ZZFixture Cloud Platforms": "fixture-cloud",
+                "zzfixture unheard of thing": None,
+                "zzfixture kept": None,
+                "zzfixture added while mapping": "manual:9",
             },
         )
 

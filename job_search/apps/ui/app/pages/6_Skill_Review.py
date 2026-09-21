@@ -107,9 +107,12 @@ page:
    automatic mapping (your decisions are never touched), then
    `dbt run --select silver__skill silver__bridge_job_skill` to refresh the
    job–skill bridge.
-2. **Your CV:** `map-cv-skills` fills only skills that have no id yet. A skill
-   that already carries an id keeps it, even after you reopen or change its
-   decision.
+2. **Your CV:** `map-cv-skills --user-id <id>` fills only skills that have no id
+   yet, so a skill that already carries an id keeps it, even after you reopen or
+   change its decision. Add `--refresh` to recompute every skill's id from the
+   current decisions: a stale id is replaced and one that no longer resolves is
+   cleared. It writes one new CV version, which you can undo in the CV Editor's
+   history.
 3. After changing the similarity threshold, `map-skills --remap-unresolved`
    re-runs only the unmapped and similarity-matched strings.
 
