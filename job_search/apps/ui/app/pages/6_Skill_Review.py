@@ -81,8 +81,10 @@ match is otherwise invisible, so check them here.
 
 #### Tab 3 — Decisions — reopen
 
-Every string you resolved or dismissed, with the skill it was resolved to. Search
-matches the string or the skill's label.
+Every string you resolved or dismissed, with the skill it was resolved to, most
+used first — so a string used by only one job sits far down. Raise **Show up to**
+to load more, or type in the search box, which matches the string or the skill's
+label.
 
 - **Reopen** withdraws the decision. *For a resolved string:* the alias is
   deleted, so the old target stops applying to future strings, and the card
@@ -346,7 +348,15 @@ with decisions_tab:
     decision_query = st.text_input(
         "Search decisions (a string or its skill)", key="decision-q"
     )
-    decision_params: dict[str, object] = {"limit": 25}
+    # Most-used first means rarely-used strings sit deep in the list, so the
+    # reviewer picks how many to load (the search box narrows it instead).
+    decision_limit = st.selectbox(
+        "Show up to",
+        [25, 50, 100, 250, 500],
+        index=2,
+        key="decision-limit",
+    )
+    decision_params: dict[str, object] = {"limit": decision_limit}
     if decision_query:
         decision_params["q"] = decision_query
     try:
@@ -354,7 +364,14 @@ with decisions_tab:
     except httpx.HTTPError as exc:
         st.error(f"Failed to load decisions: {exc}")
         decisions = []
-    st.caption(f"{len(decisions)} shown, most-used first")
+    st.caption(
+        f"{len(decisions)} shown (up to {decision_limit}), most-used first"
+        + (
+            " — there may be more: raise “Show up to” or search"
+            if len(decisions) == decision_limit
+            else ""
+        )
+    )
     for decision in decisions:
         key = decision["raw_norm"]
         with st.container(border=True):
