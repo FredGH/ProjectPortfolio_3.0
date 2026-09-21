@@ -12,7 +12,7 @@ from tests.integration.skills_fixtures import (
     purge_fixtures,
 )
 
-from core.skills.esco_embed import embed_esco_skills
+from core.skills.esco_embed import embed_esco_skills, embedding_coverage
 from core.skills.esco_load import load_esco
 
 _IDS = ["fixture-cloud", "fixture-python", "fixture-sql"]
@@ -81,6 +81,39 @@ class TestEmbedEscoSkills(unittest.TestCase):
                 skill_ids=_IDS,
             )
         self.assertEqual(self._stored(), {})
+
+
+class TestEmbeddingCoverage(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.engine = live_owner_engine()
+
+    def setUp(self) -> None:
+        purge_fixtures(self.engine)
+        load_esco(self.engine, FIXTURE_ESCO_DIR)
+
+    def tearDown(self) -> None:
+        purge_fixtures(self.engine)
+
+    def _coverage(self) -> tuple[int, int]:
+        with self.engine.connect() as conn:
+            return embedding_coverage(conn, "zzfixture-model")
+
+    def test_counts_every_skill_but_only_embeddings_from_the_given_model(
+        self,
+    ) -> None:
+        total, embedded = self._coverage()
+        self.assertGreaterEqual(total, 3)
+        self.assertEqual(embedded, 0)
+        embed_esco_skills(
+            self.engine,
+            embed=lambda label: _VECTORS[label],
+            model="zzfixture-model",
+            skill_ids=_IDS,
+        )
+        total_after, embedded_after = self._coverage()
+        self.assertEqual(total_after, total)
+        self.assertEqual(embedded_after, 3)
 
 
 if __name__ == "__main__":

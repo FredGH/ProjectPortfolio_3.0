@@ -41,7 +41,7 @@ _REQUIRED_COLUMNS = {
 
 
 class EscoLoadError(Exception):
-    """Raised when the ESCO release directory is missing a file or column."""
+    """Raised when the ESCO release directory is missing a file, a column or rows."""
 
 
 @dataclass(frozen=True)
@@ -49,12 +49,18 @@ class EscoLoadCounts:
     """Row counts written by one `load_esco` run.
 
     Attributes:
-        skills: Skills upserted.
+        skills: Distinct skills upserted (a concept id repeated in the file
+            counts once).
         skill_labels: Label rows written (preferred + alt + hidden).
         occupations: Occupations upserted.
         occupation_skills: Occupation-skill relations written.
         skipped_relations: Relations skipped because their skill or
             occupation is not in this release.
+        duplicate_skill_ids: Concept ids that appear on more than one row of
+            `skills_en.csv`, sorted. For each, the last row supplies the skill
+            record and the labels of every row are merged.
+        differing_duplicate_skill_ids: The subset of `duplicate_skill_ids`
+            whose rows are not identical, so a real choice was made.
     """
 
     skills: int
@@ -62,6 +68,8 @@ class EscoLoadCounts:
     occupations: int
     occupation_skills: int
     skipped_relations: int
+    duplicate_skill_ids: tuple[str, ...] = ()
+    differing_duplicate_skill_ids: tuple[str, ...] = ()
 
 
 def concept_id(concept_uri: str) -> str:
@@ -87,7 +95,9 @@ def _read_rows(directory: Path, filename: str) -> list[dict[str, str]]:
         The rows as dicts keyed by header name.
 
     Raises:
-        EscoLoadError: If the file is missing or lacks a required column.
+        EscoLoadError: If the file is missing, lacks a required column, or has
+            a header but no data rows (loading it would replace nothing and
+            look like a success).
     """
     path = directory / filename
     if not path.is_file():
@@ -98,7 +108,10 @@ def _read_rows(directory: Path, filename: str) -> list[dict[str, str]]:
         if missing:
             columns = ", ".join(sorted(missing))
             raise EscoLoadError(f"{filename} is missing required column(s): {columns}")
-        return list(reader)
+        rows = list(reader)
+    if not rows:
+        raise EscoLoadError(f"{filename} has a header but no data rows: {path}")
+    return rows
 
 
 def _split_labels(cell: str) -> list[str]:
@@ -138,6 +151,26 @@ def _labels_for(row: dict[str, str]) -> dict[str, tuple[str, bool]]:
             is_preferred or (previous[1] if previous else False),
         )
     return collected
+
+
+def _skill_content_key(row: dict[str, str]) -> tuple:
+    """Reduce a skills row to the fields that make two rows "the same".
+
+    Args:
+        row: A `skills_en.csv` row.
+
+    Returns:
+        A comparable key over the preferred label, type, reuse level,
+        description and the sets of alternative and hidden labels.
+    """
+    return (
+        row["preferredLabel"].strip(),
+        row["skillType"],
+        row["reuseLevel"],
+        row["description"],
+        frozenset(_split_labels(row["altLabels"])),
+        frozenset(_split_labels(row["hiddenLabels"])),
+    )
 
 
 def _execute_many(conn: Connection, statement: TextClause, params: list[dict]) -> None:
@@ -187,19 +220,36 @@ def load_esco(engine: Engine, directory: Path) -> EscoLoadCounts:
         directory: Directory containing the release's CSV files.
 
     Returns:
-        The row counts written.
+        The row counts written, and the skill concept ids the file repeats.
 
     Raises:
-        EscoLoadError: If a required file or column is missing.
+        EscoLoadError: If a required file or column is missing, or a file has
+            no data rows.
     """
     skills = _read_rows(directory, _SKILLS_FILE)
     occupations = _read_rows(directory, _OCCUPATIONS_FILE)
     relations = _read_rows(directory, _RELATIONS_FILE)
 
+    # A concept id may repeat in the release. The last row supplies the skill
+    # record; the labels of every row are merged, with only the last row's
+    # preferred label flagged preferred. Repeats are reported, not dropped
+    # silently.
+    rows_by_skill: dict[str, list[dict[str, str]]] = {}
+    for row in skills:
+        rows_by_skill.setdefault(concept_id(row["conceptUri"]), []).append(row)
+    duplicate_ids = tuple(
+        sorted(i for i, rows in rows_by_skill.items() if len(rows) > 1)
+    )
+    differing_ids = tuple(
+        i
+        for i in duplicate_ids
+        if len({_skill_content_key(r) for r in rows_by_skill[i]}) > 1
+    )
+
     skill_params: list[dict] = []
     label_params: list[dict] = []
-    for row in skills:
-        skill_id = concept_id(row["conceptUri"])
+    for skill_id, rows in rows_by_skill.items():
+        row = rows[-1]
         skill_params.append(
             {
                 "skill_id": skill_id,
@@ -210,7 +260,12 @@ def load_esco(engine: Engine, directory: Path) -> EscoLoadCounts:
                 "description": row["description"] or None,
             }
         )
-        for norm, (label, is_preferred) in _labels_for(row).items():
+        merged: dict[str, tuple[str, bool]] = {}
+        for earlier in rows[:-1]:
+            for norm, (label, _) in _labels_for(earlier).items():
+                merged.setdefault(norm, (label, False))
+        merged.update(_labels_for(row))
+        for norm, (label, is_preferred) in merged.items():
             label_params.append(
                 {
                     "skill_id": skill_id,
@@ -268,4 +323,6 @@ def load_esco(engine: Engine, directory: Path) -> EscoLoadCounts:
         occupations=len(occupation_params),
         occupation_skills=len(relation_params),
         skipped_relations=skipped,
+        duplicate_skill_ids=duplicate_ids,
+        differing_duplicate_skill_ids=differing_ids,
     )
