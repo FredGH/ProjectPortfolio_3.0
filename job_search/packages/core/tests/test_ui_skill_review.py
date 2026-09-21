@@ -57,24 +57,51 @@ _LABEL_MATCH = {
     "seen_in_cv": True,
     "jd_job_count": 2,
 }
+_RESOLVED = {
+    "raw_norm": "zzfixture resolved",
+    "raw_example": "ZZFixture Resolved",
+    "review_status": "resolved",
+    "skill_id": "fixture-cloud",
+    "skill_label": "cloud technologies",
+    "seen_in_cv": True,
+    "jd_job_count": 2,
+}
+_DISMISSED = {
+    "raw_norm": "zzfixture dismissed",
+    "raw_example": "ZZFixture Dismissed",
+    "review_status": "dismissed",
+    "skill_id": None,
+    "skill_label": None,
+    "seen_in_cv": False,
+    "jd_job_count": 0,
+}
 _INJECTION = "[click me](http://evil.example) ![pixel](http://evil.example/p.png) **x**"
 
 
-def _get_returning(unmapped: list[dict], matches: list[dict] | None = None):
+def _get_returning(
+    unmapped: list[dict],
+    matches: list[dict] | None = None,
+    decisions: list[dict] | None = None,
+):
     """Build an `httpx.get` stand-in serving given review lists.
 
     Args:
         unmapped: The items `GET /skills/review` should return.
         matches: The items `GET /skills/review/auto-matches` should return
             (default: one embedding match).
+        decisions: The items `GET /skills/review/decisions` should return
+            (default: none).
 
     Returns:
         A callable usable as `httpx.get`'s `side_effect`.
     """
     served_matches = [_MATCH] if matches is None else matches
+    served_decisions = [] if decisions is None else decisions
 
     def _fake(url: str, **_kwargs) -> httpx.Response:
         request = httpx.Request("GET", url)
+        if url.endswith("/skills/review/decisions"):
+            return httpx.Response(200, json=served_decisions, request=request)
         if url.endswith("/skills/review/auto-matches"):
             return httpx.Response(200, json=served_matches, request=request)
         if url.endswith("/skills/review"):
@@ -118,11 +145,12 @@ class TestSkillReviewPage(unittest.TestCase):
         captions = [c.value for c in app.caption]
         self.assertIn("Previously rejected: cloud technologies (0.62)", captions)
 
-    def test_the_tabs_are_unmapped_and_auto_matches(self) -> None:
+    def test_the_tabs_are_unmapped_auto_matches_and_decisions(self) -> None:
         with mock.patch("httpx.get", side_effect=_fake_get):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
         self.assertEqual(
-            [tab.label for tab in app.tabs], ["Unmapped", "Auto-matches — verify"]
+            [tab.label for tab in app.tabs],
+            ["Unmapped", "Auto-matches — verify", "Decisions — reopen"],
         )
 
     def test_the_verify_tab_shows_each_matchs_method_and_flags_suspicious_ones(
@@ -185,6 +213,145 @@ class TestSkillReviewPage(unittest.TestCase):
 
     def test_shows_an_error_instead_of_crashing_when_the_api_is_down(self) -> None:
         with mock.patch("httpx.get", side_effect=httpx.ConnectError("down")):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertGreaterEqual(len(app.error), 1)
+
+
+class TestUserGuide(unittest.TestCase):
+    def _render(self) -> AppTest:
+        with mock.patch("httpx.get", side_effect=_fake_get):
+            return AppTest.from_file(str(_PAGE), default_timeout=10).run()
+
+    def test_the_page_opens_with_a_collapsed_user_guide_accordion(self) -> None:
+        app = self._render()
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual([e.label for e in app.expander], ["User Guide"])
+        self.assertFalse(app.expander[0].proto.expanded)
+        # It sits at the top of the page: title first, then the guide,
+        # before any tab.
+        kinds = [child.type for child in app.main.children.values()]
+        self.assertEqual(kinds[0], "title")
+        self.assertEqual(kinds.index("expander"), 1)
+        self.assertLess(kinds.index("expander"), kinds.index("tab_container"))
+
+    def test_the_guide_explains_every_action_on_the_page(self) -> None:
+        app = self._render()
+        guide = " ".join(m.value for m in app.expander[0].markdown)
+        for action in (
+            "Accept suggestion",
+            "Map to selected",
+            "Mark as custom skill",
+            "Dismiss",
+            "Confirm",
+            "Reject",
+            "Reopen",
+        ):
+            self.assertIn(action, guide)
+
+    def test_the_guide_names_what_a_change_does_not_refresh_by_itself(self) -> None:
+        app = self._render()
+        guide = " ".join(m.value for m in app.expander[0].markdown)
+        for follow_up in ("map-skills --remap-all-auto", "map-cv-skills", "dbt run"):
+            self.assertIn(follow_up, guide)
+
+    def test_the_guide_names_every_button_the_page_can_show(self) -> None:
+        # Guards against a new button being added without its explanation.
+        with mock.patch(
+            "httpx.get",
+            side_effect=_get_returning([_UNMAPPED], [_MATCH], [_RESOLVED, _DISMISSED]),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        guide = " ".join(m.value for m in app.expander[0].markdown)
+        for button in app.button:
+            self.assertIn(button.label.split(":")[0], guide)
+
+
+class TestDecisionsTab(unittest.TestCase):
+    def _render(self, decisions: list[dict]) -> AppTest:
+        with mock.patch(
+            "httpx.get",
+            side_effect=_get_returning([_UNMAPPED], [_MATCH], decisions),
+        ):
+            return AppTest.from_file(str(_PAGE), default_timeout=10).run()
+
+    def test_lists_resolved_and_dismissed_strings_each_with_a_reopen_button(
+        self,
+    ) -> None:
+        app = self._render([_RESOLVED, _DISMISSED])
+        self.assertEqual(len(app.exception), 0)
+        shown = " ".join(m.value for m in app.markdown)
+        self.assertIn("ZZFixture Resolved", shown)
+        self.assertIn("ZZFixture Dismissed", shown)
+        self.assertIn("cloud technologies", shown)
+        self.assertIn("Dismissed", shown)
+        self.assertEqual([b.label for b in app.button].count("Reopen"), 2)
+
+    def test_says_so_when_there_are_no_decisions(self) -> None:
+        app = self._render([])
+        self.assertEqual(len(app.exception), 0)
+        self.assertNotIn("Reopen", [b.label for b in app.button])
+
+    def test_decision_text_is_rendered_as_plain_text_not_markdown(self) -> None:
+        hostile = {**_RESOLVED, "raw_example": _INJECTION, "skill_label": _INJECTION}
+        app = self._render([hostile])
+        self.assertEqual(len(app.exception), 0)
+        decision_text = [m.value for m in app.markdown if "click me" in m.value]
+        self.assertTrue(decision_text)
+        for value in decision_text:
+            self.assertNotIn("](http", value)
+            self.assertNotIn("![", value)
+
+    def test_clicking_reopen_posts_the_raw_norm(self) -> None:
+        with (
+            mock.patch(
+                "httpx.get",
+                side_effect=_get_returning([_UNMAPPED], [_MATCH], [_RESOLVED]),
+            ),
+            mock.patch(
+                "httpx.post",
+                return_value=httpx.Response(
+                    200,
+                    json={"status": "ok"},
+                    request=httpx.Request("POST", "http://api/skills/review/reopen"),
+                ),
+            ) as post,
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            (button,) = [b for b in app.button if b.label == "Reopen"]
+            app = button.click().run()
+        post.assert_called_once()
+        self.assertTrue(post.call_args.args[0].endswith("/skills/review/reopen"))
+        self.assertEqual(
+            post.call_args.kwargs["json"], {"raw_norm": "zzfixture resolved"}
+        )
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.error), 0)
+
+    def test_the_search_box_filters_the_decisions_by_query(self) -> None:
+        with mock.patch(
+            "httpx.get",
+            side_effect=_get_returning([_UNMAPPED], [_MATCH], [_RESOLVED]),
+        ) as get:
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            app.text_input(key="decision-q").set_value("cloud").run()
+        queries = [
+            call.kwargs.get("params")
+            for call in get.call_args_list
+            if call.args[0].endswith("/skills/review/decisions")
+        ]
+        self.assertEqual(queries[0], {"limit": 25})
+        self.assertEqual(queries[-1], {"limit": 25, "q": "cloud"})
+
+    def test_shows_an_error_instead_of_crashing_when_decisions_fail_to_load(
+        self,
+    ) -> None:
+        def _fake(url: str, **_kwargs) -> httpx.Response:
+            if url.endswith("/skills/review/decisions"):
+                raise httpx.ConnectError("down")
+            return _get_returning([_UNMAPPED])(url)
+
+        with mock.patch("httpx.get", side_effect=_fake):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
         self.assertEqual(len(app.exception), 0)
         self.assertGreaterEqual(len(app.error), 1)

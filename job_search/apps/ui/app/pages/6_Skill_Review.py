@@ -4,7 +4,8 @@ embedding similarity).
 
 A resolution is remembered as an alias, so each string is fixed once and the
 fix applies to every future CV and job description. Aliases are shared across
-users (docs/tenancy.md: taxonomy is a shared zone).
+users (docs/tenancy.md: taxonomy is a shared zone). A decision can be withdrawn
+from the Decisions tab (reopen).
 """
 
 from __future__ import annotations
@@ -16,8 +17,113 @@ import streamlit as st
 
 from core.settings import get_settings
 
+_USER_GUIDE = """
+#### What this page is for
+
+Every skill written in a job description or on your CV is reduced to a
+normalised string and looked up in this order: **(1)** a curated *alias*,
+**(2)** an exact *ESCO label*, **(3)** the nearest ESCO skill by *similarity*
+(accepted at 0.85 or above), **(4)** otherwise it is left *unmapped* and waits
+for you here.
+
+Whatever you decide here is stored as an alias. It is **shared by every user**
+and applies to **every future CV and job description**, so a string is fixed
+once. An alias you create outranks ESCO and the seed file
+(`config/skill_aliases.yml`), and a re-sync of that file never overwrites it.
+
+#### Tab 1 — Unmapped
+
+Strings the mapper could not place. Each card shows the string, how many jobs
+mention it, whether it is on your CV, and the nearest ESCO skill as a suggestion
+when there is one.
+
+- **Accept suggestion: …** maps the string to the suggested ESCO skill.
+  *Consequence:* the string becomes a permanent alias and is marked *resolved*.
+  Any future string that reduces to it — including a `Name (qualifier)` form such
+  as `MySQL (RDS)` whose head is that string — maps to the same skill. It is
+  not offered on a *Previously rejected* card, because that suggestion is the
+  one that was already thrown out.
+- **Search ESCO / custom skills**, then **Map to selected** does the same for
+  any skill you pick. The search is a literal substring match on every label of
+  a skill (preferred, alternative and hidden), best match first.
+- **Mark as custom skill** creates a `custom:` skill with the label you type (or
+  reuses one with the same label) and maps the string to it. Use it for tools
+  ESCO lacks. *Consequence:* custom skills are never deleted automatically, so
+  point every spelling of one tool at the same label — two labels mean two
+  separate skills in a gap analysis.
+- **Dismiss** means "this is not a skill". *Consequence:* the string is never
+  queued again and stays unmapped, so it counts as neither a match nor a gap.
+  Only an unmapped string can be dismissed. It can be brought back from the
+  Decisions tab.
+
+A card marked **Previously rejected** came from *Reject* (tab 2) or from
+reopening a resolved decision (tab 3). The skill named is the one that was
+turned down, shown only as context.
+
+#### Tab 2 — Auto-matches — verify
+
+Matches the system made on its own, by exact ESCO label or by similarity. A wrong
+match is otherwise invisible, so check them here.
+
+- A **warning** marks a label match where the string is not the skill's own name
+  — it matched through an alternative or hidden ESCO label of a differently named
+  skill (for example a programming language filed under "computer programming").
+  These are listed first, then similarity matches (least confident first), then
+  the remaining label matches.
+- **Confirm** agrees with the match. *Consequence:* it is saved as an alias and
+  marked *resolved*. From then on it is your decision, not an automatic one, so
+  a re-map never changes it.
+- **Reject** says the match is wrong. *Consequence:* the mapping is removed and
+  the card moves to the Unmapped tab as *Previously rejected*. It is protected
+  from automatic re-mapping, so it cannot silently match the same wrong skill
+  again — it stays unmapped until you resolve or dismiss it.
+- Leaving a match unreviewed is fine: it stays in force as it is.
+
+#### Tab 3 — Decisions — reopen
+
+Every string you resolved or dismissed, with the skill it was resolved to. Search
+matches the string or the skill's label.
+
+- **Reopen** withdraws the decision. *For a resolved string:* the alias is
+  deleted, so the old target stops applying to future strings, and the card
+  returns to the Unmapped tab as *Previously rejected* with the old target as
+  context. Then resolve it to the right skill, or dismiss it. *For a dismissed
+  string:* it returns to the Unmapped tab as an ordinary open string.
+- A custom skill created by an earlier decision is kept, because other strings
+  may point at it.
+- Not reopenable here: a string mapped by a curated seed alias (edit
+  `config/skill_aliases.yml` instead), an automatic match (use *Reject*), and a
+  string that is already unmapped.
+
+#### After you change something
+
+A decision takes effect immediately for strings mapped from now on. Rows that
+were already mapped, and the data built from them, are **not** rewritten by this
+page:
+
+1. **Job descriptions:** run `map-skills --remap-all-auto` to re-map every
+   automatic mapping (your decisions are never touched), then
+   `dbt run --select silver__skill silver__bridge_job_skill` to refresh the
+   job–skill bridge.
+2. **Your CV:** `map-cv-skills` fills only skills that have no id yet. A skill
+   that already carries an id keeps it, even after you reopen or change its
+   decision.
+3. After changing the similarity threshold, `map-skills --remap-unresolved`
+   re-runs only the unmapped and similarity-matched strings.
+
+#### Good to know
+
+- Resolving, dismissing, confirming, rejecting and reopening all change the
+  shared vocabulary for every user.
+- There is no bulk undo. To reverse a decision, reopen it.
+- Skill strings come from third-party job descriptions, so they are shown as
+  plain text.
+"""
+
 st.set_page_config(page_title="Skill Review", layout="wide")
 st.title("Skill Review")
+with st.expander("User Guide", expanded=False):
+    st.markdown(_USER_GUIDE)
 st.write(
     "Skills from job descriptions and your CV that could not be matched to the "
     "ESCO vocabulary, plus the matches the system made on its own (by ESCO label "
@@ -123,7 +229,9 @@ def _post(path: str, payload: dict) -> bool:
     return True
 
 
-unmapped_tab, verify_tab = st.tabs(["Unmapped", "Auto-matches — verify"])
+unmapped_tab, verify_tab, decisions_tab = st.tabs(
+    ["Unmapped", "Auto-matches — verify", "Decisions — reopen"]
+)
 
 with unmapped_tab:
     try:
@@ -232,4 +340,33 @@ with verify_tab:
                     st.rerun()
             if right.button("Reject", key=f"reject-{key}"):
                 if _post("/skills/review/reject", {"raw_norm": key}):
+                    st.rerun()
+
+with decisions_tab:
+    decision_query = st.text_input(
+        "Search decisions (a string or its skill)", key="decision-q"
+    )
+    decision_params: dict[str, object] = {"limit": 25}
+    if decision_query:
+        decision_params["q"] = decision_query
+    try:
+        decisions = _get("/skills/review/decisions", decision_params)
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load decisions: {exc}")
+        decisions = []
+    st.caption(f"{len(decisions)} shown, most-used first")
+    for decision in decisions:
+        key = decision["raw_norm"]
+        with st.container(border=True):
+            st.markdown(f"**{_plain(decision['raw_example'])}**")
+            usage = f"in {decision['jd_job_count']} job(s)" + (
+                " · on your CV" if decision["seen_in_cv"] else ""
+            )
+            if decision["review_status"] == "dismissed":
+                st.write(f"Dismissed — not treated as a skill, {usage}")
+            else:
+                target = _plain(decision["skill_label"] or decision["skill_id"])
+                st.write(f"→ {target} — resolved, {usage}")
+            if st.button("Reopen", key=f"reopen-{key}"):
+                if _post("/skills/review/reopen", {"raw_norm": key}):
                     st.rerun()

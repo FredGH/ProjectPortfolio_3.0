@@ -86,6 +86,29 @@ class MatchItem:
 
 
 @dataclass(frozen=True)
+class DecisionItem:
+    """A human decision (resolved or dismissed) that can be reopened.
+
+    Attributes:
+        raw_norm: The normalised string.
+        raw_example: One original spelling.
+        review_status: "resolved" (mapped to `skill_id`) or "dismissed".
+        skill_id: The skill it was resolved to; None if dismissed.
+        skill_label: That skill's display label.
+        seen_in_cv: Whether a CV contained the string.
+        jd_job_count: How many jobs' extractions contain it.
+    """
+
+    raw_norm: str
+    raw_example: str
+    review_status: str
+    skill_id: str | None
+    skill_label: str | None
+    seen_in_cv: bool
+    jd_job_count: int
+
+
+@dataclass(frozen=True)
 class SkillOption:
     """One search result the reviewer can map a string to.
 
@@ -529,6 +552,121 @@ def reject_auto_match(conn: Connection, raw_norm: str) -> None:
         text(
             "UPDATE silver.skill_mapping SET candidate_skill_id = skill_id, "
             "candidate_score = score, skill_id = NULL, score = NULL, "
+            "method = 'none', review_status = 'rejected' WHERE raw_norm = :n"
+        ),
+        {"n": raw_norm},
+    )
+
+
+_REOPENABLE_STATUSES = ("resolved", "dismissed")
+"""Review statuses that carry a human decision a reviewer may withdraw."""
+
+
+def list_decisions(
+    conn: Connection, *, query: str | None = None, limit: int = 50
+) -> list[DecisionItem]:
+    """List resolved and dismissed strings, so a decision can be found and reopened.
+
+    Args:
+        conn: An open connection.
+        query: Optional search text (normalised, matched as a literal
+            substring of the string or of its target skill's label).
+        limit: Maximum items.
+
+    Returns:
+        Items with status `resolved` or `dismissed`, most-used first. Empty
+        if a given `query` normalises to nothing.
+    """
+    where = ""
+    params: dict[str, Any] = {"limit": limit}
+    if query is not None:
+        if not normalise_skill(query):
+            return []
+        where = (
+            "AND (m.raw_norm LIKE :p OR "
+            "lower(COALESCE(es.preferred_label, cs.canonical_label)) LIKE :p) "
+        )
+        params["p"] = _like_pattern(query)
+    rows = conn.execute(
+        text(
+            "SELECT m.raw_norm, m.raw_example, m.review_status, m.skill_id, "
+            "m.seen_in_cv, "
+            "COALESCE(es.preferred_label, cs.canonical_label) AS skill_label, "
+            f"{_JD_COUNT} AS jd_job_count "
+            "FROM silver.skill_mapping AS m "
+            "LEFT JOIN esco.skill AS es ON es.skill_id = m.skill_id "
+            "LEFT JOIN silver.custom_skill AS cs ON cs.skill_id = m.skill_id "
+            "WHERE m.review_status IN ('resolved', 'dismissed') "
+            f"{where}"
+            "ORDER BY jd_job_count DESC, m.seen_in_cv DESC, m.raw_norm "
+            "LIMIT :limit"
+        ),
+        params,
+    ).all()
+    return [
+        DecisionItem(
+            raw_norm=r.raw_norm,
+            raw_example=r.raw_example,
+            review_status=r.review_status,
+            skill_id=r.skill_id,
+            skill_label=r.skill_label,
+            seen_in_cv=r.seen_in_cv,
+            jd_job_count=r.jd_job_count,
+        )
+        for r in rows
+    ]
+
+
+def reopen(conn: Connection, raw_norm: str) -> None:
+    """Withdraw a human decision, returning the string to the review list.
+
+    A resolved string loses its `review` alias (so the old target stops
+    applying to future strings) and comes back as `rejected` with the old
+    target kept as the suggestion — the review page shows that as
+    "Previously rejected", and `remap-unresolved` leaves it alone. A
+    dismissed string comes back as `open`. The custom skill a resolution
+    created, if any, is kept: other rows may reference it.
+
+    This changes only the mapping table. The CV truth base and the job bridge
+    keep the old skill id until they are refreshed (`map-cv-skills`,
+    `map-skills --remap-all-auto`, `dbt run`).
+
+    Args:
+        conn: An open connection inside the caller's transaction.
+        raw_norm: The normalised string.
+
+    Raises:
+        ReviewNotFound: If the string has no mapping row.
+        ReviewError: If the row carries no human decision (unmapped, an
+            auto-match, or a curated seed alias).
+    """
+    row = _lock_mapping(conn, raw_norm)
+    if row.review_status not in _REOPENABLE_STATUSES:
+        raise ReviewError(
+            f"{raw_norm!r} carries no decision to reopen (method {row.method!r}, "
+            f"review status {row.review_status!r}); only a resolved or dismissed "
+            f"string can be reopened"
+        )
+    if row.review_status == "dismissed":
+        conn.execute(
+            text(
+                "UPDATE silver.skill_mapping SET review_status = 'open' "
+                "WHERE raw_norm = :n"
+            ),
+            {"n": raw_norm},
+        )
+        return
+    conn.execute(
+        text(
+            "DELETE FROM silver.skill_alias "
+            "WHERE alias_norm = :n AND source = 'review'"
+        ),
+        {"n": raw_norm},
+    )
+    conn.execute(
+        text(
+            "UPDATE silver.skill_mapping SET candidate_skill_id = skill_id, "
+            "candidate_score = NULL, skill_id = NULL, score = NULL, "
             "method = 'none', review_status = 'rejected' WHERE raw_norm = :n"
         ),
         {"n": raw_norm},
