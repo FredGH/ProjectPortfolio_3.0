@@ -16,7 +16,10 @@ from pathlib import Path
 # snapshot/restore here.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"))
 
-from app.cli import main  # noqa: E402
+from app.cli import _esco_duplicates_note, _extraction_exit_code, main  # noqa: E402
+
+from core.skills.esco_load import EscoLoadCounts  # noqa: E402
+from core.skills.write_job_skills import WriteSummary  # noqa: E402
 
 
 class TestLoadEscoSubcommand(unittest.TestCase):
@@ -75,6 +78,47 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 main(["map-cv-skills", "--user-id", "not-a-uuid"])
         self.assertEqual(ctx.exception.code, 2)
+
+
+class TestExtractionExitCode(unittest.TestCase):
+    def test_success_when_something_was_extracted(self) -> None:
+        self.assertEqual(_extraction_exit_code(WriteSummary(3, 20, 0)), 0)
+
+    def test_success_when_there_was_nothing_to_do(self) -> None:
+        self.assertEqual(_extraction_exit_code(WriteSummary(0, 0, 0)), 0)
+
+    def test_partial_failure_is_still_success_because_failed_jobs_are_retried(
+        self,
+    ) -> None:
+        self.assertEqual(_extraction_exit_code(WriteSummary(2, 9, 5)), 0)
+
+    def test_failing_every_job_is_an_error(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = _extraction_exit_code(WriteSummary(0, 0, 7))
+        self.assertEqual(code, 1)
+        self.assertIn("7", out.getvalue())
+
+
+class TestEscoDuplicatesNote(unittest.TestCase):
+    def _counts(self, dupes: tuple[str, ...], differing: tuple[str, ...]):
+        return EscoLoadCounts(10, 20, 3, 4, 0, dupes, differing)
+
+    def test_no_note_without_duplicates(self) -> None:
+        self.assertIsNone(_esco_duplicates_note(self._counts((), ())))
+
+    def test_the_note_counts_duplicates_and_says_which_row_was_kept(self) -> None:
+        note = _esco_duplicates_note(self._counts(("a", "b"), ("b",)))
+        self.assertIn("2 skill concept id", note)
+        self.assertIn("1 with differing content", note)
+        self.assertIn("last row", note)
+
+    def test_the_note_lists_at_most_five_ids(self) -> None:
+        ids = tuple(f"id{i}" for i in range(9))
+        note = _esco_duplicates_note(self._counts(ids, ()))
+        self.assertIn("id4", note)
+        self.assertNotIn("id5", note)
+        self.assertIn("9 skill concept id", note)
 
 
 if __name__ == "__main__":

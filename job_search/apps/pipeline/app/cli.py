@@ -47,15 +47,19 @@ from core.llm.types import LLMAdapter
 from core.settings import Settings, get_settings
 from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
-from core.skills.esco_embed import embed_esco_skills
-from core.skills.esco_load import EscoLoadError, load_esco
+from core.skills.esco_embed import (
+    embed_esco_skills,
+    embedding_coverage,
+    embedding_coverage_warning,
+)
+from core.skills.esco_load import EscoLoadCounts, EscoLoadError, load_esco
 from core.skills.mapper import (
     EmbeddingModelMismatch,
     map_pending,
     remap_all_auto,
     remap_unresolved,
 )
-from core.skills.write_job_skills import write_job_skills
+from core.skills.write_job_skills import WriteSummary, write_job_skills
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -677,6 +681,29 @@ def _cmd_classify_jobs(args: argparse.Namespace) -> int:
         http_client.close()
 
 
+def _esco_duplicates_note(counts: EscoLoadCounts) -> str | None:
+    """Describe skill concept ids the release file repeats, if any.
+
+    Args:
+        counts: The result of `load_esco`.
+
+    Returns:
+        A one-line note saying how many ids repeat, how many of those differ
+        in content, which row was kept and (up to five) which ids; None if
+        nothing repeats.
+    """
+    duplicates = counts.duplicate_skill_ids
+    if not duplicates:
+        return None
+    shown = ", ".join(duplicates[:5]) + (", …" if len(duplicates) > 5 else "")
+    return (
+        f"load-esco: {len(duplicates)} skill concept id(s) appear on more than "
+        f"one row of skills_en.csv ({len(counts.differing_duplicate_skill_ids)} "
+        f"with differing content); the last row was kept for each skill record "
+        f"and the labels of every row were merged — {shown}"
+    )
+
+
 def _cmd_load_esco(args: argparse.Namespace) -> int:
     """Run the `load-esco` subcommand.
 
@@ -699,6 +726,9 @@ def _cmd_load_esco(args: argparse.Namespace) -> int:
         f"occupation_skills={counts.occupation_skills} "
         f"skipped_relations={counts.skipped_relations}"
     )
+    note = _esco_duplicates_note(counts)
+    if note:
+        print(note)
     return 0
 
 
@@ -765,6 +795,12 @@ def _cmd_map_skills(args: argparse.Namespace) -> int:
     http_client = httpx.Client(timeout=30.0)
     try:
         synced = sync_seed_aliases(engine)
+        with engine.connect() as conn:
+            warning = embedding_coverage_warning(
+                *embedding_coverage(conn, settings.embedding_model)
+            )
+        if warning:
+            print(f"map-skills: warning: {warning}")
         if args.remap_all_auto:
             cleared = remap_all_auto(engine)
             print(f"map-skills: cleared {cleared} auto-made mappings for re-mapping")
@@ -788,6 +824,29 @@ def _cmd_map_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _extraction_exit_code(summary: WriteSummary) -> int:
+    """Decide the exit status of `extract-job-skills` from its summary.
+
+    A run where jobs failed and none succeeded is an error (a dead LLM
+    provider, say) and must not look like a success to a scheduler. A run
+    where some succeeded exits 0: the failed jobs are retried on the next run
+    and the failed count is printed.
+
+    Args:
+        summary: What `write_job_skills` reported.
+
+    Returns:
+        1 if every attempted job failed, otherwise 0.
+    """
+    if summary.failed_jobs > 0 and summary.extracted_jobs == 0:
+        print(
+            f"extract-job-skills: all {summary.failed_jobs} attempted job(s) "
+            f"failed and nothing was extracted — check the LLM provider"
+        )
+        return 1
+    return 0
+
+
 def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     """Run the `extract-job-skills` subcommand.
 
@@ -795,7 +854,8 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
         args: Parsed CLI arguments — optional `limit`.
 
     Returns:
-        0 on success.
+        0 on success (including a partial failure), 1 if every attempted job
+        failed.
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
@@ -812,7 +872,7 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
         f"extract-job-skills complete: extracted_jobs={summary.extracted_jobs} "
         f"skill_rows={summary.skill_rows} failed_jobs={summary.failed_jobs}"
     )
-    return 0
+    return _extraction_exit_code(summary)
 
 
 def _cmd_map_cv_skills(args: argparse.Namespace) -> int:

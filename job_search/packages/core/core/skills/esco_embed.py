@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from sqlalchemy import Engine, text
+from sqlalchemy import Connection, Engine, text
 
 from core.skills.vector import EMBEDDING_DIMENSION, to_pgvector
 
@@ -29,6 +29,53 @@ _UPSERT = text(
     "ON CONFLICT (skill_id) DO UPDATE SET "
     "embedding_model = EXCLUDED.embedding_model, embedding = EXCLUDED.embedding"
 )
+
+
+def embedding_coverage(conn: Connection, model: str) -> tuple[int, int]:
+    """Count ESCO skills and how many have an embedding from `model`.
+
+    Args:
+        conn: An open connection.
+        model: The configured embedding model.
+
+    Returns:
+        ``(total skills, skills embedded with `model`)``.
+    """
+    total = conn.execute(text("SELECT count(*) FROM esco.skill")).scalar_one()
+    embedded = conn.execute(
+        text("SELECT count(*) FROM esco.skill_embedding WHERE embedding_model = :m"),
+        {"m": model},
+    ).scalar_one()
+    return total, embedded
+
+
+def embedding_coverage_warning(total: int, embedded: int) -> str | None:
+    """Word a warning when ESCO embeddings are missing or incomplete.
+
+    The mapper's similarity stage runs over `esco.skill_embedding`; with none
+    of it every string that alias and label matching miss is left unmapped,
+    and with only some of it good matches are missed, in both cases silently.
+
+    Args:
+        total: How many skills `esco.skill` holds.
+        embedded: How many of them have an embedding from the configured model.
+
+    Returns:
+        The warning, or None if every skill is embedded.
+    """
+    if total == 0:
+        return "esco.skill is empty — run `load-esco` first"
+    if embedded == 0:
+        return (
+            "esco.skill_embedding is empty for the configured model, so the "
+            "similarity stage will match nothing — run `embed-esco`"
+        )
+    if embedded < total:
+        return (
+            f"only {embedded} of {total} ESCO skills are embedded, so the "
+            "similarity stage will miss matches — run `embed-esco` to finish"
+        )
+    return None
 
 
 def embed_esco_skills(

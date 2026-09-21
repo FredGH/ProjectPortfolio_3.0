@@ -38,8 +38,10 @@ Fallback, from a bare checkout (with the `.env` overrides above):
 PYTHONPATH=packages/core:apps/pipeline python -m app.cli <command> [args]
 ```
 
-The command lines below are written in the short
-`python -m apps.pipeline.app.cli ...` form; run them either way.
+The command lines below use the module form
+`python -m apps.pipeline.app.cli <command>`. With the container, drop that
+prefix and run `docker compose run --rm pipeline <command>` with the same
+arguments.
 
 ## One-off setup
 
@@ -145,6 +147,24 @@ aliases*.
   `--provider local`: the `local` label only applies to tasks that have separate
   `local_*` config, and returns `provider_not_configured` for this local-only
   task. It needs the database and a local Ollama with `llama3.1:8b`.
+
+## Exit codes and warnings
+
+- **`extract-job-skills`** exits **1** when jobs failed and none succeeded (for
+  example the LLM provider is down), and says how many. If at least one job
+  succeeded it exits 0 and prints `failed_jobs=N`; those jobs are retried on the
+  next run.
+- **`map-skills`** prints `map-skills: warning: …` when `esco.skill_embedding` is
+  empty, or covers only some skills, for the configured model. The similarity
+  stage would otherwise silently match nothing, or miss matches. The alias and
+  label stages still run; fix it with `embed-esco`.
+- **`load-esco`** refuses a release file that has a header but no data rows
+  (loading it would replace nothing and look like a success), and reports skill
+  concept ids repeated in `skills_en.csv`. ESCO v1.2.1 repeats 21 ids on
+  identical rows (13,960 rows, 13,939 distinct skills). The last row supplies the
+  skill record and the labels of every row are merged; the command prints how
+  many ids repeat, how many of those differ in content, and up to five of them.
+  The `skills=` figure counts distinct skills, not CSV rows.
 
 ## Reviewing what did not map
 
@@ -260,13 +280,16 @@ resolved, dismissed) are never re-mapped.
 
 ## Seed aliases
 
-`config/skill_aliases.yml` is the committed starting set (GCP, AWS, Kubernetes,
-PostgreSQL). Once real ESCO data is loaded, check whether ESCO already has an
+`config/skill_aliases.yml` is the committed starting set: GCP, AWS, Kubernetes,
+PostgreSQL, and tools ESCO lacks or files under a broad skill (PyTorch,
+TensorFlow, Power BI, Tableau, Jira, Linux, React), plus Git pinned to ESCO's own
+skill. Once real ESCO data is loaded, check whether ESCO already has an
 equivalent skill for each `custom:` entry and, if so, re-point the entry at the
 ESCO skill id so the same skill does not exist under two ids.
 
-**Re-pointing a seed entry does not migrate by itself.** The sync only updates
-`silver.skill_alias`, and the alias is consulted when a string is *first*
+**Re-pointing a seed entry does not migrate by itself.** The sync only writes
+`silver.skill_alias` rows (and upserts `silver.custom_skill` for `custom:`
+entries), and the alias is consulted when a string is *first*
 mapped, so everything already mapped keeps the old id: `silver.skill_mapping`
 rows, therefore the dbt bridge, and any CV `canonical_id` written from them.
 Re-apply it with:
