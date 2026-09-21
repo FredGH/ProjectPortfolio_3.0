@@ -103,7 +103,21 @@ python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>   # after a CV up
 
 `map-cv-skills` writes a new CV truth-base version labelled "ESCO skill
 normalisation" (only if something changed), so it is traceable and reversible
-in the CV Editor's history.
+in the CV Editor's history. By default it only fills skills that have no id yet.
+
+To bring a CV in line with corrected decisions, add `--refresh`:
+
+```bash
+python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid> --refresh
+```
+
+It recomputes **every** skill's id from the current mapping: an id that no longer
+matches is replaced, and an id whose string no longer resolves to a skill (a
+dismissed or reopened decision) is cleared. It writes one version labelled
+"ESCO skill normalisation (refresh)" and nothing at all if no id changed, so a
+second run is a no-op. Overwriting is safe because no UI sets an id by hand — the
+CV Editor only carries ids across a save. A skill added in the CV Editor while
+the command is running is left alone. The output reports `changed=N`.
 
 ## Strings with a qualifier
 
@@ -190,7 +204,7 @@ steps:
 
 ```bash
 (cd dbt && dbt run --select silver__skill silver__bridge_job_skill)   # jobs
-python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>        # a CV
+python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid> --refresh   # a CV
 ```
 
 ### Correcting a decision
@@ -217,8 +231,8 @@ right skill on the Unmapped tab (*Map to selected*, or *Mark as custom skill*
 for a tool ESCO files under a broad skill, like `numpy`). To fix many at once,
 add aliases to `config/skill_aliases.yml` and run
 `map-skills --remap-all-auto`. Either way the jobs side follows after a dbt
-rebuild, but a CV skill that already holds the wrong id keeps it (see the next
-note).
+rebuild, and a CV skill that already holds the wrong id needs
+`map-cv-skills --refresh` (see the next note).
 
 **No authentication yet.** These endpoints (`/skills/review*`, `/skills/search`)
 are unauthenticated writes to shared-zone taxonomy — anyone who can reach the
@@ -226,13 +240,14 @@ API can re-point a skill for every user, and (since migration 0024) delete a
 review alias through `/skills/review/reopen`. Auth lands in **Step 22a**; this
 router must be on that step's checklist.
 
-**A reject does not correct a CV that already has the id.** `reject` and
-`map-skills --remap-unresolved` / `--remap-all-auto` change `silver.skill_mapping` only. A CV whose
-`skills[].canonical_id` was already filled with the now-rejected id keeps it,
-because `map-cv-skills` never overwrites an existing `canonical_id`. To correct
-one: clear that skill's id — in the CV Editor, rename the skill and save, then
-rename it back and save again (a save keeps the id only while the name is
-unchanged) — then re-run `map-cv-skills --user-id <uuid>`.
+**A reject or reopen does not correct a CV that already has the id.** `reject`,
+`reopen` and `map-skills --remap-unresolved` / `--remap-all-auto` change
+`silver.skill_mapping` only. A CV whose `skills[].canonical_id` was already filled
+with the now-rejected id keeps it, because a plain `map-cv-skills` never
+overwrites an existing `canonical_id`. Run
+`map-cv-skills --user-id <uuid> --refresh` to replace or clear it. (Before
+`--refresh` existed the workaround was to rename the skill in the CV Editor,
+save, rename it back and save again, then re-run `map-cv-skills`.)
 
 ## Tuning the similarity threshold
 
@@ -279,10 +294,10 @@ WHERE skill_id = 'custom:x';
 
 then rebuild the dbt models as above.
 
-CV `canonical_id`s are **not** covered by any of that: `map-cv-skills` never
-overwrites an id that is already set, so a CV holding `custom:x` keeps it until
-that skill is re-saved in the CV Editor with its id cleared (see the reject note
-above) and `map-cv-skills` is re-run. Deleting the now-unused
+CV `canonical_id`s are **not** covered by any of that: a plain `map-cv-skills`
+never overwrites an id that is already set, so a CV holding `custom:x` keeps it
+until you run `map-cv-skills --refresh` (see the reject note above). Deleting the
+now-unused
 `silver.custom_skill` row is optional, and only safe once nothing references it.
 
 **Aliases removed from the seed file are never deleted.** The loader upserts;

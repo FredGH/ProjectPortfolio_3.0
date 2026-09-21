@@ -63,6 +63,13 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
     def test_map_cv_skills_is_registered(self) -> None:
         self._help_exits_zero("map-cv-skills")
 
+    def test_map_cv_skills_offers_refresh(self) -> None:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            with self.assertRaises(SystemExit):
+                main(["map-cv-skills", "--help"])
+        self.assertIn("--refresh", out.getvalue())
+
     def test_map_cv_skills_rejects_a_malformed_user_id(self) -> None:
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as ctx:

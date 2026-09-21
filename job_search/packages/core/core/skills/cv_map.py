@@ -1,7 +1,9 @@
 """Map a user's CV skills to ESCO / custom skill ids (PLAN.md Step 14).
 
 Fills `Skill.canonical_id` in the CV truth base where it is still None and
-the skill string has a mapping. The write goes through
+the skill string has a mapping; with `refresh=True` it instead recomputes every
+skill's id from the current mapping, so a corrected decision reaches a CV that
+already holds the old id. The write goes through
 `core.cv.store.write_truth_base` with a label, so it is a new, traceable,
 reversible version exactly like any other edit; bullet IDs are untouched.
 Shared mapping rows (`silver.skill_mapping`) are written with the owner
@@ -26,6 +28,7 @@ from core.skills.mapper import EMBEDDING_ACCEPT_COSINE, map_strings
 from core.skills.normalise import normalise_skill
 
 CV_MAP_LABEL = "ESCO skill normalisation"
+CV_REFRESH_LABEL = "ESCO skill normalisation (refresh)"
 
 
 @dataclass(frozen=True)
@@ -37,11 +40,13 @@ class CvMapResult:
             changed (so no version was written).
         mapped: Skills that now have a `canonical_id`.
         unmapped: Skills still without one (they are in the review list).
+        changed: Skills whose `canonical_id` this run set, replaced or cleared.
     """
 
     new_version: int | None
     mapped: int
     unmapped: int
+    changed: int = 0
 
 
 def map_cv_skills(
@@ -52,8 +57,9 @@ def map_cv_skills(
     embed: Callable[[str], list[float]],
     embedding_model: str,
     accept_threshold: float = EMBEDDING_ACCEPT_COSINE,
+    refresh: bool = False,
 ) -> CvMapResult:
-    """Fill `canonical_id` on a user's CV skills.
+    """Fill `canonical_id` on a user's CV skills, or refresh all of them.
 
     Args:
         app_engine: The app-role (RLS) engine, for the truth base.
@@ -63,11 +69,18 @@ def map_cv_skills(
         embedding_model: The embedding model in use.
         accept_threshold: Minimum cosine similarity to accept an embedding
             match (see `core.skills.mapper.map_skill`).
+        refresh: Recompute the id of every skill from the current mapping,
+            replacing an id that no longer matches and clearing one whose
+            string no longer resolves to a skill (a dismissed or reopened
+            decision). Safe because no UI sets an id by hand: the CV Editor
+            only carries ids across a save. A skill added after the truth
+            base was read is left alone.
 
     Returns:
-        The `CvMapResult`. A skill that already has a `canonical_id` (e.g.
-        hand-corrected in the CV Editor) is neither re-mapped nor queued for
-        review, and its id is never overwritten.
+        The `CvMapResult`. Without `refresh`, a skill that already has a
+        `canonical_id` is neither re-mapped nor queued for review, and its id
+        is never overwritten. With `refresh`, `changed` counts every id set,
+        replaced or cleared, and nothing is written if that is zero.
 
     Raises:
         LookupError: If the user has no CV truth base.
@@ -80,13 +93,14 @@ def map_cv_skills(
 
     # Only skills still without an id are mapped: an already-mapped skill
     # (e.g. hand-corrected in the CV Editor) must not be re-embedded or land
-    # in the review queue.
+    # in the review queue. A refresh maps every skill, so an existing id can
+    # be checked against the current mapping.
     resolved = map_strings(
         owner_engine,
         [
             skill.name
             for skill in stored.truth_base.skills
-            if skill.canonical_id is None
+            if refresh or skill.canonical_id is None
         ],
         embed=embed,
         embedding_model=embedding_model,
@@ -107,8 +121,16 @@ def map_cv_skills(
     changed = 0
     skills = []
     for skill in truth_base.skills:
-        skill_id = resolved.get(normalise_skill(skill.name))
-        if skill.canonical_id is None and skill_id is not None:
+        key = normalise_skill(skill.name)
+        skill_id = resolved.get(key)
+        if refresh:
+            # A key absent from `resolved` was not part of this run (a skill
+            # added in the window, or a string that is not a plausible skill
+            # name): leave it exactly as it is.
+            recompute = key in resolved and skill.canonical_id != skill_id
+        else:
+            recompute = skill.canonical_id is None and skill_id is not None
+        if recompute:
             skills.append(skill.model_copy(update={"canonical_id": skill_id}))
             changed += 1
         else:
@@ -121,10 +143,15 @@ def map_cv_skills(
             user_id,
             stored.extracted_markdown,
             truth_base.model_copy(update={"skills": skills}),
-            label=CV_MAP_LABEL,
+            label=CV_REFRESH_LABEL if refresh else CV_MAP_LABEL,
         )
     unmapped = sum(1 for skill in skills if skill.canonical_id is None)
-    return CvMapResult(new_version, mapped=len(skills) - unmapped, unmapped=unmapped)
+    return CvMapResult(
+        new_version,
+        mapped=len(skills) - unmapped,
+        unmapped=unmapped,
+        changed=changed,
+    )
 
 
 def _name_key(name: object) -> str:

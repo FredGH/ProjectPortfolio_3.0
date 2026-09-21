@@ -819,7 +819,7 @@ def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
     """Run the `map-cv-skills` subcommand.
 
     Args:
-        args: Parsed CLI arguments — `user_id`.
+        args: Parsed CLI arguments — `user_id` and `refresh`.
 
     Returns:
         0 on success, 1 if the user has no CV or the ESCO embeddings are
@@ -836,6 +836,7 @@ def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
             user_id=args.user_id,
             embed=_build_embedder(http_client, settings),
             embedding_model=settings.embedding_model,
+            refresh=args.refresh,
         )
     except (LookupError, EmbeddingModelMismatch) as exc:
         print(f"map-cv-skills: {exc}")
@@ -845,7 +846,8 @@ def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
     version = result.new_version if result.new_version is not None else "unchanged"
     print(
         f"map-cv-skills complete: mapped={result.mapped} "
-        f"unmapped={result.unmapped} truth_base_version={version}"
+        f"unmapped={result.unmapped} changed={result.changed} "
+        f"truth_base_version={version}"
     )
     return 0
 
@@ -1051,6 +1053,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Fill canonical_id on a user's CV skills (writes a new CV version)",
     )
     map_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    map_cv_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help=(
+            "Recompute every skill's canonical_id from the current mapping, "
+            "replacing stale ids and clearing ones that no longer resolve "
+            "(default: only fill skills that have no id yet)"
+        ),
+    )
 
     args = parser.parse_args(argv)
 
