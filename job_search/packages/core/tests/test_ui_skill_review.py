@@ -340,8 +340,28 @@ class TestDecisionsTab(unittest.TestCase):
             for call in get.call_args_list
             if call.args[0].endswith("/skills/review/decisions")
         ]
-        self.assertEqual(queries[0], {"limit": 25})
-        self.assertEqual(queries[-1], {"limit": 25, "q": "cloud"})
+        self.assertEqual(queries[0], {"limit": 100})
+        self.assertEqual(queries[-1], {"limit": 100, "q": "cloud"})
+
+    def test_the_page_size_can_be_raised_so_every_decision_is_reachable(self) -> None:
+        # The list is sorted most-used first, so rarely-used strings sit
+        # deep; a fixed cap with no way to see more hid them.
+        with mock.patch(
+            "httpx.get",
+            side_effect=_get_returning([_UNMAPPED], [_MATCH], [_RESOLVED]),
+        ) as get:
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            picker = app.selectbox(key="decision-limit")
+            self.assertEqual(picker.options, ["25", "50", "100", "250", "500"])
+            self.assertEqual(picker.value, 100)
+            picker.select(500).run()
+        limits = [
+            call.kwargs["params"]["limit"]
+            for call in get.call_args_list
+            if call.args[0].endswith("/skills/review/decisions")
+        ]
+        self.assertEqual(limits[0], 100)
+        self.assertEqual(limits[-1], 500)
 
     def test_shows_an_error_instead_of_crashing_when_decisions_fail_to_load(
         self,
