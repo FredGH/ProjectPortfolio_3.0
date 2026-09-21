@@ -1,7 +1,7 @@
 """Skill review endpoints (PLAN.md Step 14): the unmapped-skills list, the
-embedding-match verify list, ESCO search, and the resolve / dismiss / reject
-actions. All data is SHARED-zone taxonomy — a resolution applies to every
-user (docs/tenancy.md).
+embedding-match verify list, the decisions list, ESCO search, and the resolve /
+dismiss / reject / reopen actions. All data is SHARED-zone taxonomy — a
+resolution applies to every user (docs/tenancy.md).
 """
 
 from __future__ import annotations
@@ -68,6 +68,18 @@ class MatchItemModel(BaseModel):
     method: str
     score: float | None
     suspicious: bool
+    seen_in_cv: bool
+    jd_job_count: int
+
+
+class DecisionItemModel(BaseModel):
+    """A resolved or dismissed string (see `core.skills.review.DecisionItem`)."""
+
+    raw_norm: str
+    raw_example: str
+    review_status: str
+    skill_id: str | None
+    skill_label: str | None
     seen_in_cv: bool
     jd_job_count: int
 
@@ -207,6 +219,35 @@ def get_auto_matches(
     return [MatchItemModel(**asdict(item)) for item in items]
 
 
+@router.get("/skills/review/decisions", response_model=list[DecisionItemModel])
+def get_decisions(
+    q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
+    limit: int = Query(default=50, ge=1, le=500),
+    engine: Engine = Depends(get_app_db_engine),
+) -> list[DecisionItemModel]:
+    """List resolved and dismissed strings, so one can be reopened.
+
+    Args:
+        q: Optional search text, matched against the string and its target.
+        limit: Maximum items.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        Resolved and dismissed items, most-used first.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character (a query
+            parameter has no request model to validate it).
+    """
+    if q is not None and "\x00" in q:
+        raise HTTPException(
+            status_code=422, detail="q must not contain a NUL character"
+        )
+    with engine.connect() as conn:
+        items = review.list_decisions(conn, query=q, limit=limit)
+    return [DecisionItemModel(**asdict(item)) for item in items]
+
+
 @router.get("/skills/search", response_model=list[SkillOptionModel])
 def search_skills(
     q: str = Query(min_length=1, max_length=MAX_INPUT_CHARS),
@@ -291,3 +332,19 @@ def post_reject(
         ``{"status": "ok"}``.
     """
     return _act(engine, lambda conn: review.reject_auto_match(conn, request.raw_norm))
+
+
+@router.post("/skills/review/reopen")
+def post_reopen(
+    request: RawNormRequest, engine: Engine = Depends(get_app_db_engine)
+) -> dict[str, str]:
+    """Withdraw a resolved or dismissed decision.
+
+    Args:
+        request: The string.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        ``{"status": "ok"}``.
+    """
+    return _act(engine, lambda conn: review.reopen(conn, request.raw_norm))

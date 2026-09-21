@@ -59,7 +59,8 @@ The command lines below are written in the short
    - The portal does not list the CSV file names in the zip. The names above
      are what `load-esco` expects; if yours differ, `load-esco` stops and
      names the missing file or column.
-2. `alembic -c db/alembic.ini upgrade head` (migrations 0022, 0023).
+2. `alembic -c db/alembic.ini upgrade head` (migrations 0022, 0023; 0024 grants
+   the API role `DELETE` on `silver.skill_alias`, which *Reopen* needs).
 3. Load, then embed (about 14k Ollama calls, resumable — re-run if interrupted):
 
    ```bash
@@ -133,13 +134,16 @@ aliases*.
 
 ## Reviewing what did not map
 
-Open the **Skill Review** page. Two tabs:
+Open the **Skill Review** page. It opens with a collapsed **User Guide**
+accordion that explains every action and its consequences. Three tabs:
 
 - **Unmapped** — strings that matched nothing. Accept the suggestion, search
   ESCO for the right skill, mark it as a custom skill, or dismiss it.
 - **Auto-matches — verify** — strings the system matched on its own, by an
   exact ESCO label or by similarity. Confirm or reject each; a wrong match is
   otherwise invisible. Matches that look suspicious are listed first.
+- **Decisions — reopen** — every string you resolved or dismissed. *Reopen*
+  withdraws a decision so it can be made again (see *Correcting a decision*).
 
 A resolution becomes an alias, so it applies to every future CV and JD
 string that normalises the same way. Aliases are shared across users.
@@ -189,11 +193,24 @@ steps:
 python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>        # a CV
 ```
 
-There is no undo button. Correcting a wrong decision means updating
-`silver.skill_alias` and `silver.skill_mapping` by hand (the same two `UPDATE`s
-shown under *Seed aliases*) and rebuilding. A seed-file entry cannot fix it: a
-review alias is protected from the seed sync, and a row a human resolved is
-never re-mapped (`--remap-all-auto` skips it). So choose deliberately.
+### Correcting a decision
+
+A seed-file entry cannot fix a wrong decision: a review alias is protected from
+the seed sync, and a row a human resolved is never re-mapped
+(`--remap-all-auto` skips it). Use the **Decisions — reopen** tab instead. Find
+the string (search matches the string or its skill), then click **Reopen**:
+
+| The string was | Reopen does |
+|---|---|
+| **Resolved** | Deletes the string's review alias, so the old target stops applying to future strings, and returns it to the Unmapped tab as *Previously rejected: <old target>*. Being `rejected`, it is skipped by `--remap-unresolved` and `--remap-all-auto`, and *Accept suggestion* is not offered for the old target. Then resolve it correctly (or dismiss it). A custom skill the old decision created is kept. |
+| **Dismissed** | Returns it to the Unmapped tab as an ordinary open string. |
+
+Not reopenable: a string mapped by a curated seed alias (edit
+`config/skill_aliases.yml`), an automatic match (use *Reject*), a string that is
+already unmapped. Reopen changes `silver.skill_mapping` and the alias table
+only; the CV and job-bridge steps above are still needed, and other strings
+that were auto-mapped through the withdrawn alias keep their id until
+`map-skills --remap-all-auto`.
 
 **Correcting a wrong label match.** On the verify tab, Reject it, then pick the
 right skill on the Unmapped tab (*Map to selected*, or *Mark as custom skill*
@@ -205,7 +222,8 @@ note).
 
 **No authentication yet.** These endpoints (`/skills/review*`, `/skills/search`)
 are unauthenticated writes to shared-zone taxonomy — anyone who can reach the
-API can re-point a skill for every user. Auth lands in **Step 22a**; this
+API can re-point a skill for every user, and (since migration 0024) delete a
+review alias through `/skills/review/reopen`. Auth lands in **Step 22a**; this
 router must be on that step's checklist.
 
 **A reject does not correct a CV that already has the id.** `reject` and

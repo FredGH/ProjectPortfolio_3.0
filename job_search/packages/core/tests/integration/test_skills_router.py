@@ -547,6 +547,186 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertEqual(self._mapping(_UNMAPPED).review_status, "open")
 
+    def _decisions(self, **params) -> list[dict]:
+        """GET the decisions list."""
+        response = self.client.get(
+            "/skills/review/decisions", params={"limit": 500, **params}
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
+    def _reopen(self, raw_norm: str) -> int:
+        """POST a reopen and return its status code."""
+        return self.client.post(
+            "/skills/review/reopen", json={"raw_norm": raw_norm}
+        ).status_code
+
+    def _alias_target(self, alias_norm: str) -> str | None:
+        """Return the skill an alias points at, or None if there is no alias."""
+        with self.owner.connect() as conn:
+            return conn.execute(
+                text("SELECT skill_id FROM silver.skill_alias WHERE alias_norm = :n"),
+                {"n": alias_norm},
+            ).scalar_one_or_none()
+
+    def _dismiss(self, raw_norm: str) -> None:
+        """Dismiss an unmapped string through the API."""
+        response = self.client.post(
+            "/skills/review/dismiss", json={"raw_norm": raw_norm}
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_decisions_lists_resolved_and_dismissed_strings_with_their_target(
+        self,
+    ) -> None:
+        dismissed = "zzfixture dismissed one"
+        with self.owner.begin() as conn:
+            insert_mapping(conn, dismissed)
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self._dismiss(dismissed)
+        by_norm = {d["raw_norm"]: d for d in self._decisions()}
+        resolved = by_norm[_UNMAPPED]
+        self.assertEqual(resolved["review_status"], "resolved")
+        self.assertEqual(resolved["skill_id"], "fixture-cloud")
+        self.assertEqual(resolved["skill_label"], "zzfixture cloud technologies")
+        self.assertEqual(resolved["jd_job_count"], 1)
+        self.assertTrue(resolved["seen_in_cv"])
+        self.assertEqual(by_norm[dismissed]["review_status"], "dismissed")
+        self.assertIsNone(by_norm[dismissed]["skill_id"])
+        # An auto-match still awaiting confirmation is not a decision.
+        self.assertNotIn(_MATCHED, by_norm)
+
+    def test_decisions_can_be_searched_by_string_or_target_label(self) -> None:
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        by_string = {d["raw_norm"] for d in self._decisions(q="unmapped one")}
+        by_target = {d["raw_norm"] for d in self._decisions(q="cloud technologies")}
+        self.assertIn(_UNMAPPED, by_string)
+        self.assertIn(_UNMAPPED, by_target)
+        self.assertNotIn(_UNMAPPED, {d["raw_norm"] for d in self._decisions(q="nope")})
+
+    def test_decisions_search_treats_wildcards_literally(self) -> None:
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self.assertEqual(self._decisions(q="%"), [])
+
+    def test_reopening_a_resolved_string_returns_it_as_rejected_and_drops_the_alias(
+        self,
+    ) -> None:
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self.assertEqual(self._reopen(_UNMAPPED), 200)
+        row = self._mapping(_UNMAPPED)
+        self.assertEqual(
+            (row.skill_id, row.method, row.review_status, row.candidate_skill_id),
+            (None, "none", "rejected", "fixture-cloud"),
+        )
+        self.assertIsNone(row.score)
+        self.assertIsNone(self._alias_target(_UNMAPPED))
+        listed = self.client.get("/skills/review", params={"limit": 500}).json()
+        item = next(i for i in listed if i["raw_norm"] == _UNMAPPED)
+        self.assertEqual(item["review_status"], "rejected")
+        self.assertEqual(item["candidate_label"], "zzfixture cloud technologies")
+        self.assertNotIn(_UNMAPPED, {d["raw_norm"] for d in self._decisions()})
+
+    def test_reopening_only_removes_that_strings_alias(self) -> None:
+        other = "zzfixture other alias"
+        with self.owner.begin() as conn:
+            insert_mapping(conn, other)
+        self.assertEqual(self._resolve(raw_norm=other, skill_id="fixture-python"), 200)
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self.assertEqual(self._reopen(_UNMAPPED), 200)
+        self.assertEqual(self._alias_target(other), "fixture-python")
+        self.assertEqual(self._mapping(other).review_status, "resolved")
+
+    def test_reopening_a_custom_resolution_keeps_the_custom_skill(self) -> None:
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, custom_label="ZZFixture Tool"), 200
+        )
+        self.assertEqual(self._reopen(_UNMAPPED), 200)
+        with self.owner.connect() as conn:
+            kept = conn.execute(
+                text(
+                    "SELECT count(*) FROM silver.custom_skill "
+                    "WHERE skill_id = 'custom:zzfixture-tool'"
+                )
+            ).scalar_one()
+        self.assertEqual(kept, 1)
+        self.assertEqual(
+            self._mapping(_UNMAPPED).candidate_skill_id, "custom:zzfixture-tool"
+        )
+
+    def test_reopening_a_dismissed_string_returns_it_as_open(self) -> None:
+        self._dismiss(_UNMAPPED)
+        self.assertEqual(self._reopen(_UNMAPPED), 200)
+        row = self._mapping(_UNMAPPED)
+        self.assertEqual(
+            (row.skill_id, row.method, row.review_status, row.candidate_skill_id),
+            (None, "none", "open", "fixture-cloud"),
+        )
+        self.assertIn(_UNMAPPED, self._review_norms())
+
+    def test_a_reopened_string_can_be_resolved_to_a_different_skill(self) -> None:
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self.assertEqual(self._reopen(_UNMAPPED), 200)
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-python"), 200
+        )
+        self.assertEqual(self._mapping(_UNMAPPED).skill_id, "fixture-python")
+        self.assertEqual(self._alias_target(_UNMAPPED), "fixture-python")
+
+    def test_reopening_a_string_that_carries_no_decision_is_refused(self) -> None:
+        # Unmapped, auto-matched, and a curated seed alias are all settled
+        # by something other than a human decision.
+        self.assertEqual(self._reopen(_UNMAPPED), 422)
+        self.assertEqual(self._reopen(_MATCHED), 422)
+        seeded = "zzfixture seed settled"
+        with self.owner.begin() as conn:
+            insert_mapping(
+                conn,
+                seeded,
+                skill_id="fixture-python",
+                method="alias",
+                review_status=None,
+            )
+        self.assertEqual(self._reopen(seeded), 422)
+        self.assertEqual(self._mapping(seeded).skill_id, "fixture-python")
+
+    def test_reopening_twice_is_refused(self) -> None:
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self.assertEqual(self._reopen(_UNMAPPED), 200)
+        self.assertEqual(self._reopen(_UNMAPPED), 422)
+
+    def test_reopening_an_unknown_string_is_a_404(self) -> None:
+        self.assertEqual(self._reopen("zzfixture no such string"), 404)
+
+    def test_reopen_and_decisions_reject_bad_input_rather_than_crashing(self) -> None:
+        self.assertEqual(self._reopen("zzfixture\x00x"), 422)
+        self.assertEqual(self._reopen("zzfixture " + "x" * 300), 422)
+        self.assertEqual(
+            self.client.get(
+                "/skills/review/decisions", params={"q": "zzfixture\x00x"}
+            ).status_code,
+            422,
+        )
+        self.assertEqual(
+            self.client.get(
+                "/skills/review/decisions", params={"q": "x" * 300}
+            ).status_code,
+            422,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
