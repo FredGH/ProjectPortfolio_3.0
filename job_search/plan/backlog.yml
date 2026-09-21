@@ -754,6 +754,25 @@ epics:
     points: 3
 
     jira_key: JOB-460
+  - id: STEP-14B
+    summary: "Step 14b — map-cv-skills --refresh: bring CV skill ids in line with
+      corrected decisions"
+    description: >
+      A plain map-cv-skills never overwrites an existing canonical_id, so a CV
+      kept stale ids after a Skill Review decision was corrected or reopened
+      (Tableau, NumPy, Scikit-Learn and Visual Studio still held ESCO's broad
+      skills). --refresh recomputes every skill's id from the current mapping,
+      replaces or clears stale ones, and writes one labelled CV version
+      ("ESCO skill normalisation (refresh)") only if something changed. Item
+      W4b of the Step 14 follow-up plan.
+    acceptance: >
+      A stale id is replaced by the current mapping; an id whose string no
+      longer resolves is cleared; a second run writes no version; a skill added
+      while the command runs is untouched; a run without the flag behaves as
+      before.
+    labels: [cv]
+    points: 3
+    jira_key: JOB-461
   - id: STEP-15
     summary: "Step 15 — Scoring funnel"
     description: >
