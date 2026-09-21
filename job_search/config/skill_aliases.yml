@@ -19,3 +19,27 @@ skills:
   - skill_id: "custom:postgresql"
     label: "PostgreSQL"
     aliases: ["Postgres"]
+  # Tools ESCO either lacks or maps to a broad family skill (follow-up plan
+  # W2 / decision D3): each gets its own custom skill so a gap analysis can
+  # name the tool.
+  - skill_id: "custom:pytorch"
+    label: "PyTorch"
+  - skill_id: "custom:tensorflow"
+    label: "TensorFlow"
+  - skill_id: "custom:power-bi"
+    label: "Power BI"
+    aliases: ["PowerBI", "Microsoft Power BI"]
+  - skill_id: "custom:tableau"
+    label: "Tableau"
+  - skill_id: "custom:jira"
+    label: "Jira"
+    aliases: ["Atlassian Jira"]
+  - skill_id: "custom:linux"
+    label: "Linux"
+  - skill_id: "custom:react"
+    label: "React"
+    aliases: ["React.js", "ReactJS"]
+  # Git deliberately stays on ESCO's own skill; pinned so the choice is
+  # explicit rather than an exact-label coincidence.
+  - skill_id: "9d2e926f-53d9-41f5-98f3-19dfaa687f3f"
+    aliases: ["Git"]
