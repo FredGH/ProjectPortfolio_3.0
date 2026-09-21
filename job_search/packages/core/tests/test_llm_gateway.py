@@ -22,6 +22,7 @@ class _FakeAdapter:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, float, int | None]] = []
+        self.max_tokens_seen: list[int | None] = []
 
     def complete(
         self,
@@ -30,9 +31,11 @@ class _FakeAdapter:
         prompt: str,
         temperature: float = 0.0,
         seed: int | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Record call and return fake response."""
         self.calls.append((model, prompt, temperature, seed))
+        self.max_tokens_seen.append(max_tokens)
         return LLMResponse(
             text=f"echo: {prompt}",
             provider="fake",
@@ -111,6 +114,37 @@ class TestGatewayComplete(unittest.TestCase):
         self.assertEqual(
             self.fake_adapter.calls, [("fake-model-v1", "prompt", 0.0, None)]
         )
+
+    def test_max_tokens_defaults_to_unset_and_is_passed_through_when_given(
+        self,
+    ) -> None:
+        """Test complete forwards an output cap only when one is requested."""
+        kwargs = dict(
+            prompt_version="local.v1",
+            adapters={"fake": self.fake_adapter},
+            config_path=self.config_path,
+        )
+        complete("skill_extraction", "prompt", **kwargs)
+        complete("skill_extraction", "prompt", max_tokens=2048, **kwargs)
+        self.assertEqual(self.fake_adapter.max_tokens_seen, [None, 2048])
+
+    def test_an_adapter_without_max_tokens_still_works_when_none_is_requested(
+        self,
+    ) -> None:
+        """Existing adapters that predate max_tokens keep working unchanged."""
+
+        class _OldAdapter:
+            def complete(self, *, model, prompt, temperature=0.0, seed=None):
+                return LLMResponse("ok", "fake", model, 1, 1)
+
+        result = complete(
+            "skill_extraction",
+            "prompt",
+            prompt_version="local.v1",
+            adapters={"fake": _OldAdapter()},
+            config_path=self.config_path,
+        )
+        self.assertEqual(result.text, "ok")
 
     def test_passes_through_a_given_temperature_and_seed(self) -> None:
         """Test complete passes a given temperature and seed to the adapter."""

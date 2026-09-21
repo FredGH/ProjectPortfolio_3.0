@@ -17,6 +17,9 @@ class LLMResponse:
         model: The provider-specific model identifier used.
         input_tokens: Prompt token count, as reported by the provider.
         output_tokens: Completion token count, as reported by the provider.
+        truncated: True if the provider stopped the reply because it hit the
+            output-token cap (`max_tokens`), so `text` is cut off — for a
+            model stuck in a loop this is what ends the generation.
     """
 
     text: str
@@ -24,6 +27,7 @@ class LLMResponse:
     model: str
     input_tokens: int
     output_tokens: int
+    truncated: bool = False
 
 
 class LLMAdapter(Protocol):
@@ -36,6 +40,7 @@ class LLMAdapter(Protocol):
         prompt: str,
         temperature: float = 0.0,
         seed: int | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Run one completion call.
 
@@ -48,6 +53,9 @@ class LLMAdapter(Protocol):
                 default for every caller, not an eval-only opt-in.
             seed: A fixed seed, where the provider supports one. `None`
                 means "no seed requested."
+            max_tokens: Cap on the reply's length in tokens. `None` leaves
+                the provider's own default. A reply stopped by the cap comes
+                back with `LLMResponse.truncated` set.
 
         Returns:
             The normalised `LLMResponse`.

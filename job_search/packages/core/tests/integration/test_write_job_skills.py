@@ -114,6 +114,18 @@ class TestWriteJobSkills(unittest.TestCase):
         self.assertEqual(summary.extracted_jobs, 0)
         self.assertEqual(len(adapter.calls), calls)
 
+    def test_a_reply_cut_off_by_the_token_cap_counts_as_failed_and_is_retried(
+        self,
+    ) -> None:
+        self._add_survivor(self.job, "Python required.")
+        looping = FakeAdapter(_reply(("Python", "must_have")), truncated=True)
+        summary = self._write(looping, [self.job])
+        self.assertEqual((summary.extracted_jobs, summary.failed_jobs), (0, 1))
+        self.assertEqual(self._extractions(self.job), 0)
+        # Nothing was recorded, so the next run picks the job up again.
+        fixed = FakeAdapter(_reply(("Python", "must_have")))
+        self.assertEqual(self._write(fixed, [self.job]).extracted_jobs, 1)
+
     def test_a_job_with_no_skills_is_recorded_and_not_retried(self) -> None:
         self._add_survivor(self.job, "We are a friendly company.")
         adapter = FakeAdapter(_reply())
