@@ -37,6 +37,23 @@ MAX_OUTPUT_TOKENS = 2048
 which unchecked ran for over ten minutes on one chunk of a real job. Such a
 reply is treated as a failed extraction, not a result."""
 
+REPEAT_PENALTY = 1.15
+REPEAT_LAST_N = 256
+"""Break a real decoding failure that MAX_OUTPUT_TOKENS only bounds: at
+temperature=0 (deterministic decoding), llama3.1:8b can settle into repeating
+a block of output forever once it exceeds Ollama's default repeat_last_n (64
+tokens) — one real job repeated the same ~20 skills verbatim past the cap.
+Applied only as a retry, to a chunk whose first reply was truncated (see
+`extract_jd_skills`) — never to a chunk that succeeds normally. Sending it on
+every call was tried first and measurably hurt quality on chunks that were
+already fine: fewer skills found (34 vs 14 on one real chunk), and sometimes
+invalid JSON from inline "// ..." comments the penalty induced. 1.15 with a
+256-token window (wider than the observed repeating block) stopped the
+looping chunks it was validated against; 1.3 also stopped them but drifted
+out of JSON more often. Since every call is deterministic, a chunk that still
+loops after the retry will loop identically on every future run too — see
+README.md."""
+
 DEFAULT_MAX_CHUNK_CHARS = 6000
 """~1.5k tokens of description per call — well inside llama3.1:8b's context,
 leaving room for the prompt and the JSON answer."""
@@ -173,7 +190,8 @@ def extract_jd_skills(
 
     Raises:
         ValueError: If any chunk's response can't be parsed as the expected
-            JSON shape, or was cut off by the `MAX_OUTPUT_TOKENS` cap.
+            JSON shape, or is still cut off by the `MAX_OUTPUT_TOKENS` cap
+            after a `REPEAT_PENALTY` retry.
     """
     family = prompt_family or _PROMPT_FAMILY
     template = load_prompt("skill_extraction", family, _PROMPT_VERSION_NUMBER)
@@ -182,20 +200,38 @@ def extract_jd_skills(
     collected: list[ExtractedSkill] = []
     model_id = ""
     for chunk in split_into_chunks(readable_description(description), max_chunk_chars):
+        prompt = template.format(description=chunk)
         response = complete(
             task="skill_extraction",
-            prompt=template.format(description=chunk),
+            prompt=prompt,
             prompt_version=prompt_version,
             adapters=adapters,
             provider=provider,
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
         )
+        if response.truncated:
+            # A real decoding loop (see REPEAT_PENALTY's docstring), not just
+            # a long answer — a genuine skill list is well under the cap.
+            # Retry only this chunk with the penalty; a chunk that never
+            # loops is never sent with it.
+            response = complete(
+                task="skill_extraction",
+                prompt=prompt,
+                prompt_version=prompt_version,
+                adapters=adapters,
+                provider=provider,
+                model=model,
+                max_tokens=MAX_OUTPUT_TOKENS,
+                repeat_penalty=REPEAT_PENALTY,
+                repeat_last_n=REPEAT_LAST_N,
+            )
         model_id = response.model
         if response.truncated:
             raise ValueError(
                 f"skill_extraction response hit the {MAX_OUTPUT_TOKENS}-token cap "
-                f"(the model was likely looping); discarded so the job is retried "
+                f"even after a repeat_penalty retry (the model was likely looping); "
+                f"discarded so the job is retried "
                 f"(response started with: {response.text.strip()[:200]!r})"
             )
         response_text = response.text.strip()

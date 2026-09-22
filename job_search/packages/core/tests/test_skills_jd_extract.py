@@ -10,6 +10,8 @@ from tests.skills_fakes import FakeAdapter
 from core.skills.jd_extract import (
     CURRENT_PROMPT_VERSION,
     MAX_OUTPUT_TOKENS,
+    REPEAT_LAST_N,
+    REPEAT_PENALTY,
     ExtractedSkill,
     extract_jd_skills,
     merge_skills,
@@ -87,12 +89,42 @@ class TestExtractJdSkills(unittest.TestCase):
         _extract(adapter, "Python required.")
         self.assertEqual(adapter.max_tokens_seen, [MAX_OUTPUT_TOKENS])
 
-    def test_a_reply_cut_off_by_the_cap_is_an_error_even_if_it_parses(self) -> None:
-        # A model stuck in a loop hit the cap: whatever it produced is not a
-        # trustworthy skill list, so the job must fail and be retried.
+    def test_a_normal_reply_is_never_sent_with_a_repeat_penalty(self) -> None:
+        # Applying the penalty to every call was tried and measurably hurt
+        # quality on chunks that never loop (fewer skills found, and
+        # sometimes invalid JSON from inline comments the penalty induced) —
+        # see REPEAT_PENALTY's docstring. It must only apply to a retry.
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        _extract(adapter, "Python required.")
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertEqual(adapter.repeat_penalty_seen, [None])
+        self.assertEqual(adapter.repeat_last_n_seen, [None])
+
+    def test_a_truncated_reply_is_retried_once_with_a_repeat_penalty(self) -> None:
+        # The first call loops (truncated); the retry, sent with the
+        # penalty, succeeds — its content is what the job keeps.
+        adapter = FakeAdapter(
+            _reply(("Python", "nice_to_have")),
+            _reply(("Python", "must_have")),
+            truncated=[True, False],
+        )
+        result = _extract(adapter, "Python required.")
+        self.assertEqual(len(adapter.calls), 2)
+        self.assertEqual(adapter.repeat_penalty_seen, [None, REPEAT_PENALTY])
+        self.assertEqual(adapter.repeat_last_n_seen, [None, REPEAT_LAST_N])
+        self.assertEqual(
+            [(s.skill, s.requirement_level) for s in result.skills],
+            [("Python", "must_have")],
+        )
+
+    def test_a_reply_still_truncated_after_the_penalty_retry_is_an_error(self) -> None:
+        # Both calls loop: whatever either produced is not a trustworthy
+        # skill list, so the job must fail and be retried next run.
         adapter = FakeAdapter(_reply(("Python", "must_have")), truncated=True)
         with self.assertRaises(ValueError) as ctx:
             _extract(adapter, "Python required.")
+        self.assertEqual(len(adapter.calls), 2)
+        self.assertEqual(adapter.repeat_penalty_seen, [None, REPEAT_PENALTY])
         self.assertIn("token cap", str(ctx.exception))
 
     def test_a_malformed_response_raises_value_error(self) -> None:

@@ -154,11 +154,23 @@ aliases*.
   example the LLM provider is down), and says how many. If at least one job
   succeeded it exits 0 and prints `failed_jobs=N`; those jobs are retried on the
   next run.
-- **A looping model is cut off.** Each chunk's reply is capped at 2,048 tokens
-  (`MAX_OUTPUT_TOKENS` in `core.skills.jd_extract`; a real skill list is well under
-  1,000). A model that never emits its stop token used to generate for ten minutes
-  or more on one chunk of a long job. A reply that hits the cap is discarded, the
-  job counts toward `failed_jobs`, and the next run retries it.
+- **A looping model is retried once, then cut off.** Each chunk's reply is
+  capped at `MAX_OUTPUT_TOKENS` (2,048; a real skill list is well under
+  1,000). At `temperature=0`, llama3.1:8b can settle into repeating a block of
+  output forever once it exceeds Ollama's default `repeat_last_n` (64 tokens)
+  — one real job repeated the same ~20 skills verbatim until it hit the cap.
+  A reply that hits the cap is retried **once**, that single chunk only, with
+  `repeat_penalty=1.15` and `repeat_last_n=256`
+  (`core.skills.jd_extract.REPEAT_PENALTY` / `REPEAT_LAST_N`) — wide enough
+  to break the loop. The penalty is **never** applied to a chunk whose first
+  reply was fine: sending it on every call was tried and measurably hurt
+  quality on chunks that were already fine (fewer skills found, and
+  sometimes invalid JSON from inline comments the penalty induced) — see
+  `README.md` for how this was found and the settings that were tried. A
+  reply still truncated after the retry is discarded, the job counts toward
+  `failed_jobs`, and the next run retries it; since every call is
+  deterministic, a chunk that still loops after the penalty will loop
+  identically on every future run too.
 - **`map-skills`** prints `map-skills: warning: …` when `esco.skill_embedding` is
   empty, or covers only some skills, for the configured model. The similarity
   stage would otherwise silently match nothing, or miss matches. The alias and

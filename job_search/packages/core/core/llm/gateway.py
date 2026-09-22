@@ -27,6 +27,8 @@ def complete(
     temperature: float = 0.0,
     seed: int | None = None,
     max_tokens: int | None = None,
+    repeat_penalty: float | None = None,
+    repeat_last_n: int | None = None,
 ) -> LLMResponse:
     """Run a completion for `task`, routed to its configured provider.
 
@@ -61,6 +63,11 @@ def complete(
             adapter only when given, so an adapter written before this
             parameter existed keeps working for every caller that sets none.
             A reply stopped by the cap has `LLMResponse.truncated` set.
+        repeat_penalty: Penalty on repeated tokens; Ollama-specific, ignored
+            by Anthropic. Forwarded only when given, for the same
+            keep-old-adapters-working reason as `max_tokens`.
+        repeat_last_n: Lookback window `repeat_penalty` applies over,
+            forwarded only when given.
 
     Returns:
         The adapter's `LLMResponse`.
@@ -76,9 +83,14 @@ def complete(
         provider = provider or task_config.provider
         model = model or task_config.model
     adapter = adapters[provider]
-    limits = {} if max_tokens is None else {"max_tokens": max_tokens}
+    extra = {
+        "max_tokens": max_tokens,
+        "repeat_penalty": repeat_penalty,
+        "repeat_last_n": repeat_last_n,
+    }
+    given = {key: value for key, value in extra.items() if value is not None}
     response = adapter.complete(
-        model=model, prompt=prompt, temperature=temperature, seed=seed, **limits
+        model=model, prompt=prompt, temperature=temperature, seed=seed, **given
     )
     log_llm_call(task=task, response=response, prompt_version=prompt_version)
     return response
