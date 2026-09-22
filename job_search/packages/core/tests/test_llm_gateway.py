@@ -23,6 +23,8 @@ class _FakeAdapter:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, float, int | None]] = []
         self.max_tokens_seen: list[int | None] = []
+        self.repeat_penalty_seen: list[float | None] = []
+        self.repeat_last_n_seen: list[int | None] = []
 
     def complete(
         self,
@@ -32,10 +34,14 @@ class _FakeAdapter:
         temperature: float = 0.0,
         seed: int | None = None,
         max_tokens: int | None = None,
+        repeat_penalty: float | None = None,
+        repeat_last_n: int | None = None,
     ) -> LLMResponse:
         """Record call and return fake response."""
         self.calls.append((model, prompt, temperature, seed))
         self.max_tokens_seen.append(max_tokens)
+        self.repeat_penalty_seen.append(repeat_penalty)
+        self.repeat_last_n_seen.append(repeat_last_n)
         return LLMResponse(
             text=f"echo: {prompt}",
             provider="fake",
@@ -145,6 +151,26 @@ class TestGatewayComplete(unittest.TestCase):
             config_path=self.config_path,
         )
         self.assertEqual(result.text, "ok")
+
+    def test_repeat_penalty_and_repeat_last_n_default_to_unset_and_pass_through(
+        self,
+    ) -> None:
+        """Test complete forwards a repetition penalty only when requested."""
+        kwargs = dict(
+            prompt_version="local.v1",
+            adapters={"fake": self.fake_adapter},
+            config_path=self.config_path,
+        )
+        complete("skill_extraction", "prompt", **kwargs)
+        complete(
+            "skill_extraction",
+            "prompt",
+            repeat_penalty=1.15,
+            repeat_last_n=256,
+            **kwargs,
+        )
+        self.assertEqual(self.fake_adapter.repeat_penalty_seen, [None, 1.15])
+        self.assertEqual(self.fake_adapter.repeat_last_n_seen, [None, 256])
 
     def test_passes_through_a_given_temperature_and_seed(self) -> None:
         """Test complete passes a given temperature and seed to the adapter."""

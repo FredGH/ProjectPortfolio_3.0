@@ -41,6 +41,8 @@ class LLMAdapter(Protocol):
         temperature: float = 0.0,
         seed: int | None = None,
         max_tokens: int | None = None,
+        repeat_penalty: float | None = None,
+        repeat_last_n: int | None = None,
     ) -> LLMResponse:
         """Run one completion call.
 
@@ -56,6 +58,14 @@ class LLMAdapter(Protocol):
             max_tokens: Cap on the reply's length in tokens. `None` leaves
                 the provider's own default. A reply stopped by the cap comes
                 back with `LLMResponse.truncated` set.
+            repeat_penalty: Penalty applied to tokens already seen within
+                `repeat_last_n`, where the provider supports one. `None`
+                leaves the provider's own default. At `temperature=0`
+                (deterministic decoding), a repeating block of output longer
+                than the lookback window can otherwise repeat forever — see
+                `core.skills.jd_extract.REPEAT_PENALTY`.
+            repeat_last_n: How many previous tokens `repeat_penalty` looks
+                back over. `None` leaves the provider's own default.
 
         Returns:
             The normalised `LLMResponse`.

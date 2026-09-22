@@ -36,6 +36,8 @@ class OllamaAdapter:
         temperature: float = 0.0,
         seed: int | None = None,
         max_tokens: int | None = None,
+        repeat_penalty: float | None = None,
+        repeat_last_n: int | None = None,
     ) -> LLMResponse:
         """Run one completion call against Ollama.
 
@@ -49,6 +51,12 @@ class OllamaAdapter:
                 `options.num_predict` when given. Without it Ollama generates
                 until the model stops, so a model stuck in a loop can run for
                 minutes; a reply stopped by the cap comes back `truncated`.
+            repeat_penalty: Sent as `options.repeat_penalty` when given.
+                Ollama's own default lookback (`repeat_last_n`, 64 tokens) is
+                too short to catch a longer repeating block, so without this
+                the model can loop past the token cap instead of stopping.
+            repeat_last_n: Sent as `options.repeat_last_n` when given — how
+                many previous tokens `repeat_penalty` looks back over.
 
         Returns:
             The normalised `LLMResponse`.
@@ -58,6 +66,10 @@ class OllamaAdapter:
             options["seed"] = seed
         if max_tokens is not None:
             options["num_predict"] = max_tokens
+        if repeat_penalty is not None:
+            options["repeat_penalty"] = repeat_penalty
+        if repeat_last_n is not None:
+            options["repeat_last_n"] = repeat_last_n
         response = self.client.post(
             f"{self.base_url}/api/generate",
             json={

@@ -117,6 +117,20 @@ class TestOllamaAdapter(unittest.TestCase):
         self.assertFalse(stopped.truncated)
         self.assertFalse(bare.truncated)
 
+    def test_repeat_penalty_and_repeat_last_n_are_sent_as_options(self) -> None:
+        """A repetition penalty and its lookback window reach Ollama as-is."""
+        sent, _ = self._post_capturing(
+            {"response": "ok"}, repeat_penalty=1.15, repeat_last_n=256
+        )
+        self.assertEqual(sent["options"]["repeat_penalty"], 1.15)
+        self.assertEqual(sent["options"]["repeat_last_n"], 256)
+
+    def test_no_repeat_penalty_leaves_the_request_unchanged(self) -> None:
+        """Without one, Ollama's own repeat_penalty/repeat_last_n defaults apply."""
+        sent, _ = self._post_capturing({"response": "ok"})
+        self.assertNotIn("repeat_penalty", sent["options"])
+        self.assertNotIn("repeat_last_n", sent["options"])
+
 
 class TestAnthropicAdapter(unittest.TestCase):
     """Test Anthropic adapter request/response parsing."""
@@ -198,6 +212,17 @@ class TestAnthropicAdapter(unittest.TestCase):
             messages=[{"role": "user", "content": "say hello"}],
             temperature=0.5,
         )
+
+    def test_repeat_penalty_and_repeat_last_n_are_accepted_and_ignored(self) -> None:
+        """Anthropic has no such decoding knob; the call must not crash or leak them."""
+        client = mock.Mock()
+        client.messages.create.return_value = self._message()
+        AnthropicAdapter(api_key="k", client=client).complete(
+            model="claude-sonnet-5", prompt="hi", repeat_penalty=1.15, repeat_last_n=256
+        )
+        sent = client.messages.create.call_args.kwargs
+        self.assertNotIn("repeat_penalty", sent)
+        self.assertNotIn("repeat_last_n", sent)
 
 
 class TestLogLlmCall(unittest.TestCase):

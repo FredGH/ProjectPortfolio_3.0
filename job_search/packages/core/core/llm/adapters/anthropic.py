@@ -39,6 +39,8 @@ class AnthropicAdapter:
         temperature: float = 0.0,
         seed: int | None = None,
         max_tokens: int | None = None,
+        repeat_penalty: float | None = None,
+        repeat_last_n: int | None = None,
     ) -> LLMResponse:
         """Run one completion call against Claude.
 
@@ -53,6 +55,10 @@ class AnthropicAdapter:
                 Protocol as `OllamaAdapter`, which does support it.
             max_tokens: Cap on the reply's length; defaults to this adapter's
                 own limit. A reply stopped by it comes back `truncated`.
+            repeat_penalty: Ignored — the Anthropic Messages API has no
+                repetition-penalty parameter. Accepted so this adapter
+                satisfies the same `LLMAdapter` Protocol as `OllamaAdapter`.
+            repeat_last_n: Ignored, for the same reason as `repeat_penalty`.
 
         Returns:
             The normalised `LLMResponse`.
