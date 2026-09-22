@@ -154,6 +154,11 @@ aliases*.
   example the LLM provider is down), and says how many. If at least one job
   succeeded it exits 0 and prints `failed_jobs=N`; those jobs are retried on the
   next run.
+- **A looping model is cut off.** Each chunk's reply is capped at 2,048 tokens
+  (`MAX_OUTPUT_TOKENS` in `core.skills.jd_extract`; a real skill list is well under
+  1,000). A model that never emits its stop token used to generate for ten minutes
+  or more on one chunk of a long job. A reply that hits the cap is discarded, the
+  job counts toward `failed_jobs`, and the next run retries it.
 - **`map-skills`** prints `map-skills: warning: …` when `esco.skill_embedding` is
   empty, or covers only some skills, for the configured model. The similarity
   stage would otherwise silently match nothing, or miss matches. The alias and

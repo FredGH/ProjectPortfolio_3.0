@@ -9,6 +9,7 @@ from tests.skills_fakes import FakeAdapter
 
 from core.skills.jd_extract import (
     CURRENT_PROMPT_VERSION,
+    MAX_OUTPUT_TOKENS,
     ExtractedSkill,
     extract_jd_skills,
     merge_skills,
@@ -80,6 +81,19 @@ class TestExtractJdSkills(unittest.TestCase):
         result = _extract(adapter, "   ")
         self.assertEqual(result.skills, [])
         self.assertEqual(adapter.calls, [])
+
+    def test_every_chunk_is_sent_with_the_output_token_cap(self) -> None:
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        _extract(adapter, "Python required.")
+        self.assertEqual(adapter.max_tokens_seen, [MAX_OUTPUT_TOKENS])
+
+    def test_a_reply_cut_off_by_the_cap_is_an_error_even_if_it_parses(self) -> None:
+        # A model stuck in a loop hit the cap: whatever it produced is not a
+        # trustworthy skill list, so the job must fail and be retried.
+        adapter = FakeAdapter(_reply(("Python", "must_have")), truncated=True)
+        with self.assertRaises(ValueError) as ctx:
+            _extract(adapter, "Python required.")
+        self.assertIn("token cap", str(ctx.exception))
 
     def test_a_malformed_response_raises_value_error(self) -> None:
         with self.assertRaises(ValueError):

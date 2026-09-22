@@ -31,6 +31,12 @@ _PROMPT_FAMILY = "local"
 _PROMPT_VERSION_NUMBER = 1
 CURRENT_PROMPT_VERSION = f"{_PROMPT_FAMILY}.v{_PROMPT_VERSION_NUMBER}"
 
+MAX_OUTPUT_TOKENS = 2048
+"""Cap on one chunk's reply. A chunk's skill list is well under 1,000 tokens
+(about 20 per skill); a reply that reaches this is a model stuck in a loop,
+which unchecked ran for over ten minutes on one chunk of a real job. Such a
+reply is treated as a failed extraction, not a result."""
+
 DEFAULT_MAX_CHUNK_CHARS = 6000
 """~1.5k tokens of description per call — well inside llama3.1:8b's context,
 leaving room for the prompt and the JSON answer."""
@@ -167,7 +173,7 @@ def extract_jd_skills(
 
     Raises:
         ValueError: If any chunk's response can't be parsed as the expected
-            JSON shape.
+            JSON shape, or was cut off by the `MAX_OUTPUT_TOKENS` cap.
     """
     family = prompt_family or _PROMPT_FAMILY
     template = load_prompt("skill_extraction", family, _PROMPT_VERSION_NUMBER)
@@ -183,8 +189,15 @@ def extract_jd_skills(
             adapters=adapters,
             provider=provider,
             model=model,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
         model_id = response.model
+        if response.truncated:
+            raise ValueError(
+                f"skill_extraction response hit the {MAX_OUTPUT_TOKENS}-token cap "
+                f"(the model was likely looping); discarded so the job is retried "
+                f"(response started with: {response.text.strip()[:200]!r})"
+            )
         response_text = response.text.strip()
         try:
             parsed = parse_json_response(response_text)

@@ -38,6 +38,7 @@ class AnthropicAdapter:
         prompt: str,
         temperature: float = 0.0,
         seed: int | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Run one completion call against Claude.
 
@@ -50,13 +51,15 @@ class AnthropicAdapter:
                 reproducibility even at `temperature=0`. Accepted (not
                 rejected) so this adapter satisfies the same `LLMAdapter`
                 Protocol as `OllamaAdapter`, which does support it.
+            max_tokens: Cap on the reply's length; defaults to this adapter's
+                own limit. A reply stopped by it comes back `truncated`.
 
         Returns:
             The normalised `LLMResponse`.
         """
         message = self.client.messages.create(
             model=model,
-            max_tokens=_MAX_TOKENS,
+            max_tokens=max_tokens if max_tokens is not None else _MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
             temperature=temperature,
         )
@@ -66,4 +69,5 @@ class AnthropicAdapter:
             model=model,
             input_tokens=message.usage.input_tokens,
             output_tokens=message.usage.output_tokens,
+            truncated=message.stop_reason == "max_tokens",
         )

@@ -80,9 +80,80 @@ class TestOllamaAdapter(unittest.TestCase):
         self.assertNotIn("seed", captured_json["options"])
         self.assertEqual(captured_json["options"]["temperature"], 0.0)
 
+    def _post_capturing(self, payload: dict, **complete_kwargs):
+        """Run one complete() against a mock server; return (sent json, result)."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(json.loads(request.content))
+            return httpx.Response(200, json=payload)
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        adapter = OllamaAdapter(base_url="http://ollama:11434", client=client)
+        result = adapter.complete(model="llama3.1:8b", prompt="hi", **complete_kwargs)
+        return captured, result
+
+    def test_max_tokens_is_sent_as_num_predict(self) -> None:
+        """A per-call output cap reaches Ollama as options.num_predict."""
+        sent, _ = self._post_capturing({"response": "ok"}, max_tokens=2048)
+        self.assertEqual(sent["options"]["num_predict"], 2048)
+
+    def test_no_max_tokens_leaves_num_predict_unset(self) -> None:
+        """Without a cap the request is unchanged (Ollama's own default applies)."""
+        sent, _ = self._post_capturing({"response": "ok"})
+        self.assertNotIn("num_predict", sent["options"])
+
+    def test_a_reply_cut_off_by_the_cap_is_flagged_truncated(self) -> None:
+        """Ollama's done_reason 'length' means the token cap stopped the reply."""
+        _, result = self._post_capturing(
+            {"response": '{"skills": [', "done_reason": "length"}, max_tokens=8
+        )
+        self.assertTrue(result.truncated)
+
+    def test_a_reply_that_finished_is_not_truncated(self) -> None:
+        """done_reason 'stop', or none at all, is a normal finish."""
+        _, stopped = self._post_capturing({"response": "ok", "done_reason": "stop"})
+        _, bare = self._post_capturing({"response": "ok"})
+        self.assertFalse(stopped.truncated)
+        self.assertFalse(bare.truncated)
+
 
 class TestAnthropicAdapter(unittest.TestCase):
     """Test Anthropic adapter request/response parsing."""
+
+    def _message(self, stop_reason: str = "end_turn") -> mock.Mock:
+        message = mock.Mock()
+        message.content = [mock.Mock(text="hi")]
+        message.usage = mock.Mock(input_tokens=1, output_tokens=1)
+        message.stop_reason = stop_reason
+        return message
+
+    def test_max_tokens_overrides_the_default_cap(self) -> None:
+        """A per-call cap replaces the adapter's default max_tokens."""
+        client = mock.Mock()
+        client.messages.create.return_value = self._message()
+        AnthropicAdapter(api_key="k", client=client).complete(
+            model="claude-sonnet-5", prompt="hi", max_tokens=100
+        )
+        self.assertEqual(client.messages.create.call_args.kwargs["max_tokens"], 100)
+
+    def test_a_reply_stopped_at_max_tokens_is_flagged_truncated(self) -> None:
+        """Anthropic's stop_reason 'max_tokens' means the cap stopped the reply."""
+        client = mock.Mock()
+        client.messages.create.return_value = self._message("max_tokens")
+        result = AnthropicAdapter(api_key="k", client=client).complete(
+            model="claude-sonnet-5", prompt="hi", max_tokens=8
+        )
+        self.assertTrue(result.truncated)
+
+    def test_a_reply_that_ended_normally_is_not_truncated(self) -> None:
+        """stop_reason 'end_turn' is a normal finish."""
+        client = mock.Mock()
+        client.messages.create.return_value = self._message("end_turn")
+        result = AnthropicAdapter(api_key="k", client=client).complete(
+            model="claude-sonnet-5", prompt="hi"
+        )
+        self.assertFalse(result.truncated)
 
     def test_complete_parses_anthropic_response_shape(self) -> None:
         """Verify Anthropic adapter parses response shape correctly."""

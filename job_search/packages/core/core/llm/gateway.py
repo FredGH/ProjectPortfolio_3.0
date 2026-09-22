@@ -26,6 +26,7 @@ def complete(
     model: str | None = None,
     temperature: float = 0.0,
     seed: int | None = None,
+    max_tokens: int | None = None,
 ) -> LLMResponse:
     """Run a completion for `task`, routed to its configured provider.
 
@@ -56,6 +57,10 @@ def complete(
             adapter. Defaults to 0.0 for maximum reproducibility.
         seed: A fixed seed, passed straight through — honoured by Ollama,
             ignored by Anthropic (see `AnthropicAdapter.complete`).
+        max_tokens: Cap on the reply's length in tokens. Forwarded to the
+            adapter only when given, so an adapter written before this
+            parameter existed keeps working for every caller that sets none.
+            A reply stopped by the cap has `LLMResponse.truncated` set.
 
     Returns:
         The adapter's `LLMResponse`.
@@ -71,8 +76,9 @@ def complete(
         provider = provider or task_config.provider
         model = model or task_config.model
     adapter = adapters[provider]
+    limits = {} if max_tokens is None else {"max_tokens": max_tokens}
     response = adapter.complete(
-        model=model, prompt=prompt, temperature=temperature, seed=seed
+        model=model, prompt=prompt, temperature=temperature, seed=seed, **limits
     )
     log_llm_call(task=task, response=response, prompt_version=prompt_version)
     return response

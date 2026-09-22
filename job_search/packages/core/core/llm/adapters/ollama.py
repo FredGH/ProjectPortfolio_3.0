@@ -35,6 +35,7 @@ class OllamaAdapter:
         prompt: str,
         temperature: float = 0.0,
         seed: int | None = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Run one completion call against Ollama.
 
@@ -44,6 +45,10 @@ class OllamaAdapter:
             temperature: Sampling temperature, sent as `options.temperature`.
             seed: A fixed seed, sent as `options.seed` when given — Ollama
                 supports true seeded determinism, unlike Anthropic.
+            max_tokens: Cap on the reply's length, sent as
+                `options.num_predict` when given. Without it Ollama generates
+                until the model stops, so a model stuck in a loop can run for
+                minutes; a reply stopped by the cap comes back `truncated`.
 
         Returns:
             The normalised `LLMResponse`.
@@ -51,6 +56,8 @@ class OllamaAdapter:
         options: dict[str, object] = {"temperature": temperature}
         if seed is not None:
             options["seed"] = seed
+        if max_tokens is not None:
+            options["num_predict"] = max_tokens
         response = self.client.post(
             f"{self.base_url}/api/generate",
             json={
@@ -68,4 +75,5 @@ class OllamaAdapter:
             model=model,
             input_tokens=payload.get("prompt_eval_count", 0),
             output_tokens=payload.get("eval_count", 0),
+            truncated=payload.get("done_reason") == "length",
         )
