@@ -114,6 +114,12 @@ def purge_fixtures(engine: Engine) -> None:
             text("DELETE FROM esco.occupation WHERE occupation_id LIKE 'fixture-%'")
         )
         conn.execute(text("DELETE FROM esco.skill WHERE skill_id LIKE 'fixture-%'"))
+        conn.execute(
+            text(
+                "DELETE FROM silver.skill_extraction_run "
+                "WHERE sources = ARRAY['zzfixture-source']"
+            )
+        )
 
 
 def insert_mapping(
