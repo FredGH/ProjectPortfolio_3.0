@@ -855,7 +855,8 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     """Run the `extract-job-skills` subcommand.
 
     Args:
-        args: Parsed CLI arguments — optional `limit`, `source` and `category`.
+        args: Parsed CLI arguments — optional `limit`, `source`, `category`
+            and `country`.
 
     Returns:
         0 on success (including a partial failure), 1 if every attempted job
@@ -863,12 +864,18 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     """
     settings = get_settings()
     engine = build_engine(settings.database_url)
-    pending = count_pending_jobs(engine, sources=args.source, categories=args.category)
+    pending = count_pending_jobs(
+        engine,
+        sources=args.source,
+        categories=args.category,
+        countries=args.country,
+    )
     scope = " ".join(
         part
         for part in (
             f"sources={','.join(args.source)}" if args.source else "",
             f"categories={','.join(args.category)}" if args.category else "",
+            f"countries={','.join(args.country)}" if args.country else "",
             f"limit={args.limit}" if args.limit is not None else "",
         )
         if part
@@ -889,6 +896,7 @@ def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
             limit=args.limit,
             sources=args.source,
             categories=args.category,
+            countries=args.country,
         )
     finally:
         http_client.close()
@@ -1150,6 +1158,17 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Only jobs whose gold.dim_job category is NAME (repeatable), e.g. "
             "data_engineer; a job not yet categorised never matches"
+        ),
+    )
+    extract_parser.add_argument(
+        "--country",
+        action="append",
+        default=None,
+        metavar="ISO",
+        help=(
+            "Only jobs whose gold.dim_job.country_iso is ISO (repeatable), e.g. "
+            "GB; a job whose location did not resolve to a country never matches "
+            "(core.normalisation.location) — check coverage before relying on it"
         ),
     )
 
