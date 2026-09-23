@@ -72,24 +72,31 @@ then repeat the install with the *Apple Silicon* brew explicitly:
 `/opt/homebrew/bin/brew install ollama`. The downloaded models in `~/.ollama`
 are untouched by an uninstall/reinstall.
 
-### `brew services restart` regenerates its own config — edits to the LaunchAgent don't stick
+### `brew services restart`/`start` always regenerates its own config — don't use them for this
 
 Homebrew's `ollama` formula ships its service definition with
 `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` baked in. Editing
-`~/Library/LaunchAgents/sh.brew.ollama.plist` directly looks like it works,
-but **`brew services restart`/`start` overwrites that file from Homebrew's own
-template** in the Cellar on every restart, silently reverting the edit. To
-change it durably, edit the template itself, then reload:
+`~/Library/LaunchAgents/sh.brew.ollama.plist` directly looks like it works —
+until the next `brew services restart` or `start`, which **regenerates that
+file from the formula's own definition every single time**, silently
+reverting the edit. Editing the copy of the plist under the Cellar
+(`$(brew --cellar ollama)/*/sh.brew.ollama.plist`) does **not** help either —
+`brew services` was confirmed (twice, on two different days) to ignore it and
+regenerate from the formula regardless.
+
+The only durable fix is to bypass `brew services` entirely: edit the
+LaunchAgent, then load it directly with `launchctl`, and **never run
+`brew services restart|start ollama` again afterward** (or redo this):
 
 ```bash
-plutil -lint "$(brew --cellar ollama)"/*/sh.brew.ollama.plist   # find it, sanity-check it
-/usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables" "$(brew --cellar ollama)"/*/sh.brew.ollama.plist
-brew services restart ollama
-# if launchd still shows the old env (`launchctl print gui/$(id -u)/sh.brew.ollama`),
-# force a reload instead of trusting the restart:
+/usr/libexec/PlistBuddy -c "Delete :EnvironmentVariables" ~/Library/LaunchAgents/sh.brew.ollama.plist
+plutil -lint ~/Library/LaunchAgents/sh.brew.ollama.plist   # sanity-check the edit
 launchctl bootout gui/$(id -u)/sh.brew.ollama
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/sh.brew.ollama.plist
 launchctl kickstart -k gui/$(id -u)/sh.brew.ollama
+# confirm: no OLLAMA_FLASH_ATTENTION / OLLAMA_KV_CACHE_TYPE in either of these
+launchctl print gui/$(id -u)/sh.brew.ollama | grep -A5 'environment ='
+ps eww -p "$(pgrep -f 'ollama serve' | head -1)" | tr ' ' '\n' | grep OLLAMA_
 ```
 
 ### A known decoding failure: indefinite repetition at `temperature=0`
@@ -123,3 +130,59 @@ If this keeps recurring at scale, the fix is to thread `repeat_penalty` /
 uses (`core.llm.types.LLMAdapter.complete` → `core.llm.adapters.ollama.OllamaAdapter`
 → `core.llm.gateway.complete`), scoped to `skill_extraction` only, then
 re-run the golden-set eval before trusting it broadly.
+
+**Update:** this was implemented. Applying the penalty to every call was tried
+first and rejected — it measurably hurt quality on chunks that never looped
+(fewer skills found, and sometimes invalid JSON from inline comments the
+penalty itself induced). What shipped instead retries only a chunk whose
+first reply was truncated, once, with the penalty — a chunk that succeeds
+normally is never touched by it. See `core.skills.jd_extract.REPEAT_PENALTY`.
+
+### Ollama's memory footprint grows across a long run — it once froze the whole Mac
+
+A batch of ~50 back-to-back extraction jobs (~45 minutes, no gaps — Ollama's
+`OLLAMA_KEEP_ALIVE` default of 5 minutes never kicks in because the model is
+never idle) grew the resident `llama-server` process from `ollama ps`'s
+reported ~5.0 GB up to **9.31 GB**, confirmed by macOS's own memory-pressure
+("jetsam") report at the moment of a full machine freeze that needed a hard
+restart:
+
+```
+"largestProcess": "llama-server"
+llama-server:                              9,310 MB
+com.apple.Virtualization.VirtualMachine:   5,832 MB   (Docker Desktop's VM)
+everything else combined:                 ~2,500 MB
+                                           ---------
+total:                                    ~15.1 GB of 16 GB, 176 MB free
+```
+
+(Recover this kind of evidence yourself with `ls -la
+/Library/Logs/DiagnosticReports/JetsamEvent-*.ips` around the crash time, then
+`python3 -c "import json; ..."` to parse it — it's readable JSON despite the
+`.ips` extension, one header line then the report.)
+
+**Mitigation:** don't run one large unbroken batch. Run in smaller chunks
+(e.g. `--limit 30`) and unload the model between them:
+
+```bash
+ollama stop llama3.1:8b   # fast: unloads the model, frees memory in place
+# or, to reset the whole server: see the launchctl sequence above
+```
+
+The batch-writer design already makes this safe to interrupt — each job
+commits its rows the moment it succeeds, with no outer transaction around the
+batch (`core.skills.write_job_skills.write_job_skills`; see "Scoping
+extraction" in `docs/esco.md`), so nothing already extracted is at risk —
+only the in-flight job when memory runs out.
+
+**A second, independent contributor:** Docker Desktop's own VM was already
+using 5.83 GB of its 7.9 GB allocation (`--memoryMiB 8092` on its
+`com.docker.virtualization` process — found via `ps aux`, since none of
+Docker Desktop's plain config files under `~/Library/Group Containers/
+group.com.docker/` or `~/Library/Application Support/Docker Desktop/` hold the
+live value; `marlin.dat` in the first directory looks promising but is a
+telemetry log, not settings). Lowering it is a manual step — Docker Desktop's
+newer versions keep VM resource settings in internal app state, not a
+document one can safely edit from outside: **Docker Desktop → Settings →
+Resources → Memory**, lower it (e.g. to 3–4 GB; this project's containers are
+Postgres/FastAPI/Streamlit, which don't need much), **Apply & Restart**.
