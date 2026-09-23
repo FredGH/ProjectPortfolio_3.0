@@ -161,15 +161,20 @@ total:                                    ~15.1 GB of 16 GB, 176 MB free
 `python3 -c "import json; ..."` to parse it — it's readable JSON despite the
 `.ips` extension, one header line then the report.)
 
-**Mitigation:** don't run one large unbroken batch. Run in smaller chunks
-(e.g. `--limit 30`) and unload the model between them:
+**Mitigation:** don't run one large unbroken batch. `scripts/extract_in_batches.sh`
+wraps `extract-job-skills` in bounded batches (30 by default), unloading the
+model (`ollama stop`) and pausing between each — this is not a manual step to
+remember, it is the committed, standard way to run a big extraction:
 
 ```bash
-ollama stop llama3.1:8b   # fast: unloads the model, frees memory in place
-# or, to reset the whole server: see the launchctl sequence above
+scripts/extract_in_batches.sh 30 -- --source greenhouse \
+    --category data_engineer --category analytics_engineer \
+    --category data_scientist --category ai_ml_engineer
 ```
 
-The batch-writer design already makes this safe to interrupt — each job
+It re-checks Docker and Ollama are up before every batch, and stops on the
+first batch where every job failed rather than grinding on uselessly. The
+batch-writer design already makes the whole thing safe to interrupt — each job
 commits its rows the moment it succeeds, with no outer transaction around the
 batch (`core.skills.write_job_skills.write_job_skills`; see "Scoping
 extraction" in `docs/esco.md`), so nothing already extracted is at risk —
