@@ -13,14 +13,21 @@ lock. See docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
+import httpx
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
 
-from core.skills.write_job_skills import CURRENT_PROMPT_VERSION, count_pending_jobs
+from core.llm.types import LLMAdapter
+from core.skills.write_job_skills import (
+    CURRENT_PROMPT_VERSION,
+    count_pending_jobs,
+    write_job_skills,
+)
 
 
 class RunError(ValueError):
@@ -267,3 +274,171 @@ def list_filter_options(engine: Engine) -> FilterOptions:
             row.value for row in conn.execute(_SELECT_PENDING_COUNTRIES, params)
         ]
     return FilterOptions(sources=sources, countries=countries)
+
+
+DEFAULT_BATCH_SIZE = 30
+"""Jobs per sub-batch before the Ollama model is unloaded and the run
+pauses — matches scripts/extract_in_batches.sh's proven-safe default.
+Not user-configurable (spec's Non-goals): a higher value is what grew
+Ollama's resident memory and froze the host machine once already."""
+
+DEFAULT_PAUSE_SECONDS = 10.0
+"""Pause after each unload before the next sub-batch — same value as
+scripts/extract_in_batches.sh."""
+
+_UPDATE_PROGRESS = text(
+    "UPDATE silver.skill_extraction_run SET "
+    "extracted_count = extracted_count + :extracted, "
+    "failed_count = failed_count + :failed, "
+    "updated_at = now() "
+    "WHERE run_id = :run_id"
+)
+_SELECT_CANCEL_REQUESTED = text(
+    "SELECT cancel_requested FROM silver.skill_extraction_run " "WHERE run_id = :run_id"
+)
+_FINISH_RUN = text(
+    "UPDATE silver.skill_extraction_run SET status = :status, "
+    "error_message = :error_message, finished_at = now(), updated_at = now() "
+    "WHERE run_id = :run_id"
+)
+
+
+def _record_progress(
+    engine: Engine, run_id: uuid.UUID, extracted: int, failed: int
+) -> None:
+    """Add one sub-batch's counts onto a run's running totals.
+
+    Args:
+        engine: The app-role engine.
+        run_id: The run to update.
+        extracted: Jobs extracted in this sub-batch.
+        failed: Jobs that failed in this sub-batch.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            _UPDATE_PROGRESS,
+            {"run_id": run_id, "extracted": extracted, "failed": failed},
+        )
+
+
+def _is_cancel_requested(engine: Engine, run_id: uuid.UUID) -> bool:
+    """Check whether a run's cancel flag has been set.
+
+    Args:
+        engine: The app-role engine.
+        run_id: The run to check.
+
+    Returns:
+        The current `cancel_requested` value.
+    """
+    with engine.connect() as conn:
+        return conn.execute(_SELECT_CANCEL_REQUESTED, {"run_id": run_id}).scalar_one()
+
+
+def _finish_run(
+    engine: Engine,
+    run_id: uuid.UUID,
+    *,
+    status: str,
+    error_message: str | None = None,
+) -> None:
+    """Mark a run terminal.
+
+    Args:
+        engine: The app-role engine.
+        run_id: The run to finish.
+        status: "completed", "cancelled", or "failed".
+        error_message: Set when `status == "failed"`.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            _FINISH_RUN,
+            {"run_id": run_id, "status": status, "error_message": error_message},
+        )
+
+
+def _unload_model(http_client: httpx.Client, ollama_base_url: str, model: str) -> None:
+    """Ask Ollama to free the model's memory immediately.
+
+    Sends `keep_alive: 0` with no `prompt`, which unloads rather than
+    running a completion — verified to behave identically whether
+    Ollama is native or Docker-hosted, since it's a plain HTTP call.
+
+    Args:
+        http_client: The client to issue the request with.
+        ollama_base_url: Ollama's base URL, e.g. "http://ollama:11434".
+        model: The model tag to unload, e.g. "llama3.1:8b".
+
+    Raises:
+        httpx.HTTPError: If Ollama is unreachable or returns an error.
+    """
+    response = http_client.post(
+        f"{ollama_base_url}/api/generate",
+        json={"model": model, "keep_alive": 0},
+    )
+    response.raise_for_status()
+
+
+def run_loop(
+    run_id: uuid.UUID,
+    engine: Engine,
+    *,
+    adapters: dict[str, LLMAdapter],
+    http_client: httpx.Client,
+    ollama_base_url: str,
+    model: str,
+    sources: list[str] | None,
+    countries: list[str] | None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    pause_seconds: float = DEFAULT_PAUSE_SECONDS,
+) -> None:
+    """Run a started extraction run to completion, cancellation, or failure.
+
+    Scheduled as a FastAPI `BackgroundTasks` callback by `POST
+    /skills/extraction-runs` — runs off the request/response cycle.
+    Repeats a bounded `write_job_skills` sub-batch, records its counts,
+    unloads the Ollama model, and pauses, until nothing is left pending
+    in scope or a cancel is requested. Never raises — any exception
+    from a sub-batch (a hard failure like a lost DB connection or an
+    unreachable Ollama; an individual job's own failure is already
+    handled inside `write_job_skills` and never raises) marks the run
+    `failed` and stops.
+
+    Args:
+        run_id: The run to execute — must already be `running` (i.e.
+            `start_run` returned a non-zero `total_pending`).
+        engine: The app-role engine.
+        adapters: Every available LLM adapter, keyed by provider.
+        http_client: The client used for the Ollama unload call.
+        ollama_base_url: Ollama's base URL.
+        model: The extraction model tag to unload between sub-batches —
+            resolve via `core.llm.task_config.load_task_config
+            ("skill_extraction").model`, never hardcoded.
+        sources: The run's source scope.
+        countries: The run's country scope.
+        batch_size: Jobs per sub-batch.
+        pause_seconds: Pause after each unload.
+    """
+    try:
+        while True:
+            summary = write_job_skills(
+                engine,
+                adapters=adapters,
+                limit=batch_size,
+                sources=sources,
+                countries=countries,
+            )
+            _record_progress(
+                engine, run_id, summary.extracted_jobs, summary.failed_jobs
+            )
+            _unload_model(http_client, ollama_base_url, model)
+            time.sleep(pause_seconds)
+            if _is_cancel_requested(engine, run_id):
+                _finish_run(engine, run_id, status="cancelled")
+                return
+            remaining = count_pending_jobs(engine, sources=sources, countries=countries)
+            if remaining == 0:
+                _finish_run(engine, run_id, status="completed")
+                return
+    except Exception as exc:  # noqa: BLE001 — any hard failure ends the run
+        _finish_run(engine, run_id, status="failed", error_message=str(exc))
