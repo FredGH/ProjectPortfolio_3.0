@@ -34,8 +34,13 @@ where it left off.
 
 If a run shows as **possibly stalled**, the API process restarted
 while it was running (its progress hasn't moved in over two minutes).
-The jobs it already extracted are safe; **Cancel** just clears the
-stuck row so a new run can start.
+The jobs it already extracted are safe. **Known limitation:** Cancel
+only asks a running loop to stop between sub-batches — if the loop
+itself is gone (e.g. after an API restart), nothing is left to act on
+that request, so the row stays stuck. Clearing it currently needs a
+manual database update, e.g.:
+`UPDATE silver.skill_extraction_run SET status = 'cancelled' WHERE
+run_id = '<id>';` — before a new run can start.
 """
 
 
@@ -118,8 +123,9 @@ def _render_active_run(run: dict) -> None:
     if _is_stale(run["updated_at"]):
         st.warning(
             "This run's progress hasn't updated in over two minutes — the "
-            "API may have restarted. Already-extracted jobs are safe; "
-            "Cancel to clear this run so a new one can start."
+            "API may have restarted. Already-extracted jobs are safe, but "
+            "Stop won't clear this row on its own if nothing is left "
+            "running to act on the request — see the User Guide."
         )
     if st.button("Stop", key="stop_run"):
         response = _post(f"/skills/extraction-runs/{run['run_id']}/cancel")

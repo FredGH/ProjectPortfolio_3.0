@@ -185,6 +185,12 @@ aliases*.
 
 ## Scoping extraction (the slow step)
 
+The Skill Extraction Runner UI page (`http://localhost:8501/Skill_Extraction_Runner`)
+is the recommended way to run a scoped batch interactively; the
+`--source`/`--category`/`--country` CLI flags documented below remain for
+scripted/CI use. See README.md's "Running a batch from the UI instead of the
+shell script" for how it works.
+
 `extract-job-skills` is the expensive command: a local 8B model on CPU took about
 150 s per Greenhouse job (roughly two LLM calls each) on the first real run, so
 "every pending job" was about 90 hours. Scope it instead:

@@ -191,3 +191,45 @@ newer versions keep VM resource settings in internal app state, not a
 document one can safely edit from outside: **Docker Desktop → Settings →
 Resources → Memory**, lower it (e.g. to 3–4 GB; this project's containers are
 Postgres/FastAPI/Streamlit, which don't need much), **Apply & Restart**.
+
+### Running a batch from the UI instead of the shell script
+
+The **Skill Extraction Runner** page (`apps/ui/app/pages/7_Skill_Extraction_Runner.py`,
+`http://localhost:8501/Skill_Extraction_Runner`) is the primary way to run a
+scoped extraction batch, and the only way that's safe when Ollama runs in
+Docker: `scripts/extract_in_batches.sh` (above) needs a native `venv/` and the
+`ollama` CLI on the host, neither of which exist inside the `pipeline`
+container, so it offers no protection at all when Ollama is Docker-hosted.
+The script is unchanged and still works for a native-Ollama, CLI-only
+workflow — this isn't a replacement, it's the option for everyone else.
+
+The page triggers a background run via the API (`POST
+/skills/extraction-runs`, see `core.skills.extraction_run.run_loop`), which
+repeats the same bounded-sub-batch pattern — 30 jobs, then unload, then a 10s
+pause — but over Ollama's own HTTP API (`POST /api/generate` with
+`{"model": ..., "keep_alive": 0}`, no `prompt`) instead of the `ollama` CLI.
+That's the whole reason it works identically for native or Docker-hosted
+Ollama: it's a plain HTTP call to whatever `OLLAMA_BASE_URL` resolves to,
+with no dependence on a CLI binary or a docker socket. Batch size (30) and
+pause (10s) are fixed, not configurable from the UI — the exact values this
+section already established as safe.
+
+A run's status is persisted in `silver.skill_extraction_run`, so it survives
+an API restart rather than silently vanishing. **Known limitation, found
+during verification:** if the API process dies or restarts while a run is
+`running`, the row is left `running` forever — **Cancel only sets a flag for
+the run's own loop to notice between sub-batches, and if that loop is gone
+there is nothing left to act on the request.** The page's stale-run warning
+(triggered after 2 minutes with no progress update) says so and gives the
+one-line manual fix:
+
+```sql
+UPDATE silver.skill_extraction_run SET status = 'cancelled' WHERE run_id = '<id>';
+```
+
+A safe automatic recovery (distinguishing "orphaned" from "just slow, hasn't
+finished a big sub-batch yet") needs its own design pass, not an ad-hoc fix —
+tracked as a follow-up, not implemented here.
+
+See `docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design.md`
+for the full design.
