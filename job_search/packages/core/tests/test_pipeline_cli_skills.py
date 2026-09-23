@@ -68,7 +68,7 @@ class TestSkillSubcommandsAreRegistered(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             with self.assertRaises(SystemExit):
                 main(["extract-job-skills", "--help"])
-        for flag in ("--source", "--category", "--limit"):
+        for flag in ("--source", "--category", "--country", "--limit"):
             self.assertIn(flag, out.getvalue())
 
     def test_map_cv_skills_is_registered(self) -> None:

@@ -203,10 +203,23 @@ python -m apps.pipeline.app.cli extract-job-skills --source greenhouse \
   one of the names. A job that has not been categorised yet never matches, so run
   `classify-jobs` and the gold dbt models first. See the categories and their
   counts with `SELECT category, count(*) FROM gold.dim_job GROUP BY 1`.
+- `--country ISO` (repeatable, e.g. `--country GB`) keeps only jobs whose
+  `gold.dim_job.country_iso` is one of the codes. Resolved by
+  `core.normalisation.location.normalise_location` at blocking-key time
+  (`compute-blocking-keys`), not by dbt — a location that never resolves
+  (most free-text locations don't) leaves `country_iso` `NULL` and never
+  matches. **Check real coverage before relying on it**:
+  `SELECT country_iso, count(*) FROM gold.dim_job GROUP BY 1 ORDER BY 2 DESC`
+  — a country_iso fix only reaches `gold.dim_job` after re-running
+  `compute-blocking-keys` and rebuilding the gold models that join it
+  (`dim_job`, `dim_company`, `fct_market_demand`); it does **not** need
+  `cluster-jobs`/`compute-survivorship` to re-run, since `job_group_id` and
+  survivorship winners never depend on country (PLAN.md Step 10's stability
+  guarantee holds).
 - `--limit N` caps the run, which is a good way to time a trial before a long one.
-- Filters combine (source AND category; several categories are OR-ed). The
-  command prints how many pending jobs match before it starts, so a typo shows up
-  as `0 pending job(s) match` immediately.
+- Filters combine (source AND category AND country; several values for the
+  same flag are OR-ed). The command prints how many pending jobs match before
+  it starts, so a typo shows up as `0 pending job(s) match` immediately.
 
 As measured on 2026-09-21, the pending Greenhouse jobs were 2,117, of which the four
 data and AI categories above are 257. Extraction is resumable: each job commits on

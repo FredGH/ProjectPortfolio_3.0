@@ -36,7 +36,10 @@ _PENDING_FROM_WHERE = (
     "OR js.apply_source_name = ANY(:sources)) "
     "AND (CAST(:categories AS text[]) IS NULL OR EXISTS ("
     "SELECT 1 FROM gold.dim_job AS d WHERE d.job_group_id = js.job_group_id "
-    "AND d.category = ANY(:categories)))"
+    "AND d.category = ANY(:categories))) "
+    "AND (CAST(:countries AS text[]) IS NULL OR EXISTS ("
+    "SELECT 1 FROM gold.dim_job AS d WHERE d.job_group_id = js.job_group_id "
+    "AND d.country_iso = ANY(:countries)))"
 )
 _SELECT_PENDING = text(
     "SELECT js.job_group_id, js.winning_description AS description "
@@ -75,6 +78,7 @@ def _pending_params(
     job_group_ids: list[str] | None,
     sources: list[str] | None,
     categories: list[str] | None,
+    countries: list[str] | None,
 ) -> dict[str, object]:
     """Build the bind parameters shared by the pending-jobs queries.
 
@@ -83,6 +87,8 @@ def _pending_params(
         sources: Restrict to jobs whose winning source is one of these, or None.
         categories: Restrict to jobs whose gold category is one of these, or
             None.
+        countries: Restrict to jobs whose gold country_iso is one of these,
+            or None.
 
     Returns:
         The parameter dict (an empty list is treated as no filter).
@@ -92,6 +98,7 @@ def _pending_params(
         "job_group_ids": job_group_ids,
         "sources": sources or None,
         "categories": categories or None,
+        "countries": countries or None,
     }
 
 
@@ -101,6 +108,7 @@ def count_pending_jobs(
     job_group_ids: list[str] | None = None,
     sources: list[str] | None = None,
     categories: list[str] | None = None,
+    countries: list[str] | None = None,
 ) -> int:
     """Count the jobs a `write_job_skills` run with these filters would process.
 
@@ -110,13 +118,19 @@ def count_pending_jobs(
         sources: Restrict to jobs whose winning source is one of these.
         categories: Restrict to jobs whose gold category is one of these; a
             job with no `gold.dim_job` row does not match.
+        countries: Restrict to jobs whose `gold.dim_job.country_iso` is one
+            of these (e.g. `["GB"]`); a job with no `gold.dim_job` row, or an
+            unresolved country, does not match. See
+            `core.normalisation.location` for what resolves a location to a
+            country.
 
     Returns:
         The number of pending jobs (before any `limit`).
     """
     with engine.connect() as conn:
         return conn.execute(
-            _COUNT_PENDING, _pending_params(job_group_ids, sources, categories)
+            _COUNT_PENDING,
+            _pending_params(job_group_ids, sources, categories, countries),
         ).scalar_one()
 
 
@@ -128,6 +142,7 @@ def write_job_skills(
     limit: int | None = None,
     sources: list[str] | None = None,
     categories: list[str] | None = None,
+    countries: list[str] | None = None,
 ) -> WriteSummary:
     """Extract and store skills for every not-yet-extracted dedup survivor.
 
@@ -144,6 +159,9 @@ def write_job_skills(
         categories: Only jobs whose `gold.dim_job.category` is one of these;
             `None` for every category. A job with no `gold.dim_job` row does
             not match.
+        countries: Only jobs whose `gold.dim_job.country_iso` is one of these
+            (e.g. `["GB"]`); `None` for every country. A job with no
+            `gold.dim_job` row, or an unresolved country, does not match.
 
     Returns:
         The `WriteSummary`.
@@ -151,7 +169,10 @@ def write_job_skills(
     with engine.connect() as conn:
         pending = conn.execute(
             _SELECT_PENDING,
-            {**_pending_params(job_group_ids, sources, categories), "limit": limit},
+            {
+                **_pending_params(job_group_ids, sources, categories, countries),
+                "limit": limit,
+            },
         ).all()
 
     extracted = skill_rows = failed = 0

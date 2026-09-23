@@ -38,8 +38,9 @@ class TestWriteJobSkills(unittest.TestCase):
         *,
         source: str = "greenhouse",
         category: str | None = None,
+        country: str | None = None,
     ) -> None:
-        """Insert a survivor and, if `category` is given, its gold.dim_job row."""
+        """Insert a survivor and, if given, its gold.dim_job row."""
         with self.engine.begin() as conn:
             conn.execute(
                 text(
@@ -50,13 +51,14 @@ class TestWriteJobSkills(unittest.TestCase):
                 ),
                 {"g": job, "d": description, "s": f"src-{job}", "src": source},
             )
-            if category is not None:
+            if category is not None or country is not None:
                 conn.execute(
                     text(
-                        "INSERT INTO gold.dim_job (job_group_id, category) "
-                        "VALUES (:g, :c)"
+                        "INSERT INTO gold.dim_job "
+                        "(job_group_id, category, country_iso) "
+                        "VALUES (:g, :c, :co)"
                     ),
-                    {"g": job, "c": category},
+                    {"g": job, "c": category, "co": country},
                 )
 
     def _write(self, adapter: FakeAdapter, jobs: list[str], **kwargs):
@@ -203,6 +205,55 @@ class TestWriteJobSkills(unittest.TestCase):
         self._write(adapter, [first, other], categories=["data_engineer"])
         self.assertEqual(self._extractions(other), 0)
 
+    def test_the_country_filter_leaves_other_countries_pending(self) -> None:
+        first, other = self._two_jobs(category="data_engineer", country="US")
+        first_country = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        self._add_survivor(
+            first_country, "Python.", category="data_engineer", country="GB"
+        )
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(adapter, [first, other, first_country], countries=["GB"])
+        self.assertEqual(summary.extracted_jobs, 1)
+        self.assertEqual(self._extractions(first_country), 1)
+        self.assertEqual(self._extractions(first), 0)
+        self.assertEqual(self._extractions(other), 0)
+
+    def test_several_countries_are_or_ed(self) -> None:
+        gb_job = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        us_job = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        de_job = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        self._add_survivor(gb_job, "Python.", country="GB")
+        self._add_survivor(us_job, "Python.", country="US")
+        self._add_survivor(de_job, "Python.", country="DE")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(adapter, [gb_job, us_job, de_job], countries=["GB", "US"])
+        self.assertEqual(summary.extracted_jobs, 2)
+        self.assertEqual(self._extractions(de_job), 0)
+
+    def test_a_job_with_no_country_row_is_excluded_by_a_country_filter(self) -> None:
+        first, other = self._two_jobs()  # `other` has no gold.dim_job row at all
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        self._write(adapter, [first, other], countries=["GB"])
+        self.assertEqual(self._extractions(other), 0)
+        self.assertEqual(self._extractions(first), 0)  # first has no country either
+
+    def test_country_and_category_filters_both_apply(self) -> None:
+        gb_data_eng = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        gb_other = f"fixture-job-{uuid.uuid4().hex[:8]}"
+        self._add_survivor(
+            gb_data_eng, "Python.", category="data_engineer", country="GB"
+        )
+        self._add_survivor(gb_other, "Python.", category="other", country="GB")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        summary = self._write(
+            adapter,
+            [gb_data_eng, gb_other],
+            countries=["GB"],
+            categories=["data_engineer"],
+        )
+        self.assertEqual(summary.extracted_jobs, 1)
+        self.assertEqual(self._extractions(gb_other), 0)
+
     def test_source_and_category_filters_both_apply(self) -> None:
         first, other = self._two_jobs(source="adzuna", category="data_engineer")
         adapter = FakeAdapter(_reply(("Python", "must_have")))
@@ -221,7 +272,7 @@ class TestWriteJobSkills(unittest.TestCase):
         self.assertEqual(self._write(adapter, [first, other]).extracted_jobs, 2)
 
     def test_count_pending_jobs_matches_what_a_run_would_process(self) -> None:
-        first, other = self._two_jobs(source="adzuna", category="other")
+        first, other = self._two_jobs(source="adzuna", category="other", country="US")
         ids = [first, other]
         self.assertEqual(count_pending_jobs(self.engine, job_group_ids=ids), 2)
         self.assertEqual(
@@ -239,6 +290,12 @@ class TestWriteJobSkills(unittest.TestCase):
                 self.engine, job_group_ids=ids, categories=["software_engineer"]
             ),
             0,
+        )
+        self.assertEqual(
+            count_pending_jobs(self.engine, job_group_ids=ids, countries=["US"]), 1
+        )
+        self.assertEqual(
+            count_pending_jobs(self.engine, job_group_ids=ids, countries=["GB"]), 0
         )
         adapter = FakeAdapter(_reply(("Python", "must_have")))
         self._write(adapter, [first])
