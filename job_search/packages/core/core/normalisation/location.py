@@ -14,6 +14,14 @@ _REMOTE_RE = re.compile(r"\bremote\b", re.IGNORECASE)
 
 _UK_POSTCODE_RE = re.compile(r"^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$", re.IGNORECASE)
 
+# "UK"/"United Kingdom" names the country directly but not a specific region
+# (unlike a recognised county/city in _UK_REGION_TO_ITL1) — a real gap found
+# in production data: rows shaped "London, UK" had country_iso left NULL
+# because only the region lookup existed and "uk" is not a county name.
+# Matched against the whole string (not just the last segment) with word
+# boundaries so it doesn't fire inside another word ("Ukraine").
+_UK_COUNTRY_RE = re.compile(r"\buk\b|\bunited kingdom\b", re.IGNORECASE)
+
 # UK county/region name -> ITL1 (post-Brexit NUTS1-equivalent) code.
 # Populated from names actually observed in real bronze data; extend as
 # new counties appear rather than trying to enumerate every UK county
@@ -109,6 +117,9 @@ def normalise_location(raw: str | None) -> NormalisedLocation:
         return NormalisedLocation(
             country_iso="GB", region=region_code, is_remote=is_remote
         )
+
+    if _UK_COUNTRY_RE.search(raw):
+        return NormalisedLocation(country_iso="GB", region=None, is_remote=is_remote)
 
     for pattern, country_iso in _NON_UK_COUNTRY_PATTERNS:
         if pattern.search(raw):

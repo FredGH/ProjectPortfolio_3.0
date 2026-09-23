@@ -100,6 +100,19 @@ LOCATION_EXAMPLES: list[tuple[str, str | None, str | None, bool]] = [
     ("SW1E5LB", "GB", None, False),
     ("Salt Lake City, UT", None, None, False),
     ("Dublin", None, None, False),
+    # "UK"/"United Kingdom" as the trailing segment names the country but no
+    # recognised region, unlike "London, London" etc. above (JOB-460-era
+    # gap: real Greenhouse rows like this had country_iso left NULL because
+    # only the region lookup existed, and "uk" is not a county name).
+    ("London, UK", "GB", None, False),
+    ("Manchester, United Kingdom", "GB", None, False),
+    ("Remote, UK", "GB", None, True),
+    ("United Kingdom", "GB", None, False),
+    # Regression: "uk" must not match as a substring of another word.
+    ("Kyiv, Ukraine", None, None, False),
+    # Genuinely ambiguous dual-location strings stay unresolved — no "UK"/
+    # "United Kingdom" token appears in either of these.
+    ("London, Dublin", None, None, False),
     ("Berlin, DE", "DE", None, False),
     ("MX- Mexico City", "MX", None, False),
     ("Seoul, South Korea", "KR", None, False),
