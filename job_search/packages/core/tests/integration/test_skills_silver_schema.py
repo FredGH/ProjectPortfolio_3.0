@@ -6,7 +6,7 @@ import unittest
 import uuid
 
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.exc import IntegrityError
 from tests.integration.skills_fixtures import (
     insert_job_skills,
     insert_mapping,
@@ -149,18 +149,36 @@ class TestOtherSilverSkillTables(unittest.TestCase):
             ).scalar_one()
         self.assertEqual(left, 0)
 
-    def test_app_role_can_write_review_tables_but_not_extraction_tables(self) -> None:
+    def test_app_role_can_write_review_and_extraction_tables(self) -> None:
+        """job_search_app writes both the review tables (silver.skill_mapping,
+        via the review API) and the extraction tables (silver.
+        job_skill_extraction / job_skill_raw, via the skill-extraction batch
+        runner's run_loop, called from the API process — migration 0025).
+
+        Until 0025, the extraction tables were owner-role-write-only (only
+        the pipeline CLI wrote them); this test used to assert the app role
+        was rejected there. That boundary was deliberately widened, not
+        broken — confirm the grant is actually usable, not just present in
+        information_schema.
+        """
         with self.app.begin() as conn:
             insert_mapping(conn, f"zzfixture app {self.job}")
-        with self.assertRaises(DBAPIError):
-            with self.app.begin() as conn:
-                conn.execute(
-                    text(
-                        "INSERT INTO silver.job_skill_extraction "
-                        "(job_group_id, prompt_version) VALUES (:j, 'local.v1')"
-                    ),
-                    {"j": self.job},
-                )
+            conn.execute(
+                text(
+                    "INSERT INTO silver.job_skill_extraction "
+                    "(job_group_id, prompt_version) VALUES (:j, 'local.v1')"
+                ),
+                {"j": self.job},
+            )
+        with self.engine.connect() as conn:
+            count = conn.execute(
+                text(
+                    "SELECT count(*) FROM silver.job_skill_extraction "
+                    "WHERE job_group_id = :j"
+                ),
+                {"j": self.job},
+            ).scalar_one()
+        self.assertEqual(count, 1)
 
 
 if __name__ == "__main__":
