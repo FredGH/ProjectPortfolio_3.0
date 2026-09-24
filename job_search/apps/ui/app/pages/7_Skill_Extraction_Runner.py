@@ -27,12 +27,26 @@ _API = get_settings().api_base_url
 # from the UI" section.
 _STALE_AFTER_SECONDS = 7200
 
+# "docker" is first so it's the selectbox's default — it always works
+# whenever the stack is up, unlike "native", which needs Ollama actually
+# running on the host with the model pulled.
+_OLLAMA_LOCATION_LABELS = {
+    "docker": "Docker (this stack's ollama service)",
+    "native": "Native (Ollama on your host machine)",
+}
+
 _USER_GUIDE = """
 Runs `extract-job-skills` for the sources/countries you pick, in
 bounded batches of 30 jobs with a pause between each — the same
 protection `scripts/extract_in_batches.sh` uses, so it's safe to run
 even though it can take a long time (a local model on CPU takes
 minutes per job).
+
+**Ollama location** picks where those calls go: **Docker** (this
+stack's `ollama` service, always available) or **Native** (Ollama
+running on your host machine — faster, per README.md, but only works
+if it's actually running there with the model pulled; if it isn't, the
+run fails on its first sub-batch).
 
 Only one run can be active at a time. **Stop** finishes the job
 currently in progress, then halts — nothing already extracted is
@@ -194,10 +208,20 @@ def _render_start_form() -> None:
     except httpx.HTTPError as exc:
         st.error(f"Failed to count pending jobs: {exc}")
         return
+    ollama_location = st.selectbox(
+        "Ollama location",
+        options=list(_OLLAMA_LOCATION_LABELS),
+        format_func=lambda key: _OLLAMA_LOCATION_LABELS[key],
+        key="ollama_location",
+    )
     if st.button("Start", key="start_run", disabled=pending["pending"] == 0):
         response = _post(
             "/skills/extraction-runs",
-            {"sources": sources or None, "countries": countries or None},
+            {
+                "sources": sources or None,
+                "countries": countries or None,
+                "ollama_location": ollama_location,
+            },
         )
         if response.status_code == 409:
             st.error("A run is already active.")

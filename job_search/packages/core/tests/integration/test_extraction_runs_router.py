@@ -28,6 +28,7 @@ from tests.integration.skills_fixtures import (  # noqa: E402
 )
 from tests.skills_fakes import FakeAdapter  # noqa: E402
 
+from core.settings import get_settings  # noqa: E402
 from core.skills.extraction_run import start_run  # noqa: E402
 
 app = FastAPI()
@@ -128,6 +129,47 @@ class TestExtractionRunsApi(unittest.TestCase):
             ).one()
         self.assertEqual(status, "completed")
         self.assertEqual(extracted, 1)
+
+    def test_start_defaults_to_the_docker_ollama_location(self) -> None:
+        self._add_survivor("fixture-job-api-loc1")
+        requested_urls: list[str] = []
+
+        def _record_and_answer(request: httpx.Request) -> httpx.Response:
+            requested_urls.append(str(request.url))
+            return httpx.Response(200, json={"done_reason": "unload"})
+
+        app.dependency_overrides[get_http_client] = lambda: httpx.Client(
+            transport=httpx.MockTransport(_record_and_answer)
+        )
+        start = self.client.post(
+            "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
+        )
+        self.assertEqual(start.status_code, 202)
+        self.assertEqual(
+            requested_urls,
+            [f"{get_settings().ollama_base_url}/api/generate"],
+        )
+
+    def test_start_with_native_ollama_location_targets_the_host(self) -> None:
+        self._add_survivor("fixture-job-api-loc2")
+        requested_urls: list[str] = []
+
+        def _record_and_answer(request: httpx.Request) -> httpx.Response:
+            requested_urls.append(str(request.url))
+            return httpx.Response(200, json={"done_reason": "unload"})
+
+        app.dependency_overrides[get_http_client] = lambda: httpx.Client(
+            transport=httpx.MockTransport(_record_and_answer)
+        )
+        start = self.client.post(
+            "/skills/extraction-runs",
+            json={"sources": _FIXTURE_SOURCES, "ollama_location": "native"},
+        )
+        self.assertEqual(start.status_code, 202)
+        self.assertEqual(
+            requested_urls,
+            ["http://host.docker.internal:11434/api/generate"],
+        )
 
     def test_start_while_one_is_active_returns_409(self) -> None:
         # Starts the first run directly through the core function

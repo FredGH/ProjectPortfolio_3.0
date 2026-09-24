@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 import httpx
 from app.dependencies import get_app_db_engine, get_http_client, get_llm_adapters
@@ -33,6 +34,13 @@ from core.skills.write_job_skills import count_pending_jobs
 
 router = APIRouter(prefix="/skills/extraction-runs")
 
+_NATIVE_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
+"""How the api container reaches an Ollama server running natively on the
+host, instead of the Docker `ollama` service — see README.md's "Running
+Ollama natively instead" section. `host.docker.internal` is a Docker
+Desktop DNS entry, not a real hostname; only meaningful from inside a
+container."""
+
 
 class FilterOptionsModel(BaseModel):
     """Available scope values (see `core.skills.extraction_run.FilterOptions`)."""
@@ -47,10 +55,16 @@ class StartRunRequest(BaseModel):
     Attributes:
         sources: Restrict to these sources, or None for every source.
         countries: Restrict to these countries, or None for every country.
+        ollama_location: Where the run's Ollama calls go — "docker" (the
+            `ollama` compose service, always available whenever the stack
+            is) or "native" (Ollama running on the host machine, reached
+            via `host.docker.internal` — faster per README.md, but only
+            works if it's actually running there with the model pulled).
     """
 
     sources: list[str] | None = None
     countries: list[str] | None = None
+    ollama_location: Literal["docker", "native"] = "docker"
 
 
 class StartRunResponse(BaseModel):
@@ -168,13 +182,18 @@ def post_start_run(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if total_pending > 0:
         task_config = load_task_config("skill_extraction")
+        ollama_base_url = (
+            _NATIVE_OLLAMA_BASE_URL
+            if request.ollama_location == "native"
+            else get_settings().ollama_base_url
+        )
         background_tasks.add_task(
             run_loop,
             run_id,
             engine,
             adapters=adapters,
             http_client=http_client,
-            ollama_base_url=get_settings().ollama_base_url,
+            ollama_base_url=ollama_base_url,
             model=task_config.model,
             provider=task_config.provider,
             sources=request.sources,
