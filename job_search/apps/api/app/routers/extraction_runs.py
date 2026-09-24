@@ -23,6 +23,7 @@ from core.skills.extraction_run import (
     RunNotFound,
     RunStatus,
     get_active_run,
+    get_run,
     list_filter_options,
     request_cancel,
     run_loop,
@@ -175,6 +176,7 @@ def post_start_run(
             http_client=http_client,
             ollama_base_url=get_settings().ollama_base_url,
             model=task_config.model,
+            provider=task_config.provider,
             sources=request.sources,
             countries=request.countries,
         )
@@ -193,6 +195,28 @@ def get_active(engine: Engine = Depends(get_app_db_engine)) -> RunStatusModel | 
     """
     active = get_active_run(engine)
     return _to_model(active) if active is not None else None
+
+
+@router.get("/{run_id}", response_model=RunStatusModel | None)
+def get_one(
+    run_id: uuid.UUID, engine: Engine = Depends(get_app_db_engine)
+) -> RunStatusModel | None:
+    """Return one run's status by id, active or finished.
+
+    Declared after `/filters`, `/pending-count`, and `/active` so those
+    literal paths are matched before this path-parameter route (FastAPI
+    matches in declaration order, and `/{run_id}` would otherwise
+    greedily swallow them).
+
+    Args:
+        run_id: The run to look up.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        The run's status, or None if `run_id` is unknown.
+    """
+    status = get_run(engine, run_id)
+    return _to_model(status) if status is not None else None
 
 
 @router.post("/{run_id}/cancel")

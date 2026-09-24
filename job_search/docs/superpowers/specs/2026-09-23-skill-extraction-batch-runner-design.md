@@ -216,6 +216,13 @@ UI: select sources/countries → POST /skills/extraction-runs
   auto-cleared — see the UI section above. Cancelling it just updates
   the row; it does not touch any already-written skill data.
 
+  **Correction (found during live verification, 2026-09-23):** for a
+  genuinely orphaned run (the API process that was running it is gone),
+  "Cancel"/"Stop" does NOT clear the row — it only sets a flag nothing is
+  left to observe. See README.md's "Running a batch from the UI instead
+  of the shell script" section for the real behavior and the manual
+  recovery step.
+
 ## Testing
 
 - `packages/core/tests/integration/test_extraction_run.py` (new, real

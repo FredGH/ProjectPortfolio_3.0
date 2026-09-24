@@ -220,11 +220,13 @@ during verification:** if the API process dies or restarts while a run is
 `running`, the row is left `running` forever — **Cancel only sets a flag for
 the run's own loop to notice between sub-batches, and if that loop is gone
 there is nothing left to act on the request.** The page's stale-run warning
-(triggered after 2 minutes with no progress update) says so and gives the
-one-line manual fix:
+(triggered after 2 hours with no progress update — a sub-batch of 30 jobs
+can legitimately take up to ~75 minutes at the documented worst-case CPU
+speed, so a shorter threshold would flag a healthy run) says so and gives
+the one-line manual fix:
 
 ```sql
-UPDATE silver.skill_extraction_run SET status = 'cancelled' WHERE run_id = '<id>';
+UPDATE silver.skill_extraction_run SET status = 'cancelled', finished_at = now(), updated_at = now() WHERE run_id = '<id>';
 ```
 
 A safe automatic recovery (distinguishing "orphaned" from "just slow, hasn't

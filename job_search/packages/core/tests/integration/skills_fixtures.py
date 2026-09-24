@@ -117,7 +117,7 @@ def purge_fixtures(engine: Engine) -> None:
         conn.execute(
             text(
                 "DELETE FROM silver.skill_extraction_run "
-                "WHERE sources = ARRAY['zzfixture-source']"
+                "WHERE sources && ARRAY['zzfixture-source', 'zzfixture-nonexistent']"
             )
         )
 

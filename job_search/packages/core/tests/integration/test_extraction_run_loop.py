@@ -83,6 +83,7 @@ class TestRunLoop(unittest.TestCase):
             http_client=http_client,
             ollama_base_url="http://fake-ollama:11434",
             model="test-model",
+            provider="ollama",
             sources=_FIXTURE_SOURCES,
             countries=None,
             batch_size=30,
@@ -111,6 +112,7 @@ class TestRunLoop(unittest.TestCase):
             http_client=http_client,
             ollama_base_url="http://fake-ollama:11434",
             model="test-model",
+            provider="ollama",
             sources=_FIXTURE_SOURCES,
             countries=None,
             batch_size=2,
@@ -143,6 +145,7 @@ class TestRunLoop(unittest.TestCase):
             http_client=http_client,
             ollama_base_url="http://fake-ollama:11434",
             model="test-model",
+            provider="ollama",
             sources=_FIXTURE_SOURCES,
             countries=None,
             batch_size=2,
@@ -168,6 +171,7 @@ class TestRunLoop(unittest.TestCase):
             http_client=http_client,
             ollama_base_url="http://fake-ollama:11434",
             model="test-model",
+            provider="ollama",
             sources=_FIXTURE_SOURCES,
             countries=None,
             batch_size=30,
@@ -179,6 +183,45 @@ class TestRunLoop(unittest.TestCase):
         # The job itself was still extracted and committed before the
         # unload call failed — only the run's own bookkeeping stops.
         self.assertEqual(status.extracted_count, 1)
+
+    def test_a_deterministically_failing_job_stops_the_run_instead_of_looping(
+        self,
+    ) -> None:
+        # A reply that can never parse into skills makes write_job_skills
+        # count every attempt at this job as failed_jobs=1, extracted_jobs=0
+        # (see jd_extract.py's documented Ollama decoding-loop case) — the
+        # same job would be re-selected forever without the forward-progress
+        # check in run_loop, since a failed job never gets a
+        # job_skill_extraction row. This proves the run stops after one
+        # sub-batch instead of livelocking.
+        self._add_survivor("fixture-job-neverparse1")
+        run_id, _ = start_run(self.app, sources=_FIXTURE_SOURCES, countries=None)
+        adapter = FakeAdapter("this is not JSON")
+        transport = _UnloadRecordingTransport()
+        http_client = httpx.Client(transport=transport)
+        run_loop(
+            run_id,
+            self.app,
+            adapters={"ollama": adapter},
+            http_client=http_client,
+            ollama_base_url="http://fake-ollama:11434",
+            model="test-model",
+            provider="ollama",
+            sources=_FIXTURE_SOURCES,
+            countries=None,
+            batch_size=30,
+            pause_seconds=0,
+        )
+        status = get_run(self.app, run_id)
+        self.assertEqual(status.status, "failed")
+        self.assertIn("no progress", status.error_message)
+        self.assertEqual(status.extracted_count, 0)
+        self.assertEqual(status.failed_count, 1)
+        # Only one sub-batch ran (the LLM was called exactly once) — the
+        # fix stops before the unload call too, since there is no point
+        # unloading/pausing before ending the run.
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertEqual(len(transport.unload_calls), 0)
 
 
 if __name__ == "__main__":

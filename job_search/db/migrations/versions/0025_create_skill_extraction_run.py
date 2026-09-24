@@ -42,9 +42,7 @@ def upgrade() -> None:
         sa.Column("sources", ARRAY(sa.Text()), nullable=True),
         sa.Column("countries", ARRAY(sa.Text()), nullable=True),
         sa.Column("total_pending", sa.Integer(), nullable=False),
-        sa.Column(
-            "extracted_count", sa.Integer(), nullable=False, server_default="0"
-        ),
+        sa.Column("extracted_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("failed_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
             "cancel_requested",

@@ -13,6 +13,7 @@ lock. See docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from dataclasses import dataclass
@@ -28,6 +29,8 @@ from core.skills.write_job_skills import (
     count_pending_jobs,
     write_job_skills,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RunError(ValueError):
@@ -387,6 +390,7 @@ def run_loop(
     http_client: httpx.Client,
     ollama_base_url: str,
     model: str,
+    provider: str,
     sources: list[str] | None,
     countries: list[str] | None,
     batch_size: int = DEFAULT_BATCH_SIZE,
@@ -414,6 +418,12 @@ def run_loop(
         model: The extraction model tag to unload between sub-batches —
             resolve via `core.llm.task_config.load_task_config
             ("skill_extraction").model`, never hardcoded.
+        provider: The provider `skill_extraction` is routed to —
+            resolve via `core.llm.task_config.load_task_config
+            ("skill_extraction").provider`. The unload call and pause
+            are Ollama-specific and are skipped unless this is
+            `"ollama"`, so a non-Ollama routing never sends it a
+            malformed request and fails the run.
         sources: The run's source scope.
         countries: The run's country scope.
         batch_size: Jobs per sub-batch.
@@ -431,8 +441,26 @@ def run_loop(
             _record_progress(
                 engine, run_id, summary.extracted_jobs, summary.failed_jobs
             )
-            _unload_model(http_client, ollama_base_url, model)
-            time.sleep(pause_seconds)
+            if summary.extracted_jobs == 0 and summary.failed_jobs > 0:
+                # No forward progress: the same jobs that just failed are
+                # the ones that would be re-selected next iteration (a
+                # failed job never gets a `job_skill_extraction` row, by
+                # design, so it stays "pending"). Looping here is a
+                # livelock — unbounded LLM spend and the single-active-run
+                # slot held forever — so stop instead of retrying.
+                _finish_run(
+                    engine,
+                    run_id,
+                    status="failed",
+                    error_message=(
+                        f"{summary.failed_jobs} job(s) failed with no "
+                        "progress; stopping"
+                    ),
+                )
+                return
+            if provider == "ollama":
+                _unload_model(http_client, ollama_base_url, model)
+                time.sleep(pause_seconds)
             if _is_cancel_requested(engine, run_id):
                 _finish_run(engine, run_id, status="cancelled")
                 return
@@ -441,4 +469,5 @@ def run_loop(
                 _finish_run(engine, run_id, status="completed")
                 return
     except Exception as exc:  # noqa: BLE001 — any hard failure ends the run
+        logger.exception("extraction run %s failed", run_id)
         _finish_run(engine, run_id, status="failed", error_message=str(exc))

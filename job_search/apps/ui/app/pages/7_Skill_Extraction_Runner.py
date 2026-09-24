@@ -18,7 +18,14 @@ st.set_page_config(page_title="Skill Extraction Runner", layout="wide")
 st.title("Skill Extraction Runner")
 
 _API = get_settings().api_base_url
-_STALE_AFTER_SECONDS = 120
+_STALE_AFTER_SECONDS = 7200
+"""2 hours: a sub-batch is up to 30 jobs at a documented worst-case ~150s/job
+on CPU (~75 minutes), so this must clear that with real margin — a shorter
+threshold flags a healthy run as stalled, and its advertised recovery (a
+manual UPDATE clearing the row) would let a second run start concurrently
+with a still-running first one, defeating the single-active-run guarantee
+this whole feature exists to enforce. See README.md's "Running a batch from
+the UI" section."""
 
 _USER_GUIDE = """
 Runs `extract-job-skills` for the sources/countries you pick, in
@@ -33,14 +40,15 @@ undone, and a stopped run can always be restarted later to pick up
 where it left off.
 
 If a run shows as **possibly stalled**, the API process restarted
-while it was running (its progress hasn't moved in over two minutes).
-The jobs it already extracted are safe. **Known limitation:** Cancel
+while it was running (its progress hasn't moved in over two hours).
+The jobs it already extracted are safe. **Known limitation:** Stop
 only asks a running loop to stop between sub-batches — if the loop
 itself is gone (e.g. after an API restart), nothing is left to act on
 that request, so the row stays stuck. Clearing it currently needs a
 manual database update, e.g.:
-`UPDATE silver.skill_extraction_run SET status = 'cancelled' WHERE
-run_id = '<id>';` — before a new run can start.
+`UPDATE silver.skill_extraction_run SET status = 'cancelled',
+finished_at = now(), updated_at = now() WHERE run_id = '<id>';` —
+before a new run can start.
 """
 
 
@@ -122,7 +130,7 @@ def _render_active_run(run: dict) -> None:
     )
     if _is_stale(run["updated_at"]):
         st.warning(
-            "This run's progress hasn't updated in over two minutes — the "
+            "This run's progress hasn't updated in over two hours — the "
             "API may have restarted. Already-extracted jobs are safe, but "
             "Stop won't clear this row on its own if nothing is left "
             "running to act on the request — see the User Guide."
@@ -135,6 +143,35 @@ def _render_active_run(run: dict) -> None:
             st.error(f"Failed to stop: {_error_message(exc)}")
         else:
             st.rerun()
+
+
+def _render_terminal_run(run: dict) -> None:
+    """Render a finished run's terminal state and a way to dismiss it.
+
+    A run's terminal state (including its error, for a `failed` run)
+    was previously never shown — `GET /active` only returns a
+    `running` row, so the moment a run ended the UI had nothing left
+    to poll and silently fell back to the start form. This renders
+    whatever `GET /skills/extraction-runs/{run_id}` last returned for
+    a `completed`, `cancelled`, or `failed` run.
+
+    Args:
+        run: A `GET /skills/extraction-runs/{run_id}` response body
+            whose `status` is `completed`, `cancelled`, or `failed`.
+    """
+    summary = (
+        f"{run['extracted_count']} extracted, {run['failed_count']} failed, "
+        f"out of {run['total_pending']}."
+    )
+    if run["status"] == "failed":
+        st.error(f"Run failed: {run['error_message']}\n\n{summary}")
+    elif run["status"] == "cancelled":
+        st.info(f"Run stopped. {summary}")
+    else:
+        st.success(f"Run completed. {summary}")
+    if st.button("Dismiss", key="dismiss_run"):
+        del st.session_state["extraction_run_id"]
+        st.rerun()
 
 
 def _render_start_form() -> None:
@@ -170,22 +207,45 @@ def _render_start_form() -> None:
             except httpx.HTTPStatusError as exc:
                 st.error(f"Failed to start: {_error_message(exc)}")
             else:
+                st.session_state["extraction_run_id"] = response.json()["run_id"]
                 st.rerun()
 
 
 with st.expander("User Guide", expanded=False):
     st.markdown(_USER_GUIDE)
 
-try:
-    active_run = _get("/skills/extraction-runs/active")
-except httpx.HTTPError as exc:
-    st.error(f"Failed to load run status: {exc}")
-    active_run = None
+# A run started by this browser session is tracked by id so its terminal
+# state (including a `failed` run's error) is always shown, not just while
+# it's `running` — `GET /active` alone goes back to null the instant a run
+# ends, which used to leave the UI with no path back to that outcome. If
+# this session has no tracked run, `GET /active` still covers "someone else
+# started one" or "a page reload lost session state" by adopting whatever
+# is active into `extraction_run_id` so the rest of the flow is unified.
+if "extraction_run_id" not in st.session_state:
+    try:
+        active_run = _get("/skills/extraction-runs/active")
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load run status: {exc}")
+        active_run = None
+    if active_run is not None:
+        st.session_state["extraction_run_id"] = active_run["run_id"]
 
-if active_run is not None:
-    _render_active_run(active_run)
-    if active_run["status"] == "running":
+run_id = st.session_state.get("extraction_run_id")
+if run_id is not None:
+    try:
+        run = _get(f"/skills/extraction-runs/{run_id}")
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load run status: {exc}")
+        run = None
+    if run is None:
+        # Unknown run id — nothing to show or dismiss, fall back to the form.
+        del st.session_state["extraction_run_id"]
+        st.rerun()
+    elif run["status"] == "running":
+        _render_active_run(run)
         time.sleep(5)
         st.rerun()
+    else:
+        _render_terminal_run(run)
 else:
     _render_start_form()
