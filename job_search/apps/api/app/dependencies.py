@@ -71,6 +71,33 @@ def get_ollama_http_client() -> httpx.Client:
     return httpx.Client(timeout=2000.0)
 
 
+NATIVE_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
+"""How this container reaches an Ollama server running natively on the
+host, instead of the Docker `ollama` service — see README.md's "Running
+Ollama natively instead" section. `host.docker.internal` is a Docker
+Desktop DNS entry, not a real hostname; only meaningful from inside a
+container."""
+
+
+@lru_cache
+def get_native_ollama_adapter() -> LLMAdapter:
+    """Return the Ollama adapter for a run that chose the "native" location.
+
+    A separate adapter from `get_llm_adapters`'s "ollama" entry, which
+    always points at the Docker `ollama` service — this one points at
+    `NATIVE_OLLAMA_BASE_URL` instead. Reuses `get_ollama_http_client`'s
+    long-timeout client: the target host differs, but a native call is
+    no faster to *time out* on if something's wrong, and the same 2000s
+    budget applies.
+
+    Returns:
+        An `OllamaAdapter` targeting the host machine's native Ollama.
+    """
+    return OllamaAdapter(
+        base_url=NATIVE_OLLAMA_BASE_URL, client=get_ollama_http_client()
+    )
+
+
 @lru_cache
 def get_llm_adapters() -> dict[str, LLMAdapter]:
     """Build the process-wide LLM adapter registry.

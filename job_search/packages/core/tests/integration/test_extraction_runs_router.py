@@ -17,6 +17,7 @@ from app.dependencies import (  # noqa: E402
     get_app_db_engine,
     get_http_client,
     get_llm_adapters,
+    get_native_ollama_adapter,
 )
 from app.routers import extraction_runs  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
@@ -65,9 +66,18 @@ class TestExtractionRunsApi(unittest.TestCase):
     def setUp(self) -> None:
         purge_fixtures(self.owner)
         app.dependency_overrides[get_app_db_engine] = lambda: self.app_engine
+        # Two distinguishable fakes: a "docker" one is what get_llm_adapters
+        # yields, a "native" one is what get_native_ollama_adapter yields —
+        # keeping them separate lets a test prove which one actually served
+        # the extraction calls, not just which URL the unload ping hit.
+        self.docker_adapter = FakeAdapter('{"skills": []}')
+        self.native_adapter = FakeAdapter('{"skills": []}')
         app.dependency_overrides[get_llm_adapters] = lambda: {
-            "ollama": FakeAdapter('{"skills": []}')
+            "ollama": self.docker_adapter
         }
+        app.dependency_overrides[get_native_ollama_adapter] = (
+            lambda: self.native_adapter
+        )
         app.dependency_overrides[get_http_client] = lambda: httpx.Client(
             transport=httpx.MockTransport(_fake_ollama_unload_response)
         )
@@ -145,10 +155,17 @@ class TestExtractionRunsApi(unittest.TestCase):
             "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
         )
         self.assertEqual(start.status_code, 202)
+        # The unload ping went to the Docker URL...
         self.assertEqual(
             requested_urls,
             [f"{get_settings().ollama_base_url}/api/generate"],
         )
+        # ...and, more importantly, the actual extraction call used the
+        # Docker-location adapter, not just the unload ping — this is
+        # the check that would have caught a real bug where only the
+        # unload target was swapped but the extraction adapter wasn't.
+        self.assertEqual(len(self.docker_adapter.calls), 1)
+        self.assertEqual(len(self.native_adapter.calls), 0)
 
     def test_start_with_native_ollama_location_targets_the_host(self) -> None:
         self._add_survivor("fixture-job-api-loc2")
@@ -170,6 +187,10 @@ class TestExtractionRunsApi(unittest.TestCase):
             requested_urls,
             ["http://host.docker.internal:11434/api/generate"],
         )
+        # The actual extraction call must go through the native adapter,
+        # not the Docker one — the unload URL alone doesn't prove this.
+        self.assertEqual(len(self.native_adapter.calls), 1)
+        self.assertEqual(len(self.docker_adapter.calls), 0)
 
     def test_start_while_one_is_active_returns_409(self) -> None:
         # Starts the first run directly through the core function

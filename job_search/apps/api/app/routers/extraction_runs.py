@@ -10,7 +10,13 @@ from datetime import datetime
 from typing import Literal
 
 import httpx
-from app.dependencies import get_app_db_engine, get_http_client, get_llm_adapters
+from app.dependencies import (
+    NATIVE_OLLAMA_BASE_URL,
+    get_app_db_engine,
+    get_http_client,
+    get_llm_adapters,
+    get_native_ollama_adapter,
+)
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import Engine
@@ -33,13 +39,6 @@ from core.skills.extraction_run import (
 from core.skills.write_job_skills import count_pending_jobs
 
 router = APIRouter(prefix="/skills/extraction-runs")
-
-_NATIVE_OLLAMA_BASE_URL = "http://host.docker.internal:11434"
-"""How the api container reaches an Ollama server running natively on the
-host, instead of the Docker `ollama` service — see README.md's "Running
-Ollama natively instead" section. `host.docker.internal` is a Docker
-Desktop DNS entry, not a real hostname; only meaningful from inside a
-container."""
 
 
 class FilterOptionsModel(BaseModel):
@@ -155,6 +154,7 @@ def post_start_run(
     background_tasks: BackgroundTasks,
     engine: Engine = Depends(get_app_db_engine),
     adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
+    native_ollama_adapter: LLMAdapter = Depends(get_native_ollama_adapter),
     http_client: httpx.Client = Depends(get_http_client),
 ) -> StartRunResponse:
     """Start a scoped extraction run in the background.
@@ -164,7 +164,13 @@ def post_start_run(
         background_tasks: Injected by FastAPI — schedules `run_loop`
             after this response is sent.
         engine: Injected via `get_app_db_engine`.
-        adapters: Injected via `get_llm_adapters`.
+        adapters: Injected via `get_llm_adapters` — always points at the
+            Docker `ollama` service. Used as-is when `request.
+            ollama_location == "docker"`; its "ollama" entry is swapped
+            for `native_ollama_adapter` otherwise, so the actual
+            extraction calls go to the chosen location, not just the
+            unload ping between sub-batches.
+        native_ollama_adapter: Injected via `get_native_ollama_adapter`.
         http_client: Injected via `get_http_client`, used for the
             Ollama unload call between sub-batches.
 
@@ -182,11 +188,11 @@ def post_start_run(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if total_pending > 0:
         task_config = load_task_config("skill_extraction")
-        ollama_base_url = (
-            _NATIVE_OLLAMA_BASE_URL
-            if request.ollama_location == "native"
-            else get_settings().ollama_base_url
-        )
+        if request.ollama_location == "native":
+            ollama_base_url = NATIVE_OLLAMA_BASE_URL
+            adapters = {**adapters, "ollama": native_ollama_adapter}
+        else:
+            ollama_base_url = get_settings().ollama_base_url
         background_tasks.add_task(
             run_loop,
             run_id,
