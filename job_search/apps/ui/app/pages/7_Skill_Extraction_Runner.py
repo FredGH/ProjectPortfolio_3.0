@@ -18,14 +18,14 @@ st.set_page_config(page_title="Skill Extraction Runner", layout="wide")
 st.title("Skill Extraction Runner")
 
 _API = get_settings().api_base_url
+# 2 hours: a sub-batch is up to 30 jobs at a documented worst-case ~150s/job
+# on CPU (~75 minutes), so this must clear that with real margin — a shorter
+# threshold flags a healthy run as stalled, and its advertised recovery (a
+# manual UPDATE clearing the row) would let a second run start concurrently
+# with a still-running first one, defeating the single-active-run guarantee
+# this whole feature exists to enforce. See README.md's "Running a batch
+# from the UI" section.
 _STALE_AFTER_SECONDS = 7200
-"""2 hours: a sub-batch is up to 30 jobs at a documented worst-case ~150s/job
-on CPU (~75 minutes), so this must clear that with real margin — a shorter
-threshold flags a healthy run as stalled, and its advertised recovery (a
-manual UPDATE clearing the row) would let a second run start concurrently
-with a still-running first one, defeating the single-active-run guarantee
-this whole feature exists to enforce. See README.md's "Running a batch from
-the UI" section."""
 
 _USER_GUIDE = """
 Runs `extract-job-skills` for the sources/countries you pick, in
