@@ -242,15 +242,19 @@ never turns a completed run into a failed one — it is recorded in the summary.
 `silver__bridge_job_skill` are dbt models, and dbt cannot run inside the API
 image (dbt-core needs protobuf ≥ 6 while Streamlit needs < 6 — see
 `requirements-dbt.txt`). The page shows the command after each completed run;
-from `job_search/`, with the dbt venv (`python3.11 -m venv venv-dbt &&
-venv-dbt/bin/pip install -r requirements-dbt.txt`):
+from `job_search/`, run it in the one-shot `dbt` container (its own image, so
+no host venv is needed):
 
 ```bash
-cd dbt && ../venv-dbt/bin/dbt run --select silver__skill silver__bridge_job_skill
+docker compose run --rm dbt run --select silver__skill silver__bridge_job_skill
 ```
 
-Making that automatic would need a separate dbt container the API can call —
-not built.
+(`docker compose run --rm dbt debug` checks the connection. The host-venv route
+still works: `python3.11 -m venv venv-dbt && venv-dbt/bin/pip install -r
+requirements-dbt.txt`, then `cd dbt && ../venv-dbt/bin/dbt run --select ...`.)
+The API itself cannot start that container — that would need the Docker socket
+mounted into it — so the refresh is one command after a run rather than
+automatic.
 
 A run's status is persisted in `silver.skill_extraction_run`, so it survives
 an API restart rather than silently vanishing. **Known limitation:** if the
