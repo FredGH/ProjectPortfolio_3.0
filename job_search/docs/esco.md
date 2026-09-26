@@ -392,7 +392,7 @@ still unmapped and records a high-confidence match with `method = 'llm'`. Such a
 row is shown in *Auto-matches — verify* as "matched by Claude" and is only made
 an alias when a person confirms it. `--remap-all-auto` keeps `llm` matches and
 any open string the model has already checked (so its note and API cost are not
-lost); to send such a string again, reject/reopen it.
+lost); decide such a string in the review UI instead.
 
 CV `canonical_id`s are **not** covered by any of that: a plain `map-cv-skills`
 never overwrites an id that is already set, so a CV holding `custom:x` keeps it

@@ -336,8 +336,8 @@ def remap_unresolved(engine: Engine, *, raw_norms: list[str] | None = None) -> i
     `open` that the model has not checked. Never deletes `rejected`,
     `resolved` or `dismissed` rows — those carry a human decision. A string
     the model has already checked is not re-mapped, so a new seed alias or
-    threshold will not reach it through a re-map; reject/reopen it in the
-    review UI to release it. CV-only strings (not in `job_skill_raw`) are
+    threshold will not reach it through a re-map; decide it in the review UI
+    instead. CV-only strings (not in `job_skill_raw`) are
     re-mapped by re-running `map-cv-skills`.
 
     Args:
@@ -373,7 +373,7 @@ def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int
     open string the model already checked are kept: they cost an API call and
     carry its note, and a string the model has checked is not re-mapped, so a
     new seed alias or threshold will not reach it through a re-map;
-    reject/reopen it in the review UI to release it. Rows a human decided — `resolved`,
+    decide it in the review UI instead. Rows a human decided — `resolved`,
     `rejected`, `dismissed` — are never deleted.
 
     Only `silver.skill_mapping` changes. A CV skill that already holds a

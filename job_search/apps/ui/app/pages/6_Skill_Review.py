@@ -107,7 +107,7 @@ page:
 
 1. **Job descriptions:** run `map-skills --remap-all-auto` to re-map every
    automatic mapping (your decisions are never touched, and neither are
-   strings Claude already checked; reject/reopen one to release it), then
+   strings Claude already checked — decide those here), then
    `dbt run --select silver__skill silver__bridge_job_skill` to refresh the
    job–skill bridge.
 2. **Your CV:** `map-cv-skills --user-id <id>` fills only skills that have no id
