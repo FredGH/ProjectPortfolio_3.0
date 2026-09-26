@@ -365,8 +365,9 @@ def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int
     matches, so a correction made *after* a string was first mapped (a new
     alias, a re-pointed seed entry) actually takes effect. An auto-made row is
     one nobody decided: `review_status` NULL (alias, label or embedding) or an
-    `open` unmapped string. Rows a human decided — `resolved`, `rejected`,
-    `dismissed` — are never deleted.
+    `open` unmapped string. An `llm` match is kept: it cost an API call and a
+    person can reject it in the verify list. Rows a human decided — `resolved`,
+    `rejected`, `dismissed` — are never deleted.
 
     Only `silver.skill_mapping` changes. A CV skill that already holds a
     `canonical_id` keeps it (a plain `map-cv-skills` never overwrites an id; use
@@ -384,7 +385,7 @@ def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int
         result = conn.execute(
             text(
                 "DELETE FROM silver.skill_mapping "
-                "WHERE (review_status IS NULL "
+                "WHERE ((review_status IS NULL AND method <> 'llm') "
                 "OR (method = 'none' AND review_status = 'open')) "
                 "AND (CAST(:raw_norms AS text[]) IS NULL "
                 "OR raw_norm = ANY(:raw_norms))"

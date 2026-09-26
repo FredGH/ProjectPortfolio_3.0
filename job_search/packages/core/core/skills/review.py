@@ -41,6 +41,9 @@ class ReviewItem:
         candidate_skill_id: The nearest ESCO skill below the threshold, if any.
         candidate_label: That skill's display label.
         candidate_score: Its cosine similarity.
+        llm_verdict: The LLM pre-review's verdict, if it was asked.
+        llm_custom_label: The custom skill name it proposed, if any.
+        llm_note: Its one-line reason.
     """
 
     raw_norm: str
@@ -52,6 +55,9 @@ class ReviewItem:
     candidate_skill_id: str | None
     candidate_label: str | None
     candidate_score: float | None
+    llm_verdict: str | None = None
+    llm_custom_label: str | None = None
+    llm_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,7 +69,7 @@ class MatchItem:
         raw_example: One original spelling.
         skill_id: The skill it was mapped to.
         skill_label: That skill's display label.
-        method: "label" (an ESCO label matched exactly) or "embedding".
+        method: "label" (an ESCO label matched exactly), "embedding" or "llm".
         score: The cosine similarity that cleared the threshold; None for a
             label match.
         suspicious: For a label match, True when the string is not the
@@ -72,6 +78,7 @@ class MatchItem:
             embedding match.
         seen_in_cv: Whether a CV contained the string.
         jd_job_count: How many jobs' extractions contain it.
+        llm_note: The LLM's reason, for an `llm` match.
     """
 
     raw_norm: str
@@ -83,6 +90,7 @@ class MatchItem:
     suspicious: bool
     seen_in_cv: bool
     jd_job_count: int
+    llm_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -159,6 +167,7 @@ def list_unmapped(
         text(
             f"SELECT m.raw_norm, m.raw_example, m.review_status, m.seen_in_cv, "
             f"m.candidate_skill_id, m.candidate_score, "
+            f"m.llm_verdict, m.llm_custom_label, m.llm_note, "
             f"COALESCE(es.preferred_label, cs.canonical_label) AS candidate_label, "
             f"{_JD_COUNT} AS jd_job_count, "
             f"ARRAY(SELECT DISTINCT r.job_group_id FROM silver.job_skill_raw AS r "
@@ -188,6 +197,9 @@ def list_unmapped(
             candidate_score=(
                 float(r.candidate_score) if r.candidate_score is not None else None
             ),
+            llm_verdict=r.llm_verdict,
+            llm_custom_label=r.llm_custom_label,
+            llm_note=r.llm_note,
         )
         for r in rows
     ]
@@ -227,7 +239,7 @@ def list_auto_matches(
         limit: Maximum items.
 
     Returns:
-        Rows whose method is `embedding` or `label` (a confirm or reject moves
+        Rows whose method is `embedding`, `label` or `llm` (a confirm or reject moves
         them out; curated seed aliases are not listed). Order: label matches
         that look suspicious first, then embedding matches least confident
         first, then label matches that name the skill; within a label group
@@ -247,7 +259,7 @@ def list_auto_matches(
     rows = conn.execute(
         text(
             "SELECT m.raw_norm, m.raw_example, m.skill_id, m.method, m.score, "
-            "m.seen_in_cv, "
+            "m.seen_in_cv, m.llm_note, "
             "COALESCE(es.preferred_label, cs.canonical_label) AS skill_label, "
             "COALESCE(jc.job_count, 0) AS jd_job_count "
             "FROM silver.skill_mapping AS m "
@@ -256,7 +268,7 @@ def list_auto_matches(
             "LEFT JOIN (SELECT raw_norm, count(DISTINCT job_group_id) AS job_count "
             "FROM silver.job_skill_raw GROUP BY raw_norm) AS jc "
             "ON jc.raw_norm = m.raw_norm "
-            f"WHERE m.method IN ('embedding', 'label'){where}"
+            f"WHERE m.method IN ('embedding', 'label', 'llm'){where}"
         ),
         params,
     ).all()
@@ -272,6 +284,7 @@ def list_auto_matches(
             and is_suspicious_label_match(r.raw_norm, r.skill_label),
             seen_in_cv=r.seen_in_cv,
             jd_job_count=r.jd_job_count,
+            llm_note=r.llm_note,
         )
         for r in rows
     ]
@@ -291,7 +304,7 @@ def _match_sort_key(item: MatchItem) -> tuple:
     """
     if item.method == "label" and item.suspicious:
         return (0, -item.jd_job_count, item.raw_norm)
-    if item.method == "embedding":
+    if item.method in ("embedding", "llm"):
         return (1, item.score, item.raw_norm)
     return (2, -item.jd_job_count, item.raw_norm)
 
@@ -429,7 +442,7 @@ def _lock_mapping(conn: Connection, raw_norm: str) -> Row[Any]:
 _RESOLVABLE_STATUSES = ("open", "rejected")
 """Review statuses a resolve may act on: the Unmapped tab's two states."""
 
-_AUTO_METHODS = ("embedding", "label")
+_AUTO_METHODS = ("embedding", "label", "llm")
 """Mapping methods the verify tab lists: the mapper's own, unreviewed matches."""
 
 
@@ -442,7 +455,7 @@ def _require_resolvable(row: Row[Any], raw_norm: str) -> None:
 
     Raises:
         ReviewError: Unless the row is unmapped (`open`/`rejected`) or an
-            auto-match awaiting confirmation (method `embedding` or `label`).
+            auto-match awaiting confirmation (method `embedding`, `label` or `llm`).
             A curated seed alias is settled and refused.
     """
     if row.review_status not in _RESOLVABLE_STATUSES and row.method not in (
@@ -451,7 +464,7 @@ def _require_resolvable(row: Row[Any], raw_norm: str) -> None:
         raise ReviewError(
             f"{raw_norm!r} is already settled (method {row.method!r}, "
             f"review status {row.review_status!r}); only an unmapped string "
-            f"or an auto-match (embedding or label) can be resolved"
+            f"or an auto-match (embedding, label or llm) can be resolved"
         )
 
 
@@ -574,12 +587,14 @@ def reject_auto_match(conn: Connection, raw_norm: str) -> None:
 
     Raises:
         ReviewNotFound: If the string has no mapping row.
-        ReviewError: If the row was not auto-mapped by the embedding or label
+        ReviewError: If the row was not auto-mapped by the embedding, label or llm
             stage.
     """
     row = _lock_mapping(conn, raw_norm)
     if row.method not in _AUTO_METHODS:
-        raise ReviewError(f"{raw_norm!r} was not auto-mapped by embedding or label")
+        raise ReviewError(
+            f"{raw_norm!r} was not auto-mapped by embedding, label or llm"
+        )
     conn.execute(
         text(
             "UPDATE silver.skill_mapping SET candidate_skill_id = skill_id, "
