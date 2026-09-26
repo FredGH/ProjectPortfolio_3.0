@@ -35,7 +35,8 @@ once. An alias you create outranks ESCO and the seed file
 
 Strings the mapper could not place. Each card shows the string, how many jobs
 mention it, whether it is on your CV, and the nearest ESCO skill as a suggestion
-when there is one.
+when there is one. If Claude has already looked at the string and found no good
+ESCO match, the card carries its note, and may offer a one-click custom skill.
 
 - **Accept suggestion: …** maps the string to the suggested ESCO skill.
   *Consequence:* the string becomes a permanent alias and is marked *resolved*.
@@ -62,8 +63,9 @@ turned down, shown only as context.
 
 #### Tab 2 — Auto-matches — verify
 
-Matches the system made on its own, by exact ESCO label or by similarity. A wrong
-match is otherwise invisible, so check them here.
+Matches the system made on its own, by exact ESCO label, by similarity, or by
+Claude (*matched by Claude*, with its short reason). A wrong match is otherwise
+invisible, so check them here.
 
 - A **warning** marks a label match where the string is not the skill's own name
   — it matched through an alternative or hidden ESCO label of a differently named
@@ -104,7 +106,8 @@ were already mapped, and the data built from them, are **not** rewritten by this
 page:
 
 1. **Job descriptions:** run `map-skills --remap-all-auto` to re-map every
-   automatic mapping (your decisions are never touched), then
+   automatic mapping (your decisions are never touched, and neither are
+   strings Claude already checked — decide those here), then
    `dbt run --select silver__skill silver__bridge_job_skill` to refresh the
    job–skill bridge.
 2. **Your CV:** `map-cv-skills --user-id <id>` fills only skills that have no id
@@ -253,6 +256,25 @@ with unmapped_tab:
                 f"In {item['jd_job_count']} job(s)"
                 + (" · on your CV" if item["seen_in_cv"] else "")
             )
+            if item.get("llm_verdict") in ("no_equivalent", "unsure", "match_low"):
+                verdict_text = {
+                    "no_equivalent": "no ESCO equivalent",
+                    "unsure": "unsure",
+                    "match_low": "weak match only",
+                }[item["llm_verdict"]]
+                st.caption(
+                    f"Claude: {verdict_text}"
+                    + (f" — {_plain(item['llm_note'])}" if item.get("llm_note") else "")
+                )
+                if item.get("llm_custom_label") and st.button(
+                    f"Create custom skill “{_plain(item['llm_custom_label'])}”",
+                    key=f"llmcustom-{key}",
+                ):
+                    if _post(
+                        "/skills/review/resolve",
+                        {"raw_norm": key, "custom_label": item["llm_custom_label"]},
+                    ):
+                        st.rerun()
             if item["candidate_skill_id"]:
                 suggestion = _plain(
                     item["candidate_label"] or item["candidate_skill_id"]
@@ -321,11 +343,14 @@ with verify_tab:
         key = match["raw_norm"]
         with st.container(border=True):
             st.markdown(f"**{_plain(match['raw_example'])}**")
-            how = (
-                "exact ESCO label match"
-                if match["method"] == "label"
-                else f"similarity {match['score']:.2f}"
-            )
+            if match["method"] == "label":
+                how = "exact ESCO label match"
+            elif match["method"] == "llm":
+                how = "matched by Claude" + (
+                    f" ({_plain(match['llm_note'])})" if match.get("llm_note") else ""
+                )
+            else:
+                how = f"similarity {match['score']:.2f}"
             st.write(
                 f"→ {_plain(match['skill_label'] or match['skill_id'])} — {how}, "
                 f"in {match['jd_job_count']} job(s)"
