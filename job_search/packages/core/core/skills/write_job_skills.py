@@ -14,6 +14,7 @@ if interrupted.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
@@ -143,6 +144,8 @@ def write_job_skills(
     sources: list[str] | None = None,
     categories: list[str] | None = None,
     countries: list[str] | None = None,
+    on_job_done: Callable[[str, bool], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> WriteSummary:
     """Extract and store skills for every not-yet-extracted dedup survivor.
 
@@ -162,9 +165,17 @@ def write_job_skills(
         countries: Only jobs whose `gold.dim_job.country_iso` is one of these
             (e.g. `["GB"]`); `None` for every country. A job with no
             `gold.dim_job` row, or an unresolved country, does not match.
+        on_job_done: Called after each job with its `job_group_id` and whether
+            it was extracted (`False` = it failed and will be retried by a
+            later run). A successful job's rows are already committed when
+            this fires, so a caller can record durable progress from it. An
+            exception it raises propagates and ends the batch.
+        should_stop: Checked before each job; when it returns `True` the batch
+            ends there, leaving the remaining jobs pending. Lets a caller stop
+            within one job rather than at the end of the batch.
 
     Returns:
-        The `WriteSummary`.
+        The `WriteSummary` of the jobs processed so far.
     """
     with engine.connect() as conn:
         pending = conn.execute(
@@ -177,11 +188,15 @@ def write_job_skills(
 
     extracted = skill_rows = failed = 0
     for row in pending:
+        if should_stop is not None and should_stop():
+            break
         try:
             extraction = extract_jd_skills(row.description, adapters=adapters)
         except (ValueError, httpx.HTTPError) as exc:
             failed += 1
             logger.warning("skill extraction failed for %s: %s", row.job_group_id, exc)
+            if on_job_done is not None:
+                on_job_done(row.job_group_id, False)
             continue
         raw_rows = [
             {
@@ -206,4 +221,6 @@ def write_job_skills(
                 conn.execute(_INSERT_RAW, raw_rows)
         extracted += 1
         skill_rows += len(raw_rows)
+        if on_job_done is not None:
+            on_job_done(row.job_group_id, True)
     return WriteSummary(extracted, skill_rows, failed)

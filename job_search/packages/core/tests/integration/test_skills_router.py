@@ -620,7 +620,7 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertEqual(
             self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
         )
-        self.assertEqual(self._decisions(q="%"), [])
+        self.assertNotIn(_UNMAPPED, {d["raw_norm"] for d in self._decisions(q="%")})
 
     def _unmapped(self, **params) -> set[str]:
         body = self.client.get("/skills/review", params={"limit": 500, **params}).json()
@@ -640,7 +640,10 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertNotIn(_UNMAPPED, self._unmapped(q="nope"))
 
     def test_the_unmapped_list_search_treats_wildcards_literally(self) -> None:
-        self.assertEqual(self._unmapped(q="%"), set())
+        # Real strings may legitimately contain a "%" ("25% of the time"), so
+        # don't assert the result is empty. A wildcard "%" would match
+        # everything, fixture included — a literal one cannot match it.
+        self.assertNotIn(_UNMAPPED, self._unmapped(q="%"))
 
     def test_auto_matches_can_be_searched_by_string_or_skill_label(self) -> None:
         self.assertIn(_MATCHED, self._matches(q="zzfixture matched"))
@@ -648,7 +651,7 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertNotIn(_MATCHED, self._matches(q="nope"))
 
     def test_auto_matches_search_treats_wildcards_literally(self) -> None:
-        self.assertEqual(self._matches(q="%"), set())
+        self.assertNotIn(_MATCHED, self._matches(q="%"))
 
     def test_a_nul_character_in_a_list_search_is_rejected(self) -> None:
         for path in ("/skills/review", "/skills/review/auto-matches"):

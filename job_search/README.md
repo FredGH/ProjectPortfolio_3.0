@@ -214,24 +214,61 @@ with no dependence on a CLI binary or a docker socket. Batch size (30) and
 pause (10s) are fixed, not configurable from the UI — the exact values this
 section already established as safe.
 
+**Progress and Stop are per job.** After every job the run commits its counts
+and bumps `updated_at`, so the page's bar moves as jobs finish, and a Stop is
+noticed before the next job starts — measured live: Stop halted a native run
+**37 s** after it was pressed (it finishes the job in flight first). The 30-job
+sub-batch only decides when Ollama is unloaded, not how fast the page reacts.
+
+**Ending a run.** A job that fails is retried once, in the next pass. If that
+pass makes no progress: a run that had never extracted anything is marked
+**failed** (Ollama or the model is broken for this scope — looping would burn
+LLM time forever); a run that had extracted jobs is **completed**, and the
+stubborn leftovers simply stay pending for the next run (each counted once in
+`failed_count`).
+
+**Skills are mapped automatically when a run completes.** Extraction only
+writes raw strings; until they are mapped to ESCO they can't reach the review
+list or the job–skill bridge. So a completed run maps its new strings itself
+(what `map-skills` does — `core.skills.post_run_mapping`, in-process, as the
+app DB role, embedding against the same Ollama location the run used) and shows
+the outcome on the page and in `silver.skill_extraction_run.mapping_summary`,
+e.g. *"Mapped 4 new skill string(s) to ESCO; 25 need review."* A stopped or
+failed run skips it (so Stop stays instant, and a broken Ollama isn't asked to
+embed); the next completed run maps everything still unmapped. A mapping error
+never turns a completed run into a failed one — it is recorded in the summary.
+
+**The dbt bridge is *not* automatic.** `silver__skill` and
+`silver__bridge_job_skill` are dbt models, and dbt cannot run inside the API
+image (dbt-core needs protobuf ≥ 6 while Streamlit needs < 6 — see
+`requirements-dbt.txt`). The page shows the command after each completed run;
+from `job_search/`, with the dbt venv (`python3.11 -m venv venv-dbt &&
+venv-dbt/bin/pip install -r requirements-dbt.txt`):
+
+```bash
+cd dbt && ../venv-dbt/bin/dbt run --select silver__skill silver__bridge_job_skill
+```
+
+Making that automatic would need a separate dbt container the API can call —
+not built.
+
 A run's status is persisted in `silver.skill_extraction_run`, so it survives
-an API restart rather than silently vanishing. **Known limitation, found
-during verification:** if the API process dies or restarts while a run is
-`running`, the row is left `running` forever — **Cancel only sets a flag for
-the run's own loop to notice between sub-batches, and if that loop is gone
-there is nothing left to act on the request.** The page's stale-run warning
-(triggered after 2 hours with no progress update — a sub-batch of 30 jobs
-can legitimately take up to ~75 minutes at the documented worst-case CPU
-speed, so a shorter threshold would flag a healthy run) says so and gives
-the one-line manual fix:
+an API restart rather than silently vanishing. **Known limitation:** if the
+API process dies or restarts while a run is `running`, the row is left
+`running` — **Stop only sets a flag for the run's own loop to notice, and if
+that loop is gone there is nothing left to act on it.** Because a live run now
+updates `updated_at` after every job, the page flags a run as stalled after
+**30 minutes** of silence (it used to be 2 hours, when only whole batches
+reported), and gives the one-line manual fix — only use it when the process is
+verifiably gone, never on a run that is still alive (that would let a second
+run start alongside it):
 
 ```sql
 UPDATE silver.skill_extraction_run SET status = 'cancelled', finished_at = now(), updated_at = now() WHERE run_id = '<id>';
 ```
 
-A safe automatic recovery (distinguishing "orphaned" from "just slow, hasn't
-finished a big sub-batch yet") needs its own design pass, not an ad-hoc fix —
-tracked as a follow-up, not implemented here.
+Not built: clearing an orphaned run automatically (from the API on startup, or
+a "clear stalled run" button that checks the heartbeat server-side).
 
 See `docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design.md`
 for the full design.

@@ -103,6 +103,11 @@ python -m apps.pipeline.app.cli map-skills           # seed aliases, then map ne
 python -m apps.pipeline.app.cli map-cv-skills --user-id <uuid>   # after a CV upload/edit
 ```
 
+If you extract from the **Skill Extraction Runner** page instead of the CLI, a
+run that completes does the `map-skills` step for you (and shows the result); only
+the `dbt run` line stays manual, because dbt can't run inside the API image. See
+README.md's "Running a batch from the UI".
+
 `map-cv-skills` writes a new CV truth-base version labelled "ESCO skill
 normalisation" (only if something changed), so it is traceable and reversible
 in the CV Editor's history. By default it only fills skills that have no id yet.

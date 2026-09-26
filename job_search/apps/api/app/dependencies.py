@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import lru_cache
 
 import httpx
@@ -12,6 +13,7 @@ from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.settings import get_settings
+from core.skills.post_run_mapping import build_post_run_mapping
 
 
 @lru_cache
@@ -96,6 +98,18 @@ def get_native_ollama_adapter() -> LLMAdapter:
     return OllamaAdapter(
         base_url=NATIVE_OLLAMA_BASE_URL, client=get_ollama_http_client()
     )
+
+
+def get_skill_mapping_hook_factory() -> Callable[..., Callable[[], str]]:
+    """Return the function that builds a run's post-completion skill mapping.
+
+    A dependency (rather than a direct import in the router) so tests can swap
+    in a fake and never call a real embedding server.
+
+    Returns:
+        `core.skills.post_run_mapping.build_post_run_mapping`.
+    """
+    return build_post_run_mapping
 
 
 @lru_cache
