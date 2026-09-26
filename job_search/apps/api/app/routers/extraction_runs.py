@@ -6,6 +6,7 @@ docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design.md.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from typing import Literal
 
@@ -16,6 +17,8 @@ from app.dependencies import (
     get_http_client,
     get_llm_adapters,
     get_native_ollama_adapter,
+    get_ollama_http_client,
+    get_skill_mapping_hook_factory,
 )
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -87,6 +90,7 @@ class RunStatusModel(BaseModel):
     started_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+    mapping_summary: str | None
 
 
 def _to_model(status: RunStatus) -> RunStatusModel:
@@ -111,6 +115,7 @@ def _to_model(status: RunStatus) -> RunStatusModel:
         started_at=status.started_at,
         updated_at=status.updated_at,
         finished_at=status.finished_at,
+        mapping_summary=status.mapping_summary,
     )
 
 
@@ -156,6 +161,10 @@ def post_start_run(
     adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
     native_ollama_adapter: LLMAdapter = Depends(get_native_ollama_adapter),
     http_client: httpx.Client = Depends(get_http_client),
+    ollama_http_client: httpx.Client = Depends(get_ollama_http_client),
+    mapping_hook_factory: Callable[..., Callable[[], str]] = Depends(
+        get_skill_mapping_hook_factory
+    ),
 ) -> StartRunResponse:
     """Start a scoped extraction run in the background.
 
@@ -173,6 +182,12 @@ def post_start_run(
         native_ollama_adapter: Injected via `get_native_ollama_adapter`.
         http_client: Injected via `get_http_client`, used for the
             Ollama unload call between sub-batches.
+        ollama_http_client: Injected via `get_ollama_http_client`, used
+            for the embedding calls of the skill mapping that runs when the
+            run completes (long timeout: the first call loads the model).
+        mapping_hook_factory: Injected via `get_skill_mapping_hook_factory`;
+            builds the post-completion skill mapping for this run's Ollama
+            location.
 
     Returns:
         The new run's id.
@@ -204,6 +219,12 @@ def post_start_run(
             provider=task_config.provider,
             sources=request.sources,
             countries=request.countries,
+            map_skills=mapping_hook_factory(
+                engine,
+                ollama_base_url=ollama_base_url,
+                embedding_model=get_settings().embedding_model,
+                http_client=ollama_http_client,
+            ),
         )
     return StartRunResponse(run_id=run_id)
 

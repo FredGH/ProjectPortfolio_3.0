@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -68,6 +69,9 @@ class RunStatus:
         updated_at: When progress was last recorded.
         finished_at: When the run reached a terminal status, or None
             while still running.
+        mapping_summary: One line on what the automatic skill mapping did
+            once the run finished (or why it did not run / failed), or None
+            while the run is unfinished or was started without mapping.
     """
 
     run_id: uuid.UUID
@@ -82,6 +86,7 @@ class RunStatus:
     started_at: datetime
     updated_at: datetime
     finished_at: datetime | None
+    mapping_summary: str | None
 
 
 @dataclass(frozen=True)
@@ -100,7 +105,7 @@ class FilterOptions:
 _COLUMNS = (
     "run_id, status, sources, countries, total_pending, extracted_count, "
     "failed_count, cancel_requested, error_message, started_at, updated_at, "
-    "finished_at"
+    "finished_at, mapping_summary"
 )
 _SELECT_ACTIVE = text(
     f"SELECT {_COLUMNS} FROM silver.skill_extraction_run WHERE status = 'running'"
@@ -166,6 +171,7 @@ def _row_to_status(row) -> RunStatus:
         started_at=row.started_at,
         updated_at=row.updated_at,
         finished_at=row.finished_at,
+        mapping_summary=row.mapping_summary,
     )
 
 
@@ -279,6 +285,15 @@ def list_filter_options(engine: Engine) -> FilterOptions:
     return FilterOptions(sources=sources, countries=countries)
 
 
+MAPPING_SKIPPED_STOPPED = (
+    "Skill mapping did not run because the run was stopped; it runs after the "
+    "next completed run."
+)
+MAPPING_SKIPPED_FAILED = (
+    "Skill mapping did not run because the run failed; it runs after the "
+    "next completed run."
+)
+
 DEFAULT_BATCH_SIZE = 30
 """Jobs per sub-batch before the Ollama model is unloaded and the run
 pauses — matches scripts/extract_in_batches.sh's proven-safe default.
@@ -301,7 +316,8 @@ _SELECT_CANCEL_REQUESTED = text(
 )
 _FINISH_RUN = text(
     "UPDATE silver.skill_extraction_run SET status = :status, "
-    "error_message = :error_message, finished_at = now(), updated_at = now() "
+    "error_message = :error_message, mapping_summary = :mapping_summary, "
+    "finished_at = now(), updated_at = now() "
     "WHERE run_id = :run_id"
 )
 
@@ -309,13 +325,15 @@ _FINISH_RUN = text(
 def _record_progress(
     engine: Engine, run_id: uuid.UUID, extracted: int, failed: int
 ) -> None:
-    """Add one sub-batch's counts onto a run's running totals.
+    """Add counts onto a run's running totals and bump its `updated_at`.
+
+    Called after every job, so `updated_at` doubles as the run's heartbeat.
 
     Args:
         engine: The app-role engine.
         run_id: The run to update.
-        extracted: Jobs extracted in this sub-batch.
-        failed: Jobs that failed in this sub-batch.
+        extracted: Jobs to add to `extracted_count`.
+        failed: Jobs to add to `failed_count`.
     """
     with engine.begin() as conn:
         conn.execute(
@@ -344,6 +362,7 @@ def _finish_run(
     *,
     status: str,
     error_message: str | None = None,
+    mapping_summary: str | None = None,
 ) -> None:
     """Mark a run terminal.
 
@@ -352,12 +371,42 @@ def _finish_run(
         run_id: The run to finish.
         status: "completed", "cancelled", or "failed".
         error_message: Set when `status == "failed"`.
+        mapping_summary: What the automatic skill mapping did, or why it did
+            not run; None when the run was started without mapping.
     """
     with engine.begin() as conn:
         conn.execute(
             _FINISH_RUN,
-            {"run_id": run_id, "status": status, "error_message": error_message},
+            {
+                "run_id": run_id,
+                "status": status,
+                "error_message": error_message,
+                "mapping_summary": mapping_summary,
+            },
         )
+
+
+def _run_mapping(map_skills: Callable[[], str] | None) -> str | None:
+    """Run the post-run skill mapping, turning any failure into a summary.
+
+    Mapping is best-effort: the extraction it follows already succeeded and
+    is committed, so a mapping failure (embedding server down, model
+    mismatch) must not turn a completed run into a failed one.
+
+    Args:
+        map_skills: The mapping hook, or None if none was given.
+
+    Returns:
+        The hook's summary, a "failed" line if it raised, or None if there
+        was no hook.
+    """
+    if map_skills is None:
+        return None
+    try:
+        return map_skills()
+    except Exception as exc:  # noqa: BLE001 — best-effort, never fails the run
+        logger.exception("skill mapping after the run failed")
+        return f"Skill mapping failed: {exc}"
 
 
 def _unload_model(http_client: httpx.Client, ollama_base_url: str, model: str) -> None:
@@ -393,6 +442,7 @@ def run_loop(
     provider: str,
     sources: list[str] | None,
     countries: list[str] | None,
+    map_skills: Callable[[], str] | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     pause_seconds: float = DEFAULT_PAUSE_SECONDS,
 ) -> None:
@@ -400,13 +450,27 @@ def run_loop(
 
     Scheduled as a FastAPI `BackgroundTasks` callback by `POST
     /skills/extraction-runs` — runs off the request/response cycle.
-    Repeats a bounded `write_job_skills` sub-batch, records its counts,
-    unloads the Ollama model, and pauses, until nothing is left pending
-    in scope or a cancel is requested. Never raises — any exception
-    from a sub-batch (a hard failure like a lost DB connection or an
-    unreachable Ollama; an individual job's own failure is already
-    handled inside `write_job_skills` and never raises) marks the run
-    `failed` and stops.
+    Repeats a bounded `write_job_skills` sub-batch, unloads the Ollama
+    model, and pauses, until nothing is left pending in scope or a cancel is
+    requested. Progress is committed after **every job** (so the page's
+    counts and `updated_at` move per job), and a cancel is noticed before
+    the next job — Stop takes effect within one job, not one sub-batch.
+    Never raises — any exception from a sub-batch (a hard failure like a
+    lost DB connection or an unreachable Ollama; an individual job's own
+    failure is already handled inside `write_job_skills` and never raises)
+    marks the run `failed` and stops.
+
+    A job that fails is retried once, in the next pass. If a pass then makes no
+    progress: with nothing ever extracted the run **fails** (Ollama or the
+    model is broken for this scope); if it had extracted jobs, only
+    stubborn leftovers remain, so the run **completes** and they stay pending
+    for a later run.
+
+    When the run **completes** and `map_skills` was given, it is called once
+    before the run is marked finished, and its one-line result is stored on
+    the run. It is skipped after a stop or a failure (so Stop stays
+    responsive and a broken Ollama is not asked to embed); the next
+    completed run maps everything still unmapped.
 
     Args:
         run_id: The run to execute — must already be `running` (i.e.
@@ -426,9 +490,32 @@ def run_loop(
             malformed request and fails the run.
         sources: The run's source scope.
         countries: The run's country scope.
+        map_skills: Zero-argument function that maps the newly extracted
+            skill strings and returns a one-line summary (see
+            `core.skills.post_run_mapping.build_post_run_mapping`); None to
+            skip mapping.
         batch_size: Jobs per sub-batch.
         pause_seconds: Pause after each unload.
     """
+
+    extracted_total = 0
+    failed_jobs: set[str] = set()
+
+    def job_done(job_group_id: str, extracted: bool) -> None:
+        nonlocal extracted_total
+        # A job that fails is retried once in the next pass; count it as failed
+        # only the first time so `failed_count` means distinct jobs. The row is
+        # still touched either way, so `updated_at` stays a per-job heartbeat.
+        first_failure = not extracted and job_group_id not in failed_jobs
+        if not extracted:
+            failed_jobs.add(job_group_id)
+        extracted_total += int(extracted)
+        _record_progress(engine, run_id, int(extracted), int(first_failure))
+
+    def should_stop() -> bool:
+        return _is_cancel_requested(engine, run_id)
+
+    skipped_on_failure = MAPPING_SKIPPED_FAILED if map_skills is not None else None
     try:
         while True:
             summary = write_job_skills(
@@ -437,17 +524,22 @@ def run_loop(
                 limit=batch_size,
                 sources=sources,
                 countries=countries,
+                on_job_done=job_done,
+                should_stop=should_stop,
             )
-            _record_progress(
-                engine, run_id, summary.extracted_jobs, summary.failed_jobs
+            cancelled = _is_cancel_requested(engine, run_id)
+            stalled = (
+                not cancelled
+                and summary.extracted_jobs == 0
+                and summary.failed_jobs > 0
             )
-            if summary.extracted_jobs == 0 and summary.failed_jobs > 0:
-                # No forward progress: the same jobs that just failed are
-                # the ones that would be re-selected next iteration (a
-                # failed job never gets a `job_skill_extraction` row, by
-                # design, so it stays "pending"). Looping here is a
-                # livelock — unbounded LLM spend and the single-active-run
-                # slot held forever — so stop instead of retrying.
+            if stalled and extracted_total == 0:
+                # No forward progress and none ever made: the model or Ollama
+                # is broken for this scope, not just a few stubborn jobs.
+                # Looping would be a livelock (a failed job never gets a
+                # `job_skill_extraction` row, so it stays "pending" and is
+                # re-selected forever) — unbounded LLM spend and the
+                # single-active-run slot held — so stop instead of retrying.
                 _finish_run(
                     engine,
                     run_id,
@@ -456,18 +548,41 @@ def run_loop(
                         f"{summary.failed_jobs} job(s) failed with no "
                         "progress; stopping"
                     ),
+                    mapping_summary=skipped_on_failure,
                 )
                 return
             if provider == "ollama":
                 _unload_model(http_client, ollama_base_url, model)
-                time.sleep(pause_seconds)
-            if _is_cancel_requested(engine, run_id):
-                _finish_run(engine, run_id, status="cancelled")
+            if cancelled:
+                _finish_run(
+                    engine,
+                    run_id,
+                    status="cancelled",
+                    mapping_summary=(
+                        MAPPING_SKIPPED_STOPPED if map_skills is not None else None
+                    ),
+                )
                 return
+            if provider == "ollama":
+                time.sleep(pause_seconds)
             remaining = count_pending_jobs(engine, sources=sources, countries=countries)
-            if remaining == 0:
-                _finish_run(engine, run_id, status="completed")
+            # `stalled` here means the run did make progress earlier and only
+            # jobs that keep failing are left: it has done all it can. They
+            # stay pending for a later run, so this is a completion.
+            if remaining == 0 or stalled:
+                _finish_run(
+                    engine,
+                    run_id,
+                    status="completed",
+                    mapping_summary=_run_mapping(map_skills),
+                )
                 return
     except Exception as exc:  # noqa: BLE001 — any hard failure ends the run
         logger.exception("extraction run %s failed", run_id)
-        _finish_run(engine, run_id, status="failed", error_message=str(exc))
+        _finish_run(
+            engine,
+            run_id,
+            status="failed",
+            error_message=str(exc),
+            mapping_summary=skipped_on_failure,
+        )

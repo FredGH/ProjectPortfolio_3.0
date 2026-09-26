@@ -18,6 +18,7 @@ from app.dependencies import (  # noqa: E402
     get_http_client,
     get_llm_adapters,
     get_native_ollama_adapter,
+    get_skill_mapping_hook_factory,
 )
 from app.routers import extraction_runs  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
@@ -81,6 +82,15 @@ class TestExtractionRunsApi(unittest.TestCase):
         app.dependency_overrides[get_http_client] = lambda: httpx.Client(
             transport=httpx.MockTransport(_fake_ollama_unload_response)
         )
+        # Never build the real mapping (it would call a real embedding server):
+        # record which Ollama it was aimed at and return a canned summary.
+        self.mapping_targets: list[str] = []
+
+        def fake_factory(engine, *, ollama_base_url, embedding_model, http_client):
+            self.mapping_targets.append(ollama_base_url)
+            return lambda: "fake mapping summary"
+
+        app.dependency_overrides[get_skill_mapping_hook_factory] = lambda: fake_factory
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
@@ -191,6 +201,28 @@ class TestExtractionRunsApi(unittest.TestCase):
         # not the Docker one — the unload URL alone doesn't prove this.
         self.assertEqual(len(self.native_adapter.calls), 1)
         self.assertEqual(len(self.docker_adapter.calls), 0)
+
+    def test_a_completed_run_maps_skills_against_the_chosen_ollama_location(
+        self,
+    ) -> None:
+        self._add_survivor("fixture-job-api-map1")
+        start = self.client.post(
+            "/skills/extraction-runs",
+            json={"sources": _FIXTURE_SOURCES, "ollama_location": "native"},
+        )
+        self.assertEqual(start.status_code, 202)
+        body = self.client.get(f"/skills/extraction-runs/{start.json()['run_id']}")
+        self.assertEqual(body.json()["status"], "completed")
+        self.assertEqual(body.json()["mapping_summary"], "fake mapping summary")
+        self.assertEqual(self.mapping_targets, ["http://host.docker.internal:11434"])
+
+    def test_the_default_location_maps_against_the_docker_ollama(self) -> None:
+        self._add_survivor("fixture-job-api-map2")
+        start = self.client.post(
+            "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
+        )
+        self.assertEqual(start.status_code, 202)
+        self.assertEqual(self.mapping_targets, [get_settings().ollama_base_url])
 
     def test_start_while_one_is_active_returns_409(self) -> None:
         # Starts the first run directly through the core function

@@ -248,3 +248,22 @@ This closes two of the three items tracked in memory
 batch-restart script, and the missing UI trigger. The third (the
 2,634-item skill-review backlog) is unrelated — no change to that from
 this work.
+
+## Update 2026-09-26 — per-job progress, cancel and auto-mapping
+
+Live use showed the per-sub-batch design was too coarse: progress sat at 0 for
+20-75 minutes and Stop could take as long. Changed since this spec was written:
+
+- `write_job_skills` takes `on_job_done` / `should_stop` hooks; `run_loop`
+  commits counts and bumps `updated_at` after **every job** and checks the cancel
+  flag **before every job**. Stop now halts within one job (measured: 37 s).
+- The stale-run threshold dropped from 2 hours to 30 minutes, since a live run now
+  heartbeats per job.
+- A completed run maps its new skills to ESCO automatically
+  (`core.skills.post_run_mapping`, result in `silver.skill_extraction_run.
+  mapping_summary`, migration 0026). The dbt bridge refresh stays manual — dbt
+  cannot run inside the API image.
+- A run whose only remaining jobs keep failing now **completes** (they stay
+  pending) if it had extracted anything; it **fails** only if it never made progress.
+
+See README.md's "Running a batch from the UI" for the current behaviour.

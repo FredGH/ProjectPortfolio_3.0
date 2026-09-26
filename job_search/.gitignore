@@ -36,3 +36,4 @@ CLAUDE.local.md
 
 # dbt writes run logs here when run from job_search/
 /logs/
+/venv-dbt/

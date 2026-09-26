@@ -107,6 +107,43 @@ class TestWriteJobSkills(unittest.TestCase):
             ).scalar_one()
         self.assertEqual(version, "local.v1")
 
+    def test_on_job_done_reports_every_job_after_it_is_committed(self) -> None:
+        prefix = uuid.uuid4().hex[:6]  # one shared prefix: jobs run in id order
+        jobs = [f"fixture-job-{prefix}-{c}" for c in "abc"]
+        for job in jobs:
+            self._add_survivor(job, "Python required.")
+        # Job b's reply is cut off twice (first try + the retry) so it fails;
+        # a and c succeed.
+        adapter = FakeAdapter(
+            _reply(("Python", "must_have")), truncated=[False, True, True, False]
+        )
+        seen: list[tuple[str, bool, int]] = []
+
+        def on_done(job_group_id: str, extracted: bool) -> None:
+            seen.append((job_group_id, extracted, self._extractions(job_group_id)))
+
+        self._write(adapter, jobs, on_job_done=on_done)
+        # Reported in order, once each, and a success is already durable
+        # when its callback fires (a failure has no extraction row).
+        self.assertEqual(
+            seen, [(jobs[0], True, 1), (jobs[1], False, 0), (jobs[2], True, 1)]
+        )
+
+    def test_should_stop_ends_the_batch_before_the_next_job(self) -> None:
+        prefix = uuid.uuid4().hex[:6]  # one shared prefix: jobs run in id order
+        jobs = [f"fixture-job-{prefix}-{c}" for c in "abc"]
+        for job in jobs:
+            self._add_survivor(job, "Python required.")
+        adapter = FakeAdapter(_reply(("Python", "must_have")))
+        checks = iter([False, True])  # let one job through, then stop
+
+        summary = self._write(adapter, jobs, should_stop=lambda: next(checks))
+
+        self.assertEqual(summary.extracted_jobs, 1)
+        self.assertEqual(len(adapter.calls), 1)
+        self.assertEqual(self._extractions(jobs[0]), 1)
+        self.assertEqual(self._extractions(jobs[1]), 0)  # left for a later run
+
     def test_a_second_run_does_no_llm_work(self) -> None:
         self._add_survivor(self.job, "Python required.")
         adapter = FakeAdapter(_reply(("Python", "must_have")))

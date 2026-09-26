@@ -18,14 +18,20 @@ st.set_page_config(page_title="Skill Extraction Runner", layout="wide")
 st.title("Skill Extraction Runner")
 
 _API = get_settings().api_base_url
-# 2 hours: a sub-batch is up to 30 jobs at a documented worst-case ~150s/job
-# on CPU (~75 minutes), so this must clear that with real margin — a shorter
-# threshold flags a healthy run as stalled, and its advertised recovery (a
-# manual UPDATE clearing the row) would let a second run start concurrently
-# with a still-running first one, defeating the single-active-run guarantee
-# this whole feature exists to enforce. See README.md's "Running a batch
-# from the UI" section.
-_STALE_AFTER_SECONDS = 7200
+# 30 minutes. The run bumps `updated_at` after every job (about 35-150s each;
+# a job whose chunk hits the token cap and is retried can take several
+# minutes), so half an hour of silence means the process running it is gone,
+# not that it is between batches. Kept generous on purpose: the advertised
+# recovery (a manual UPDATE clearing the row) would let a second run start
+# alongside a still-running first one if it were used on a healthy run.
+# See README.md's "Running a batch from the UI" section.
+_STALE_AFTER_SECONDS = 1800
+
+# The dbt refresh that makes newly mapped skills show up in the job-skill
+# bridge. dbt cannot run inside the API image, so the page can only show it.
+_DBT_REFRESH_COMMAND = (
+    "cd dbt && dbt run --select silver__skill silver__bridge_job_skill"
+)
 
 # "docker" is first so it's the selectbox's default — it always works
 # whenever the stack is up, unlike "native", which needs Ollama actually
@@ -48,18 +54,26 @@ running on your host machine — faster, per README.md, but only works
 if it's actually running there with the model pulled; if it isn't, the
 run fails on its first sub-batch).
 
-Only one run can be active at a time. **Stop** finishes the job
-currently in progress, then halts — nothing already extracted is
-undone, and a stopped run can always be restarted later to pick up
-where it left off.
+Progress updates after **every job**. Only one run can be active at a
+time. **Stop** takes effect as soon as the job currently being
+extracted finishes (typically a minute or two) — nothing already
+extracted is undone, and a stopped run can always be restarted later to
+pick up where it left off.
 
-If a run shows as **possibly stalled**, the API process restarted
-while it was running (its progress hasn't moved in over two hours).
-The jobs it already extracted are safe. **Known limitation:** Stop
-only asks a running loop to stop between sub-batches — if the loop
-itself is gone (e.g. after an API restart), nothing is left to act on
-that request, so the row stays stuck. Clearing it currently needs a
-manual database update, e.g.:
+When a run **completes**, the skills it extracted are **mapped to ESCO
+automatically** and the result is shown here (mapped vs. needing
+review). A stopped or failed run skips this; it happens after the next
+completed run. The job–skill **bridge** is a dbt model and is *not*
+refreshed automatically (dbt can't run inside the API): from
+`job_search/`, run `cd dbt && dbt run --select silver__skill
+silver__bridge_job_skill`.
+
+If a run shows as **possibly stalled**, the API process running it was
+restarted (its progress hasn't moved in over half an hour). The jobs it
+already extracted are safe. **Known limitation:** Stop only asks a live
+run to stop — if the process itself is gone (e.g. after an API
+restart), nothing is left to act on that request, so the row stays
+stuck. Clearing it currently needs a manual database update, e.g.:
 `UPDATE silver.skill_extraction_run SET status = 'cancelled',
 finished_at = now(), updated_at = now() WHERE run_id = '<id>';` —
 before a new run can start.
@@ -142,9 +156,11 @@ def _render_active_run(run: dict) -> None:
         text=f"{run['extracted_count']} extracted, "
         f"{run['failed_count']} failed, out of {run['total_pending']}",
     )
+    if done >= run["total_pending"]:
+        st.caption("All jobs processed — mapping skills to ESCO…")
     if _is_stale(run["updated_at"]):
         st.warning(
-            "This run's progress hasn't updated in over two hours — the "
+            "This run's progress hasn't updated in over half an hour — the "
             "API may have restarted. Already-extracted jobs are safe, but "
             "Stop won't clear this row on its own if nothing is left "
             "running to act on the request — see the User Guide."
@@ -183,6 +199,18 @@ def _render_terminal_run(run: dict) -> None:
         st.info(f"Run stopped. {summary}")
     else:
         st.success(f"Run completed. {summary}")
+        if run["failed_count"]:
+            st.caption(
+                f"{run['failed_count']} job(s) could not be extracted and stay "
+                "pending; the next run retries them."
+            )
+    if run.get("mapping_summary"):
+        st.info(run["mapping_summary"])
+    if run["status"] == "completed":
+        st.caption(
+            "The job–skill bridge is not refreshed automatically. From "
+            f"`job_search/`, run: `{_DBT_REFRESH_COMMAND}`"
+        )
     if st.button("Dismiss", key="dismiss_run"):
         del st.session_state["extraction_run_id"]
         st.rerun()
