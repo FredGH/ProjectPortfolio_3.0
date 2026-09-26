@@ -333,8 +333,11 @@ def remap_unresolved(engine: Engine, *, raw_norms: list[str] | None = None) -> i
     """Delete auto-made mappings so the next `map_pending` re-maps them.
 
     Deletes rows with method `embedding`, or method `none` and status
-    `open`. Never deletes `rejected`, `resolved` or `dismissed` rows — those
-    carry a human decision. CV-only strings (not in `job_skill_raw`) are
+    `open` that the model has not checked. Never deletes `rejected`,
+    `resolved` or `dismissed` rows — those carry a human decision. A string
+    the model has already checked is not re-mapped, so a new seed alias or
+    threshold will not reach it through a re-map; reject/reopen it in the
+    review UI to release it. CV-only strings (not in `job_skill_raw`) are
     re-mapped by re-running `map-cv-skills`.
 
     Args:
@@ -349,7 +352,8 @@ def remap_unresolved(engine: Engine, *, raw_norms: list[str] | None = None) -> i
             text(
                 "DELETE FROM silver.skill_mapping "
                 "WHERE (method = 'embedding' "
-                "OR (method = 'none' AND review_status = 'open')) "
+                "OR (method = 'none' AND review_status = 'open' "
+                "AND llm_checked_at IS NULL)) "
                 "AND (CAST(:raw_norms AS text[]) IS NULL "
                 "OR raw_norm = ANY(:raw_norms))"
             ),
@@ -365,8 +369,11 @@ def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int
     matches, so a correction made *after* a string was first mapped (a new
     alias, a re-pointed seed entry) actually takes effect. An auto-made row is
     one nobody decided: `review_status` NULL (alias, label or embedding) or an
-    `open` unmapped string. An `llm` match is kept: it cost an API call and a
-    person can reject it in the verify list. Rows a human decided — `resolved`,
+    `open` unmapped string the model has not checked. An `llm` match and an
+    open string the model already checked are kept: they cost an API call and
+    carry its note, and a string the model has checked is not re-mapped, so a
+    new seed alias or threshold will not reach it through a re-map;
+    reject/reopen it in the review UI to release it. Rows a human decided — `resolved`,
     `rejected`, `dismissed` — are never deleted.
 
     Only `silver.skill_mapping` changes. A CV skill that already holds a
@@ -386,7 +393,8 @@ def remap_all_auto(engine: Engine, *, raw_norms: list[str] | None = None) -> int
             text(
                 "DELETE FROM silver.skill_mapping "
                 "WHERE ((review_status IS NULL AND method <> 'llm') "
-                "OR (method = 'none' AND review_status = 'open')) "
+                "OR (method = 'none' AND review_status = 'open' "
+                "AND llm_checked_at IS NULL)) "
                 "AND (CAST(:raw_norms AS text[]) IS NULL "
                 "OR raw_norm = ANY(:raw_norms))"
             ),

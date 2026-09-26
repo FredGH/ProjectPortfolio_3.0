@@ -194,7 +194,8 @@ def build_prompt(items: list[_Item], template: str) -> str:
     """
     blocks = []
     for number, item in enumerate(items, start=1):
-        lines = [f"{number}. {item.raw_example}"]
+        example = " ".join(item.raw_example.split())
+        lines = [f"{number}. {example}"]
         lines += [
             f"   {index}) {cand.label}"
             for index, cand in enumerate(item.candidates, start=1)
@@ -210,11 +211,13 @@ def _clean(value: object) -> str | None:
         value: The raw JSON value.
 
     Returns:
-        A stripped, length-capped string, or None if empty / not a string.
+        A stripped, NUL-free, length-capped string, or None if empty / not a
+        string.
     """
-    if not isinstance(value, str) or not value.strip():
+    if not isinstance(value, str):
         return None
-    return value.strip()[:_NOTE_MAX_CHARS]
+    value = value.replace("\x00", "").strip()
+    return value[:_NOTE_MAX_CHARS] if value else None
 
 
 def _to_verdict(entry: dict[str, object], candidates: list[Candidate]) -> Verdict:

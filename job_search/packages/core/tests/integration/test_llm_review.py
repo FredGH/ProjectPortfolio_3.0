@@ -14,7 +14,7 @@ from tests.integration.skills_fixtures import (
 
 from core.skills import review
 from core.skills.esco_load import load_esco
-from core.skills.mapper import remap_all_auto
+from core.skills.mapper import remap_all_auto, remap_unresolved
 
 
 def _insert_llm_match(conn, raw_norm: str, note: str = "same skill") -> None:
@@ -119,6 +119,39 @@ class TestLlmReviewFlow(unittest.TestCase):
                 {"n": "zzfixture llm five"},
             ).scalar_one_or_none()
         self.assertEqual(method, "llm")
+
+    def _seed_open_rows(self) -> None:
+        """Insert one open row with a verdict and one without."""
+        with self.engine.begin() as conn:
+            insert_mapping(conn, "zzfixture llm checked", review_status="open")
+            conn.execute(
+                text(
+                    "UPDATE silver.skill_mapping SET llm_verdict = 'no_equivalent', "
+                    "llm_note = 'kept', llm_checked_at = now() WHERE raw_norm = :n"
+                ),
+                {"n": "zzfixture llm checked"},
+            )
+            insert_mapping(conn, "zzfixture llm unchecked", review_status="open")
+
+    def _surviving(self) -> set[str]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT raw_norm FROM silver.skill_mapping "
+                    "WHERE raw_norm LIKE 'zzfixture llm %checked'"
+                )
+            ).all()
+        return {r.raw_norm for r in rows}
+
+    def test_remap_unresolved_keeps_open_rows_the_model_checked(self) -> None:
+        self._seed_open_rows()
+        remap_unresolved(self.engine)
+        self.assertEqual(self._surviving(), {"zzfixture llm checked"})
+
+    def test_remap_all_auto_keeps_open_rows_the_model_checked(self) -> None:
+        self._seed_open_rows()
+        remap_all_auto(self.engine)
+        self.assertEqual(self._surviving(), {"zzfixture llm checked"})
 
 
 if __name__ == "__main__":

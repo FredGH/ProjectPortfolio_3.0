@@ -957,6 +957,12 @@ def _print_evaluation(report: EvalReport) -> int:
         f"truth_in_candidates={report.truth_in_candidates} "
         f"cost~${_usd(report.input_tokens, report.output_tokens):.2f}"
     )
+    if report.answered == 0 and report.sampled > 0:
+        print(
+            f"llm-map-skills: the model answered none of {report.sampled} "
+            "sampled strings — check the API key / connectivity"
+        )
+        return 1
     if report.agreement is None:
         print("llm-map-skills: no high-confidence matches to judge")
         return 1

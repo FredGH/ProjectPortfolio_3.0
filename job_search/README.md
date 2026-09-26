@@ -289,4 +289,5 @@ A high-confidence match appears in *Auto-matches — verify* as "matched by
 Claude" and only becomes an alias when a person confirms it. Every completed
 extraction run also does a capped pass (at most 300 strings) automatically. It
 needs `ANTHROPIC_API_KEY` and sends only the skill strings, nothing else from
-your jobs or CV.
+your jobs or CV. A re-map (`--remap-unresolved` / `--remap-all-auto`) keeps
+strings Claude already checked; reject/reopen one to send it again.

@@ -472,9 +472,9 @@ def resolve_to_skill(conn: Connection, raw_norm: str, skill_id: str) -> None:
     """Map a string to a skill and remember it as a review alias.
 
     Only the two states the review UI offers a resolve for are accepted: an
-    unmapped string (`open` or `rejected`) and an auto-match (embedding or
-    label) being confirmed. Anything else is already settled — re-pointing it would
-    silently move an alias every past and future string shares, and the
+    unmapped string (`open` or `rejected`) and an auto-match (embedding, label
+    or llm) being confirmed. Anything else is already settled — re-pointing it
+    would silently move an alias every past and future string shares, and the
     alias upsert's `source = 'review'` would then shield the new target from
     the seed-alias sync.
 
