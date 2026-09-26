@@ -28,9 +28,10 @@ _API = get_settings().api_base_url
 _STALE_AFTER_SECONDS = 1800
 
 # The dbt refresh that makes newly mapped skills show up in the job-skill
-# bridge. dbt cannot run inside the API image, so the page can only show it.
+# bridge. dbt cannot run inside the API image, so the page can only show it;
+# it runs in its own one-shot `dbt` container instead.
 _DBT_REFRESH_COMMAND = (
-    "cd dbt && dbt run --select silver__skill silver__bridge_job_skill"
+    "docker compose run --rm dbt run --select silver__skill silver__bridge_job_skill"
 )
 
 # "docker" is first so it's the selectbox's default — it always works
@@ -65,8 +66,8 @@ automatically** and the result is shown here (mapped vs. needing
 review). A stopped or failed run skips this; it happens after the next
 completed run. The job–skill **bridge** is a dbt model and is *not*
 refreshed automatically (dbt can't run inside the API): from
-`job_search/`, run `cd dbt && dbt run --select silver__skill
-silver__bridge_job_skill`.
+`job_search/`, run `docker compose run --rm dbt run --select
+silver__skill silver__bridge_job_skill`.
 
 If a run shows as **possibly stalled**, the API process running it was
 restarted (its progress hasn't moved in over half an hour). The jobs it

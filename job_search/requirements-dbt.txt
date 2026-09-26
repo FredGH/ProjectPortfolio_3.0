@@ -1,7 +1,8 @@
 # dbt toolchain. Install into its OWN virtual environment, not the one that
 # holds requirements.txt: dbt-core 1.11 needs protobuf>=6 while streamlit 1.39
 # (requirements.txt) needs protobuf<6, so pip cannot resolve them together.
-# No Docker image installs this file; dbt runs from a developer machine.
+# The `dbt` compose service (apps/dbt/Dockerfile, profile `cli`) installs this
+# file; no api/ui/pipeline image does.
 #
 #   python3.11 -m venv venv-dbt
 #   venv-dbt/bin/pip install -r requirements-dbt.txt

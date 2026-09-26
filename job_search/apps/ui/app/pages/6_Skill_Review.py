@@ -239,8 +239,15 @@ unmapped_tab, verify_tab, decisions_tab = st.tabs(
 )
 
 with unmapped_tab:
+    unmapped_query = st.text_input(
+        "Search unmapped strings (a string or its suggested skill)",
+        key="unmapped-q",
+    )
+    unmapped_params: dict[str, object] = {"limit": 25}
+    if unmapped_query:
+        unmapped_params["q"] = unmapped_query
     try:
-        unmapped = _get("/skills/review", {"limit": 25})
+        unmapped = _get("/skills/review", unmapped_params)
     except httpx.HTTPError as exc:
         st.error(f"Failed to load the review list: {exc}")
         unmapped = []
@@ -308,8 +315,14 @@ with unmapped_tab:
                     st.rerun()
 
 with verify_tab:
+    verify_query = st.text_input(
+        "Search auto-matches (a string or its matched skill)", key="verify-q"
+    )
+    verify_params: dict[str, object] = {"limit": 25}
+    if verify_query:
+        verify_params["q"] = verify_query
     try:
-        matches = _get("/skills/review/auto-matches", {"limit": 25})
+        matches = _get("/skills/review/auto-matches", verify_params)
     except httpx.HTTPError as exc:
         st.error(f"Failed to load auto-matches: {exc}")
         matches = []
