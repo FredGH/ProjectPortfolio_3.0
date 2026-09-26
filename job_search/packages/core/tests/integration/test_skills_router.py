@@ -80,7 +80,9 @@ class TestSkillReviewApi(unittest.TestCase):
             ).one()
 
     def _review_norms(self) -> set[str]:
-        body = self.client.get("/skills/review", params={"limit": 500}).json()
+        body = self.client.get(
+            "/skills/review", params={"limit": 500, "q": "zzfixture"}
+        ).json()
         return {item["raw_norm"] for item in body}
 
     def _insert_esco_skill(self, conn, skill_id: str, label: str) -> None:
@@ -104,7 +106,9 @@ class TestSkillReviewApi(unittest.TestCase):
     def test_review_list_shows_the_unmapped_string_with_context_and_suggestion(
         self,
     ) -> None:
-        body = self.client.get("/skills/review", params={"limit": 500}).json()
+        body = self.client.get(
+            "/skills/review", params={"limit": 500, "q": "zzfixture"}
+        ).json()
         item = next(i for i in body if i["raw_norm"] == _UNMAPPED)
         self.assertEqual(item["review_status"], "open")
         self.assertEqual(item["jd_job_count"], 1)
@@ -117,7 +121,7 @@ class TestSkillReviewApi(unittest.TestCase):
 
     def test_auto_matches_list_shows_the_embedding_matched_string(self) -> None:
         body = self.client.get(
-            "/skills/review/auto-matches", params={"limit": 500}
+            "/skills/review/auto-matches", params={"limit": 500, "q": "zzfixture"}
         ).json()
         item = next(i for i in body if i["raw_norm"] == _MATCHED)
         self.assertEqual(item["skill_id"], "fixture-python")
@@ -143,7 +147,7 @@ class TestSkillReviewApi(unittest.TestCase):
 
     def _auto_matches(self) -> list[dict]:
         body = self.client.get(
-            "/skills/review/auto-matches", params={"limit": 500}
+            "/skills/review/auto-matches", params={"limit": 500, "q": "zzfixture"}
         ).json()
         return [m for m in body if m["raw_norm"].startswith("zzfixture")]
 
@@ -321,7 +325,7 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertIsNone(row.candidate_skill_id)
         self.assertIsNone(row.candidate_score)
         matches = self.client.get(
-            "/skills/review/auto-matches", params={"limit": 500}
+            "/skills/review/auto-matches", params={"limit": 500, "q": "zzfixture"}
         ).json()
         self.assertNotIn(_MATCHED, {m["raw_norm"] for m in matches})
 
@@ -389,7 +393,9 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertIsNone(row.score)
         self.assertAlmostEqual(float(row.candidate_score), 0.86)
-        listed = self.client.get("/skills/review", params={"limit": 500}).json()
+        listed = self.client.get(
+            "/skills/review", params={"limit": 500, "q": "zzfixture"}
+        ).json()
         rejected = next(i for i in listed if i["raw_norm"] == _MATCHED)
         self.assertEqual(rejected["review_status"], "rejected")
         again = self.client.post("/skills/review/reject", json={"raw_norm": _MATCHED})
@@ -487,7 +493,9 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertIsNone(row.score)
         self.assertIsNone(row.candidate_score)  # a label match has no score
-        listed = self.client.get("/skills/review", params={"limit": 500}).json()
+        listed = self.client.get(
+            "/skills/review", params={"limit": 500, "q": "zzfixture"}
+        ).json()
         rejected = next(i for i in listed if i["raw_norm"] == labelled)
         self.assertEqual(rejected["review_status"], "rejected")
         self.assertIsNone(rejected["candidate_score"])
@@ -614,6 +622,40 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertEqual(self._decisions(q="%"), [])
 
+    def _unmapped(self, **params) -> set[str]:
+        body = self.client.get("/skills/review", params={"limit": 500, **params}).json()
+        return {i["raw_norm"] for i in body}
+
+    def _matches(self, **params) -> set[str]:
+        body = self.client.get(
+            "/skills/review/auto-matches", params={"limit": 500, **params}
+        ).json()
+        return {m["raw_norm"] for m in body}
+
+    def test_the_unmapped_list_can_be_searched_by_string_or_candidate_label(
+        self,
+    ) -> None:
+        self.assertIn(_UNMAPPED, self._unmapped(q="unmapped one"))
+        self.assertIn(_UNMAPPED, self._unmapped(q="cloud technologies"))
+        self.assertNotIn(_UNMAPPED, self._unmapped(q="nope"))
+
+    def test_the_unmapped_list_search_treats_wildcards_literally(self) -> None:
+        self.assertEqual(self._unmapped(q="%"), set())
+
+    def test_auto_matches_can_be_searched_by_string_or_skill_label(self) -> None:
+        self.assertIn(_MATCHED, self._matches(q="zzfixture matched"))
+        self.assertIn(_MATCHED, self._matches(q="zzfixture python"))
+        self.assertNotIn(_MATCHED, self._matches(q="nope"))
+
+    def test_auto_matches_search_treats_wildcards_literally(self) -> None:
+        self.assertEqual(self._matches(q="%"), set())
+
+    def test_a_nul_character_in_a_list_search_is_rejected(self) -> None:
+        for path in ("/skills/review", "/skills/review/auto-matches"):
+            self.assertEqual(
+                self.client.get(path, params={"q": "zzfixture\x00x"}).status_code, 422
+            )
+
     def test_reopening_a_resolved_string_returns_it_as_rejected_and_drops_the_alias(
         self,
     ) -> None:
@@ -628,7 +670,9 @@ class TestSkillReviewApi(unittest.TestCase):
         )
         self.assertIsNone(row.score)
         self.assertIsNone(self._alias_target(_UNMAPPED))
-        listed = self.client.get("/skills/review", params={"limit": 500}).json()
+        listed = self.client.get(
+            "/skills/review", params={"limit": 500, "q": "zzfixture"}
+        ).json()
         item = next(i for i in listed if i["raw_norm"] == _UNMAPPED)
         self.assertEqual(item["review_status"], "rejected")
         self.assertEqual(item["candidate_label"], "zzfixture cloud technologies")

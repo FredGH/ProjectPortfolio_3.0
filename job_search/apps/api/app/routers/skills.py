@@ -44,6 +44,21 @@ def _reject_nul(*values: str | None) -> None:
             raise ValueError("must not contain a NUL character")
 
 
+def _reject_nul_query(q: str | None) -> None:
+    """Refuse a NUL character in a search query parameter.
+
+    Args:
+        q: The search text, or None.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character.
+    """
+    if q is not None and "\x00" in q:
+        raise HTTPException(
+            status_code=422, detail="q must not contain a NUL character"
+        )
+
+
 class ReviewItemModel(BaseModel):
     """An unmapped skill string awaiting review (`core.skills.review.ReviewItem`)."""
 
@@ -182,40 +197,56 @@ def _act(engine: Engine, action: Callable[[Connection], None]) -> dict[str, str]
 
 @router.get("/skills/review", response_model=list[ReviewItemModel])
 def get_review_list(
+    q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
     limit: int = Query(default=50, ge=1, le=500),
     engine: Engine = Depends(get_app_db_engine),
 ) -> list[ReviewItemModel]:
     """List unmapped skill strings needing a decision.
 
     Args:
+        q: Optional search text, matched against the string and its
+            suggested skill. Lets a reviewer find one string in a backlog
+            far longer than `limit`.
         limit: Maximum items.
         engine: Injected via `get_app_db_engine`.
 
     Returns:
         Open and rejected items, most-requested first.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character (a query
+            parameter has no request model to validate it).
     """
+    _reject_nul_query(q)
     with engine.connect() as conn:
-        items = review.list_unmapped(conn, limit=limit)
+        items = review.list_unmapped(conn, query=q, limit=limit)
     return [ReviewItemModel(**asdict(item)) for item in items]
 
 
 @router.get("/skills/review/auto-matches", response_model=list[MatchItemModel])
 def get_auto_matches(
+    q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
     limit: int = Query(default=50, ge=1, le=500),
     engine: Engine = Depends(get_app_db_engine),
 ) -> list[MatchItemModel]:
     """List the mapper's own matches (label and embedding) for verification.
 
     Args:
+        q: Optional search text, matched against the string and its
+            matched skill.
         limit: Maximum items.
         engine: Injected via `get_app_db_engine`.
 
     Returns:
         Suspicious label matches first, then embedding matches least
         confident first, then the remaining label matches.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character.
     """
+    _reject_nul_query(q)
     with engine.connect() as conn:
-        items = review.list_auto_matches(conn, limit=limit)
+        items = review.list_auto_matches(conn, query=q, limit=limit)
     return [MatchItemModel(**asdict(item)) for item in items]
 
 

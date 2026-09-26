@@ -129,17 +129,32 @@ _JD_COUNT = (
 )
 
 
-def list_unmapped(conn: Connection, *, limit: int = 50) -> list[ReviewItem]:
+def list_unmapped(
+    conn: Connection, *, query: str | None = None, limit: int = 50
+) -> list[ReviewItem]:
     """List unmapped strings needing review, most-requested first.
 
     Args:
         conn: An open connection.
+        query: Optional search text (normalised, matched as a literal
+            substring of the string or of its suggested skill's label).
         limit: Maximum items.
 
     Returns:
         Items with status `open` or `rejected`, ordered by how many jobs
-        mention them, then CV presence.
+        mention them, then CV presence. Empty if a given `query`
+        normalises to nothing.
     """
+    where = ""
+    params: dict[str, Any] = {"limit": limit}
+    if query is not None:
+        if not normalise_skill(query):
+            return []
+        where = (
+            "AND (m.raw_norm LIKE :p OR "
+            "lower(COALESCE(es.preferred_label, cs.canonical_label)) LIKE :p) "
+        )
+        params["p"] = _like_pattern(query)
     rows = conn.execute(
         text(
             f"SELECT m.raw_norm, m.raw_example, m.review_status, m.seen_in_cv, "
@@ -154,10 +169,11 @@ def list_unmapped(conn: Connection, *, limit: int = 50) -> list[ReviewItem]:
             f"LEFT JOIN silver.custom_skill AS cs "
             f"ON cs.skill_id = m.candidate_skill_id "
             f"WHERE m.review_status IN ('open', 'rejected') "
+            f"{where}"
             f"ORDER BY jd_job_count DESC, m.seen_in_cv DESC, m.raw_norm "
             f"LIMIT :limit"
         ),
-        {"limit": limit},
+        params,
     ).all()
     return [
         ReviewItem(
@@ -199,11 +215,15 @@ def is_suspicious_label_match(raw_norm: str, skill_label: str | None) -> bool:
     return not set(candidate_forms(raw_norm)) & set(candidate_forms(skill_label))
 
 
-def list_auto_matches(conn: Connection, *, limit: int = 50) -> list[MatchItem]:
+def list_auto_matches(
+    conn: Connection, *, query: str | None = None, limit: int = 50
+) -> list[MatchItem]:
     """List the mapper's own matches for a person to verify.
 
     Args:
         conn: An open connection.
+        query: Optional search text (normalised, matched as a literal
+            substring of the string or of its matched skill's label).
         limit: Maximum items.
 
     Returns:
@@ -211,8 +231,19 @@ def list_auto_matches(conn: Connection, *, limit: int = 50) -> list[MatchItem]:
         them out; curated seed aliases are not listed). Order: label matches
         that look suspicious first, then embedding matches least confident
         first, then label matches that name the skill; within a label group
-        the most-used string first.
+        the most-used string first. Empty if a given `query` normalises to
+        nothing.
     """
+    where = ""
+    params: dict[str, Any] = {}
+    if query is not None:
+        if not normalise_skill(query):
+            return []
+        where = (
+            " AND (m.raw_norm LIKE :p OR "
+            "lower(COALESCE(es.preferred_label, cs.canonical_label)) LIKE :p)"
+        )
+        params["p"] = _like_pattern(query)
     rows = conn.execute(
         text(
             "SELECT m.raw_norm, m.raw_example, m.skill_id, m.method, m.score, "
@@ -225,8 +256,9 @@ def list_auto_matches(conn: Connection, *, limit: int = 50) -> list[MatchItem]:
             "LEFT JOIN (SELECT raw_norm, count(DISTINCT job_group_id) AS job_count "
             "FROM silver.job_skill_raw GROUP BY raw_norm) AS jc "
             "ON jc.raw_norm = m.raw_norm "
-            "WHERE m.method IN ('embedding', 'label')"
-        )
+            f"WHERE m.method IN ('embedding', 'label'){where}"
+        ),
+        params,
     ).all()
     items = [
         MatchItem(
