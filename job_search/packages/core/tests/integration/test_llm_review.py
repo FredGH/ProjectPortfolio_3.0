@@ -17,6 +17,11 @@ from core.skills.esco_load import load_esco
 from core.skills.mapper import remap_all_auto, remap_unresolved
 
 
+# Every remap call in these tests MUST be scoped to these fixture strings: an
+# unscoped call deletes every auto-made mapping in the shared dev database.
+_SEEDED_NORMS = ["zzfixture llm checked", "zzfixture llm unchecked"]
+
+
 def _insert_llm_match(conn, raw_norm: str, note: str = "same skill") -> None:
     insert_mapping(
         conn,
@@ -145,12 +150,12 @@ class TestLlmReviewFlow(unittest.TestCase):
 
     def test_remap_unresolved_keeps_open_rows_the_model_checked(self) -> None:
         self._seed_open_rows()
-        remap_unresolved(self.engine)
+        remap_unresolved(self.engine, raw_norms=_SEEDED_NORMS)
         self.assertEqual(self._surviving(), {"zzfixture llm checked"})
 
     def test_remap_all_auto_keeps_open_rows_the_model_checked(self) -> None:
         self._seed_open_rows()
-        remap_all_auto(self.engine)
+        remap_all_auto(self.engine, raw_norms=_SEEDED_NORMS)
         self.assertEqual(self._surviving(), {"zzfixture llm checked"})
 
 
