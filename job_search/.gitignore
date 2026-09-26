@@ -33,3 +33,6 @@ infra/.terraform.tfstate.lock.info
 
 # Personal overrides — never shared (CLAUDE.local.md documents itself as gitignored).
 CLAUDE.local.md
+
+# dbt writes run logs here when run from job_search/
+/logs/
