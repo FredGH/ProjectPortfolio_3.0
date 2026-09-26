@@ -13,4 +13,4 @@ A portfolio of AI agent projects built with the Anthropic SDK and Claude.
 
 ## Related
 
-- [jira_sync_kit](https://github.com/FredGH/jira_sync_kit) — reusable Jira Cloud sync/client package used by `job_search` and any other sibling project that adopts Jira tracking; lives in its own repo so it can be `pip install`ed and versioned independently.
+- [jira_sync_kit](https://github.com/FredGH/jira_sync_kit) — reusable Jira Cloud sync/client package used by `job_search` and any other sibling project that adopts Jira tracking; lives in its own repo so it can be `pip install`ed and versioned independently. **Jira tracking is currently disabled** (subscription ended) — see [docs/jira-integration-disabled.md](docs/jira-integration-disabled.md).

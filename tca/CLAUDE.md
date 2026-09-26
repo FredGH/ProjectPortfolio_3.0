@@ -416,8 +416,8 @@ ruff check . && isort . && black .
 
 ## Development Workflow
 
-1. **Before starting a non-trivial change**, ask once, in a single question: is this a `feat` / `fix` / `chore` / `docs` / `refactor` / `test`, or should it just be made directly without a branch? Skip asking for docs/comment/config-only edits, if already on a non-main branch, or if already answered earlier in this conversation. Branch as `<type>/<slug>`, or `<type>/<JIRA-KEY>-<slug>` if `plan/backlog.yml` exists and `jira-log` resolved a key (see the `commit-push` skill).
-2. **If `plan/backlog.yml` exists**, use the `jira-log` skill to record the confirmed fix/feature as a Jira ticket.
+1. **Before starting a non-trivial change**, ask once, in a single question: is this a `feat` / `fix` / `chore` / `docs` / `refactor` / `test`, or should it just be made directly without a branch? Skip asking for docs/comment/config-only edits, if already on a non-main branch, or if already answered earlier in this conversation. Branch as `<type>/<slug>`.
+2. **Jira tracking is disabled** (subscription ended 2026-09-26) — do not use the `jira-log` skill, create or sync Jira issues, or run `jira_sync_kit`. `plan/backlog.yml` (where present) is kept as a plain plan file. To re-enable, see `docs/jira-integration-disabled.md` at the repo root.
 3. Implement changes following the rules in `.claude/rules/` (see Rules table above)
 4. Run `dbt build` and/or `coverage run -m unittest discover` as relevant before committing
 5. Use the `commit`, `commit-push`, `pr`, or `commit-push-pr` skills to commit/branch/push/open a PR
