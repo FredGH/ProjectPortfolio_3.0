@@ -375,6 +375,13 @@ nobody decided) and never touches `resolved`, `rejected` or `dismissed` rows.
 A string a human resolved to the old id keeps it, and its review alias is
 protected from the seed sync; migrate those by hand, in this order:
 
+**The `llm` method.** `llm-map-skills` asks Claude to pre-review strings that are
+still unmapped and records a high-confidence match with `method = 'llm'`. Such a
+row is shown in *Auto-matches — verify* as "matched by Claude" and is only made
+an alias when a person confirms it. `--remap-all-auto` keeps `llm` rows (it does
+not delete them), so a re-map never discards the model's work or spends API
+calls again.
+
 ```sql
 -- 1. The alias rows themselves.
 UPDATE silver.skill_alias SET skill_id = '<new-esco-id>'
