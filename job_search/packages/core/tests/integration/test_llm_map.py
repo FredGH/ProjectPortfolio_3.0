@@ -22,7 +22,11 @@ from tests.integration.skills_fixtures import (
 from core.llm.types import LLMResponse
 from core.settings import get_settings
 from core.skills.esco_load import load_esco
-from core.skills.llm_map import count_eligible, propose_matches
+from core.skills.llm_map import (
+    count_eligible,
+    evaluate_against_resolved,
+    propose_matches,
+)
 from core.skills.vector import to_pgvector
 
 _MODEL = get_settings().embedding_model
@@ -239,6 +243,69 @@ class TestProposeMatches(unittest.TestCase):
         self._run(adapter)
         self.assertIn("zzfixture llm a", adapter.prompts[0])
         self.assertIn("1)", adapter.prompts[0])
+
+
+class TestEvaluate(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.engine = live_owner_engine()
+
+    def setUp(self) -> None:
+        purge_fixtures(self.engine)
+        load_esco(self.engine, FIXTURE_ESCO_DIR)
+        with self.engine.begin() as conn:
+            for skill_id, axis in (("fixture-cloud", 0), ("fixture-python", 1)):
+                conn.execute(
+                    text(
+                        "INSERT INTO esco.skill_embedding "
+                        "(skill_id, embedding_model, embedding) "
+                        "VALUES (:id, :m, CAST(:v AS vector))"
+                    ),
+                    {"id": skill_id, "m": _MODEL, "v": to_pgvector(axis_vector(axis))},
+                )
+            # A person resolved "a" to fixture-cloud and "b" to fixture-python.
+            insert_mapping(
+                conn,
+                "zzfixture eval a",
+                skill_id="fixture-cloud",
+                method="alias",
+                review_status="resolved",
+            )
+            insert_mapping(
+                conn,
+                "zzfixture eval b",
+                skill_id="fixture-python",
+                method="alias",
+                review_status="resolved",
+            )
+
+    def tearDown(self) -> None:
+        purge_fixtures(self.engine)
+
+    def test_reports_agreement_on_high_confidence_picks_and_writes_nothing(
+        self,
+    ) -> None:
+        # Candidate 1 for both strings is fixture-cloud: right for "a", wrong for "b".
+        adapter = _FakeAdapter([_reply(_match(1), _match(2))])
+        count_sql = text(
+            "SELECT count(*) FROM silver.skill_mapping "
+            "WHERE llm_checked_at IS NOT NULL"
+        )
+        with self.engine.connect() as conn:
+            before = conn.execute(count_sql).scalar_one()
+        report = evaluate_against_resolved(
+            self.engine,
+            adapters={"anthropic": adapter},
+            embed=_embed_on_axis_0,
+            embedding_model=_MODEL,
+            sample=2,
+            raw_norms=["zzfixture eval a", "zzfixture eval b"],
+        )
+        self.assertEqual((report.high_matches, report.high_agree), (2, 1))
+        self.assertEqual(report.agreement, 0.5)
+        with self.engine.connect() as conn:
+            after = conn.execute(count_sql).scalar_one()
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

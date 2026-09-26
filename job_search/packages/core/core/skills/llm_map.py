@@ -38,6 +38,8 @@ BATCH_SIZE = 20
 CANDIDATES_PER_STRING = 5
 MAX_REPLY_TOKENS = 4096
 _NOTE_MAX_CHARS = 200
+MIN_HIGH_AGREEMENT = 0.90
+"""Minimum agreement on high-confidence picks before running on the backlog."""
 
 _ELIGIBLE = (
     "FROM silver.skill_mapping AS m WHERE m.review_status = 'open' "
@@ -153,6 +155,14 @@ class LlmMapSummary:
 
 @dataclass(frozen=True)
 class _Item:
+    """One string offered to the model, with its candidate skills.
+
+    Attributes:
+        raw_norm: The normalised skill string.
+        raw_example: An original spelling of it.
+        candidates: The ESCO skills offered as possible matches.
+    """
+
     raw_norm: str
     raw_example: str
     candidates: list[Candidate]
@@ -389,4 +399,138 @@ def propose_matches(
         failed=failed,
         input_tokens=in_tokens,
         output_tokens=out_tokens,
+    )
+
+
+_SELECT_RESOLVED = text(
+    "SELECT raw_norm, raw_example, skill_id FROM silver.skill_mapping "
+    "WHERE review_status = 'resolved' AND skill_id IS NOT NULL "
+    "AND (CAST(:raw_norms AS text[]) IS NULL OR raw_norm = ANY(:raw_norms)) "
+    "ORDER BY md5(raw_norm) LIMIT :sample"
+)
+
+
+@dataclass(frozen=True)
+class EvalReport:
+    """How the model's verdicts compare with strings a person already resolved.
+
+    Attributes:
+        sampled: Resolved strings sent.
+        answered: Of those, strings the model answered.
+        high_matches: High-confidence matches it proposed.
+        high_agree: High-confidence matches equal to the person's choice.
+        low_matches: Low-confidence matches proposed.
+        no_equivalent: Strings it said have no ESCO equivalent.
+        unsure: Strings it was unsure about.
+        truth_in_candidates: Strings whose human-chosen skill was among the
+            5 offered candidates (an upper bound on what any match can reach).
+        input_tokens: Prompt tokens billed.
+        output_tokens: Completion tokens billed.
+    """
+
+    sampled: int
+    answered: int
+    high_matches: int
+    high_agree: int
+    low_matches: int
+    no_equivalent: int
+    unsure: int
+    truth_in_candidates: int
+    input_tokens: int
+    output_tokens: int
+
+    @property
+    def agreement(self) -> float | None:
+        """Share of high-confidence matches that equal the person's choice.
+
+        Returns:
+            `high_agree / high_matches`, or None when there were no high matches.
+        """
+        return self.high_agree / self.high_matches if self.high_matches else None
+
+
+def evaluate_against_resolved(
+    engine: Engine,
+    *,
+    adapters: dict[str, LLMAdapter],
+    embed: Callable[[str], list[float]],
+    embedding_model: str,
+    sample: int = 200,
+    batch_size: int = BATCH_SIZE,
+    raw_norms: list[str] | None = None,
+    config_path: Path | None = None,
+) -> EvalReport:
+    """Measure the model against strings a person already resolved. Writes nothing.
+
+    Args:
+        engine: A DB engine (read-only use).
+        adapters: LLM adapters keyed by provider.
+        embed: Maps a string to its embedding.
+        embedding_model: The embedding model in use.
+        sample: How many resolved strings to send (a stable pseudo-random pick).
+        batch_size: Strings per model call.
+        raw_norms: Restrict the pool to these strings (tests).
+        config_path: Task-config override (tests).
+
+    Returns:
+        The comparison report. A failed batch is skipped (`answered` is lower).
+    """
+    template = load_prompt(TASK, load_task_config(TASK, config_path).prompt_family, 1)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            _SELECT_RESOLVED, {"raw_norms": raw_norms, "sample": sample}
+        ).all()
+    counts = dict.fromkeys(
+        ("answered", "high", "agree", "low", "none", "unsure", "in_cands", "in", "out"),
+        0,
+    )
+    for start in range(0, len(rows), batch_size):
+        chunk = rows[start : start + batch_size]
+        items = [
+            _Item(
+                r.raw_norm,
+                r.raw_example,
+                _candidates(engine, r.raw_norm, embed, embedding_model),
+            )
+            for r in chunk
+        ]
+        try:
+            response = gateway.complete(
+                TASK,
+                build_prompt(items, template),
+                prompt_version=PROMPT_VERSION,
+                adapters=adapters,
+                config_path=config_path,
+                max_tokens=MAX_REPLY_TOKENS,
+            )
+            verdicts = parse_verdicts(response.text, items)
+        except Exception:  # noqa: BLE001 — a failed batch is just skipped
+            continue
+        counts["in"] += response.input_tokens
+        counts["out"] += response.output_tokens
+        for index, verdict in verdicts.items():
+            truth = chunk[index].skill_id
+            counts["answered"] += 1
+            offered = items[index].candidates
+            counts["in_cands"] += any(c.skill_id == truth for c in offered)
+            if verdict.kind == "match" and verdict.confidence == "high":
+                counts["high"] += 1
+                counts["agree"] += verdict.skill_id == truth
+            elif verdict.kind == "match":
+                counts["low"] += 1
+            elif verdict.kind == "no_equivalent":
+                counts["none"] += 1
+            else:
+                counts["unsure"] += 1
+    return EvalReport(
+        sampled=len(rows),
+        answered=counts["answered"],
+        high_matches=counts["high"],
+        high_agree=counts["agree"],
+        low_matches=counts["low"],
+        no_equivalent=counts["none"],
+        unsure=counts["unsure"],
+        truth_in_candidates=counts["in_cands"],
+        input_tokens=counts["in"],
+        output_tokens=counts["out"],
     )
