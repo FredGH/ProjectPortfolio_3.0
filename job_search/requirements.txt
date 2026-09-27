@@ -26,6 +26,14 @@ dlt[postgres]==1.5.0
 fsspec==2024.10.0
 docling==2.126.0
 llama-index-core==0.14.25
+# Pipeline-only: the cross-encoder reranker for score-similarity (Step 15
+# stage 2b). This one file is installed verbatim by apps/pipeline,
+# apps/api and apps/ui Dockerfiles alike (see the dbt comment above), so
+# this pin also lands in the api/ui images even though only the pipeline
+# CLI imports sentence_transformers — flagged in the task report rather
+# than silently bloating those two images; splitting into a pipeline-only
+# requirements file is follow-up work, not done here.
+sentence-transformers==6.1.0
 # dbt is deliberately NOT here: dbt-core 1.11 needs protobuf>=6 while
 # streamlit 1.39 needs protobuf<6, so the two cannot share one environment
 # (and every image installs this file). See requirements-dbt.txt.

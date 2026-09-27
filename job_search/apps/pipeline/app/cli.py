@@ -47,6 +47,7 @@ from core.llm.types import LLMAdapter
 from core.scoring.cv_chunking import chunk_and_embed_cv
 from core.scoring.hard_filters import run_hard_filters
 from core.scoring.job_chunking import chunk_and_embed_jobs
+from core.scoring.similarity import run_similarity
 from core.settings import Settings, get_settings
 from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
@@ -1139,6 +1140,41 @@ def _cmd_chunk_embed_cv(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_reranker() -> Callable[[str, str], float]:
+    """Build the cross-encoder reranker function for score-similarity.
+
+    Returns:
+        A function taking (cv_text, jd_text) and returning a relevance
+        score from the local BAAI/bge-reranker-base model.
+    """
+    from sentence_transformers import CrossEncoder
+
+    model = CrossEncoder("BAAI/bge-reranker-base")
+
+    def rerank(cv_text: str, jd_text: str) -> float:
+        return float(model.predict([(cv_text, jd_text)])[0])
+
+    return rerank
+
+
+def _cmd_score_similarity(args: argparse.Namespace) -> int:
+    """Run the `score-similarity` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id` and `top_n`.
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    n = run_similarity(
+        app_engine, args.user_id, rerank=_build_reranker(), top_n=args.top_n
+    )
+    print(f"score-similarity complete: jobs_scored={n}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1451,6 +1487,19 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    score_similarity_parser = subparsers.add_parser(
+        "score-similarity",
+        help="Vector similarity + cross-encoder rerank for one user "
+        "(PLAN.md Step 15 stage 2b)",
+    )
+    score_similarity_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    score_similarity_parser.add_argument(
+        "--top-n",
+        type=int,
+        default=200,
+        help="How many top-scoring jobs get a reranker score",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1487,6 +1536,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_chunk_embed_jobs(args)
     if args.command == "chunk-embed-cv":
         return _cmd_chunk_embed_cv(args)
+    if args.command == "score-similarity":
+        return _cmd_score_similarity(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
