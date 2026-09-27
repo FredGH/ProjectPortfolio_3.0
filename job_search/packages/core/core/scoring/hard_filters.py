@@ -8,11 +8,13 @@ with no saved preferences at all passes every job here).
 
 from __future__ import annotations
 
+import datetime
 import uuid
 
 from sqlalchemy import Engine, text
 
 from core.db.session import session_scope
+from core.normalisation.location import normalise_location
 from core.scoring.preferences import read_preference
 
 _SELECT_JOBS = text(
@@ -36,12 +38,13 @@ _UPSERT_PASSED = text(
 )
 
 
-def _passes(job: dict, pref) -> bool:
+def _passes(job: dict, pref, as_of: datetime.date) -> bool:
     """Decide whether one job clears one user's hard filters.
 
     Args:
         job: A row from `_SELECT_JOBS`, as a mapping.
         pref: The user's `UserPreference`.
+        as_of: The date to treat as "today" for the posting-age filter.
 
     Returns:
         True if the job passes every set filter.
@@ -78,11 +81,32 @@ def _passes(job: dict, pref) -> bool:
             or job["rate_annualised"] < pref.min_salary_annual
         ):
             return False
+    if (
+        pref.remote_ok == "required"
+        and not normalise_location(job["location"]).is_remote
+    ):
+        return False
+    if pref.remote_ok == "excluded" and normalise_location(job["location"]).is_remote:
+        return False
+    if pref.max_posting_age_days is not None:
+        posted_at = job["posted_at"]
+        if posted_at is None:
+            # Cannot confirm the posting is within the window, same
+            # "cannot confirm => filtered out" convention as the missing
+            # rate case above.
+            return False
+        oldest_acceptable = as_of - datetime.timedelta(days=pref.max_posting_age_days)
+        if posted_at.date() < oldest_acceptable:
+            return False
     return True
 
 
 def run_hard_filters(
-    engine: Engine, user_id: uuid.UUID, *, limit: int | None = None
+    engine: Engine,
+    user_id: uuid.UUID,
+    *,
+    limit: int | None = None,
+    as_of: datetime.date | None = None,
 ) -> int:
     """Run stage 1 for one user over the whole (or `limit`-capped) job pool.
 
@@ -92,11 +116,15 @@ def run_hard_filters(
         user_id: Whose preferences to filter by.
         limit: Cap the number of jobs considered (tests only); `None` covers
             every job in `dim_job`.
+        as_of: The date to treat as "today" for the posting-age filter
+            (injectable so tests are deterministic); defaults to today.
 
     Returns:
         The number of jobs written (pass or fail; every considered job gets
         a row).
     """
+    if as_of is None:
+        as_of = datetime.date.today()
     pref = read_preference(engine, user_id)
     query = _SELECT_JOBS
     if limit is not None:
@@ -114,7 +142,7 @@ def run_hard_filters(
                 {
                     "user_id": user_id,
                     "job_group_id": job["job_group_id"],
-                    "passed": _passes(job, pref),
+                    "passed": _passes(job, pref, as_of),
                 },
             )
     return len(jobs)

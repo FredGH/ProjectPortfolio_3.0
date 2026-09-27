@@ -9,6 +9,7 @@ test_skills_router.py's _insert_esco_skill uses for esco.skill.
 
 from __future__ import annotations
 
+import datetime
 import unittest
 import uuid
 
@@ -143,6 +144,44 @@ class TestHardFilters(unittest.TestCase):
         )
         run_hard_filters(self.engine, self.user_id)
         self.assertFalse(self._passed("fixture-job-junior"))
+
+    def test_remote_required_excludes_a_non_remote_job(self) -> None:
+        self._insert_job("fixture-job-london", location="London")
+        self._insert_job("fixture-job-remote", location="Remote, UK")
+        write_preference(
+            self.engine, self.user_id, UserPreference(remote_ok="required")
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-london"))
+        self.assertTrue(self._passed("fixture-job-remote"))
+
+    def test_remote_excluded_excludes_a_remote_job(self) -> None:
+        self._insert_job("fixture-job-london", location="London")
+        self._insert_job("fixture-job-remote", location="Remote, UK")
+        write_preference(
+            self.engine, self.user_id, UserPreference(remote_ok="excluded")
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-london"))
+        self.assertFalse(self._passed("fixture-job-remote"))
+
+    def test_max_posting_age_days_excludes_an_older_posting(self) -> None:
+        self._insert_job("fixture-job-old", posted_at="2026-09-01")
+        self._insert_job("fixture-job-recent", posted_at="2026-09-25")
+        write_preference(
+            self.engine, self.user_id, UserPreference(max_posting_age_days=10)
+        )
+        run_hard_filters(self.engine, self.user_id, as_of=datetime.date(2026, 9, 27))
+        self.assertFalse(self._passed("fixture-job-old"))
+        self.assertTrue(self._passed("fixture-job-recent"))
+
+    def test_a_null_posted_at_is_excluded_when_an_age_limit_is_set(self) -> None:
+        self._insert_job("fixture-job-noposted", posted_at=None)
+        write_preference(
+            self.engine, self.user_id, UserPreference(max_posting_age_days=10)
+        )
+        run_hard_filters(self.engine, self.user_id, as_of=datetime.date(2026, 9, 27))
+        self.assertFalse(self._passed("fixture-job-noposted"))
 
     def test_rerunning_updates_rather_than_duplicating(self) -> None:
         self._insert_job("fixture-job-rerun")
