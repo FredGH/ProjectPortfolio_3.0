@@ -58,6 +58,7 @@ def _rls(table: str) -> None:
 def upgrade() -> None:
     """Create the `scoring` schema and its five tables."""
     op.execute("CREATE SCHEMA IF NOT EXISTS scoring")
+    op.execute("GRANT USAGE ON SCHEMA scoring TO job_search_app")
 
     op.create_table(
         "user_preference",

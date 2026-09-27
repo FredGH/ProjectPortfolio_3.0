@@ -8,11 +8,15 @@ import uuid
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_owner_engine
 
+from core.db.session import build_engine, session_scope
+from core.settings import get_settings
+
 
 class TestScoringSchema(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.engine = live_owner_engine()
+        cls.app_engine = build_engine(get_settings().app_database_url)
 
     def setUp(self) -> None:
         self.user_id = uuid.uuid4()
@@ -131,6 +135,25 @@ class TestScoringSchema(unittest.TestCase):
                 {"id": self.user_id},
             ).scalar_one()
         self.assertTrue(score)
+
+    def test_app_role_has_usage_on_the_scoring_schema(self) -> None:
+        """job_search_app can query scoring.* — not just the schema owner.
+
+        Schema-level USAGE is a prerequisite for any per-table privilege.
+        The owner-role engine (`self.engine`) bypasses privilege checks
+        entirely, so this must go through the app-role engine, wrapped in
+        `session_scope` like every real request, to actually exercise the
+        grant.
+        """
+        with session_scope(self.app_engine, user_id=self.user_id) as conn:
+            count = conn.execute(
+                text(
+                    "SELECT count(*) FROM scoring.user_preference "
+                    "WHERE user_id = :id"
+                ),
+                {"id": self.user_id},
+            ).scalar_one()
+        self.assertEqual(count, 0)
 
 
 if __name__ == "__main__":
