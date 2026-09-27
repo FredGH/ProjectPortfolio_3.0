@@ -35,8 +35,9 @@ once. An alias you create outranks ESCO and the seed file
 
 Matches the system made on its own, by exact ESCO label, by similarity, or by
 Claude (*matched by Claude*, with its short reason). A wrong match is otherwise
-invisible, so check them here. **Show up to** controls how many load; the
-caption shows the true total alongside how many are shown.
+invisible, so check them here. **Show up to** controls how many load, or type
+in the search box (a string or its matched skill) to narrow it; the caption's
+total reflects the active search.
 
 - A **warning** marks a label match where the string is not the skill's own name
   — it matched through an alternative or hidden ESCO label of a differently named
@@ -72,13 +73,16 @@ label; the caption's total reflects the active search.
 
 #### Tab 3 — Unmapped
 
-Strings the mapper could not place. Each card shows the string, how many jobs
-mention it, whether it is on your CV, and the nearest ESCO skill as a suggestion
-when there is one. If Claude has already looked at the string, the card carries
-its note. When Claude found no ESCO equivalent and could name the skill, it has
-already been created as a custom skill (see the Decisions tab) — a card only
-still shows that suggestion here if the name couldn't be turned into a valid
-skill name automatically, in which case fix it in the box below.
+Strings the mapper could not place. **Show up to** controls how many load, or
+type in the search box (a string or its suggested skill) to narrow it; the
+caption's total reflects the active search. Each card shows the string, how
+many jobs mention it, whether it is on your CV, and the nearest ESCO skill as
+a suggestion when there is one. If Claude has already looked at the string,
+the card carries its note. When Claude found no ESCO equivalent and could name
+the skill, it has already been created as a custom skill (see the Decisions
+tab) — a card only still shows that suggestion here if the name couldn't be
+turned into a valid skill name automatically, in which case fix it in the box
+below.
 
 - **Accept suggestion: …** maps the string to the suggested ESCO skill.
   *Consequence:* the string becomes a permanent alias and is marked *resolved*.
@@ -268,16 +272,26 @@ verify_tab, decisions_tab, unmapped_tab = st.tabs(
 )
 
 with verify_tab:
+    verify_query = st.text_input(
+        "Search auto-matches (a string or its matched skill)", key="verify-q"
+    )
     verify_limit = st.selectbox(
         "Show up to", _SHOW_UP_TO_OPTIONS, index=2, key="verify-limit"
     )
+    verify_params: dict[str, object] = {"limit": verify_limit}
+    verify_count_params: dict[str, object] = {}
+    if verify_query:
+        verify_params["q"] = verify_query
+        verify_count_params["q"] = verify_query
     try:
-        matches = _get("/skills/review/auto-matches", {"limit": verify_limit})
+        matches = _get("/skills/review/auto-matches", verify_params)
     except httpx.HTTPError as exc:
         st.error(f"Failed to load auto-matches: {exc}")
         matches = []
     try:
-        verify_total = _get_count("/skills/review/auto-matches/count")
+        verify_total = _get_count(
+            "/skills/review/auto-matches/count", verify_count_params
+        )
     except httpx.HTTPError:
         verify_total = None
     st.caption(
@@ -369,16 +383,25 @@ with decisions_tab:
                     st.rerun()
 
 with unmapped_tab:
+    unmapped_query = st.text_input(
+        "Search unmapped strings (a string or its suggested skill)",
+        key="unmapped-q",
+    )
     unmapped_limit = st.selectbox(
         "Show up to", _SHOW_UP_TO_OPTIONS, index=2, key="unmapped-limit"
     )
+    unmapped_params: dict[str, object] = {"limit": unmapped_limit}
+    unmapped_count_params: dict[str, object] = {}
+    if unmapped_query:
+        unmapped_params["q"] = unmapped_query
+        unmapped_count_params["q"] = unmapped_query
     try:
-        unmapped = _get("/skills/review", {"limit": unmapped_limit})
+        unmapped = _get("/skills/review", unmapped_params)
     except httpx.HTTPError as exc:
         st.error(f"Failed to load the review list: {exc}")
         unmapped = []
     try:
-        unmapped_total = _get_count("/skills/review/count")
+        unmapped_total = _get_count("/skills/review/count", unmapped_count_params)
     except httpx.HTTPError:
         unmapped_total = None
     st.caption(

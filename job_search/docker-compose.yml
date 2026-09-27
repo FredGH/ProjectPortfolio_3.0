@@ -64,6 +64,20 @@ services:
       postgres:
         condition: service_healthy
 
+  # One-shot dbt runner (no host venv needed):
+  #   docker compose run --rm dbt run --select silver__skill silver__bridge_job_skill
+  dbt:
+    build:
+      context: .
+      dockerfile: apps/dbt/Dockerfile
+    env_file: .env
+    profiles: [cli]
+    volumes:
+      - ./dbt:/app/dbt
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   ollama:
     image: ollama/ollama
     ports:
