@@ -25,6 +25,7 @@ rapidfuzz==3.14.5
 dlt[postgres]==1.5.0
 fsspec==2024.10.0
 docling==2.126.0
+llama-index-core==0.14.25
 # dbt is deliberately NOT here: dbt-core 1.11 needs protobuf>=6 while
 # streamlit 1.39 needs protobuf<6, so the two cannot share one environment
 # (and every image installs this file). See requirements-dbt.txt.

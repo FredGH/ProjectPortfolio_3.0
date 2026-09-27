@@ -45,6 +45,7 @@ from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
 from core.scoring.hard_filters import run_hard_filters
+from core.scoring.job_chunking import chunk_and_embed_jobs
 from core.settings import Settings, get_settings
 from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
@@ -1083,6 +1084,31 @@ def _cmd_score_filter_jobs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_chunk_embed_jobs(args: argparse.Namespace) -> int:
+    """Run the `chunk-embed-jobs` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `limit`.
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        n = chunk_and_embed_jobs(
+            engine,
+            embed=_build_embedder(http_client, settings),
+            embedding_model=settings.embedding_model,
+            limit=args.limit,
+        )
+    finally:
+        http_client.close()
+    print(f"chunk-embed-jobs complete: jobs_chunked={n}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1368,6 +1394,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Cap the number of jobs considered (tests only)",
     )
 
+    chunk_embed_jobs_parser = subparsers.add_parser(
+        "chunk-embed-jobs",
+        help="Chunk and embed every job description with no chunks yet "
+        "(PLAN.md Step 15 stage 2, shared across users)",
+    )
+    chunk_embed_jobs_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap the number of jobs chunked (tests only)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1400,6 +1438,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_map_cv_skills(args)
     if args.command == "score-filter-jobs":
         return _cmd_score_filter_jobs(args)
+    if args.command == "chunk-embed-jobs":
+        return _cmd_chunk_embed_jobs(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
