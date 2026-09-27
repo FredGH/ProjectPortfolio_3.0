@@ -44,9 +44,11 @@ from core.ingestion.sources_config import load_sources_config
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
+from core.scoring.blend import compute_final_scores
 from core.scoring.cv_chunking import chunk_and_embed_cv
 from core.scoring.hard_filters import run_hard_filters
 from core.scoring.job_chunking import chunk_and_embed_jobs
+from core.scoring.llm_rerank import run_llm_rerank
 from core.scoring.similarity import run_similarity
 from core.scoring.skill_coverage import run_skill_coverage
 from core.settings import Settings, get_settings
@@ -1199,6 +1201,48 @@ def _cmd_score_skill_coverage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_score_llm_rerank(args: argparse.Namespace) -> int:
+    """Run the `score-llm-rerank` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id` and `top_n`.
+
+    Returns:
+        0 on success, 1 if there is no Anthropic key configured.
+    """
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        print("score-llm-rerank: ANTHROPIC_API_KEY is not set")
+        return 1
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=120.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        n = run_llm_rerank(
+            app_engine, args.user_id, adapters=adapters, top_n=args.top_n
+        )
+    finally:
+        http_client.close()
+    print(f"score-llm-rerank complete: jobs_reranked={n}")
+    return 0
+
+
+def _cmd_score_blend(args: argparse.Namespace) -> int:
+    """Run the `score-blend` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id`.
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    n = compute_final_scores(app_engine, args.user_id)
+    print(f"score-blend complete: jobs_blended={n}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1531,6 +1575,26 @@ def main(argv: list[str] | None = None) -> int:
     )
     score_skill_coverage_parser.add_argument("--user-id", required=True, type=uuid.UUID)
 
+    score_llm_rerank_parser = subparsers.add_parser(
+        "score-llm-rerank",
+        help="LLM re-rank of the top pre-LLM-scored jobs for one user "
+        "(PLAN.md Step 15 stage 4)",
+    )
+    score_llm_rerank_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    score_llm_rerank_parser.add_argument(
+        "--top-n",
+        type=int,
+        default=50,
+        help="Send at most this many jobs to the LLM (plan's own cap: 50)",
+    )
+
+    score_blend_parser = subparsers.add_parser(
+        "score-blend",
+        help="Config-driven weighted blend of every present score component "
+        "for one user (PLAN.md Step 15, final stage)",
+    )
+    score_blend_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1571,6 +1635,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_similarity(args)
     if args.command == "score-skill-coverage":
         return _cmd_score_skill_coverage(args)
+    if args.command == "score-llm-rerank":
+        return _cmd_score_llm_rerank(args)
+    if args.command == "score-blend":
+        return _cmd_score_blend(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

@@ -36,6 +36,20 @@ sources:
         columns:
           - name: job_group_id
             description: "Matches gold.dim_job.job_group_id."
+  - name: scoring
+    schema: scoring
+    tables:
+      - name: job_score
+        description: >
+          Per-user job score components, written across the scoring
+          funnel's pipeline CLI subcommands (score-filter-jobs,
+          score-similarity, score-skill-coverage, score-llm-rerank,
+          score-blend) — not dbt, since every write is RLS-scoped to one
+          user via core.db.session.session_scope (PLAN.md Step 15). One
+          row per (user_id, job_group_id).
+        columns:
+          - name: job_group_id
+            description: "Matches gold.dim_job.job_group_id."
 
 models:
   - name: dim_job
@@ -289,3 +303,58 @@ models:
           - not_null
           - accepted_values:
               values: ['api']
+
+  - name: fct_job_score
+    description: >
+      One row per (user_id, job_group_id) — the shared job pool, scored
+      independently per user (PLAN.md Step 15). Thin pass-through over
+      scoring.job_score, enriched with dim_job's display fields — see
+      this model's header comment.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [user_id, job_group_id]
+    columns:
+      - name: user_id
+        data_type: uuid
+        tests: [not_null]
+      - name: job_group_id
+        data_type: text
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_job')
+              field: job_group_id
+      - name: title_for_display
+        data_type: text
+      - name: company
+        data_type: text
+      - name: hard_filter_passed
+        description: "Stage 1 of the scoring funnel — cheap preference filters."
+        data_type: boolean
+        tests: [not_null]
+      - name: vector_similarity_score
+        description: "Stage 2: CV/JD chunk cosine similarity."
+        data_type: numeric
+      - name: reranker_score
+        description: "Stage 2b: cross-encoder rerank of the top vector-similarity jobs."
+        data_type: numeric
+      - name: skill_coverage_score
+        description: "Stage 3: weighted, recency-decayed skill coverage."
+        data_type: numeric
+      - name: llm_fit_score
+        description: "Stage 4: LLM-assessed fit, 0-100, for the top-N pre-LLM jobs only."
+        data_type: numeric
+      - name: llm_rationale
+        data_type: text
+      - name: llm_missing_skills
+        description: "Skills the LLM judged the job asks for that the CV does not show."
+        data_type: ARRAY
+      - name: llm_stretch_flag
+        description: "Whether the LLM judged this role a stretch versus the CV's experience."
+        data_type: boolean
+      - name: final_score
+        description: "The config-driven weighted blend of every present component."
+        data_type: numeric
+      - name: scored_at
+        data_type: timestamptz
+        tests: [not_null]

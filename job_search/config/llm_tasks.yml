@@ -40,3 +40,7 @@ tasks:
     provider: anthropic
     model: claude-haiku-4-5-20251001
     prompt_family: claude
+  job_scoring:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
