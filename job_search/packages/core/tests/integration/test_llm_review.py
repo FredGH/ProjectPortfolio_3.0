@@ -16,7 +16,6 @@ from core.skills import review
 from core.skills.esco_load import load_esco
 from core.skills.mapper import remap_all_auto, remap_unresolved
 
-
 # Every remap call in these tests MUST be scoped to these fixture strings: an
 # unscoped call deletes every auto-made mapping in the shared dev database.
 _SEEDED_NORMS = ["zzfixture llm checked", "zzfixture llm unchecked"]

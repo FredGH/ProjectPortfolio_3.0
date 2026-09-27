@@ -275,9 +275,13 @@ for the full design.
 
 ### Claude pre-review of unmapped skills
 
-Strings the ESCO mapper leaves unmapped can be pre-reviewed by Claude, which
-either proposes an ESCO skill, or notes that there is no equivalent (optionally
-suggesting a custom skill label) for you to act on in the Skill Review page.
+Strings the ESCO mapper leaves unmapped can be pre-reviewed by Claude. It either
+proposes an ESCO skill for you to confirm, or decides there is no ESCO
+equivalent — in which case, if it can name the skill, a custom skill is created
+straight away (no click needed; this is the one verdict applied without
+confirmation, since the failure mode is an extra custom skill rather than a
+wrong ESCO id). It stays visible and reversible afterwards in the Decisions —
+reopen tab.
 
 ```bash
 docker compose --profile cli run --rm pipeline llm-map-skills --dry-run   # count + estimated cost, no API call

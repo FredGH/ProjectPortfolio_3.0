@@ -107,7 +107,8 @@ def build_post_run_mapping(
         )
         return (
             f"{message} Claude pre-review: {reviewed.checked} checked, "
-            f"{reviewed.applied} applied, {reviewed.left_open} left for review{tail}"
+            f"{reviewed.applied} applied, {reviewed.custom_created} custom "
+            f"skill(s) created, {reviewed.left_open} left for review{tail}"
         )
 
     return run

@@ -35,8 +35,11 @@ once. An alias you create outranks ESCO and the seed file
 
 Strings the mapper could not place. Each card shows the string, how many jobs
 mention it, whether it is on your CV, and the nearest ESCO skill as a suggestion
-when there is one. If Claude has already looked at the string and found no good
-ESCO match, the card carries its note, and may offer a one-click custom skill.
+when there is one. If Claude has already looked at the string, the card carries
+its note. When Claude found no ESCO equivalent and could name the skill, it has
+already been created as a custom skill (see the Decisions tab) — a card only
+still shows that suggestion here if the name couldn't be turned into a valid
+skill name automatically, in which case fix it in the box below.
 
 - **Accept suggestion: …** maps the string to the suggested ESCO skill.
   *Consequence:* the string becomes a permanent alias and is marked *resolved*.
@@ -266,15 +269,17 @@ with unmapped_tab:
                     f"Claude: {verdict_text}"
                     + (f" — {_plain(item['llm_note'])}" if item.get("llm_note") else "")
                 )
-                if item.get("llm_custom_label") and st.button(
-                    f"Create custom skill “{_plain(item['llm_custom_label'])}”",
-                    key=f"llmcustom-{key}",
-                ):
-                    if _post(
-                        "/skills/review/resolve",
-                        {"raw_norm": key, "custom_label": item["llm_custom_label"]},
-                    ):
-                        st.rerun()
+                # A "no ESCO equivalent" verdict with a usable label is
+                # already resolved to a custom skill automatically (see
+                # core.skills.llm_map) and never reaches this list — a card
+                # still showing one here means the label couldn't be turned
+                # into a valid skill name, so the fix is the manual box below.
+                if item.get("llm_custom_label"):
+                    st.caption(
+                        f"Claude suggested “{_plain(item['llm_custom_label'])}”, "
+                        "but that name couldn't be used automatically — "
+                        "adjust it below."
+                    )
             if item["candidate_skill_id"]:
                 suggestion = _plain(
                     item["candidate_label"] or item["candidate_skill_id"]

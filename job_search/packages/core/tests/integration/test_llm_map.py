@@ -139,16 +139,25 @@ class TestProposeMatches(unittest.TestCase):
         )
         self.assertIsNotNone(second.llm_checked_at)
 
-    def test_no_equivalent_records_the_custom_label_and_note(self) -> None:
+    def test_no_equivalent_with_a_custom_label_is_auto_resolved_to_a_custom_skill(
+        self,
+    ) -> None:
+        # A "no ESCO equivalent" verdict with a label is the one verdict this
+        # function applies without a human confirming it first (see the
+        # module and propose_matches docstrings): the failure mode is an
+        # extra custom skill, not a wrong ESCO id, and it stays visible and
+        # reversible afterwards in Decisions — reopen.
         entry = {
             "n": 1,
             "verdict": "no_equivalent",
             "candidate": None,
             "confidence": None,
-            "custom_label": "GRPO",
+            "custom_label": "zzfixture Widget Tool",
             "note": "RL method",
         }
-        self._run(_FakeAdapter([_reply(entry, {"n": 2, "verdict": "unsure"})]))
+        summary = self._run(
+            _FakeAdapter([_reply(entry, {"n": 2, "verdict": "unsure"})])
+        )
         row = self._row("zzfixture llm a")
         self.assertEqual(
             (
@@ -158,9 +167,69 @@ class TestProposeMatches(unittest.TestCase):
                 row.llm_custom_label,
                 row.llm_note,
             ),
-            ("none", "open", "no_equivalent", "GRPO", "RL method"),
+            (
+                "alias",
+                "resolved",
+                "no_equivalent",
+                "zzfixture Widget Tool",
+                "RL method",
+            ),
         )
+        self.assertTrue(row.skill_id.startswith("custom:zzfixture"))
+        with self.engine.connect() as conn:
+            canonical_label = conn.execute(
+                text(
+                    "SELECT canonical_label FROM silver.custom_skill "
+                    "WHERE skill_id = :i"
+                ),
+                {"i": row.skill_id},
+            ).scalar_one()
+        self.assertEqual(canonical_label, "zzfixture Widget Tool")
         self.assertEqual(self._row("zzfixture llm b").llm_verdict, "unsure")
+        self.assertEqual((summary.custom_created, summary.applied), (1, 0))
+
+    def test_no_equivalent_without_a_custom_label_stays_open(self) -> None:
+        entry = {
+            "n": 1,
+            "verdict": "no_equivalent",
+            "candidate": None,
+            "confidence": None,
+            "custom_label": None,
+            "note": "unclear string",
+        }
+        summary = self._run(
+            _FakeAdapter([_reply(entry, {"n": 2, "verdict": "unsure"})])
+        )
+        row = self._row("zzfixture llm a")
+        self.assertEqual(
+            (row.method, row.review_status, row.llm_verdict),
+            ("none", "open", "no_equivalent"),
+        )
+        self.assertEqual(summary.custom_created, 0)
+
+    def test_a_custom_label_with_no_usable_characters_falls_back_to_staying_open(
+        self,
+    ) -> None:
+        # normalise_skill + the slug regex strip everything from "!!!",
+        # so resolve_to_custom raises ReviewError — the verdict is still
+        # recorded and the row is left open, same as no custom_label at all.
+        entry = {
+            "n": 1,
+            "verdict": "no_equivalent",
+            "candidate": None,
+            "confidence": None,
+            "custom_label": "!!!",
+            "note": "punctuation only",
+        }
+        summary = self._run(
+            _FakeAdapter([_reply(entry, {"n": 2, "verdict": "unsure"})])
+        )
+        row = self._row("zzfixture llm a")
+        self.assertEqual(
+            (row.method, row.review_status, row.llm_custom_label),
+            ("none", "open", "!!!"),
+        )
+        self.assertEqual(summary.custom_created, 0)
 
     def test_a_candidate_number_outside_the_offered_range_is_unsure(self) -> None:
         self._run(_FakeAdapter([_reply(_match(1, candidate=9), _match(2))]))

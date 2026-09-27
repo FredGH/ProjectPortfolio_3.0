@@ -933,8 +933,8 @@ def _cmd_llm_map_skills(args: argparse.Namespace) -> int:
         http_client.close()
     print(
         f"llm-map-skills complete: checked={summary.checked} "
-        f"applied={summary.applied} left_open={summary.left_open} "
-        f"failed={summary.failed} "
+        f"applied={summary.applied} custom_created={summary.custom_created} "
+        f"left_open={summary.left_open} failed={summary.failed} "
         f"cost~${_usd(summary.input_tokens, summary.output_tokens):.2f}"
     )
     return 0

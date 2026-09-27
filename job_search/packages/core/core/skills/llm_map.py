@@ -8,6 +8,11 @@ it is unsure:
 - a high-confidence match is applied as `method = 'llm'` with `review_status`
   NULL, so it appears in the "Auto-matches — verify" list and only becomes a
   permanent alias when a person confirms it;
+- a "no ESCO equivalent" verdict that names a custom skill is resolved
+  straight away (`core.skills.review.resolve_to_custom`) — this is the one
+  case that skips human confirmation, since the failure mode is an extra
+  custom skill rather than a wrong ESCO id, and it stays visible and
+  reversible in the Decisions — reopen list;
 - anything else leaves the row `open`, with the verdict recorded for display.
 
 Every string the model answered gets `llm_checked_at`, so it is never sent
@@ -30,6 +35,7 @@ from core.llm.json_response import parse_json_response
 from core.llm.prompts import load_prompt
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
+from core.skills import review
 from core.skills.vector import to_pgvector
 
 TASK = "skill_mapping"
@@ -139,6 +145,8 @@ class LlmMapSummary:
     Attributes:
         checked: Strings the model answered and that were recorded.
         applied: Of those, high-confidence matches applied as `llm` mappings.
+        custom_created: Of those, "no ESCO equivalent" verdicts resolved
+            straight to a new (or reused) custom skill.
         left_open: Of those, strings left open for a person.
         failed: Strings sent but not answered / not recorded (retried later).
         input_tokens: Prompt tokens billed across all calls.
@@ -147,6 +155,7 @@ class LlmMapSummary:
 
     checked: int
     applied: int
+    custom_created: int
     left_open: int
     failed: int
     input_tokens: int
@@ -334,7 +343,12 @@ def propose_matches(
 
     Returns:
         Counts and token usage. A failed batch is counted in `failed` and does
-        not stop the run.
+        not stop the run. A "no ESCO equivalent" verdict with a custom label
+        is resolved to a custom skill immediately (see `custom_created` on
+        the returned summary) — the one verdict this function applies without
+        a human confirming it, because the failure mode is an extra custom
+        skill rather than a wrong ESCO id, and it is still visible and
+        reversible afterwards in the Decisions — reopen list.
     """
     template = load_prompt(TASK, load_task_config(TASK, config_path).prompt_family, 1)
     with engine.connect() as conn:
@@ -342,7 +356,7 @@ def propose_matches(
             _SELECT_ELIGIBLE,
             {"raw_norms": raw_norms, "limit": limit if limit is not None else 10**9},
         ).all()
-    checked = applied = failed = in_tokens = out_tokens = 0
+    checked = applied = custom_created = failed = in_tokens = out_tokens = 0
     for start in range(0, len(rows), batch_size):
         chunk = rows[start : start + batch_size]
         items = [
@@ -394,11 +408,28 @@ def propose_matches(
                             "raw_norm": item.raw_norm,
                         },
                     )
+                    if (
+                        result.rowcount
+                        and verdict.kind == "no_equivalent"
+                        and verdict.custom_label
+                    ):
+                        try:
+                            review.resolve_to_custom(
+                                conn, item.raw_norm, verdict.custom_label
+                            )
+                            custom_created += 1
+                        except review.ReviewError:
+                            # The label yielded no usable slug (e.g. only
+                            # punctuation) — leave the verdict recorded above
+                            # and the row open, same as no_equivalent with no
+                            # label at all.
+                            pass
                 checked += result.rowcount
     return LlmMapSummary(
         checked=checked,
         applied=applied,
-        left_open=checked - applied,
+        custom_created=custom_created,
+        left_open=checked - applied - custom_created,
         failed=failed,
         input_tokens=in_tokens,
         output_tokens=out_tokens,
