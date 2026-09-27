@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from sqlalchemy import Engine, text
 
@@ -46,6 +47,27 @@ _UPDATE_RERANK_SCORE = text(
     "UPDATE scoring.job_score SET reranker_score = :score "
     "WHERE user_id = :user_id AND job_group_id = :job_group_id"
 )
+_CLEAR_RERANK_SCORES = text(
+    "UPDATE scoring.job_score SET reranker_score = NULL "
+    "WHERE user_id = :user_id AND job_group_id = ANY(:job_group_ids)"
+)
+
+
+@dataclass(frozen=True)
+class SimilaritySummary:
+    """Counts from one `run_similarity` run.
+
+    Attributes:
+        jobs_scored: Jobs considered this run (every hard-filter-passing
+            candidate with at least one embedded JD chunk), whether or not
+            it ended up with a non-NULL `vector_similarity_score`.
+        mismatched: Of those, jobs whose `vector_similarity_score` was
+            skipped (left NULL) solely because every comparable chunk pair
+            was embedded under different `embedding_model` values.
+    """
+
+    jobs_scored: int
+    mismatched: int
 
 
 def _parse_vector(raw: str) -> list[float]:
@@ -88,7 +110,7 @@ def run_similarity(
     *,
     rerank: Callable[[str, str], float],
     top_n: int = 200,
-) -> int:
+) -> SimilaritySummary:
     """Score vector similarity for every hard-filter-passing job, then
     rerank the top `top_n` with a cross-encoder.
 
@@ -101,9 +123,10 @@ def run_similarity(
         top_n: How many top-scoring jobs get a reranker score.
 
     Returns:
-        The number of jobs given a `vector_similarity_score` (including
-        those skipped for a model mismatch, which get no score but are
-        still "considered").
+        A `SimilaritySummary` with the number of jobs considered
+        (`jobs_scored`, including those skipped for a model mismatch, which
+        get no score but are still "considered") and how many of those were
+        skipped for a model mismatch (`mismatched`).
     """
     with session_scope(app_engine, user_id=user_id) as conn:
         cv_chunks = (
@@ -127,6 +150,7 @@ def run_similarity(
 
     results: dict[str, float | None] = {}
     embedding_model_used: dict[str, str] = {}
+    mismatched = 0
     for job_group_id, chunks in jobs.items():
         pair_scores: list[float] = []
         mismatch = False
@@ -136,22 +160,31 @@ def run_similarity(
             if not cv_side or not job_side:
                 continue
             best = 0.0
+            # Tracks whether any chunk pair for this section was actually
+            # compared, since a genuinely-computed cosine of exactly 0.0 is
+            # indistinguishable from `best`'s initial value — using `best`'s
+            # truthiness to gate the append below would silently drop it.
+            compared = False
             for cv_chunk in cv_side:
                 for job_chunk in job_side:
                     if cv_chunk["embedding_model"] != job_chunk["embedding_model"]:
                         mismatch = True
                         continue
+                    compared = True
                     embedding_model_used[job_group_id] = cv_chunk["embedding_model"]
                     score = _cosine(
                         _parse_vector(cv_chunk["embedding"]),
                         _parse_vector(job_chunk["embedding"]),
                     )
                     best = max(best, score)
-            if best:
+            if compared:
                 pair_scores.append(best)
+        job_is_mismatched = mismatch and not pair_scores
+        if job_is_mismatched:
+            mismatched += 1
         results[job_group_id] = (
             None
-            if (mismatch and not pair_scores)
+            if job_is_mismatched
             else (sum(pair_scores) / len(pair_scores) if pair_scores else None)
         )
 
@@ -178,6 +211,14 @@ def run_similarity(
     }
     cv_text = " ".join(c["chunk_text"] for c in cv_chunks)
     with session_scope(app_engine, user_id=user_id) as conn:
+        # A job scored in a previous run that no longer makes this run's
+        # top-n cut must not keep its old reranker_score: clear every job
+        # considered this run first, then the loop below sets the real
+        # value only for the current `ranked` subset.
+        conn.execute(
+            _CLEAR_RERANK_SCORES,
+            {"user_id": user_id, "job_group_ids": list(results.keys())},
+        )
         for job_group_id in ranked:
             conn.execute(
                 _UPDATE_RERANK_SCORE,
@@ -187,4 +228,4 @@ def run_similarity(
                     "score": rerank(cv_text, job_text_by_id[job_group_id]),
                 },
             )
-    return len(jobs)
+    return SimilaritySummary(jobs_scored=len(jobs), mismatched=mismatched)

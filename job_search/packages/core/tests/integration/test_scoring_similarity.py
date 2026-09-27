@@ -23,6 +23,8 @@ class TestSimilarity(unittest.TestCase):
         self.user_id = uuid.uuid4()
         self.job_a = "fixture-job-sim-a"  # aligned with the CV
         self.job_b = "fixture-job-sim-b"  # embedded under a different model
+        self.job_c = "fixture-job-sim-c"  # same model, lower similarity than a
+        self.job_d = "fixture-job-sim-d"  # same model, orthogonal (cosine 0.0)
         with self.owner.begin() as conn:
             conn.execute(
                 text(
@@ -116,6 +118,40 @@ class TestSimilarity(unittest.TestCase):
 
     def _fake_rerank(self, cv_text: str, jd_text: str) -> float:
         return 0.5
+
+    def _insert_candidate_job(self, job_group_id: str, vector_literal: str) -> None:
+        """Insert a fixture job with one 'responsibilities' chunk plus its
+        `job_score` candidate row, under the CV's own embedding model.
+
+        Args:
+            job_group_id: The fixture job's id.
+            vector_literal: The pgvector text literal for its one chunk,
+                e.g. ``"[1.0,0.0,...]"``.
+        """
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_chunk_embedding (job_group_id, "
+                    "section, chunk_index, chunk_text, embedding, "
+                    "embedding_model) VALUES (:j, 'responsibilities', 0, "
+                    "'zzfixture', CAST(:v AS vector), 'nomic-embed-text')"
+                ),
+                {"j": job_group_id, "v": vector_literal},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO gold.dim_job (job_group_id, title_for_display, "
+                    "company) VALUES (:j, 'zzfixture role', 'zzfixture co')"
+                ),
+                {"j": job_group_id},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_score (user_id, job_group_id, "
+                    "hard_filter_passed) VALUES (:u, :j, true)"
+                ),
+                {"u": self.user_id, "j": job_group_id},
+            )
 
     def test_matching_embedding_model_gets_a_similarity_score(self) -> None:
         run_similarity(
@@ -216,6 +252,66 @@ class TestSimilarity(unittest.TestCase):
                 .all()
             )
         self.assertEqual(reranked, [self.job_a])
+
+    def test_stale_reranker_score_cleared_when_job_falls_out_of_top_n(self) -> None:
+        # job_c matches the CV's embedding model but less closely than job_a,
+        # so a smaller top_n on a later run should drop it from the ranking.
+        self._insert_candidate_job(
+            self.job_c, "[0.6,0.8," + ",".join(["0.0"] * 766) + "]"
+        )
+
+        # First run: top_n=2 lets both job_a and job_c get a reranker_score.
+        run_similarity(self.app_engine, self.user_id, rerank=self._fake_rerank, top_n=2)
+        with self.owner.connect() as conn:
+            score_c = conn.execute(
+                text(
+                    "SELECT reranker_score FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = :j"
+                ),
+                {"u": self.user_id, "j": self.job_c},
+            ).scalar_one()
+        self.assertIsNotNone(score_c)
+
+        # Second run: top_n=1 keeps only job_a. job_c's OLD reranker_score
+        # must be cleared, not left over as a stale, non-NULL value.
+        run_similarity(self.app_engine, self.user_id, rerank=self._fake_rerank, top_n=1)
+        with self.owner.connect() as conn:
+            score_c = conn.execute(
+                text(
+                    "SELECT reranker_score FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = :j"
+                ),
+                {"u": self.user_id, "j": self.job_c},
+            ).scalar_one()
+        self.assertIsNone(score_c)
+
+    def test_exact_zero_cosine_similarity_is_not_dropped_as_null(self) -> None:
+        # job_d's chunk is orthogonal to the CV's (cosine exactly 0.0), under
+        # the SAME embedding_model as the CV — a genuinely-computed 0.0, not
+        # a model mismatch and not "nothing to compare".
+        self._insert_candidate_job(
+            self.job_d, "[0.0,1.0," + ",".join(["0.0"] * 766) + "]"
+        )
+        run_similarity(
+            self.app_engine, self.user_id, rerank=self._fake_rerank, top_n=200
+        )
+        with self.owner.connect() as conn:
+            score = conn.execute(
+                text(
+                    "SELECT vector_similarity_score FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = :j"
+                ),
+                {"u": self.user_id, "j": self.job_d},
+            ).scalar_one()
+        self.assertIsNotNone(score)
+        self.assertAlmostEqual(float(score), 0.0)
+
+    def test_mismatch_count_is_reported_in_the_summary(self) -> None:
+        summary = run_similarity(
+            self.app_engine, self.user_id, rerank=self._fake_rerank, top_n=200
+        )
+        self.assertEqual(summary.jobs_scored, 2)  # job_a + job_b considered
+        self.assertEqual(summary.mismatched, 1)  # job_b only
 
 
 if __name__ == "__main__":

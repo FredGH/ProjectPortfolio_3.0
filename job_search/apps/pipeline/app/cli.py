@@ -1168,10 +1168,13 @@ def _cmd_score_similarity(args: argparse.Namespace) -> int:
     """
     settings = get_settings()
     app_engine = build_engine(settings.app_database_url)
-    n = run_similarity(
+    summary = run_similarity(
         app_engine, args.user_id, rerank=_build_reranker(), top_n=args.top_n
     )
-    print(f"score-similarity complete: jobs_scored={n}")
+    print(
+        f"score-similarity complete: jobs_scored={summary.jobs_scored} "
+        f"mismatched={summary.mismatched}"
+    )
     return 0
 
 
