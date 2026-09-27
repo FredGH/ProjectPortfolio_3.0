@@ -44,6 +44,7 @@ from core.ingestion.sources_config import load_sources_config
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
+from core.scoring.cv_chunking import chunk_and_embed_cv
 from core.scoring.hard_filters import run_hard_filters
 from core.scoring.job_chunking import chunk_and_embed_jobs
 from core.settings import Settings, get_settings
@@ -1109,6 +1110,35 @@ def _cmd_chunk_embed_jobs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_chunk_embed_cv(args: argparse.Namespace) -> int:
+    """Run the `chunk-embed-cv` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id` and `refresh`.
+
+    Returns:
+        0 on success, 1 if the user has no CV truth base.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        n = chunk_and_embed_cv(
+            app_engine,
+            args.user_id,
+            embed=_build_embedder(http_client, settings),
+            embedding_model=settings.embedding_model,
+            refresh=args.refresh,
+        )
+    except LookupError as exc:
+        print(f"chunk-embed-cv: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    print(f"chunk-embed-cv complete: chunks_written={n}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1406,6 +1436,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Cap the number of jobs chunked (tests only)",
     )
 
+    chunk_embed_cv_parser = subparsers.add_parser(
+        "chunk-embed-cv",
+        help="Chunk and embed one user's current CV truth base "
+        "(PLAN.md Step 15 stage 2, CV side)",
+    )
+    chunk_embed_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    chunk_embed_cv_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help=(
+            "Recompute even if this CV version already has chunks "
+            "(default: skip if this version is already chunked)"
+        ),
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1440,6 +1485,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_filter_jobs(args)
     if args.command == "chunk-embed-jobs":
         return _cmd_chunk_embed_jobs(args)
+    if args.command == "chunk-embed-cv":
+        return _cmd_chunk_embed_cv(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
