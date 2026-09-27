@@ -48,6 +48,7 @@ from core.scoring.cv_chunking import chunk_and_embed_cv
 from core.scoring.hard_filters import run_hard_filters
 from core.scoring.job_chunking import chunk_and_embed_jobs
 from core.scoring.similarity import run_similarity
+from core.scoring.skill_coverage import run_skill_coverage
 from core.settings import Settings, get_settings
 from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
@@ -1178,6 +1179,26 @@ def _cmd_score_similarity(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_score_skill_coverage(args: argparse.Namespace) -> int:
+    """Run the `score-skill-coverage` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id`.
+
+    Returns:
+        0 on success, 1 if the user has no CV truth base.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    try:
+        n = run_skill_coverage(app_engine, args.user_id)
+    except LookupError as exc:
+        print(f"score-skill-coverage: {exc}")
+        return 1
+    print(f"score-skill-coverage complete: jobs_scored={n}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1503,6 +1524,13 @@ def main(argv: list[str] | None = None) -> int:
         help="How many top-scoring jobs get a reranker score",
     )
 
+    score_skill_coverage_parser = subparsers.add_parser(
+        "score-skill-coverage",
+        help="Skill coverage with recency decay for one user "
+        "(PLAN.md Step 15 stage 3)",
+    )
+    score_skill_coverage_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1541,6 +1569,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_chunk_embed_cv(args)
     if args.command == "score-similarity":
         return _cmd_score_similarity(args)
+    if args.command == "score-skill-coverage":
+        return _cmd_score_skill_coverage(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
