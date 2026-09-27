@@ -176,6 +176,58 @@ class TestLlmRerank(unittest.TestCase):
         self.assertIsNone(row.llm_missing_skills)
         self.assertIsNone(row.llm_stretch_flag)
 
+    def test_stale_llm_fields_cleared_when_job_drops_out_of_top_n(self) -> None:
+        # First run with top_n=2: fixture-job-rerank-0 and -1 (the two
+        # highest pre_llm_score fixtures) both get a real LLM fit score.
+        run_llm_rerank(
+            self.app_engine,
+            self.user_id,
+            adapters={"anthropic": _FakeAdapter()},
+            top_n=2,
+        )
+        with self.owner.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT llm_fit_score FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-rerank-1'"
+                ),
+                {"u": self.user_id},
+            ).one()
+        self.assertIsNotNone(row.llm_fit_score)
+
+        # Now tank fixture-job-rerank-1's pre-LLM score so the second run's
+        # top_n=2 cut excludes it entirely — it drops OUT of the top-N
+        # rather than being reconsidered-and-failing within it. It is, by
+        # construction, absent from the second run's `top_jobs`.
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE scoring.job_score SET vector_similarity_score = 0.01 "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-rerank-1'"
+                ),
+                {"u": self.user_id},
+            )
+
+        run_llm_rerank(
+            self.app_engine,
+            self.user_id,
+            adapters={"anthropic": _FakeAdapter()},
+            top_n=2,
+        )
+        with self.owner.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT llm_fit_score, llm_rationale, llm_missing_skills, "
+                    "llm_stretch_flag FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-rerank-1'"
+                ),
+                {"u": self.user_id},
+            ).one()
+        self.assertIsNone(row.llm_fit_score)
+        self.assertIsNone(row.llm_rationale)
+        self.assertIsNone(row.llm_missing_skills)
+        self.assertIsNone(row.llm_stretch_flag)
+
 
 if __name__ == "__main__":
     unittest.main()

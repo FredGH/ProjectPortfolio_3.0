@@ -39,7 +39,7 @@ _SELECT_CV_TEXT = text(
 _CLEAR_LLM_FIELDS = text(
     "UPDATE scoring.job_score SET llm_fit_score = NULL, llm_rationale = NULL, "
     "llm_missing_skills = NULL, llm_stretch_flag = NULL "
-    "WHERE user_id = :user_id AND job_group_id = ANY(:job_group_ids)"
+    "WHERE user_id = :user_id AND hard_filter_passed = true"
 )
 _UPDATE_LLM_FIELDS = text(
     "UPDATE scoring.job_score SET llm_fit_score = :fit_score, "
@@ -59,15 +59,21 @@ def run_llm_rerank(
 ) -> int:
     """Run the LLM re-rank stage for one user's top-scoring jobs.
 
-    Every job in this run's top-N pool has its `llm_fit_score`,
-    `llm_rationale`, `llm_missing_skills`, and `llm_stretch_flag` cleared to
-    NULL before the per-job loop runs, so a job that was LLM-scored on a
-    previous run but is reconsidered-and-fails (a bad/malformed reply) or
-    reconsidered-and-drops-out-of-the-ranking this run never keeps a stale
-    non-NULL value from an earlier run. A job outside this run's top-N pool
-    entirely (never reconsidered) keeps whatever it had — the pre-LLM
-    ranking always re-evaluates who is "in" the top-N fresh each run, so
-    only actually-reconsidered jobs need clearing.
+    Every `hard_filter_passed = true` job for this user — the full
+    candidate pool that could have made this run's top-N, not just the
+    jobs that actually did — has its `llm_fit_score`, `llm_rationale`,
+    `llm_missing_skills`, and `llm_stretch_flag` cleared to NULL before the
+    top-N is even selected. Clearing only the current top-N (this run's
+    `top_jobs`) cannot catch a job that drops OUT of the top-N this run
+    (its `vector_similarity_score`/`reranker_score`/`skill_coverage_score`
+    shifted since it was last LLM-scored) — by construction, a dropped-out
+    job is absent from `top_jobs`, so a clear scoped to `top_jobs` would
+    leave its stale LLM fields in place forever. Clearing the whole
+    candidate pool up front — mirrors core.scoring.similarity's
+    `_CLEAR_RERANK_SCORES` pattern, which clears `reranker_score` for
+    `results.keys()` (every job considered this run) before setting the
+    new value only for the current top-N subset — guarantees a dropped-out
+    job ends up correctly NULL regardless of why it dropped out.
 
     Args:
         app_engine: The app-role engine (RLS-enforced).
@@ -87,6 +93,11 @@ def run_llm_rerank(
     """
     template = load_prompt(TASK, load_task_config(TASK, config_path).prompt_family, 1)
     with session_scope(app_engine, user_id=user_id) as conn:
+        # Clear the FULL candidate pool's LLM fields first, before this
+        # run's top-N is even selected — see the docstring above for why a
+        # clear scoped to just `top_jobs` can never catch a job that drops
+        # out of the top-N entirely.
+        conn.execute(_CLEAR_LLM_FIELDS, {"user_id": user_id})
         top_jobs = conn.execute(
             _SELECT_PRE_LLM_TOP, {"user_id": user_id, "top_n": top_n}
         ).all()
@@ -94,19 +105,6 @@ def run_llm_rerank(
             conn.execute(_SELECT_CV_TEXT, {"user_id": user_id}).scalar_one_or_none()
             or ""
         )
-
-    if top_jobs:
-        with session_scope(app_engine, user_id=user_id) as conn:
-            # Clear every reconsidered job's LLM fields up front so a job
-            # that fails or drops out this run never keeps a stale value —
-            # same pattern as core.scoring.similarity._CLEAR_RERANK_SCORES.
-            conn.execute(
-                _CLEAR_LLM_FIELDS,
-                {
-                    "user_id": user_id,
-                    "job_group_ids": [row.job_group_id for row in top_jobs],
-                },
-            )
 
     reranked = 0
     for row in top_jobs:

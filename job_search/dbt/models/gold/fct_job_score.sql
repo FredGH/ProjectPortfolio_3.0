@@ -11,6 +11,7 @@ SELECT
     j.company,
     s.hard_filter_passed,
     s.vector_similarity_score,
+    s.embedding_model,
     s.reranker_score,
     s.skill_coverage_score,
     s.llm_fit_score,

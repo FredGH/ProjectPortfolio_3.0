@@ -335,6 +335,11 @@ models:
       - name: vector_similarity_score
         description: "Stage 2: CV/JD chunk cosine similarity."
         data_type: numeric
+      - name: embedding_model
+        description: >
+          Which embedding model produced vector_similarity_score, recorded
+          so a model change is auditable.
+        data_type: text
       - name: reranker_score
         description: "Stage 2b: cross-encoder rerank of the top vector-similarity jobs."
         data_type: numeric
