@@ -227,6 +227,28 @@ def get_review_list(
     return [ReviewItemModel(**asdict(item)) for item in items]
 
 
+@router.get("/skills/review/count")
+def get_review_count(
+    q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
+    engine: Engine = Depends(get_app_db_engine),
+) -> dict[str, int]:
+    """Count every unmapped string, ignoring any list `limit`.
+
+    Args:
+        q: Optional search text, matched the same way as `GET /skills/review`.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `{"total": <count>}`.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character.
+    """
+    _reject_nul_query(q)
+    with engine.connect() as conn:
+        return {"total": review.count_unmapped(conn, query=q)}
+
+
 @router.get("/skills/review/auto-matches", response_model=list[MatchItemModel])
 def get_auto_matches(
     q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
@@ -252,6 +274,29 @@ def get_auto_matches(
     with engine.connect() as conn:
         items = review.list_auto_matches(conn, query=q, limit=limit)
     return [MatchItemModel(**asdict(item)) for item in items]
+
+
+@router.get("/skills/review/auto-matches/count")
+def get_auto_matches_count(
+    q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
+    engine: Engine = Depends(get_app_db_engine),
+) -> dict[str, int]:
+    """Count every auto-match, ignoring any list `limit`.
+
+    Args:
+        q: Optional search text, matched the same way as
+            `GET /skills/review/auto-matches`.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `{"total": <count>}`.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character.
+    """
+    _reject_nul_query(q)
+    with engine.connect() as conn:
+        return {"total": review.count_auto_matches(conn, query=q)}
 
 
 @router.get("/skills/review/decisions", response_model=list[DecisionItemModel])
@@ -281,6 +326,29 @@ def get_decisions(
     with engine.connect() as conn:
         items = review.list_decisions(conn, query=q, limit=limit)
     return [DecisionItemModel(**asdict(item)) for item in items]
+
+
+@router.get("/skills/review/decisions/count")
+def get_decisions_count(
+    q: str | None = Query(default=None, max_length=MAX_INPUT_CHARS),
+    engine: Engine = Depends(get_app_db_engine),
+) -> dict[str, int]:
+    """Count every resolved/dismissed decision, ignoring any list `limit`.
+
+    Args:
+        q: Optional search text, matched the same way as
+            `GET /skills/review/decisions`.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `{"total": <count>}`.
+
+    Raises:
+        fastapi.HTTPException: 422 if `q` contains a NUL character.
+    """
+    _reject_nul_query(q)
+    with engine.connect() as conn:
+        return {"total": review.count_decisions(conn, query=q)}
 
 
 @router.get("/skills/search", response_model=list[SkillOptionModel])

@@ -205,6 +205,39 @@ def list_unmapped(
     ]
 
 
+def count_unmapped(conn: Connection, *, query: str | None = None) -> int:
+    """Count the strings `list_unmapped` would return, ignoring `limit`.
+
+    Args:
+        conn: An open connection.
+        query: Optional search text, matched the same way as `list_unmapped`.
+
+    Returns:
+        The total count. 0 if a given `query` normalises to nothing.
+    """
+    where = ""
+    params: dict[str, Any] = {}
+    if query is not None:
+        if not normalise_skill(query):
+            return 0
+        where = (
+            "AND (m.raw_norm LIKE :p OR "
+            "lower(COALESCE(es.preferred_label, cs.canonical_label)) LIKE :p) "
+        )
+        params["p"] = _like_pattern(query)
+    return conn.execute(
+        text(
+            "SELECT count(*) FROM silver.skill_mapping AS m "
+            "LEFT JOIN esco.skill AS es ON es.skill_id = m.candidate_skill_id "
+            "LEFT JOIN silver.custom_skill AS cs "
+            "ON cs.skill_id = m.candidate_skill_id "
+            "WHERE m.review_status IN ('open', 'rejected') "
+            f"{where}"
+        ),
+        params,
+    ).scalar_one()
+
+
 def is_suspicious_label_match(raw_norm: str, skill_label: str | None) -> bool:
     """Decide whether an exact-label match deserves a second look.
 
@@ -290,6 +323,37 @@ def list_auto_matches(
     ]
     items.sort(key=_match_sort_key)
     return items[:limit]
+
+
+def count_auto_matches(conn: Connection, *, query: str | None = None) -> int:
+    """Count the rows `list_auto_matches` would return, ignoring `limit`.
+
+    Args:
+        conn: An open connection.
+        query: Optional search text, matched the same way as `list_auto_matches`.
+
+    Returns:
+        The total count. 0 if a given `query` normalises to nothing.
+    """
+    where = ""
+    params: dict[str, Any] = {}
+    if query is not None:
+        if not normalise_skill(query):
+            return 0
+        where = (
+            " AND (m.raw_norm LIKE :p OR "
+            "lower(COALESCE(es.preferred_label, cs.canonical_label)) LIKE :p)"
+        )
+        params["p"] = _like_pattern(query)
+    return conn.execute(
+        text(
+            "SELECT count(*) FROM silver.skill_mapping AS m "
+            "LEFT JOIN esco.skill AS es ON es.skill_id = m.skill_id "
+            "LEFT JOIN silver.custom_skill AS cs ON cs.skill_id = m.skill_id "
+            f"WHERE m.method IN ('embedding', 'label', 'llm'){where}"
+        ),
+        params,
+    ).scalar_one()
 
 
 def _match_sort_key(item: MatchItem) -> tuple:
@@ -662,6 +726,38 @@ def list_decisions(
         )
         for r in rows
     ]
+
+
+def count_decisions(conn: Connection, *, query: str | None = None) -> int:
+    """Count the strings `list_decisions` would return, ignoring `limit`.
+
+    Args:
+        conn: An open connection.
+        query: Optional search text, matched the same way as `list_decisions`.
+
+    Returns:
+        The total count. 0 if a given `query` normalises to nothing.
+    """
+    where = ""
+    params: dict[str, Any] = {}
+    if query is not None:
+        if not normalise_skill(query):
+            return 0
+        where = (
+            "AND (m.raw_norm LIKE :p OR "
+            "lower(COALESCE(es.preferred_label, cs.canonical_label)) LIKE :p) "
+        )
+        params["p"] = _like_pattern(query)
+    return conn.execute(
+        text(
+            "SELECT count(*) FROM silver.skill_mapping AS m "
+            "LEFT JOIN esco.skill AS es ON es.skill_id = m.skill_id "
+            "LEFT JOIN silver.custom_skill AS cs ON cs.skill_id = m.skill_id "
+            "WHERE m.review_status IN ('resolved', 'dismissed') "
+            f"{where}"
+        ),
+        params,
+    ).scalar_one()
 
 
 def reopen(conn: Connection, raw_norm: str) -> None:

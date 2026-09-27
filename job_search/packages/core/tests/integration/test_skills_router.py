@@ -119,6 +119,20 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertAlmostEqual(item["candidate_score"], 0.6)
         self.assertNotIn(_MATCHED, {i["raw_norm"] for i in body})
 
+    def test_the_unmapped_count_is_not_capped_by_the_lists_limit(self) -> None:
+        with self.owner.begin() as conn:
+            for name in ("zzfixture count a", "zzfixture count b"):
+                insert_mapping(conn, name)
+        total = self.client.get(
+            "/skills/review/count", params={"q": "zzfixture"}
+        ).json()
+        capped = self.client.get(
+            "/skills/review", params={"limit": 2, "q": "zzfixture"}
+        ).json()
+        # setUp's _UNMAPPED plus the two inserted above.
+        self.assertEqual(total, {"total": 3})
+        self.assertEqual(len(capped), 2)
+
     def test_auto_matches_list_shows_the_embedding_matched_string(self) -> None:
         body = self.client.get(
             "/skills/review/auto-matches", params={"limit": 500, "q": "zzfixture"}
@@ -130,6 +144,18 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertAlmostEqual(item["score"], 0.86)
         self.assertFalse(item["suspicious"])
         self.assertFalse(item["seen_in_cv"])
+
+    def test_the_auto_matches_count_is_not_capped_by_the_lists_limit(self) -> None:
+        self._insert_label_match("zzfixture count label", "fixture-cloud")
+        total = self.client.get(
+            "/skills/review/auto-matches/count", params={"q": "zzfixture"}
+        ).json()
+        capped = self.client.get(
+            "/skills/review/auto-matches", params={"limit": 1, "q": "zzfixture"}
+        ).json()
+        # setUp's _MATCHED plus the one inserted above.
+        self.assertEqual(total, {"total": 2})
+        self.assertEqual(len(capped), 1)
 
     def _insert_label_match(
         self, raw_norm: str, skill_id: str, *, seen_in_cv: bool = False
@@ -594,7 +620,9 @@ class TestSkillReviewApi(unittest.TestCase):
             self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
         )
         self._dismiss(dismissed)
-        by_norm = {d["raw_norm"]: d for d in self._decisions()}
+        # Scoped by q: the unscoped top-500 window can miss these fixture
+        # rows once the shared dev DB holds thousands of real decisions.
+        by_norm = {d["raw_norm"]: d for d in self._decisions(q="zzfixture")}
         resolved = by_norm[_UNMAPPED]
         self.assertEqual(resolved["review_status"], "resolved")
         self.assertEqual(resolved["skill_id"], "fixture-cloud")
@@ -605,6 +633,23 @@ class TestSkillReviewApi(unittest.TestCase):
         self.assertIsNone(by_norm[dismissed]["skill_id"])
         # An auto-match still awaiting confirmation is not a decision.
         self.assertNotIn(_MATCHED, by_norm)
+
+    def test_the_decisions_count_is_not_capped_by_the_lists_limit(self) -> None:
+        dismissed = "zzfixture count dismissed"
+        with self.owner.begin() as conn:
+            insert_mapping(conn, dismissed)
+        self.assertEqual(
+            self._resolve(raw_norm=_UNMAPPED, skill_id="fixture-cloud"), 200
+        )
+        self._dismiss(dismissed)
+        total = self.client.get(
+            "/skills/review/decisions/count", params={"q": "zzfixture"}
+        ).json()
+        capped = self.client.get(
+            "/skills/review/decisions", params={"limit": 1, "q": "zzfixture"}
+        ).json()
+        self.assertEqual(total, {"total": 2})
+        self.assertEqual(len(capped), 1)
 
     def test_decisions_can_be_searched_by_string_or_target_label(self) -> None:
         self.assertEqual(
