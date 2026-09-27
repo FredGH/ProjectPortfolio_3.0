@@ -93,7 +93,9 @@ _SELECT_UNCHUNKED = text(
     "SELECT j.job_group_id, j.description FROM gold.dim_job AS j "
     "LEFT JOIN (SELECT DISTINCT job_group_id FROM scoring.job_chunk_embedding) "
     "AS c ON c.job_group_id = j.job_group_id "
-    "WHERE c.job_group_id IS NULL AND j.description IS NOT NULL"
+    "WHERE c.job_group_id IS NULL AND j.description IS NOT NULL "
+    "AND (CAST(:job_group_ids AS text[]) IS NULL "
+    "OR j.job_group_id = ANY(:job_group_ids))"
 )
 _INSERT_CHUNK = text(
     "INSERT INTO scoring.job_chunk_embedding "
@@ -110,6 +112,7 @@ def chunk_and_embed_jobs(
     embed: Callable[[str], list[float]],
     embedding_model: str,
     limit: int | None = None,
+    job_group_ids: list[str] | None = None,
 ) -> int:
     """Chunk and embed every job that has no chunks yet.
 
@@ -122,23 +125,37 @@ def chunk_and_embed_jobs(
             work, not required for a working similarity signal).
         embedding_model: Recorded on every row written.
         limit: Cap how many jobs to chunk this run; `None` covers all.
+        job_group_ids: Restrict to these job ids; `None` (what the CLI
+            passes) covers everything unchunked. Exists so tests never
+            touch unrelated rows in the shared dev DB.
 
     Returns:
-        The number of jobs newly chunked (0 if all were already done).
+        The number of jobs actually chunked this run — i.e. that got at
+        least one row inserted into `scoring.job_chunk_embedding` (0 if
+        all selected jobs were already done, or every selected job's
+        `detect_sections` produced no non-empty section bodies).
     """
     query = _SELECT_UNCHUNKED
     if limit is not None:
         query = text(query.text + " LIMIT :limit")
     with engine.connect() as conn:
         jobs = (
-            conn.execute(query, {"limit": limit} if limit is not None else {})
+            conn.execute(
+                query,
+                {
+                    "job_group_ids": job_group_ids,
+                    **({"limit": limit} if limit is not None else {}),
+                },
+            )
             .mappings()
             .all()
         )
     splitter = SentenceSplitter(
         chunk_size=_CHUNK_SIZE_TOKENS, chunk_overlap=_CHUNK_OVERLAP_TOKENS
     )
+    chunked_count = 0
     for job in jobs:
+        rows_written = 0
         with engine.begin() as conn:
             for section, section_text in detect_sections(job["description"]):
                 for chunk_index, chunk_text in enumerate(
@@ -155,4 +172,7 @@ def chunk_and_embed_jobs(
                             "embedding_model": embedding_model,
                         },
                     )
-    return len(jobs)
+                    rows_written += 1
+        if rows_written > 0:
+            chunked_count += 1
+    return chunked_count
