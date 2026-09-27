@@ -26,6 +26,7 @@ class TestSkillCoverage(unittest.TestCase):
         self.user_id = uuid.uuid4()
         self.job_must = "fixture-job-cov-must"
         self.job_nice = "fixture-job-cov-nice"
+        self.job_mixed = "fixture-job-cov-mixed"
         with self.owner.begin() as conn:
             conn.execute(
                 text(
@@ -34,7 +35,7 @@ class TestSkillCoverage(unittest.TestCase):
                 ),
                 {"id": self.user_id, "email": f"zzfixture-{self.user_id}@example.com"},
             )
-            for job in (self.job_must, self.job_nice):
+            for job in (self.job_must, self.job_nice, self.job_mixed):
                 conn.execute(
                     text(
                         "INSERT INTO gold.dim_job (job_group_id, title_for_display, "
@@ -64,6 +65,26 @@ class TestSkillCoverage(unittest.TestCase):
                     "VALUES (:j, 'fixture-python', 'nice_to_have', 1)"
                 ),
                 {"j": self.job_nice},
+            )
+            # A job that lists BOTH a must-have and a nice-to-have skill, so
+            # partial coverage within one job can be compared: covering the
+            # must-have half should outscore covering the nice-to-have half,
+            # even though both are "one of two skills" matched.
+            conn.execute(
+                text(
+                    "INSERT INTO silver.silver__bridge_job_skill "
+                    "(job_group_id, skill_id, requirement_level, mention_count) "
+                    "VALUES (:j, 'fixture-python', 'must_have', 1)"
+                ),
+                {"j": self.job_mixed},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO silver.silver__bridge_job_skill "
+                    "(job_group_id, skill_id, requirement_level, mention_count) "
+                    "VALUES (:j, 'fixture-sql', 'nice_to_have', 1)"
+                ),
+                {"j": self.job_mixed},
             )
 
     def tearDown(self) -> None:
@@ -96,12 +117,14 @@ class TestSkillCoverage(unittest.TestCase):
                 text("DELETE FROM app_user WHERE id = :id"), {"id": self.user_id}
             )
 
-    def _write_cv(self, last_used: str | None) -> None:
+    def _write_cv(
+        self, last_used: str | None, canonical_id: str = "fixture-python"
+    ) -> None:
         truth_base = CVTruthBase(
             identity="zzfixture Person",
             headline="Engineer",
             skills=[
-                Skill(name="Python", canonical_id="fixture-python", last_used=last_used)
+                Skill(name="Skill", canonical_id=canonical_id, last_used=last_used)
             ],
         )
         write_truth_base(
@@ -120,14 +143,29 @@ class TestSkillCoverage(unittest.TestCase):
                 ).scalar_one()
             )
 
-    def test_a_must_have_hit_scores_higher_than_an_equivalent_nice_to_have(
+    def test_covering_the_must_have_half_of_a_mixed_job_scores_higher(
         self,
     ) -> None:
-        self._write_cv(last_used="2026-06")
+        # fixture-job-cov-mixed lists one must-have (fixture-python) and one
+        # nice-to-have (fixture-sql) skill. Matching only the must-have half
+        # and matching only the nice-to-have half are both "one of two
+        # skills" in raw count, but the weighted coverage score must favour
+        # the must-have match — this is where must-have weighting actually
+        # matters (a mix within one job), unlike full-vs-full across two
+        # separate single-skill jobs.
+        self._write_cv(last_used="2026-06", canonical_id="fixture-python")
         run_skill_coverage(
             self.app_engine, self.user_id, as_of=datetime.date(2026, 9, 27)
         )
-        self.assertGreater(self._coverage(self.job_must), self._coverage(self.job_nice))
+        must_half_score = self._coverage(self.job_mixed)
+
+        self._write_cv(last_used="2026-06", canonical_id="fixture-sql")
+        run_skill_coverage(
+            self.app_engine, self.user_id, as_of=datetime.date(2026, 9, 27)
+        )
+        nice_half_score = self._coverage(self.job_mixed)
+
+        self.assertGreater(must_half_score, nice_half_score)
 
     def test_a_skill_unused_for_six_years_scores_lower_than_one_used_last_year(
         self,

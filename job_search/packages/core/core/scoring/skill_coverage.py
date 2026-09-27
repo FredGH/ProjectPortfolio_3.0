@@ -134,12 +134,7 @@ def run_skill_coverage(
                     if row["requirement_level"] == "must_have"
                     else _NICE_TO_HAVE_WEIGHT
                 )
-                # The denominator uses the fixed must-have ceiling per skill
-                # (not this row's own weight) so a fully-matched nice-to-have
-                # scores lower than an equivalent fully-matched must-have —
-                # both are "coverage of what the job could have demanded,"
-                # not "coverage of what it happened to demand."
-                total += _MUST_HAVE_WEIGHT
+                total += weight
                 if row["skill_id"] in cv_skills:
                     hit += weight * cv_skills[row["skill_id"]]
             conn.execute(
