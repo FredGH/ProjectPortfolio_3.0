@@ -44,6 +44,7 @@ from core.ingestion.sources_config import load_sources_config
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
+from core.scoring.hard_filters import run_hard_filters
 from core.settings import Settings, get_settings
 from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
@@ -1066,6 +1067,22 @@ def _cmd_map_cv_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_score_filter_jobs(args: argparse.Namespace) -> int:
+    """Run the `score-filter-jobs` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `user_id` and `limit`.
+
+    Returns:
+        0 on success.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    n = run_hard_filters(app_engine, args.user_id, limit=args.limit)
+    print(f"score-filter-jobs complete: considered={n}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1339,6 +1356,18 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    score_filter_parser = subparsers.add_parser(
+        "score-filter-jobs",
+        help="Run stage-1 hard filters for one user (PLAN.md Step 15)",
+    )
+    score_filter_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    score_filter_parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap the number of jobs considered (tests only)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1369,6 +1398,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_extract_job_skills(args)
     if args.command == "map-cv-skills":
         return _cmd_map_cv_skills(args)
+    if args.command == "score-filter-jobs":
+        return _cmd_score_filter_jobs(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

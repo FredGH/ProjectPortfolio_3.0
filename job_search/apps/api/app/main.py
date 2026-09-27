@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import uuid
 
-from app.routers import classification, cv, dedup, extraction_runs, ingest, skills
+from app.routers import (
+    classification,
+    cv,
+    dedup,
+    extraction_runs,
+    ingest,
+    scoring,
+    skills,
+)
 from fastapi import Depends, FastAPI
 
 from core.db.session import get_current_user_id
@@ -16,6 +24,7 @@ app.include_router(classification.router)
 app.include_router(cv.router)
 app.include_router(skills.router)
 app.include_router(extraction_runs.router)
+app.include_router(scoring.router)
 
 
 @app.get("/health")
