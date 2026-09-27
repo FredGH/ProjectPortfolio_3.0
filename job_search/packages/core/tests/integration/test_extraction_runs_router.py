@@ -86,7 +86,9 @@ class TestExtractionRunsApi(unittest.TestCase):
         # record which Ollama it was aimed at and return a canned summary.
         self.mapping_targets: list[str] = []
 
-        def fake_factory(engine, *, ollama_base_url, embedding_model, http_client):
+        def fake_factory(
+            engine, *, ollama_base_url, embedding_model, http_client, llm_adapters=None
+        ):
             self.mapping_targets.append(ollama_base_url)
             return lambda: "fake mapping summary"
 

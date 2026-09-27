@@ -20,6 +20,7 @@ from tests.integration.skills_fixtures import (
     sparse_vector,
 )
 
+from core.llm.types import LLMResponse
 from core.settings import get_settings
 from core.skills.post_run_mapping import build_post_run_mapping
 
@@ -27,6 +28,39 @@ from core.skills.post_run_mapping import build_post_run_mapping
 def _fake_embeddings(request: httpx.Request) -> httpx.Response:
     """Answer Ollama's /api/embeddings with a vector far from every ESCO label."""
     return httpx.Response(200, json={"embedding": sparse_vector({767: 1.0})})
+
+
+class _FakeAnthropic:
+    """LLM adapter that replies with a canned text or raises a canned error."""
+
+    def __init__(self, reply: str | Exception) -> None:
+        """Store the reply.
+
+        Args:
+            reply: Text to return, or an exception to raise.
+        """
+        self.reply = reply
+
+    def complete(self, *, model: str, prompt: str, **_: object) -> LLMResponse:
+        """Return the canned reply or raise it.
+
+        Args:
+            model: Model name echoed back.
+            prompt: Ignored.
+            **_: Ignored.
+
+        Returns:
+            The canned response.
+        """
+        if isinstance(self.reply, Exception):
+            raise self.reply
+        return LLMResponse(
+            text=self.reply,
+            provider="anthropic",
+            model=model,
+            input_tokens=1,
+            output_tokens=1,
+        )
 
 
 class TestPostRunMapping(unittest.TestCase):
@@ -79,6 +113,47 @@ class TestPostRunMapping(unittest.TestCase):
         hook = self._hook()
         hook()
         self.assertEqual(hook(), "Mapped 0 new skill string(s) to ESCO; 0 need review.")
+
+    def _seed(self) -> None:
+        """Insert one unmapped fixture skill string."""
+        with self.owner.begin() as conn:
+            insert_job_skills(
+                conn, self.job, "local.v1", [(self.raw, self.raw, "must_have")]
+            )
+
+    def _hook_with(self, llm_adapters):
+        """Build a hook with the given LLM adapters.
+
+        Args:
+            llm_adapters: Adapter dict passed to the hook.
+
+        Returns:
+            The zero-argument hook.
+        """
+        return build_post_run_mapping(
+            self.app,
+            ollama_base_url="http://fake-ollama:11434",
+            embedding_model=get_settings().embedding_model,
+            http_client=httpx.Client(transport=httpx.MockTransport(_fake_embeddings)),
+            raw_norms=[self.raw],
+            llm_adapters=llm_adapters,
+        )
+
+    def test_summary_notes_the_skipped_pre_review_when_there_is_no_anthropic_adapter(
+        self,
+    ) -> None:
+        self._seed()
+        summary = self._hook_with({})()
+        self.assertTrue(
+            summary.endswith("Claude pre-review skipped: no Anthropic key.")
+        )
+
+    def test_a_pre_review_failure_is_reported_but_does_not_raise(self) -> None:
+        self._seed()
+        summary = self._hook_with({"anthropic": _FakeAnthropic(RuntimeError("down"))})()
+        self.assertIn("Mapped 0 new skill string(s)", summary)
+        self.assertIn("Claude pre-review: 0 checked", summary)
+        self.assertIn("1 not answered", summary)
 
 
 if __name__ == "__main__":

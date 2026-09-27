@@ -31,11 +31,58 @@ and applies to **every future CV and job description**, so a string is fixed
 once. An alias you create outranks ESCO and the seed file
 (`config/skill_aliases.yml`), and a re-sync of that file never overwrites it.
 
-#### Tab 1 — Unmapped
+#### Tab 1 — Auto-matches — verify
 
-Strings the mapper could not place. Each card shows the string, how many jobs
-mention it, whether it is on your CV, and the nearest ESCO skill as a suggestion
-when there is one.
+Matches the system made on its own, by exact ESCO label, by similarity, or by
+Claude (*matched by Claude*, with its short reason). A wrong match is otherwise
+invisible, so check them here. **Show up to** controls how many load, or type
+in the search box (a string or its matched skill) to narrow it; the caption's
+total reflects the active search.
+
+- A **warning** marks a label match where the string is not the skill's own name
+  — it matched through an alternative or hidden ESCO label of a differently named
+  skill (for example a programming language filed under "computer programming").
+  These are listed first, then similarity matches (least confident first), then
+  the remaining label matches.
+- **Confirm** agrees with the match. *Consequence:* it is saved as an alias and
+  marked *resolved*. From then on it is your decision, not an automatic one, so
+  a re-map never changes it.
+- **Reject** says the match is wrong. *Consequence:* the mapping is removed and
+  the card moves to the Unmapped tab as *Previously rejected*. It is protected
+  from automatic re-mapping, so it cannot silently match the same wrong skill
+  again — it stays unmapped until you resolve or dismiss it.
+- Leaving a match unreviewed is fine: it stays in force as it is.
+
+#### Tab 2 — Decisions — reopen
+
+Every string you resolved or dismissed, with the skill it was resolved to, most
+used first — so a string used by only one job sits far down. Raise **Show up to**
+to load more, or type in the search box, which matches the string or the skill's
+label; the caption's total reflects the active search.
+
+- **Reopen** withdraws the decision. *For a resolved string:* the alias is
+  deleted, so the old target stops applying to future strings, and the card
+  returns to the Unmapped tab as *Previously rejected* with the old target as
+  context. Then resolve it to the right skill, or dismiss it. *For a dismissed
+  string:* it returns to the Unmapped tab as an ordinary open string.
+- A custom skill created by an earlier decision is kept, because other strings
+  may point at it.
+- Not reopenable here: a string mapped by a curated seed alias (edit
+  `config/skill_aliases.yml` instead), an automatic match (use *Reject*), and a
+  string that is already unmapped.
+
+#### Tab 3 — Unmapped
+
+Strings the mapper could not place. **Show up to** controls how many load, or
+type in the search box (a string or its suggested skill) to narrow it; the
+caption's total reflects the active search. Each card shows the string, how
+many jobs mention it, whether it is on your CV, and the nearest ESCO skill as
+a suggestion when there is one. If Claude has already looked at the string,
+the card carries its note. When Claude found no ESCO equivalent and could name
+the skill, it has already been created as a custom skill (see the Decisions
+tab) — a card only still shows that suggestion here if the name couldn't be
+turned into a valid skill name automatically, in which case fix it in the box
+below.
 
 - **Accept suggestion: …** maps the string to the suggested ESCO skill.
   *Consequence:* the string becomes a permanent alias and is marked *resolved*.
@@ -56,46 +103,9 @@ when there is one.
   Only an unmapped string can be dismissed. It can be brought back from the
   Decisions tab.
 
-A card marked **Previously rejected** came from *Reject* (tab 2) or from
-reopening a resolved decision (tab 3). The skill named is the one that was
+A card marked **Previously rejected** came from *Reject* (tab 1) or from
+reopening a resolved decision (tab 2). The skill named is the one that was
 turned down, shown only as context.
-
-#### Tab 2 — Auto-matches — verify
-
-Matches the system made on its own, by exact ESCO label or by similarity. A wrong
-match is otherwise invisible, so check them here.
-
-- A **warning** marks a label match where the string is not the skill's own name
-  — it matched through an alternative or hidden ESCO label of a differently named
-  skill (for example a programming language filed under "computer programming").
-  These are listed first, then similarity matches (least confident first), then
-  the remaining label matches.
-- **Confirm** agrees with the match. *Consequence:* it is saved as an alias and
-  marked *resolved*. From then on it is your decision, not an automatic one, so
-  a re-map never changes it.
-- **Reject** says the match is wrong. *Consequence:* the mapping is removed and
-  the card moves to the Unmapped tab as *Previously rejected*. It is protected
-  from automatic re-mapping, so it cannot silently match the same wrong skill
-  again — it stays unmapped until you resolve or dismiss it.
-- Leaving a match unreviewed is fine: it stays in force as it is.
-
-#### Tab 3 — Decisions — reopen
-
-Every string you resolved or dismissed, with the skill it was resolved to, most
-used first — so a string used by only one job sits far down. Raise **Show up to**
-to load more, or type in the search box, which matches the string or the skill's
-label.
-
-- **Reopen** withdraws the decision. *For a resolved string:* the alias is
-  deleted, so the old target stops applying to future strings, and the card
-  returns to the Unmapped tab as *Previously rejected* with the old target as
-  context. Then resolve it to the right skill, or dismiss it. *For a dismissed
-  string:* it returns to the Unmapped tab as an ordinary open string.
-- A custom skill created by an earlier decision is kept, because other strings
-  may point at it.
-- Not reopenable here: a string mapped by a curated seed alias (edit
-  `config/skill_aliases.yml` instead), an automatic match (use *Reject*), and a
-  string that is already unmapped.
 
 #### After you change something
 
@@ -104,7 +114,8 @@ were already mapped, and the data built from them, are **not** rewritten by this
 page:
 
 1. **Job descriptions:** run `map-skills --remap-all-auto` to re-map every
-   automatic mapping (your decisions are never touched), then
+   automatic mapping (your decisions are never touched, and neither are
+   strings Claude already checked — decide those here), then
    `dbt run --select silver__skill silver__bridge_job_skill` to refresh the
    job–skill bridge.
 2. **Your CV:** `map-cv-skills --user-id <id>` fills only skills that have no id
@@ -186,6 +197,28 @@ def _get(path: str, params: dict | None = None) -> list[dict]:
     return response.json()
 
 
+def _get_count(path: str, params: dict | None = None) -> int:
+    """GET a `{"total": <int>}` count endpoint on the API.
+
+    Args:
+        path: The endpoint path.
+        params: Query parameters.
+
+    Returns:
+        The total count.
+
+    Raises:
+        httpx.HTTPError: If the request fails.
+    """
+    response = httpx.get(f"{_API}{path}", params=params, timeout=10.0)
+    response.raise_for_status()
+    return response.json()["total"]
+
+
+_SHOW_UP_TO_OPTIONS = [25, 50, 100, 250, 500]
+"""Options for the "Show up to" selectbox, shared by all three tabs."""
+
+
 def _error_message(exc: httpx.HTTPStatusError) -> str:
     """Build a readable message from an HTTP error response.
 
@@ -234,24 +267,147 @@ def _post(path: str, payload: dict) -> bool:
     return True
 
 
-unmapped_tab, verify_tab, decisions_tab = st.tabs(
-    ["Unmapped", "Auto-matches — verify", "Decisions — reopen"]
+verify_tab, decisions_tab, unmapped_tab = st.tabs(
+    ["Auto-matches — verify", "Decisions — reopen", "Unmapped"]
 )
+
+with verify_tab:
+    verify_query = st.text_input(
+        "Search auto-matches (a string or its matched skill)", key="verify-q"
+    )
+    verify_limit = st.selectbox(
+        "Show up to", _SHOW_UP_TO_OPTIONS, index=2, key="verify-limit"
+    )
+    verify_params: dict[str, object] = {"limit": verify_limit}
+    verify_count_params: dict[str, object] = {}
+    if verify_query:
+        verify_params["q"] = verify_query
+        verify_count_params["q"] = verify_query
+    try:
+        matches = _get("/skills/review/auto-matches", verify_params)
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load auto-matches: {exc}")
+        matches = []
+    try:
+        verify_total = _get_count(
+            "/skills/review/auto-matches/count", verify_count_params
+        )
+    except httpx.HTTPError:
+        verify_total = None
+    st.caption(
+        (f"{verify_total} total, " if verify_total is not None else "")
+        + f"{len(matches)} shown — label matches whose skill has a different name "
+        "first, then similarity matches (least confident first), then the rest"
+    )
+    for match in matches:
+        key = match["raw_norm"]
+        with st.container(border=True):
+            st.markdown(f"**{_plain(match['raw_example'])}**")
+            if match["method"] == "label":
+                how = "exact ESCO label match"
+            elif match["method"] == "llm":
+                how = "matched by Claude" + (
+                    f" ({_plain(match['llm_note'])})" if match.get("llm_note") else ""
+                )
+            else:
+                how = f"similarity {match['score']:.2f}"
+            st.write(
+                f"→ {_plain(match['skill_label'] or match['skill_id'])} — {how}, "
+                f"in {match['jd_job_count']} job(s)"
+                + (" · on your CV" if match["seen_in_cv"] else "")
+            )
+            if match["suspicious"]:
+                st.warning(
+                    "Matched through an alternative ESCO label, not the skill's "
+                    "own name — check it really is the same thing."
+                )
+            left, right = st.columns(2)
+            if left.button("Confirm", key=f"confirm-{key}"):
+                if _post(
+                    "/skills/review/resolve",
+                    {"raw_norm": key, "skill_id": match["skill_id"]},
+                ):
+                    st.rerun()
+            if right.button("Reject", key=f"reject-{key}"):
+                if _post("/skills/review/reject", {"raw_norm": key}):
+                    st.rerun()
+
+with decisions_tab:
+    decision_query = st.text_input(
+        "Search decisions (a string or its skill)", key="decision-q"
+    )
+    # Most-used first means rarely-used strings sit deep in the list, so the
+    # reviewer picks how many to load (the search box narrows it instead).
+    decision_limit = st.selectbox(
+        "Show up to", _SHOW_UP_TO_OPTIONS, index=2, key="decision-limit"
+    )
+    decision_params: dict[str, object] = {"limit": decision_limit}
+    count_params: dict[str, object] = {}
+    if decision_query:
+        decision_params["q"] = decision_query
+        count_params["q"] = decision_query
+    try:
+        decisions = _get("/skills/review/decisions", decision_params)
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load decisions: {exc}")
+        decisions = []
+    try:
+        decision_total = _get_count("/skills/review/decisions/count", count_params)
+    except httpx.HTTPError:
+        decision_total = None
+    st.caption(
+        (f"{decision_total} total, " if decision_total is not None else "")
+        + f"{len(decisions)} shown, most-used first"
+        + (
+            " — there may be more: raise “Show up to”"
+            if decision_total is not None
+            and len(decisions) < decision_total
+            and len(decisions) == decision_limit
+            else ""
+        )
+    )
+    for decision in decisions:
+        key = decision["raw_norm"]
+        with st.container(border=True):
+            st.markdown(f"**{_plain(decision['raw_example'])}**")
+            usage = f"in {decision['jd_job_count']} job(s)" + (
+                " · on your CV" if decision["seen_in_cv"] else ""
+            )
+            if decision["review_status"] == "dismissed":
+                st.write(f"Dismissed — not treated as a skill, {usage}")
+            else:
+                target = _plain(decision["skill_label"] or decision["skill_id"])
+                st.write(f"→ {target} — resolved, {usage}")
+            if st.button("Reopen", key=f"reopen-{key}"):
+                if _post("/skills/review/reopen", {"raw_norm": key}):
+                    st.rerun()
 
 with unmapped_tab:
     unmapped_query = st.text_input(
         "Search unmapped strings (a string or its suggested skill)",
         key="unmapped-q",
     )
-    unmapped_params: dict[str, object] = {"limit": 25}
+    unmapped_limit = st.selectbox(
+        "Show up to", _SHOW_UP_TO_OPTIONS, index=2, key="unmapped-limit"
+    )
+    unmapped_params: dict[str, object] = {"limit": unmapped_limit}
+    unmapped_count_params: dict[str, object] = {}
     if unmapped_query:
         unmapped_params["q"] = unmapped_query
+        unmapped_count_params["q"] = unmapped_query
     try:
         unmapped = _get("/skills/review", unmapped_params)
     except httpx.HTTPError as exc:
         st.error(f"Failed to load the review list: {exc}")
         unmapped = []
-    st.caption(f"{len(unmapped)} shown, most-requested first")
+    try:
+        unmapped_total = _get_count("/skills/review/count", unmapped_count_params)
+    except httpx.HTTPError:
+        unmapped_total = None
+    st.caption(
+        (f"{unmapped_total} total, " if unmapped_total is not None else "")
+        + f"{len(unmapped)} shown, most-requested first"
+    )
     for item in unmapped:
         key = item["raw_norm"]
         with st.container(border=True):
@@ -260,6 +416,27 @@ with unmapped_tab:
                 f"In {item['jd_job_count']} job(s)"
                 + (" · on your CV" if item["seen_in_cv"] else "")
             )
+            if item.get("llm_verdict") in ("no_equivalent", "unsure", "match_low"):
+                verdict_text = {
+                    "no_equivalent": "no ESCO equivalent",
+                    "unsure": "unsure",
+                    "match_low": "weak match only",
+                }[item["llm_verdict"]]
+                st.caption(
+                    f"Claude: {verdict_text}"
+                    + (f" — {_plain(item['llm_note'])}" if item.get("llm_note") else "")
+                )
+                # A "no ESCO equivalent" verdict with a usable label is
+                # already resolved to a custom skill automatically (see
+                # core.skills.llm_map) and never reaches this list — a card
+                # still showing one here means the label couldn't be turned
+                # into a valid skill name, so the fix is the manual box below.
+                if item.get("llm_custom_label"):
+                    st.caption(
+                        f"Claude suggested “{_plain(item['llm_custom_label'])}”, "
+                        "but that name couldn't be used automatically — "
+                        "adjust it below."
+                    )
             if item["candidate_skill_id"]:
                 suggestion = _plain(
                     item["candidate_label"] or item["candidate_skill_id"]
@@ -312,94 +489,4 @@ with unmapped_tab:
                     st.rerun()
             if right.button("Dismiss", key=f"dismiss-{key}"):
                 if _post("/skills/review/dismiss", {"raw_norm": key}):
-                    st.rerun()
-
-with verify_tab:
-    verify_query = st.text_input(
-        "Search auto-matches (a string or its matched skill)", key="verify-q"
-    )
-    verify_params: dict[str, object] = {"limit": 25}
-    if verify_query:
-        verify_params["q"] = verify_query
-    try:
-        matches = _get("/skills/review/auto-matches", verify_params)
-    except httpx.HTTPError as exc:
-        st.error(f"Failed to load auto-matches: {exc}")
-        matches = []
-    st.caption(
-        f"{len(matches)} shown — label matches whose skill has a different name "
-        "first, then similarity matches (least confident first), then the rest"
-    )
-    for match in matches:
-        key = match["raw_norm"]
-        with st.container(border=True):
-            st.markdown(f"**{_plain(match['raw_example'])}**")
-            how = (
-                "exact ESCO label match"
-                if match["method"] == "label"
-                else f"similarity {match['score']:.2f}"
-            )
-            st.write(
-                f"→ {_plain(match['skill_label'] or match['skill_id'])} — {how}, "
-                f"in {match['jd_job_count']} job(s)"
-                + (" · on your CV" if match["seen_in_cv"] else "")
-            )
-            if match["suspicious"]:
-                st.warning(
-                    "Matched through an alternative ESCO label, not the skill's "
-                    "own name — check it really is the same thing."
-                )
-            left, right = st.columns(2)
-            if left.button("Confirm", key=f"confirm-{key}"):
-                if _post(
-                    "/skills/review/resolve",
-                    {"raw_norm": key, "skill_id": match["skill_id"]},
-                ):
-                    st.rerun()
-            if right.button("Reject", key=f"reject-{key}"):
-                if _post("/skills/review/reject", {"raw_norm": key}):
-                    st.rerun()
-
-with decisions_tab:
-    decision_query = st.text_input(
-        "Search decisions (a string or its skill)", key="decision-q"
-    )
-    # Most-used first means rarely-used strings sit deep in the list, so the
-    # reviewer picks how many to load (the search box narrows it instead).
-    decision_limit = st.selectbox(
-        "Show up to",
-        [25, 50, 100, 250, 500],
-        index=2,
-        key="decision-limit",
-    )
-    decision_params: dict[str, object] = {"limit": decision_limit}
-    if decision_query:
-        decision_params["q"] = decision_query
-    try:
-        decisions = _get("/skills/review/decisions", decision_params)
-    except httpx.HTTPError as exc:
-        st.error(f"Failed to load decisions: {exc}")
-        decisions = []
-    st.caption(
-        f"{len(decisions)} shown (up to {decision_limit}), most-used first"
-        + (
-            " — there may be more: raise “Show up to” or search"
-            if len(decisions) == decision_limit
-            else ""
-        )
-    )
-    for decision in decisions:
-        key = decision["raw_norm"]
-        with st.container(border=True):
-            st.markdown(f"**{_plain(decision['raw_example'])}**")
-            usage = f"in {decision['jd_job_count']} job(s)" + (
-                " · on your CV" if decision["seen_in_cv"] else ""
-            )
-            if decision["review_status"] == "dismissed":
-                st.write(f"Dismissed — not treated as a skill, {usage}")
-            else:
-                target = _plain(decision["skill_label"] or decision["skill_id"])
-                st.write(f"→ {target} — resolved, {usage}")
-            if st.button("Reopen", key=f"reopen-{key}"):
-                if _post("/skills/review/reopen", {"raw_norm": key}):
                     st.rerun()

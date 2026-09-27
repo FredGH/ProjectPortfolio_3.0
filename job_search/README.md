@@ -276,3 +276,26 @@ a "clear stalled run" button that checks the heartbeat server-side).
 
 See `docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design.md`
 for the full design.
+
+### Claude pre-review of unmapped skills
+
+Strings the ESCO mapper leaves unmapped can be pre-reviewed by Claude. It either
+proposes an ESCO skill for you to confirm, or decides there is no ESCO
+equivalent — in which case, if it can name the skill, a custom skill is created
+straight away (no click needed; this is the one verdict applied without
+confirmation, since the failure mode is an extra custom skill rather than a
+wrong ESCO id). It stays visible and reversible afterwards in the Decisions —
+reopen tab.
+
+```bash
+docker compose --profile cli run --rm pipeline llm-map-skills --dry-run   # count + estimated cost, no API call
+docker compose --profile cli run --rm pipeline llm-map-skills --evaluate  # accuracy gate on a sample
+docker compose --profile cli run --rm pipeline llm-map-skills [--limit N] # the real run
+```
+
+A high-confidence match appears in *Auto-matches — verify* as "matched by
+Claude" and only becomes an alias when a person confirms it. Every completed
+extraction run also does a capped pass (at most 300 strings) automatically. It
+needs `ANTHROPIC_API_KEY` and sends only the skill strings, nothing else from
+your jobs or CV. A re-map (`--remap-unresolved` / `--remap-all-auto`) keeps
+strings Claude already checked (they are decided in the review UI, not re-sent).

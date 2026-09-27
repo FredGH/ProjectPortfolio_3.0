@@ -387,6 +387,20 @@ WHERE skill_id = 'custom:x';
 
 then rebuild the dbt models as above.
 
+**The `llm` method.** `llm-map-skills` asks Claude to pre-review strings that are
+still unmapped and records a high-confidence match with `method = 'llm'`. Such a
+row is shown in *Auto-matches — verify* as "matched by Claude" and is only made
+an alias when a person confirms it. `--remap-all-auto` keeps `llm` matches and
+any open string the model has already checked (so its note and API cost are not
+lost); decide such a string in the review UI instead.
+
+A "no ESCO equivalent" verdict with a usable name is the one exception: it is
+resolved straight to a custom skill (or an existing one, if the same name was
+used before) without waiting for a confirm click, because a wrong pick there
+only means an extra custom skill rather than a wrong ESCO id. It still shows up
+in the Decisions — reopen tab like any other resolved string, so it can be
+found and corrected.
+
 CV `canonical_id`s are **not** covered by any of that: a plain `map-cv-skills`
 never overwrites an id that is already set, so a CV holding `custom:x` keeps it
 until you run `map-cv-skills --refresh` (see the reject note above). Deleting the
