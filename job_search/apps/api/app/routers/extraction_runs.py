@@ -224,6 +224,7 @@ def post_start_run(
                 ollama_base_url=ollama_base_url,
                 embedding_model=get_settings().embedding_model,
                 http_client=ollama_http_client,
+                llm_adapters=adapters,
             ),
         )
     return StartRunResponse(run_id=run_id)

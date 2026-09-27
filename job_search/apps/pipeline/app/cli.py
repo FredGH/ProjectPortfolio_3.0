@@ -53,6 +53,13 @@ from core.skills.esco_embed import (
     embedding_coverage_warning,
 )
 from core.skills.esco_load import EscoLoadCounts, EscoLoadError, load_esco
+from core.skills.llm_map import (
+    MIN_HIGH_AGREEMENT,
+    EvalReport,
+    count_eligible,
+    evaluate_against_resolved,
+    propose_matches,
+)
 from core.skills.mapper import (
     EmbeddingModelMismatch,
     map_pending,
@@ -851,6 +858,121 @@ def _extraction_exit_code(summary: WriteSummary) -> int:
     return 0
 
 
+# Haiku 4.5 list price, USD per million tokens — an estimate for the printout
+# only; check the current price list before relying on it.
+_HAIKU_INPUT_USD_PER_MTOK = 1.0
+_HAIKU_OUTPUT_USD_PER_MTOK = 5.0
+_EST_INPUT_TOKENS_PER_STRING = 250
+_EST_OUTPUT_TOKENS_PER_STRING = 60
+
+
+def _usd(input_tokens: int, output_tokens: int) -> float:
+    """Estimate the cost of a token count at Haiku 4.5 list prices.
+
+    Args:
+        input_tokens: Prompt tokens.
+        output_tokens: Completion tokens.
+
+    Returns:
+        Estimated USD.
+    """
+    return (
+        input_tokens * _HAIKU_INPUT_USD_PER_MTOK
+        + output_tokens * _HAIKU_OUTPUT_USD_PER_MTOK
+    ) / 1_000_000
+
+
+def _cmd_llm_map_skills(args: argparse.Namespace) -> int:
+    """Run the `llm-map-skills` subcommand.
+
+    Args:
+        args: Parsed CLI arguments — `limit`, `dry_run`, `evaluate`, `sample`.
+
+    Returns:
+        0 on success; 1 if there is no Anthropic key, the embedding server is
+        unavailable, or `--evaluate` finds agreement below the safe threshold.
+    """
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        print("llm-map-skills: ANTHROPIC_API_KEY is not set")
+        return 1
+    engine = build_engine(settings.database_url)
+    if args.dry_run:
+        eligible = count_eligible(engine)
+        sent = min(eligible, args.limit) if args.limit else eligible
+        cost = _usd(
+            sent * _EST_INPUT_TOKENS_PER_STRING, sent * _EST_OUTPUT_TOKENS_PER_STRING
+        )
+        print(f"llm-map-skills: {eligible} eligible; would send {sent} (~${cost:.2f})")
+        return 0
+    http_client = httpx.Client(timeout=120.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        embed = _build_embedder(http_client, settings)
+        if args.evaluate:
+            return _print_evaluation(
+                evaluate_against_resolved(
+                    engine,
+                    adapters=adapters,
+                    embed=embed,
+                    embedding_model=settings.embedding_model,
+                    sample=args.sample,
+                )
+            )
+        summary = propose_matches(
+            engine,
+            adapters=adapters,
+            embed=embed,
+            embedding_model=settings.embedding_model,
+            limit=args.limit,
+        )
+    except httpx.HTTPError as exc:
+        print(f"llm-map-skills: embedding server unavailable ({exc})")
+        return 1
+    finally:
+        http_client.close()
+    print(
+        f"llm-map-skills complete: checked={summary.checked} "
+        f"applied={summary.applied} left_open={summary.left_open} "
+        f"failed={summary.failed} "
+        f"cost~${_usd(summary.input_tokens, summary.output_tokens):.2f}"
+    )
+    return 0
+
+
+def _print_evaluation(report: EvalReport) -> int:
+    """Print an `--evaluate` report and decide the exit status.
+
+    Args:
+        report: What `evaluate_against_resolved` measured.
+
+    Returns:
+        0 if high-confidence agreement meets `MIN_HIGH_AGREEMENT`, else 1.
+    """
+    print(
+        f"llm-map-skills --evaluate: sampled={report.sampled} "
+        f"answered={report.answered} high={report.high_matches} "
+        f"high_agree={report.high_agree} low={report.low_matches} "
+        f"no_equivalent={report.no_equivalent} unsure={report.unsure} "
+        f"truth_in_candidates={report.truth_in_candidates} "
+        f"cost~${_usd(report.input_tokens, report.output_tokens):.2f}"
+    )
+    if report.answered == 0 and report.sampled > 0:
+        print(
+            f"llm-map-skills: the model answered none of {report.sampled} "
+            "sampled strings — check the API key / connectivity"
+        )
+        return 1
+    if report.agreement is None:
+        print("llm-map-skills: no high-confidence matches to judge")
+        return 1
+    print(
+        f"llm-map-skills: high-confidence agreement {report.agreement:.0%} "
+        f"(need >= {MIN_HIGH_AGREEMENT:.0%})"
+    )
+    return 0 if report.agreement >= MIN_HIGH_AGREEMENT else 1
+
+
 def _cmd_extract_job_skills(args: argparse.Namespace) -> int:
     """Run the `extract-job-skills` subcommand.
 
@@ -1132,6 +1254,36 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
 
+    llm_parser = subparsers.add_parser(
+        "llm-map-skills",
+        help="Have Claude pre-review open unmapped skill strings",
+    )
+    llm_parser.add_argument(
+        "--limit", type=int, default=None, help="Send at most this many strings"
+    )
+    llm_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Print how many strings would be sent and the estimated cost; "
+            "no API calls"
+        ),
+    )
+    llm_parser.add_argument(
+        "--evaluate",
+        action="store_true",
+        help=(
+            "Judge the model against strings a person already resolved; writes "
+            "nothing. Exits 1 if high-confidence agreement is below 90%%"
+        ),
+    )
+    llm_parser.add_argument(
+        "--sample",
+        type=int,
+        default=200,
+        help="Resolved strings to use with --evaluate",
+    )
+
     extract_parser = subparsers.add_parser(
         "extract-job-skills",
         help="Extract skills + must/nice-to-have levels for every dedup survivor",
@@ -1211,6 +1363,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_embed_esco(args)
     if args.command == "map-skills":
         return _cmd_map_skills(args)
+    if args.command == "llm-map-skills":
+        return _cmd_llm_map_skills(args)
     if args.command == "extract-job-skills":
         return _cmd_extract_job_skills(args)
     if args.command == "map-cv-skills":

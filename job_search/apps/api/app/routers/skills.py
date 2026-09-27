@@ -71,6 +71,9 @@ class ReviewItemModel(BaseModel):
     candidate_skill_id: str | None
     candidate_label: str | None
     candidate_score: float | None
+    llm_verdict: str | None = None
+    llm_custom_label: str | None = None
+    llm_note: str | None = None
 
 
 class MatchItemModel(BaseModel):
@@ -85,6 +88,7 @@ class MatchItemModel(BaseModel):
     suspicious: bool
     seen_in_cv: bool
     jd_job_count: int
+    llm_note: str | None = None
 
 
 class DecisionItemModel(BaseModel):

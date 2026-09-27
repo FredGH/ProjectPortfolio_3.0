@@ -21,7 +21,9 @@ import httpx
 from sqlalchemy import Engine
 
 from core.embedding.ollama import embed_text
+from core.llm.types import LLMAdapter
 from core.skills.aliases import sync_seed_aliases
+from core.skills.llm_map import propose_matches
 from core.skills.mapper import map_pending
 
 
@@ -32,6 +34,8 @@ def build_post_run_mapping(
     embedding_model: str,
     http_client: httpx.Client,
     raw_norms: list[str] | None = None,
+    llm_adapters: dict[str, LLMAdapter] | None = None,
+    llm_limit: int = 300,
 ) -> Callable[[], str]:
     """Build a zero-argument function that maps every still-unmapped string.
 
@@ -47,12 +51,18 @@ def build_post_run_mapping(
         raw_norms: Restrict to these normalised strings; `None` covers every
             unmapped string. Exists so tests never touch unrelated rows in
             the shared dev DB.
+        llm_adapters: Adapters for the Claude pre-review that runs after the
+            embedding mapping. `None` switches the pre-review off (summary is
+            unchanged); a dict without an `anthropic` entry reports it as
+            skipped for want of a key.
+        llm_limit: Most unmapped strings the pre-review looks at per run.
 
     Returns:
-        A function that syncs the seed aliases, maps the pending strings, and
-        returns a one-line summary for the run row. It raises on failure
-        (embedding server down, model mismatch) — the caller decides what
-        that means for the run.
+        A function that syncs the seed aliases, maps the pending strings,
+        optionally runs the Claude pre-review, and returns a summary for the
+        run row. It raises on embedding failure (server down, model mismatch)
+        — the caller decides what that means for the run — but never on a
+        pre-review failure, which is reported in the summary instead.
     """
 
     def embed(text: str) -> list[float]:
@@ -71,9 +81,33 @@ def build_post_run_mapping(
             embedding_model=embedding_model,
             raw_norms=raw_norms,
         )
-        return (
+        message = (
             f"Mapped {summary.mapped} new skill string(s) to ESCO; "
             f"{summary.unmapped} need review."
+        )
+        if llm_adapters is None:
+            return message
+        if "anthropic" not in llm_adapters:
+            return f"{message} Claude pre-review skipped: no Anthropic key."
+        try:
+            reviewed = propose_matches(
+                engine,
+                adapters=llm_adapters,
+                embed=embed,
+                embedding_model=embedding_model,
+                limit=llm_limit,
+                raw_norms=raw_norms,
+            )
+        except Exception as exc:  # noqa: BLE001 - never fail the run over this
+            return f"{message} Claude pre-review failed: {exc}."
+        tail = (
+            f", {reviewed.failed} not answered (retried next run)."
+            if reviewed.failed
+            else "."
+        )
+        return (
+            f"{message} Claude pre-review: {reviewed.checked} checked, "
+            f"{reviewed.applied} applied, {reviewed.left_open} left for review{tail}"
         )
 
     return run
