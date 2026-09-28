@@ -325,7 +325,13 @@ _SELECT_LABELED_JOB_SCORES = text(
     "FROM scoring.job_label l "
     "JOIN scoring.job_score s "
     "ON s.user_id = l.user_id AND s.job_group_id = l.job_group_id "
-    "WHERE l.user_id = :user_id"
+    "WHERE l.user_id = :user_id "
+    # Postgres gives no row-order guarantee for a plain SELECT — without
+    # this ORDER BY, `random.Random(seed).sample(rows, 30)` would only be
+    # reproducible by luck (same process, no intervening writes), not by
+    # design. A stable key makes the sample deterministic across separate
+    # calls, processes, and time, for the same underlying label set.
+    "ORDER BY l.job_group_id"
 )
 
 _LABEL_TO_NUMERIC = {"strong": 1.0, "maybe": 0.5, "no": 0.0}
