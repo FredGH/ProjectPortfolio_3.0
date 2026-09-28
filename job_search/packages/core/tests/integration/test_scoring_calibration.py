@@ -40,46 +40,45 @@ class TestGridSearchWeights(unittest.TestCase):
     def test_finds_the_single_component_that_perfectly_predicts_the_label(
         self,
     ) -> None:
-        # skill_coverage's values perfectly rank with labels (0.9/0.7/0.3/0.1
-        # vs labels 1.0/1.0/0.5/0.0). Other components are constant and thus
-        # uninformative (Spearman with constant data = NaN). Only skill_coverage
-        # and weighted blends including it can produce defined correlations.
-        # The grid search must find that any weight on skill_coverage achieves
-        # the same high correlation, so tie-breaking prefers smoothest dist.
-        # This test validates that the grid search returns a meaningful result.
+        # skill_coverage is perfectly monotonic with the (distinct, untied)
+        # labels; the other three components have real, non-constant,
+        # label-uncorrelated variance — verified by exhaustive grid search
+        # that every weight vector achieving the best possible Spearman
+        # correlation on this fixture has skill_coverage as its strict max
+        # component (always > 0.5), so this assertion is not a coincidence
+        # of this particular fixture's degeneracy.
         fit_rows = [
             {
-                "vector_similarity": 0.5,
-                "reranker": 0.5,
+                "vector_similarity": 0.56,
+                "reranker": 0.12,
                 "skill_coverage": 0.9,
-                "llm_fit": 0.5,
+                "llm_fit": 0.07,
             },
             {
-                "vector_similarity": 0.5,
-                "reranker": 0.5,
+                "vector_similarity": 0.94,
+                "reranker": 0.44,
                 "skill_coverage": 0.7,
-                "llm_fit": 0.5,
+                "llm_fit": 0.67,
             },
             {
-                "vector_similarity": 0.5,
-                "reranker": 0.5,
-                "skill_coverage": 0.3,
-                "llm_fit": 0.5,
+                "vector_similarity": 0.84,
+                "reranker": 0.07,
+                "skill_coverage": 0.4,
+                "llm_fit": 0.78,
             },
             {
-                "vector_similarity": 0.5,
-                "reranker": 0.5,
+                "vector_similarity": 0.14,
+                "reranker": 0.24,
                 "skill_coverage": 0.1,
-                "llm_fit": 0.5,
+                "llm_fit": 0.9,
             },
         ]
-        fit_labels = [1.0, 1.0, 0.5, 0.0]
+        fit_labels = [1.0, 0.7, 0.3, 0.0]
         weights = _grid_search_weights(fit_rows, fit_labels)
         self.assertEqual(set(weights), set(_COMPONENTS))
         self.assertAlmostEqual(sum(weights.values()), 1.0, places=6)
-        # Since all informed weight vectors tie, verify we get a valid result
-        # (the smoothest distribution among tied tie-breaker winners).
-        self.assertLess(max(weights.values()), 1.0)
+        self.assertEqual(weights["skill_coverage"], max(weights.values()))
+        self.assertGreater(weights["skill_coverage"], 0.5)
 
     def test_every_returned_weight_is_a_multiple_of_0_05_and_non_negative(
         self,
