@@ -93,7 +93,7 @@ def _grid_search_weights(
         max_weight = max(combo)
         better = agreement > best_score + 1e-9
         tied_but_smoother = (
-            abs(agreement - best_score) <= 1e-9 and max_weight > best_max_weight
+            abs(agreement - best_score) <= 1e-9 and max_weight < best_max_weight
         )
         if better or tied_but_smoother:
             best_weights = weights
