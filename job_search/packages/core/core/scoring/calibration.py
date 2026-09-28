@@ -289,3 +289,156 @@ def pick_labeling_candidate(
         ),
         llm_stretch_flag=row.llm_stretch_flag,
     )
+
+
+@dataclass(frozen=True)
+class CalibrationPreview:
+    """The result of a fit run, not yet persisted.
+
+    Attributes:
+        fit_count: How many labeled jobs were used to fit the weights
+            (always 20 for a normal run, but see the Review Focus note on
+            labels whose job_score row has since disappeared).
+        holdout_count: How many labeled jobs were held out and never used
+            for fitting (always 10 for a normal run, same caveat).
+        weights: Component name -> fitted weight, summing to 1.0.
+        holdout_agreement: Spearman correlation between the fitted-weight
+            blended score and the numeric label, computed on the holdout
+            set only. None when undefined (e.g. every holdout label is
+            identical).
+        embedding_model: The embedding model in use for the fit-set jobs
+            at fit time — recorded so a later embedding-model change can
+            be detected as making this calibration stale.
+    """
+
+    fit_count: int
+    holdout_count: int
+    weights: dict[str, float]
+    holdout_agreement: float | None
+    embedding_model: str
+
+
+_SELECT_LABELED_JOB_SCORES = text(
+    "SELECT l.job_group_id, l.label, s.vector_similarity_score, "
+    "s.reranker_score, s.skill_coverage_score, s.llm_fit_score, "
+    "s.embedding_model "
+    "FROM scoring.job_label l "
+    "JOIN scoring.job_score s "
+    "ON s.user_id = l.user_id AND s.job_group_id = l.job_group_id "
+    "WHERE l.user_id = :user_id"
+)
+
+_LABEL_TO_NUMERIC = {"strong": 1.0, "maybe": 0.5, "no": 0.0}
+
+
+def split_and_fit(
+    engine: Engine, user_id: uuid.UUID, seed: int = 0
+) -> CalibrationPreview:
+    """Sample 30 labeled jobs, split 20 fit / 10 holdout, fit weights,
+    and measure holdout agreement. Writes nothing.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: Whose labels/scores to fit against.
+        seed: Random seed for the 30-of-N sample and the fit/holdout
+            split — the same seed always produces the same split for the
+            same label set, so a re-run is reproducible.
+
+    Returns:
+        The fit result, ready either to inspect (a preview) or persist
+        via `save_calibration`.
+
+    Raises:
+        ValueError: If fewer than 30 labels have a matching
+            `scoring.job_score` row (a label whose job has since dropped
+            out of the scored pool doesn't count — see the module's
+            Review Focus note on a vanished job_score row).
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        rows = conn.execute(_SELECT_LABELED_JOB_SCORES, {"user_id": user_id}).all()
+    if len(rows) < 30:
+        raise ValueError(
+            f"split_and_fit needs at least 30 labeled jobs with a current "
+            f"score, have {len(rows)}"
+        )
+    sample = random.Random(seed).sample(rows, 30)
+    fit_rows_raw, holdout_rows_raw = sample[:20], sample[20:]
+
+    def _to_component_row(row) -> dict[str, float]:
+        return {
+            "vector_similarity": float(row.vector_similarity_score),
+            "reranker": float(row.reranker_score),
+            "skill_coverage": float(row.skill_coverage_score),
+            "llm_fit": float(row.llm_fit_score) / 100.0,
+        }
+
+    fit_rows = [_to_component_row(r) for r in fit_rows_raw]
+    fit_labels = [_LABEL_TO_NUMERIC[r.label] for r in fit_rows_raw]
+    holdout_rows = [_to_component_row(r) for r in holdout_rows_raw]
+    holdout_labels = [_LABEL_TO_NUMERIC[r.label] for r in holdout_rows_raw]
+
+    weights = _grid_search_weights(fit_rows, fit_labels)
+    holdout_agreement = _spearman_agreement(holdout_rows, holdout_labels, weights)
+
+    return CalibrationPreview(
+        fit_count=len(fit_rows),
+        holdout_count=len(holdout_rows),
+        weights=weights,
+        holdout_agreement=holdout_agreement,
+        embedding_model=sample[0].embedding_model,
+    )
+
+
+_UPSERT_WEIGHT = text(
+    "INSERT INTO scoring.weight (user_id, component, weight, fitted_at) "
+    "VALUES (:user_id, :component, :weight, now()) "
+    "ON CONFLICT (user_id, component) DO UPDATE SET "
+    "weight = EXCLUDED.weight, fitted_at = now()"
+)
+_INSERT_CALIBRATION_RUN = text(
+    "INSERT INTO scoring.calibration_run (user_id, fit_count, holdout_count, "
+    "vector_similarity_weight, reranker_weight, skill_coverage_weight, "
+    "llm_fit_weight, holdout_agreement, embedding_model, calibrated_by) "
+    "VALUES (:user_id, :fit_count, :holdout_count, :vector_similarity_weight, "
+    ":reranker_weight, :skill_coverage_weight, :llm_fit_weight, "
+    ":holdout_agreement, :embedding_model, :calibrated_by)"
+)
+
+
+def save_calibration(
+    engine: Engine,
+    user_id: uuid.UUID,
+    preview: CalibrationPreview,
+    calibrated_by: str | None = None,
+) -> None:
+    """Persist a previewed calibration: upsert scoring.weight and append
+    a scoring.calibration_run history row, in one transaction.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: Whose weights to save.
+        preview: The result of a prior `split_and_fit` call.
+        calibrated_by: Optional free-text attribution (mirrors
+            `dedup.calibration_thresholds.calibrated_by`).
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        for component, weight in preview.weights.items():
+            conn.execute(
+                _UPSERT_WEIGHT,
+                {"user_id": user_id, "component": component, "weight": weight},
+            )
+        conn.execute(
+            _INSERT_CALIBRATION_RUN,
+            {
+                "user_id": user_id,
+                "fit_count": preview.fit_count,
+                "holdout_count": preview.holdout_count,
+                "vector_similarity_weight": preview.weights["vector_similarity"],
+                "reranker_weight": preview.weights["reranker"],
+                "skill_coverage_weight": preview.weights["skill_coverage"],
+                "llm_fit_weight": preview.weights["llm_fit"],
+                "holdout_agreement": preview.holdout_agreement,
+                "embedding_model": preview.embedding_model,
+                "calibrated_by": calibrated_by,
+            },
+        )

@@ -9,13 +9,23 @@ every test here touches a DB).
 from __future__ import annotations
 
 import unittest
+import uuid
 
+from sqlalchemy import text
+from tests.integration.skills_fixtures import live_owner_engine
+
+from core.db.session import build_engine, session_scope
 from core.scoring.calibration import (
     _COMPONENTS,
+    CalibrationPreview,
     _blend,
     _grid_search_weights,
     _spearman_agreement,
+    save_calibration,
+    split_and_fit,
+    write_label,
 )
+from core.settings import get_settings
 
 
 class TestBlend(unittest.TestCase):
@@ -187,6 +197,194 @@ class TestSpearmanAgreement(unittest.TestCase):
         weights = {c: 0.25 for c in _COMPONENTS}
         agreement = _spearman_agreement(rows, labels, weights)
         self.assertIsNone(agreement)
+
+
+class TestSplitAndFit(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.owner_engine = live_owner_engine()
+        cls.app_engine = build_engine(get_settings().app_database_url)
+
+    def setUp(self) -> None:
+        self.user_id = uuid.uuid4()
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO app_user (id, email, display_name) "
+                    "VALUES (:id, :email, 'zzfixture split_and_fit user')"
+                ),
+                {"id": self.user_id, "email": f"zzfixture-{self.user_id}@example.com"},
+            )
+
+    def tearDown(self) -> None:
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM scoring.calibration_run WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM scoring.weight WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM scoring.job_label WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM scoring.job_score WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM gold.dim_job "
+                    "WHERE job_group_id LIKE 'zzfixture-fit-%'"
+                )
+            )
+            conn.execute(
+                text("DELETE FROM app_user WHERE id = :id"), {"id": self.user_id}
+            )
+
+    def _insert_labeled_job(self, index: int, label: str) -> None:
+        job_group_id = f"zzfixture-fit-{index}"
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO gold.dim_job (job_group_id, title_for_display, "
+                    "company, location, engagement_type, description) "
+                    "VALUES (:j, 'zzfixture role', 'zzfixture co', 'London', "
+                    "'contract', 'zzfixture description')"
+                ),
+                {"j": job_group_id},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_score (user_id, job_group_id, "
+                    "hard_filter_passed, vector_similarity_score, reranker_score, "
+                    "skill_coverage_score, llm_fit_score, final_score, "
+                    "embedding_model) "
+                    "VALUES (:u, :j, true, :s, :s, :s, :llm, :s, 'nomic-embed-text')"
+                ),
+                {
+                    "u": self.user_id,
+                    "j": job_group_id,
+                    # Score rises with index so labels correlate with score
+                    # — a fit run against this fixture set should find a
+                    # sane, non-degenerate weight vector.
+                    "s": round(0.1 + 0.02 * index, 4),
+                    "llm": round((0.1 + 0.02 * index) * 100, 2),
+                },
+            )
+        write_label(self.app_engine, self.user_id, job_group_id, label)
+
+    def test_raises_below_30_labels(self) -> None:
+        for i in range(29):
+            self._insert_labeled_job(i, "maybe")
+        with self.assertRaises(ValueError):
+            split_and_fit(self.app_engine, self.user_id)
+
+    def test_splits_30_labels_into_20_fit_and_10_holdout_with_no_overlap(
+        self,
+    ) -> None:
+        for i in range(30):
+            label = "strong" if i >= 20 else ("maybe" if i >= 10 else "no")
+            self._insert_labeled_job(i, label)
+        preview = split_and_fit(self.app_engine, self.user_id)
+        self.assertEqual(preview.fit_count, 20)
+        self.assertEqual(preview.holdout_count, 10)
+        self.assertEqual(
+            set(preview.weights),
+            {"vector_similarity", "reranker", "skill_coverage", "llm_fit"},
+        )
+        self.assertAlmostEqual(sum(preview.weights.values()), 1.0, places=6)
+        self.assertEqual(preview.embedding_model, "nomic-embed-text")
+
+    def test_same_seed_produces_the_same_split_every_time(self) -> None:
+        for i in range(30):
+            label = "strong" if i >= 20 else ("maybe" if i >= 10 else "no")
+            self._insert_labeled_job(i, label)
+        preview_a = split_and_fit(self.app_engine, self.user_id, seed=0)
+        preview_b = split_and_fit(self.app_engine, self.user_id, seed=0)
+        self.assertEqual(preview_a.weights, preview_b.weights)
+        self.assertEqual(preview_a.holdout_agreement, preview_b.holdout_agreement)
+
+
+class TestSaveCalibration(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.owner_engine = live_owner_engine()
+        cls.app_engine = build_engine(get_settings().app_database_url)
+
+    def setUp(self) -> None:
+        self.user_id = uuid.uuid4()
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO app_user (id, email, display_name) "
+                    "VALUES (:id, :email, 'zzfixture save_calibration user')"
+                ),
+                {"id": self.user_id, "email": f"zzfixture-{self.user_id}@example.com"},
+            )
+
+    def tearDown(self) -> None:
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM scoring.calibration_run WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM scoring.weight WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM app_user WHERE id = :id"), {"id": self.user_id}
+            )
+
+    def _preview(self) -> CalibrationPreview:
+        return CalibrationPreview(
+            fit_count=20,
+            holdout_count=10,
+            weights={
+                "vector_similarity": 0.4,
+                "reranker": 0.3,
+                "skill_coverage": 0.2,
+                "llm_fit": 0.1,
+            },
+            holdout_agreement=0.8,
+            embedding_model="nomic-embed-text",
+        )
+
+    def test_writes_one_weight_row_per_component(self) -> None:
+        save_calibration(self.app_engine, self.user_id, self._preview())
+        with session_scope(self.app_engine, user_id=self.user_id) as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT component, weight FROM scoring.weight " "WHERE user_id = :u"
+                ),
+                {"u": self.user_id},
+            ).all()
+        self.assertEqual(len(rows), 4)
+        by_component = {r.component: float(r.weight) for r in rows}
+        self.assertAlmostEqual(by_component["vector_similarity"], 0.4)
+
+    def test_re_saving_upserts_weights_rather_than_duplicating(self) -> None:
+        save_calibration(self.app_engine, self.user_id, self._preview())
+        save_calibration(self.app_engine, self.user_id, self._preview())
+        with session_scope(self.app_engine, user_id=self.user_id) as conn:
+            count = conn.execute(
+                text("SELECT count(*) FROM scoring.weight WHERE user_id = :u"),
+                {"u": self.user_id},
+            ).scalar_one()
+        self.assertEqual(count, 4)
+
+    def test_appends_one_calibration_run_row_per_save(self) -> None:
+        save_calibration(self.app_engine, self.user_id, self._preview())
+        save_calibration(self.app_engine, self.user_id, self._preview())
+        with session_scope(self.app_engine, user_id=self.user_id) as conn:
+            count = conn.execute(
+                text("SELECT count(*) FROM scoring.calibration_run WHERE user_id = :u"),
+                {"u": self.user_id},
+            ).scalar_one()
+        self.assertEqual(count, 2)
 
 
 if __name__ == "__main__":
