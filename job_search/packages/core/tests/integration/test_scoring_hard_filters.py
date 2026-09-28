@@ -183,6 +183,50 @@ class TestHardFilters(unittest.TestCase):
         run_hard_filters(self.engine, self.user_id, as_of=datetime.date(2026, 9, 27))
         self.assertFalse(self._passed("fixture-job-noposted"))
 
+    def test_flipping_to_excluded_nulls_every_downstream_score_column(self) -> None:
+        # Finding 4 regression: a job that flips hard_filter_passed
+        # true -> false must have every downstream column nulled in the
+        # same upsert, since later stages only ever touch
+        # hard_filter_passed = true rows and would otherwise leave a
+        # stale score/rationale forever.
+        self._insert_job("fixture-job-flip", ir35_status="outside")
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-flip"))
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE scoring.job_score SET "
+                    "vector_similarity_score = 0.9, reranker_score = 0.8, "
+                    "skill_coverage_score = 0.7, llm_fit_score = 80, "
+                    "llm_rationale = 'zzfixture stale rationale', "
+                    "llm_missing_skills = ARRAY['python'], "
+                    "llm_stretch_flag = true, final_score = 0.85, "
+                    "embedding_model = 'zzfixture-model' "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-flip'"
+                ),
+                {"u": self.user_id},
+            )
+        # Now the same job fails the (newly set) preference.
+        write_preference(
+            self.engine,
+            self.user_id,
+            UserPreference(excluded_ir35_statuses=["outside"]),
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-flip"))
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT vector_similarity_score, reranker_score, "
+                    "skill_coverage_score, llm_fit_score, llm_rationale, "
+                    "llm_missing_skills, llm_stretch_flag, final_score, "
+                    "embedding_model FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-flip'"
+                ),
+                {"u": self.user_id},
+            ).one()
+        self.assertTrue(all(value is None for value in row))
+
     def test_rerunning_updates_rather_than_duplicating(self) -> None:
         self._insert_job("fixture-job-rerun")
         run_hard_filters(self.engine, self.user_id)

@@ -30,11 +30,32 @@ context) — a job in another currency cannot be confirmed to clear a floor,
 so it is filtered out on that dimension rather than compared unsafely.
 Currency-normalised comparison is Step 21a's job, not this one's."""
 _SENIORITY_ORDER = ["junior", "mid", "senior", "lead", "principal"]
+_DOWNSTREAM_SCORE_COLUMNS = [
+    "vector_similarity_score",
+    "reranker_score",
+    "skill_coverage_score",
+    "llm_fit_score",
+    "llm_rationale",
+    "llm_missing_skills",
+    "llm_stretch_flag",
+    "final_score",
+    "embedding_model",
+]
+# A job that flips hard_filter_passed true -> false must have every
+# downstream column nulled in the same UPDATE — later stages only ever
+# touch hard_filter_passed = true rows, so a stale score/rationale from
+# before the flip would otherwise survive forever (design spec: these
+# columns are "NULL if hard-filtered out").
 _UPSERT_PASSED = text(
     "INSERT INTO scoring.job_score (user_id, job_group_id, hard_filter_passed) "
     "VALUES (:user_id, :job_group_id, :passed) "
     "ON CONFLICT (user_id, job_group_id) DO UPDATE SET "
-    "hard_filter_passed = EXCLUDED.hard_filter_passed"
+    "hard_filter_passed = EXCLUDED.hard_filter_passed, "
+    + ", ".join(
+        f"{col} = CASE WHEN EXCLUDED.hard_filter_passed "
+        f"THEN scoring.job_score.{col} ELSE NULL END"
+        for col in _DOWNSTREAM_SCORE_COLUMNS
+    )
 )
 
 
