@@ -156,11 +156,18 @@ def chunk_and_embed_jobs(
     chunked_count = 0
     for job in jobs:
         rows_written = 0
+        # `detect_sections` can return the same section name more than once
+        # (several heading variants map to one canonical section), so
+        # chunk_index must run per section NAME across the whole job, not
+        # restart for each detected block — otherwise a second block's
+        # chunks restart at 0 and get silently discarded by the
+        # ON CONFLICT DO NOTHING below, contradicting the "content is never
+        # dropped" design principle.
+        section_chunk_counters: dict[str, int] = {}
         with engine.begin() as conn:
             for section, section_text in detect_sections(job["description"]):
-                for chunk_index, chunk_text in enumerate(
-                    splitter.split_text(section_text)
-                ):
+                for chunk_text in splitter.split_text(section_text):
+                    chunk_index = section_chunk_counters.get(section, 0)
                     conn.execute(
                         _INSERT_CHUNK,
                         {
@@ -172,6 +179,7 @@ def chunk_and_embed_jobs(
                             "embedding_model": embedding_model,
                         },
                     )
+                    section_chunk_counters[section] = chunk_index + 1
                     rows_written += 1
         if rows_written > 0:
             chunked_count += 1

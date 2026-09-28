@@ -28,6 +28,27 @@ Benefits
 
 _UNSTRUCTURED = "Great company looking for a great engineer to do great things."
 
+# Two separately-headed blocks ("Requirements" and "Essential") that both
+# map to section "requirements" per _SECTION_PATTERNS, with an unrelated
+# "Nice to have" block in between so they are genuinely two distinct
+# detected blocks, not merged into one. Finding 2: chunk_index must run per
+# section NAME across the whole job, not restart per detected block —
+# otherwise the second block's chunks collide on (job_group_id, section,
+# chunk_index) and get silently discarded by ON CONFLICT DO NOTHING.
+_TWO_REQUIREMENTS_BLOCKS = """We are a fast-growing widget company.
+
+Requirements
+5+ years of backend experience.
+Strong SQL skills.
+
+Nice to have
+Experience with Kafka.
+
+Essential
+Comfortable with ambiguity.
+Excellent communication skills.
+"""
+
 
 class TestDetectSections(unittest.TestCase):
     def test_a_structured_description_splits_into_its_named_sections(self) -> None:
@@ -189,6 +210,37 @@ class TestChunkAndEmbedJobs(unittest.TestCase):
             job_group_ids=["fixture-job-chunk-empty"],
         )
         self.assertEqual(written, 0)
+
+    def test_two_blocks_mapping_to_the_same_section_both_get_all_their_chunks(
+        self,
+    ) -> None:
+        self._insert_job("fixture-job-chunk-two-req", _TWO_REQUIREMENTS_BLOCKS)
+        written = chunk_and_embed_jobs(
+            self.engine,
+            embed=self._fake_embed,
+            embedding_model="zzfixture-model",
+            job_group_ids=["fixture-job-chunk-two-req"],
+        )
+        self.assertEqual(written, 1)
+        with self.engine.connect() as conn:
+            rows = (
+                conn.execute(
+                    text(
+                        "SELECT chunk_index, chunk_text "
+                        "FROM scoring.job_chunk_embedding "
+                        "WHERE job_group_id = 'fixture-job-chunk-two-req' "
+                        "AND section = 'requirements' "
+                        "ORDER BY chunk_index"
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        self.assertEqual([r["chunk_index"] for r in rows], list(range(len(rows))))
+        self.assertGreaterEqual(len(rows), 2)
+        all_text = " ".join(r["chunk_text"] for r in rows)
+        self.assertIn("backend experience", all_text)
+        self.assertIn("ambiguity", all_text)
 
 
 if __name__ == "__main__":

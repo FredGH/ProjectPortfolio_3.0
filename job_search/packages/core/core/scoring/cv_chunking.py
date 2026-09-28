@@ -135,10 +135,18 @@ def chunk_and_embed_cv(
         chunk_size=_CHUNK_SIZE_TOKENS, chunk_overlap=_CHUNK_OVERLAP_TOKENS
     )
     written = 0
+    # Multiple `build_cv_sections` entries can share the same section name
+    # (e.g. one "experience" entry per bullet), so chunk_index must run
+    # per section NAME across the whole loop, not restart for each entry —
+    # otherwise a second entry's first chunk collides with the first
+    # entry's chunk_index=0 on the table's (user_id, cv_version, section,
+    # chunk_index) primary key.
+    section_chunk_counters: dict[str, int] = {}
     with session_scope(app_engine, user_id=user_id) as conn:
         conn.execute(_DELETE_FOR_USER, {"user_id": user_id})
         for section, source_ref, section_text in build_cv_sections(stored.truth_base):
-            for chunk_index, chunk_text in enumerate(splitter.split_text(section_text)):
+            for chunk_text in splitter.split_text(section_text):
+                chunk_index = section_chunk_counters.get(section, 0)
                 conn.execute(
                     _INSERT_CHUNK,
                     {
@@ -152,5 +160,6 @@ def chunk_and_embed_cv(
                         "embedding_model": embedding_model,
                     },
                 )
+                section_chunk_counters[section] = chunk_index + 1
                 written += 1
     return written

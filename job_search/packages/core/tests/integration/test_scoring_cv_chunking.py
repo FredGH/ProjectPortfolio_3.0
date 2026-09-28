@@ -28,6 +28,29 @@ _TRUTH_BASE = CVTruthBase(
     ],
 )
 
+# Two experience bullets across two different roles — both map to the
+# section name "experience", so build_cv_sections emits two separate
+# ("experience", ..., ...) entries. Finding 1: chunk_index must run per
+# section NAME across the whole write loop, not restart per entry.
+_TRUTH_BASE_TWO_EXPERIENCE_BULLETS = CVTruthBase(
+    identity="zzfixture Person Two",
+    headline="Senior Data Engineer",
+    summary="A summary paragraph about zzfixture skills.",
+    skills=[Skill(name="Python"), Skill(name="SQL")],
+    experience=[
+        Experience(
+            company="zzfixture Co",
+            title="Data Engineer",
+            bullets=[Bullet(bullet_id="b1", text="Built a zzfixture pipeline.")],
+        ),
+        Experience(
+            company="zzfixture Other Co",
+            title="Senior Data Engineer",
+            bullets=[Bullet(bullet_id="b2", text="Led a zzfixture migration.")],
+        ),
+    ],
+)
+
 
 class TestBuildCvSections(unittest.TestCase):
     def test_sections_cover_summary_skills_and_experience(self) -> None:
@@ -125,6 +148,41 @@ class TestChunkAndEmbedCv(unittest.TestCase):
             embedding_model="zzfixture-model",
         )
         self.assertEqual(written_again, 0)
+
+    def test_two_experience_bullets_both_get_chunked_without_colliding(self) -> None:
+        # Finding 1 regression: two experience bullets across two roles both
+        # map to section "experience", so build_cv_sections emits two
+        # separate entries under that name. chunk_and_embed_cv must not
+        # raise on the second entry's chunk_index colliding with the
+        # first's, and must persist both bullets' chunks.
+        write_truth_base(
+            self.app_engine,
+            self.user_id,
+            "zzfixture markdown two bullets",
+            _TRUTH_BASE_TWO_EXPERIENCE_BULLETS,
+            label="fixture",
+        )
+        written = chunk_and_embed_cv(
+            self.app_engine,
+            self.user_id,
+            embed=self._fake_embed,
+            embedding_model="zzfixture-model",
+        )
+        self.assertGreater(written, 0)
+        with self.owner.connect() as conn:
+            chunk_indexes = (
+                conn.execute(
+                    text(
+                        "SELECT chunk_index FROM scoring.cv_chunk_embedding "
+                        "WHERE user_id = :id AND section = 'experience' "
+                        "ORDER BY chunk_index"
+                    ),
+                    {"id": self.user_id},
+                )
+                .scalars()
+                .all()
+            )
+        self.assertEqual(chunk_indexes, [0, 1])
 
 
 if __name__ == "__main__":
