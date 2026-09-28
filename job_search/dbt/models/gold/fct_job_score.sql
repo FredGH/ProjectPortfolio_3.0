@@ -3,6 +3,25 @@
 -- scoring.job_score, enriched with dim_job's display fields so a caller
 -- doesn't need a second join for every consumer.
 -- Grain: (user_id, job_group_id) (unique).
+--
+-- This is the first per-user model in `gold`. `job_search_app` gets
+-- automatic SELECT on every gold table via migration 0014's
+-- `ALTER DEFAULT PRIVILEGES ... IN SCHEMA gold`, which would otherwise let
+-- any app-role query return every user's scores/rationales — a
+-- tenant-isolation gap. The `table` materialization drops and recreates
+-- this relation on every run, so RLS cannot be set up once in a migration;
+-- it must be re-applied with a `post_hook` after every build, matching
+-- scoring's own per-table `_rls()` helper (0028) for policy naming and the
+-- `app.current_user_id` GUC.
+
+{{ config(
+    post_hook=[
+        "ALTER TABLE {{ this }} ENABLE ROW LEVEL SECURITY",
+        "CREATE POLICY fct_job_score_isolation ON {{ this }} "
+        "USING (user_id = current_setting('app.current_user_id', true)::uuid)",
+        "GRANT SELECT ON {{ this }} TO job_search_app"
+    ]
+) }}
 
 SELECT
     s.user_id,
