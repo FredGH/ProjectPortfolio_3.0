@@ -163,6 +163,24 @@ class TestPickLabelingCandidate(unittest.TestCase):
         self.assertEqual(candidate.vector_similarity_score, 0.5)
         self.assertEqual(candidate.llm_fit_score, 70)
 
+    def test_preserves_empty_llm_missing_skills_list_not_none(self) -> None:
+        self._insert_job("zzfixture-cand-no-missing")
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_score (user_id, job_group_id, "
+                    "hard_filter_passed, vector_similarity_score, reranker_score, "
+                    "skill_coverage_score, llm_fit_score, llm_missing_skills, "
+                    "final_score) "
+                    "VALUES (:u, :j, true, 0.5, 0.5, 0.5, 70, "
+                    "ARRAY[]::text[], 0.5)"
+                ),
+                {"u": self.user_id, "j": "zzfixture-cand-no-missing"},
+            )
+        candidate = pick_labeling_candidate(self.app_engine, self.user_id)
+        self.assertIsNotNone(candidate)
+        self.assertEqual(candidate.llm_missing_skills, [])
+
 
 if __name__ == "__main__":
     unittest.main()

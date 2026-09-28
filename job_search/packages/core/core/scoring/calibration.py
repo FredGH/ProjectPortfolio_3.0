@@ -285,7 +285,7 @@ def pick_labeling_candidate(
         llm_fit_score=float(row.llm_fit_score),
         llm_rationale=row.llm_rationale,
         llm_missing_skills=(
-            list(row.llm_missing_skills) if row.llm_missing_skills else None
+            list(row.llm_missing_skills) if row.llm_missing_skills is not None else None
         ),
         llm_stretch_flag=row.llm_stretch_flag,
     )
