@@ -55,11 +55,19 @@ def compute_final_scores(app_engine: Engine, user_id: uuid.UUID) -> int:
     blended = 0
     with session_scope(app_engine, user_id=user_id) as conn:
         for row in rows:
-            present = {
-                component: float(row[_COLUMN_BY_COMPONENT[component]])
-                for component in _COMPONENTS
-                if row[_COLUMN_BY_COMPONENT[component]] is not None
-            }
+            present = {}
+            for component in _COMPONENTS:
+                value = row[_COLUMN_BY_COMPONENT[component]]
+                if value is None:
+                    continue
+                value = float(value)
+                if component == "llm_fit":
+                    # llm_fit_score is stored 0-100 (human-readable) but
+                    # every other component is ~[0,1] — rescale for the
+                    # blend only, never mutating what is stored in the
+                    # column itself.
+                    value /= 100.0
+                present[component] = value
             if not present:
                 continue
             weights = {

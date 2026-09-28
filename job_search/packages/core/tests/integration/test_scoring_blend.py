@@ -84,6 +84,42 @@ class TestBlend(unittest.TestCase):
         # not (0.8 + 0.6 + 0 + 0) / 4 = 0.35.
         self.assertAlmostEqual(self._final(), 0.7, places=4)
 
+    def test_llm_fit_score_is_rescaled_from_0_100_before_blending(self) -> None:
+        # Finding 5 regression: llm_fit_score is stored 0-100 (human
+        # readable) but every other component is ~[0,1]. The blend must
+        # divide it by 100 before averaging, not treat 40 as if it were
+        # already on the [0,1] scale.
+        job_id = "fixture-job-blend-llm"
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO gold.dim_job (job_group_id, title_for_display, "
+                    "company) VALUES (:j, 'zzfixture role', 'zzfixture co')"
+                ),
+                {"j": job_id},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_score (user_id, job_group_id, "
+                    "hard_filter_passed, vector_similarity_score, llm_fit_score) "
+                    "VALUES (:u, :j, true, 0.8, 40)"
+                ),
+                {"u": self.user_id, "j": job_id},
+            )
+        compute_final_scores(self.app_engine, self.user_id)
+        with self.owner.connect() as conn:
+            final_score, stored_llm_fit_score = conn.execute(
+                text(
+                    "SELECT final_score, llm_fit_score FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = :j"
+                ),
+                {"u": self.user_id, "j": job_id},
+            ).one()
+        # (0.8 + 40/100) / 2 = 0.6, not (0.8 + 40) / 2 = 20.4.
+        self.assertAlmostEqual(float(final_score), 0.6, places=4)
+        # The stored llm_fit_score column itself stays human-readable 0-100.
+        self.assertAlmostEqual(float(stored_llm_fit_score), 40.0, places=4)
+
     def test_a_fitted_weight_overrides_the_default(self) -> None:
         with self.owner.begin() as conn:
             conn.execute(
