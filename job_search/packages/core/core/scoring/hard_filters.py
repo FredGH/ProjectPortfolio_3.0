@@ -90,9 +90,16 @@ def _passes(job: dict, pref, as_of: datetime.date) -> bool:
         if job["rate_currency"] not in (None, _ASSUMED_CURRENCY):
             # Cannot safely compare a non-GBP figure to a GBP floor.
             return False
-        if pref.min_rate_daily and (
-            job["rate_daily_equivalent"] is None
-            or job["rate_daily_equivalent"] < pref.min_rate_daily
+        # A day-rate floor is a contract-market concept: a permanent job's
+        # converted day-rate-equivalent isn't how permanent pay is judged,
+        # so the floor only applies to non-permanent engagements.
+        if (
+            pref.min_rate_daily
+            and job["engagement_type"] != "permanent"
+            and (
+                job["rate_daily_equivalent"] is None
+                or job["rate_daily_equivalent"] < pref.min_rate_daily
+            )
         ):
             # No day-rate figure at all cannot be confirmed to clear the
             # floor either, so it is filtered out rather than assumed to pass.
