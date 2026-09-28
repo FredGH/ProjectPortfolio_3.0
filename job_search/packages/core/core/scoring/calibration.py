@@ -8,9 +8,15 @@ predicting a label's exact numeric value.
 
 from __future__ import annotations
 
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
 from itertools import product
 
 from scipy.stats import spearmanr
+from sqlalchemy import Engine, text
+
+from core.db.session import session_scope
 
 _COMPONENTS = ("vector_similarity", "reranker", "skill_coverage", "llm_fit")
 
@@ -105,3 +111,84 @@ def _grid_search_weights(
         # placeholder blend.py itself uses pre-calibration.
         return {c: 1.0 / len(_COMPONENTS) for c in _COMPONENTS}
     return best_weights
+
+
+@dataclass(frozen=True)
+class JobLabel:
+    """One hand-labeled job.
+
+    Attributes:
+        job_group_id: The labeled job's identity.
+        label: "strong" | "maybe" | "no".
+        labeled_at: When this label was last written.
+    """
+
+    job_group_id: str
+    label: str
+    labeled_at: datetime
+
+
+def read_labels(engine: Engine, user_id: uuid.UUID) -> list[JobLabel]:
+    """Read every label this user has recorded, newest first.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: Whose labels to read.
+
+    Returns:
+        Every `JobLabel`, ordered by `labeled_at` descending. Empty list
+        if this user has never labeled anything.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT job_group_id, label, labeled_at FROM scoring.job_label "
+                "WHERE user_id = :user_id ORDER BY labeled_at DESC"
+            ),
+            {"user_id": user_id},
+        ).all()
+    return [JobLabel(row.job_group_id, row.label, row.labeled_at) for row in rows]
+
+
+_UPSERT_LABEL = text(
+    "INSERT INTO scoring.job_label (user_id, job_group_id, label, labeled_at) "
+    "VALUES (:user_id, :job_group_id, :label, now()) "
+    "ON CONFLICT (user_id, job_group_id) DO UPDATE SET "
+    "label = EXCLUDED.label, labeled_at = now()"
+)
+
+
+def write_label(
+    engine: Engine, user_id: uuid.UUID, job_group_id: str, label: str
+) -> None:
+    """Create or overwrite one job's label.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: Whose label this is.
+        job_group_id: The job being labeled.
+        label: "strong" | "maybe" | "no".
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        conn.execute(
+            _UPSERT_LABEL,
+            {"user_id": user_id, "job_group_id": job_group_id, "label": label},
+        )
+
+
+def delete_label(engine: Engine, user_id: uuid.UUID, job_group_id: str) -> None:
+    """Remove one job's label, if it exists.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: Whose label to remove.
+        job_group_id: The job to un-label.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        conn.execute(
+            text(
+                "DELETE FROM scoring.job_label "
+                "WHERE user_id = :user_id AND job_group_id = :job_group_id"
+            ),
+            {"user_id": user_id, "job_group_id": job_group_id},
+        )
