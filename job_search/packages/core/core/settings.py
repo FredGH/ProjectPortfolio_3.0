@@ -6,6 +6,7 @@ here, never a code path or a separate image — see PLAN.md Step 1.
 
 from __future__ import annotations
 
+import uuid
 from functools import lru_cache
 from typing import Literal
 
@@ -51,6 +52,12 @@ class Settings(BaseSettings):
         reed_api_key: Reed.co.uk connector API key.
         jooble_key: Jooble connector API key.
         api_base_url: Base URL the UI and pipeline use to reach the API.
+        dev_user_id: PLAN.md Step 22a's local-dev identity override. When
+            set and `env == "local"`, `core.db.session.get_current_user_id`
+            returns this id for a request with no real identity yet — lets
+            per-user pages work locally before Step 22's IAP exists. Never
+            consulted when `env == "gcp"`, regardless of this value, and
+            never overrides a real identity a request already carries.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -76,6 +83,8 @@ class Settings(BaseSettings):
     jooble_key: str | None = None
 
     api_base_url: str = "http://localhost:8000"
+
+    dev_user_id: uuid.UUID | None = None
 
 
 @lru_cache
