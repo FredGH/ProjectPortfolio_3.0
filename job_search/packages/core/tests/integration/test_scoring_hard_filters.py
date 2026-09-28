@@ -1,0 +1,246 @@
+"""Integration tests for core.scoring.hard_filters against live Postgres.
+
+Uses real gold.dim_job rows via fixture job_group_ids so these tests never
+touch real job data. dim_job is built by dbt from silver sources this suite
+does not have access to seed directly, so these tests insert straight into
+gold.dim_job (owner role) and clean it up — the same tactic
+test_skills_router.py's _insert_esco_skill uses for esco.skill.
+"""
+
+from __future__ import annotations
+
+import datetime
+import unittest
+import uuid
+
+from sqlalchemy import text
+from tests.integration.skills_fixtures import live_owner_engine
+
+from core.scoring.hard_filters import run_hard_filters
+from core.scoring.preferences import UserPreference, write_preference
+
+
+class TestHardFilters(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.engine = live_owner_engine()
+
+    def setUp(self) -> None:
+        self.user_id = uuid.uuid4()
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO app_user (id, email, display_name) "
+                    "VALUES (:id, :email, 'zzfixture filters user')"
+                ),
+                {"id": self.user_id, "email": f"zzfixture-{self.user_id}@example.com"},
+            )
+
+    def tearDown(self) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM scoring.job_score WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM scoring.user_preference WHERE user_id = :id"),
+                {"id": self.user_id},
+            )
+            conn.execute(
+                text("DELETE FROM gold.dim_job WHERE job_group_id LIKE 'fixture-job-%'")
+            )
+            conn.execute(
+                text("DELETE FROM app_user WHERE id = :id"), {"id": self.user_id}
+            )
+
+    def _insert_job(self, job_group_id: str, **overrides) -> None:
+        """Insert one minimal gold.dim_job fixture row.
+
+        Note: gold.dim_job has no `title` column (real columns are
+        `title_raw`/`title_for_display`) — `title_for_display` is used
+        here instead of the brief's placeholder `title` key.
+        """
+        defaults = {
+            "job_group_id": job_group_id,
+            "title_for_display": "zzfixture role",
+            "company": "zzfixture co",
+            "location": "London",
+            "engagement_type": "contract",
+            "ir35_status": "outside",
+            "seniority_band": "senior",
+            "rate_currency": "GBP",
+            "rate_daily_equivalent": 600,
+            "rate_annualised": None,
+            "posted_at": "2026-09-01",
+        }
+        defaults.update(overrides)
+        columns = ", ".join(defaults)
+        placeholders = ", ".join(f":{k}" for k in defaults)
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(f"INSERT INTO gold.dim_job ({columns}) VALUES ({placeholders})"),
+                defaults,
+            )
+
+    def _passed(self, job_group_id: str) -> bool:
+        with self.engine.connect() as conn:
+            return conn.execute(
+                text(
+                    "SELECT hard_filter_passed FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = :j"
+                ),
+                {"u": self.user_id, "j": job_group_id},
+            ).scalar_one()
+
+    def test_no_preference_row_at_all_passes_every_job(self) -> None:
+        self._insert_job("fixture-job-nopref")
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-nopref"))
+
+    def test_excluded_ir35_status_fails_a_matching_job_but_not_others(self) -> None:
+        self._insert_job("fixture-job-inside", ir35_status="inside")
+        self._insert_job("fixture-job-outside", ir35_status="outside")
+        write_preference(
+            self.engine, self.user_id, UserPreference(excluded_ir35_statuses=["inside"])
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-inside"))
+        self.assertTrue(self._passed("fixture-job-outside"))
+
+    def test_unknown_ir35_status_is_never_auto_excluded(self) -> None:
+        self._insert_job("fixture-job-unknown-ir35", ir35_status="unknown")
+        write_preference(
+            self.engine, self.user_id, UserPreference(excluded_ir35_statuses=["inside"])
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-unknown-ir35"))
+
+    def test_min_rate_daily_excludes_a_lower_rate(self) -> None:
+        self._insert_job("fixture-job-lowrate", rate_daily_equivalent=300)
+        write_preference(self.engine, self.user_id, UserPreference(min_rate_daily=500))
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-lowrate"))
+
+    def test_a_rate_in_a_different_currency_is_never_compared_to_the_floor(
+        self,
+    ) -> None:
+        # rate_annualised/rate_daily_equivalent are in the job's OWN
+        # rate_currency, never converted (_gold.yml's own documented
+        # caveat) — a non-GBP rate must not be treated as clearing or
+        # missing a GBP floor by accident.
+        self._insert_job(
+            "fixture-job-usd", rate_currency="USD", rate_daily_equivalent=900
+        )
+        write_preference(self.engine, self.user_id, UserPreference(min_rate_daily=500))
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-usd"))
+
+    def test_seniority_band_range_is_inclusive(self) -> None:
+        self._insert_job("fixture-job-junior", seniority_band="junior")
+        write_preference(
+            self.engine,
+            self.user_id,
+            UserPreference(min_seniority_band="mid", max_seniority_band="lead"),
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-junior"))
+
+    def test_remote_required_excludes_a_non_remote_job(self) -> None:
+        self._insert_job("fixture-job-london", location="London")
+        self._insert_job("fixture-job-remote", location="Remote, UK")
+        write_preference(
+            self.engine, self.user_id, UserPreference(remote_ok="required")
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-london"))
+        self.assertTrue(self._passed("fixture-job-remote"))
+
+    def test_remote_excluded_excludes_a_remote_job(self) -> None:
+        self._insert_job("fixture-job-london", location="London")
+        self._insert_job("fixture-job-remote", location="Remote, UK")
+        write_preference(
+            self.engine, self.user_id, UserPreference(remote_ok="excluded")
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-london"))
+        self.assertFalse(self._passed("fixture-job-remote"))
+
+    def test_max_posting_age_days_excludes_an_older_posting(self) -> None:
+        self._insert_job("fixture-job-old", posted_at="2026-09-01")
+        self._insert_job("fixture-job-recent", posted_at="2026-09-25")
+        write_preference(
+            self.engine, self.user_id, UserPreference(max_posting_age_days=10)
+        )
+        run_hard_filters(self.engine, self.user_id, as_of=datetime.date(2026, 9, 27))
+        self.assertFalse(self._passed("fixture-job-old"))
+        self.assertTrue(self._passed("fixture-job-recent"))
+
+    def test_a_null_posted_at_is_excluded_when_an_age_limit_is_set(self) -> None:
+        self._insert_job("fixture-job-noposted", posted_at=None)
+        write_preference(
+            self.engine, self.user_id, UserPreference(max_posting_age_days=10)
+        )
+        run_hard_filters(self.engine, self.user_id, as_of=datetime.date(2026, 9, 27))
+        self.assertFalse(self._passed("fixture-job-noposted"))
+
+    def test_flipping_to_excluded_nulls_every_downstream_score_column(self) -> None:
+        # Finding 4 regression: a job that flips hard_filter_passed
+        # true -> false must have every downstream column nulled in the
+        # same upsert, since later stages only ever touch
+        # hard_filter_passed = true rows and would otherwise leave a
+        # stale score/rationale forever.
+        self._insert_job("fixture-job-flip", ir35_status="outside")
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-flip"))
+        with self.engine.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE scoring.job_score SET "
+                    "vector_similarity_score = 0.9, reranker_score = 0.8, "
+                    "skill_coverage_score = 0.7, llm_fit_score = 80, "
+                    "llm_rationale = 'zzfixture stale rationale', "
+                    "llm_missing_skills = ARRAY['python'], "
+                    "llm_stretch_flag = true, final_score = 0.85, "
+                    "embedding_model = 'zzfixture-model' "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-flip'"
+                ),
+                {"u": self.user_id},
+            )
+        # Now the same job fails the (newly set) preference.
+        write_preference(
+            self.engine,
+            self.user_id,
+            UserPreference(excluded_ir35_statuses=["outside"]),
+        )
+        run_hard_filters(self.engine, self.user_id)
+        self.assertFalse(self._passed("fixture-job-flip"))
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT vector_similarity_score, reranker_score, "
+                    "skill_coverage_score, llm_fit_score, llm_rationale, "
+                    "llm_missing_skills, llm_stretch_flag, final_score, "
+                    "embedding_model FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-flip'"
+                ),
+                {"u": self.user_id},
+            ).one()
+        self.assertTrue(all(value is None for value in row))
+
+    def test_rerunning_updates_rather_than_duplicating(self) -> None:
+        self._insert_job("fixture-job-rerun")
+        run_hard_filters(self.engine, self.user_id)
+        run_hard_filters(self.engine, self.user_id)
+        with self.engine.connect() as conn:
+            count = conn.execute(
+                text(
+                    "SELECT count(*) FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = 'fixture-job-rerun'"
+                ),
+                {"u": self.user_id},
+            ).scalar_one()
+        self.assertEqual(count, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

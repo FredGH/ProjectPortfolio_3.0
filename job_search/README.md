@@ -299,3 +299,45 @@ extraction run also does a capped pass (at most 300 strings) automatically. It
 needs `ANTHROPIC_API_KEY` and sends only the skill strings, nothing else from
 your jobs or CV. A re-map (`--remap-unresolved` / `--remap-all-auto`) keeps
 strings Claude already checked (they are decided in the review UI, not re-sent).
+
+### Scoring the job pool (Step 15)
+
+Run these commands in sequence to score jobs against a user's CV. Each command
+requires the user to first extract their CV skills via `map-cv-skills --user-id <id>`.
+Results land in `scoring.job_score` immediately; after a `dbt run --select fct_job_score`,
+they flow into the gold mart `fct_job_score`.
+
+```bash
+# Stage 1: Filter jobs by hard rules (location/remote, contract type, IR35
+# exclusions, seniority band, salary/rate floor, posting age)
+docker compose --profile cli run --rm pipeline score-filter-jobs --user-id <id> [--limit N]
+
+# Stage 2a: Chunk and embed job descriptions (shared, run once across all users)
+docker compose --profile cli run --rm pipeline chunk-embed-jobs [--limit N]
+
+# Stage 2b: Chunk and embed the CV, then score CV–JD similarity
+docker compose --profile cli run --rm pipeline chunk-embed-cv --user-id <id> [--refresh]
+docker compose --profile cli run --rm pipeline score-similarity --user-id <id> [--top-n N]
+
+# Stage 3: Score skill coverage with recency decay
+docker compose --profile cli run --rm pipeline score-skill-coverage --user-id <id>
+
+# Stage 4: Re-rank top jobs with Claude (requires ANTHROPIC_API_KEY)
+docker compose --profile cli run --rm pipeline score-llm-rerank --user-id <id> [--top-n N]
+
+# Final stage: Blend all scores into a single ranked result
+docker compose --profile cli run --rm pipeline score-blend --user-id <id>
+```
+
+The **Scoring Preferences** page (`apps/ui/app/pages/8_Scoring_Preferences.py`,
+`http://localhost:8501/Scoring_Preferences`) is where Stage 1's hard-filter
+settings (location/remote, contract type, IR35 exclusions, seniority band,
+salary/rate floor, posting age) are edited — it does not tune the Stage 2-4
+blend weights; those are calibrated per user by Step 16 (not built yet) and
+stored in `scoring.weight`, read automatically by `score-blend` with an
+equal-weight default until a user has been calibrated. The settings page needs
+Step 22a's authentication to work in a browser today (`/whoami` and
+`/scoring/preferences` endpoints return 501 until then); this is a known,
+accepted, and documented gap, not a bug — the CLI pipeline works without it.
+Read the final blended scores from `fct_job_score` (with `embedding_model` and
+other scoring metadata), or direct from `scoring.job_score` before dbt runs.
