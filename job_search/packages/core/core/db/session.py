@@ -14,6 +14,8 @@ from contextlib import contextmanager
 from fastapi import HTTPException, Request
 from sqlalchemy import Connection, Engine, create_engine, text
 
+from core.settings import get_settings
+
 # The nil UUID, used to ensure RLS policies return no rows when no user ID is
 # set. Once any SET LOCAL has run on a pooled connection, current_setting()
 # returns empty string (not NULL) in later transactions, causing ''::uuid to
@@ -84,10 +86,13 @@ def get_current_user_id(request: Request) -> uuid.UUID:
 
     Deliberately never reads a client-supplied header or query parameter —
     PLAN.md Step 1a requires the session user context come "from a verified
-    token only." No verified-token source exists yet (that's Step 22a's
-    IAP integration), so this raises until `request.state.user_id` has been
-    set by that future middleware. This is the seam Step 22a fills in, not
-    a stand-in that trusts anything from the request.
+    token only." No verified-token source exists yet (that's Step 22's IAP
+    integration, wired to `request.state.user_id` by Step 22a's middleware),
+    so this raises until that middleware sets it — UNLESS PLAN.md Step 22a's
+    local-dev override applies: `Settings.dev_user_id` is set and `env ==
+    "local"`. That override is hard-disabled whenever `env == "gcp"`,
+    regardless of `dev_user_id`'s value, and is only ever consulted when no
+    real identity is present — a real `request.state.user_id` always wins.
 
     Args:
         request: The incoming FastAPI request.
@@ -97,12 +102,16 @@ def get_current_user_id(request: Request) -> uuid.UUID:
 
     Raises:
         fastapi.HTTPException: 501, when no identity middleware has set
-            `request.state.user_id` yet.
+            `request.state.user_id` yet and the local-dev override doesn't
+            apply.
     """
     user_id = getattr(request.state, "user_id", None)
-    if user_id is None:
-        raise HTTPException(
-            status_code=501,
-            detail="Authentication not implemented yet — see Step 22a.",
-        )
-    return user_id
+    if user_id is not None:
+        return user_id
+    settings = get_settings()
+    if settings.env == "local" and settings.dev_user_id is not None:
+        return settings.dev_user_id
+    raise HTTPException(
+        status_code=501,
+        detail="Authentication not implemented yet — see Step 22a.",
+    )
