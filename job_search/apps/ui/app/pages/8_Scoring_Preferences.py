@@ -12,8 +12,57 @@ import streamlit as st
 
 from core.settings import get_settings
 
+_USER_GUIDE = """
+#### What this page is for
+
+These are Stage 1 of the scoring funnel (PLAN.md Step 15) — the cheap, hard
+filters that decide whether a job is even considered before anything
+expensive runs (vector similarity, the cross-encoder rerank, skill coverage,
+the LLM fit re-rank). A job that fails any filter here never reaches those
+later stages, and any score it previously earned is cleared.
+
+Leaving a field at its default ("blank", "No minimum/maximum", or `0`) means
+**no filter on that dimension** — it is never treated as "exclude
+everything" or "exclude nothing" by assumption. In particular, a job whose
+IR35 status is `unknown` is never auto-excluded, even if you exclude other
+statuses.
+
+#### Field notes
+
+- **Preferred locations** — a job's `location` must match one of these
+  exactly (comma-separated). Leaving this blank applies no location filter.
+- **Remote work** — `required` keeps only jobs recognised as remote;
+  `excluded` drops them; `preferred`/`no_preference` apply no filter here
+  (a genuine preference for remote work, as opposed to a hard requirement,
+  is a later-stage concern, not built yet).
+- **Contract types** / **Excluded IR35 statuses** — jobs are matched against
+  a job's own `engagement_type`/`ir35_status`.
+- **Seniority band** — inclusive on both ends, ordered junior < mid <
+  senior < lead < principal. A job with no seniority classification yet
+  always passes (there's nothing to compare).
+- **Minimum annual salary** — compared against a job's annualised rate,
+  **GBP only**: a job priced in another currency can't be safely compared to
+  a GBP floor (rates are never currency-converted), so it's filtered out on
+  this dimension if a floor is set. Applies to any engagement type.
+- **Minimum day rate** — same GBP-only rule, but this filter only applies to
+  **non-permanent** jobs (contract, FTC, interim, unknown). A permanent
+  salary's converted day-rate-equivalent isn't how permanent pay is judged,
+  so permanent jobs are never excluded by this field.
+- **Maximum posting age** — a job with no posting date at all is filtered
+  out when this is set, since it can't be confirmed to be within the window.
+
+#### After you change something
+
+Preferences take effect the next time you run `score-filter-jobs` for your
+user. A job that newly fails a filter has every downstream score cleared
+immediately; nothing here is applied retroactively to a job that already
+passed and scored under the old preferences until that command runs again.
+"""
+
 st.set_page_config(page_title="Scoring Preferences", layout="wide")
 st.title("Scoring Preferences")
+with st.expander("User Guide", expanded=False):
+    st.markdown(_USER_GUIDE)
 
 st.info(
     "This page needs sign-in (PLAN.md Step 22a), not yet built — it will "
@@ -166,6 +215,9 @@ min_rate_daily = st.number_input(
     min_value=0,
     value=int(current["min_rate_daily"] or 0),
     step=50,
+)
+st.caption(
+    "Applies to non-permanent jobs only — permanent roles are never excluded by this."
 )
 
 max_posting_age_days = st.number_input(

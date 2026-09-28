@@ -121,6 +121,19 @@ class TestHardFilters(unittest.TestCase):
         run_hard_filters(self.engine, self.user_id)
         self.assertFalse(self._passed("fixture-job-lowrate"))
 
+    def test_min_rate_daily_never_excludes_a_permanent_job(self) -> None:
+        # A day-rate floor is a contract-market concept — a permanent
+        # salary's converted day-rate-equivalent isn't how permanent pay is
+        # evaluated, so it must never fail this filter on that basis alone.
+        self._insert_job(
+            "fixture-job-perm-lowrate",
+            engagement_type="permanent",
+            rate_daily_equivalent=300,
+        )
+        write_preference(self.engine, self.user_id, UserPreference(min_rate_daily=500))
+        run_hard_filters(self.engine, self.user_id)
+        self.assertTrue(self._passed("fixture-job-perm-lowrate"))
+
     def test_a_rate_in_a_different_currency_is_never_compared_to_the_floor(
         self,
     ) -> None:
