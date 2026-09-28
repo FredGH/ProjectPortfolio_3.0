@@ -19,12 +19,19 @@ from core.db.session import session_scope
 
 # Only these section pairs are compared — "compare like sections only"
 # (DECISIONS.md §4). A CV section not listed here (education, certifications,
-# projects) is never compared against any JD section.
-_SECTION_PAIRS = {
-    "experience": "responsibilities",
-    "skills": "requirements",
-    "summary": "company_blurb",
-}
+# projects) is never compared against any JD section. A list of tuples, not
+# a dict, since one CV section pairs with more than one JD section: `other`
+# (detect_sections's fallback for a headingless job description, common
+# from aggregators) is paired against both `experience` and `skills` so
+# such a job still gets a vector_similarity_score instead of being
+# structurally unscoreable regardless of true fit.
+_SECTION_PAIRS = [
+    ("experience", "responsibilities"),
+    ("skills", "requirements"),
+    ("summary", "company_blurb"),
+    ("experience", "other"),
+    ("skills", "other"),
+]
 
 _SELECT_CV_CHUNKS = text(
     "SELECT section, embedding, embedding_model, chunk_text "
@@ -154,7 +161,7 @@ def run_similarity(
     for job_group_id, chunks in jobs.items():
         pair_scores: list[float] = []
         mismatch = False
-        for cv_section, job_section in _SECTION_PAIRS.items():
+        for cv_section, job_section in _SECTION_PAIRS:
             cv_side = cv_by_section.get(cv_section, [])
             job_side = [c for c in chunks if c["section"] == job_section]
             if not cv_side or not job_side:

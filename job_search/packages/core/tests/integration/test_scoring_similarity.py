@@ -306,6 +306,61 @@ class TestSimilarity(unittest.TestCase):
         self.assertIsNotNone(score)
         self.assertAlmostEqual(float(score), 0.0)
 
+    def test_a_headingless_other_section_job_still_gets_a_similarity_score(
+        self,
+    ) -> None:
+        # Finding 7 regression: detect_sections falls back to one 'other'
+        # section for a headingless job description (common from
+        # aggregators). _SECTION_PAIRS must pair 'other' against the CV's
+        # 'experience' section so such a job is not structurally
+        # unscoreable regardless of true fit.
+        job_other = "fixture-job-sim-other"
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_chunk_embedding (job_group_id, "
+                    "section, chunk_index, chunk_text, embedding, embedding_model) "
+                    "VALUES (:j, 'other', 0, 'zzfixture', "
+                    "CAST(:v AS vector), 'nomic-embed-text')"
+                ),
+                {"j": job_other, "v": "[" + ",".join(["1.0"] + ["0.0"] * 767) + "]"},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO gold.dim_job (job_group_id, title_for_display, "
+                    "company) VALUES (:j, 'zzfixture role', 'zzfixture co')"
+                ),
+                {"j": job_other},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.job_score (user_id, job_group_id, "
+                    "hard_filter_passed) VALUES (:u, :j, true)"
+                ),
+                {"u": self.user_id, "j": job_other},
+            )
+        run_similarity(
+            self.app_engine, self.user_id, rerank=self._fake_rerank, top_n=200
+        )
+        with self.owner.connect() as conn:
+            score = conn.execute(
+                text(
+                    "SELECT vector_similarity_score FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = :j"
+                ),
+                {"u": self.user_id, "j": job_other},
+            ).scalar_one()
+            conn.execute(
+                text("DELETE FROM scoring.job_chunk_embedding WHERE job_group_id = :j"),
+                {"j": job_other},
+            )
+            conn.execute(
+                text("DELETE FROM gold.dim_job WHERE job_group_id = :j"),
+                {"j": job_other},
+            )
+        self.assertIsNotNone(score)
+        self.assertGreater(float(score), 0.9)
+
     def test_mismatch_count_is_reported_in_the_summary(self) -> None:
         summary = run_similarity(
             self.app_engine, self.user_id, rerank=self._fake_rerank, top_n=200

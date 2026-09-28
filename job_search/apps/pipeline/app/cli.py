@@ -1218,12 +1218,15 @@ def _cmd_score_llm_rerank(args: argparse.Namespace) -> int:
     http_client = httpx.Client(timeout=120.0)
     try:
         adapters = _build_llm_adapters(http_client)
-        n = run_llm_rerank(
+        summary = run_llm_rerank(
             app_engine, args.user_id, adapters=adapters, top_n=args.top_n
         )
     finally:
         http_client.close()
-    print(f"score-llm-rerank complete: jobs_reranked={n}")
+    print(
+        f"score-llm-rerank complete: jobs_checked={summary.checked} "
+        f"jobs_reranked={summary.reranked}"
+    )
     return 0
 
 

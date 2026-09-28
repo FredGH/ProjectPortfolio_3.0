@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import Engine, text
@@ -21,20 +22,43 @@ TASK = "job_scoring"
 PROMPT_VERSION = "claude.v1"
 TOP_N = 50
 
+# A MEAN of only the non-NULL components, not a SUM of COALESCE(x, 0) — a
+# job with one strong component (e.g. skill_coverage_score=0.9 only) must
+# rank above a job with all three components present but each mediocre
+# (e.g. all at 0.2): SUM would rank the mediocre-but-complete job higher
+# (0.6 > 0.9 is false, but 0.2+0.2+0.2=0.6 vs 0.9 — SUM favors more
+# components over higher per-component fit). NULLIF guards the all-NULL
+# case (no components at all) so that job's mean is NULL, not a
+# division-by-zero error. Postgres's actual default for ORDER BY ... DESC
+# is NULLS FIRST (nulls sort as "larger than any value"), the opposite of
+# what "NULLs sort last" intuition suggests — verified against a live
+# query, not assumed — so NULLS LAST is spelled out explicitly to put an
+# all-NULL job at the bottom of the ranking, not the top.
 _SELECT_PRE_LLM_TOP = text(
     "SELECT job_group_id, "
-    "COALESCE(vector_similarity_score, 0) + COALESCE(reranker_score, 0) "
-    "+ COALESCE(skill_coverage_score, 0) AS pre_llm_score "
+    "(COALESCE(vector_similarity_score, 0) + COALESCE(reranker_score, 0) "
+    "+ COALESCE(skill_coverage_score, 0)) "
+    "/ NULLIF("
+    "(CASE WHEN vector_similarity_score IS NOT NULL THEN 1 ELSE 0 END) "
+    "+ (CASE WHEN reranker_score IS NOT NULL THEN 1 ELSE 0 END) "
+    "+ (CASE WHEN skill_coverage_score IS NOT NULL THEN 1 ELSE 0 END), "
+    "0) AS pre_llm_score "
     "FROM scoring.job_score WHERE user_id = :user_id AND hard_filter_passed = true "
-    "ORDER BY pre_llm_score DESC LIMIT :top_n"
+    "ORDER BY pre_llm_score DESC NULLS LAST LIMIT :top_n"
 )
-_SELECT_JOB_TEXT = text(
-    "SELECT string_agg(chunk_text, ' ') AS jd_text FROM scoring.job_chunk_embedding "
-    "WHERE job_group_id = :job_group_id"
+# Read straight from gold.dim_job.description rather than aggregating
+# scoring.job_chunk_embedding: the chunk table has no ORDER BY-able
+# sequencing across sections and chunks overlap by design, so a plain
+# string_agg over it is scrambled/repeated text, not the job description.
+_SELECT_JOB_DESCRIPTION = text(
+    "SELECT description FROM gold.dim_job WHERE job_group_id = :job_group_id"
 )
+# ORDER BY section, chunk_index for stable, non-scrambled CV text — chunks
+# overlap by design, so an unordered string_agg would interleave them
+# unpredictably.
 _SELECT_CV_TEXT = text(
-    "SELECT string_agg(chunk_text, ' ') AS cv_text FROM scoring.cv_chunk_embedding "
-    "WHERE user_id = :user_id"
+    "SELECT string_agg(chunk_text, ' ' ORDER BY section, chunk_index) AS cv_text "
+    "FROM scoring.cv_chunk_embedding WHERE user_id = :user_id"
 )
 _CLEAR_LLM_FIELDS = text(
     "UPDATE scoring.job_score SET llm_fit_score = NULL, llm_rationale = NULL, "
@@ -49,6 +73,21 @@ _UPDATE_LLM_FIELDS = text(
 )
 
 
+@dataclass(frozen=True)
+class RerankSummary:
+    """The outcome of one `run_llm_rerank` call.
+
+    Attributes:
+        checked: How many top-N jobs had usable text and were actually
+            sent to the LLM (whether or not the reply parsed).
+        reranked: How many of those were successfully re-ranked (a
+            parse/API failure is checked but not reranked).
+    """
+
+    checked: int
+    reranked: int
+
+
 def run_llm_rerank(
     app_engine: Engine,
     user_id: uuid.UUID,
@@ -56,7 +95,7 @@ def run_llm_rerank(
     adapters: dict[str, LLMAdapter],
     top_n: int = TOP_N,
     config_path: Path | None = None,
-) -> int:
+) -> RerankSummary:
     """Run the LLM re-rank stage for one user's top-scoring jobs.
 
     Every `hard_filter_passed = true` job for this user — the full
@@ -87,11 +126,28 @@ def run_llm_rerank(
         config_path: Task-config override (tests).
 
     Returns:
-        The number of jobs successfully re-ranked (a parse/API failure on
-        one job is skipped, not fatal to the rest — same retry-safe pattern
-        as core.skills.llm_map).
+        A `RerankSummary` with how many top-N jobs were checked (had usable
+        text and were actually sent to the LLM) and how many of those were
+        successfully re-ranked (a parse/API failure is checked but skipped,
+        not fatal to the rest — same retry-safe pattern as
+        core.skills.llm_map). If the user has no CV text at all, this is a
+        no-op run: `RerankSummary(checked=0, reranked=0)`, nothing cleared,
+        no LLM call made.
     """
     template = load_prompt(TASK, load_task_config(TASK, config_path).prompt_family, 1)
+    with session_scope(app_engine, user_id=user_id) as conn:
+        cv_text = (
+            conn.execute(_SELECT_CV_TEXT, {"user_id": user_id}).scalar_one_or_none()
+            or ""
+        )
+    if not cv_text.strip():
+        # No CV chunks at all for this user — there is nothing meaningful
+        # to compare any job against. Return early rather than sending
+        # empty CV text to the LLM for every top-N job and saving whatever
+        # score comes back as if it were real; also leaves any existing
+        # LLM fields untouched rather than clearing them for no reason.
+        return RerankSummary(checked=0, reranked=0)
+
     with session_scope(app_engine, user_id=user_id) as conn:
         # Clear the FULL candidate pool's LLM fields first, before this
         # run's top-N is even selected — see the docstring above for why a
@@ -101,20 +157,24 @@ def run_llm_rerank(
         top_jobs = conn.execute(
             _SELECT_PRE_LLM_TOP, {"user_id": user_id, "top_n": top_n}
         ).all()
-        cv_text = (
-            conn.execute(_SELECT_CV_TEXT, {"user_id": user_id}).scalar_one_or_none()
-            or ""
-        )
 
+    checked = 0
     reranked = 0
     for row in top_jobs:
         with app_engine.connect() as conn:
             jd_text = (
                 conn.execute(
-                    _SELECT_JOB_TEXT, {"job_group_id": row.job_group_id}
+                    _SELECT_JOB_DESCRIPTION, {"job_group_id": row.job_group_id}
                 ).scalar_one_or_none()
                 or ""
             )
+        if not jd_text.strip():
+            # No usable job description yet — skip this job entirely
+            # rather than sending empty text to the LLM and saving
+            # whatever score comes back as if it were real. Its LLM
+            # fields stay NULL (already cleared above) this run.
+            continue
+        checked += 1
         prompt = template.format(cv_text=cv_text, jd_text=jd_text)
         try:
             response = gateway.complete(
@@ -144,4 +204,4 @@ def run_llm_rerank(
                 },
             )
         reranked += 1
-    return reranked
+    return RerankSummary(checked=checked, reranked=reranked)
