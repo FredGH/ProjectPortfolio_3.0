@@ -8,6 +8,7 @@ predicting a label's exact numeric value.
 
 from __future__ import annotations
 
+import random
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -192,3 +193,99 @@ def delete_label(engine: Engine, user_id: uuid.UUID, job_group_id: str) -> None:
             ),
             {"user_id": user_id, "job_group_id": job_group_id},
         )
+
+
+@dataclass(frozen=True)
+class LabelCandidate:
+    """One job to show a human for hand-labeling, with enough context to
+    judge fit confidently.
+
+    Attributes:
+        job_group_id: The candidate job's identity.
+        title: `gold.dim_job.title_for_display`.
+        company: The employer name.
+        location: The posting's location string.
+        engagement_type: permanent/contract/ftc/interim.
+        description: The full job description.
+        vector_similarity_score: Stage-2 component score.
+        reranker_score: Stage-2 (cross-encoder) component score.
+        skill_coverage_score: Stage-3 component score.
+        llm_fit_score: Stage-4 component score, 0-100.
+        llm_rationale: The LLM re-rank's free-text rationale, if present.
+        llm_missing_skills: Skills the LLM flagged as missing, if present.
+        llm_stretch_flag: Whether the LLM flagged this as a stretch role.
+    """
+
+    job_group_id: str
+    title: str
+    company: str
+    location: str
+    engagement_type: str
+    description: str
+    vector_similarity_score: float
+    reranker_score: float
+    skill_coverage_score: float
+    llm_fit_score: float
+    llm_rationale: str | None
+    llm_missing_skills: list[str] | None
+    llm_stretch_flag: bool | None
+
+
+_SELECT_ELIGIBLE_CANDIDATES = text(
+    "SELECT s.job_group_id, j.title_for_display, j.company, j.location, "
+    "j.engagement_type, j.description, s.vector_similarity_score, "
+    "s.reranker_score, s.skill_coverage_score, s.llm_fit_score, "
+    "s.llm_rationale, s.llm_missing_skills, s.llm_stretch_flag "
+    "FROM scoring.job_score s "
+    "JOIN gold.dim_job j ON j.job_group_id = s.job_group_id "
+    "WHERE s.user_id = :user_id AND s.hard_filter_passed = true "
+    "AND s.vector_similarity_score IS NOT NULL "
+    "AND s.reranker_score IS NOT NULL "
+    "AND s.skill_coverage_score IS NOT NULL "
+    "AND s.llm_fit_score IS NOT NULL "
+    "AND s.job_group_id NOT IN ("
+    "SELECT job_group_id FROM scoring.job_label WHERE user_id = :user_id)"
+)
+
+
+def pick_labeling_candidate(
+    engine: Engine, user_id: uuid.UUID
+) -> LabelCandidate | None:
+    """Pick a random eligible, not-yet-labeled job for hand-labeling.
+
+    Eligible means every one of the four scoring components is present
+    (a job missing one can't inform that component's weight) and
+    `hard_filter_passed`. Picks uniformly at random among every eligible,
+    unlabeled candidate — with at most 50 jobs ever reaching all-four-
+    present (the LLM-rerank stage's own cap), stratifying further into
+    score bands is unnecessary complexity for a pool this small.
+
+    Args:
+        engine: The app-role engine (RLS-enforced).
+        user_id: Whose candidate pool to pick from.
+
+    Returns:
+        One `LabelCandidate`, or None if nothing eligible remains unlabeled.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        rows = conn.execute(_SELECT_ELIGIBLE_CANDIDATES, {"user_id": user_id}).all()
+    if not rows:
+        return None
+    row = random.choice(rows)
+    return LabelCandidate(
+        job_group_id=row.job_group_id,
+        title=row.title_for_display,
+        company=row.company,
+        location=row.location,
+        engagement_type=row.engagement_type,
+        description=row.description,
+        vector_similarity_score=float(row.vector_similarity_score),
+        reranker_score=float(row.reranker_score),
+        skill_coverage_score=float(row.skill_coverage_score),
+        llm_fit_score=float(row.llm_fit_score),
+        llm_rationale=row.llm_rationale,
+        llm_missing_skills=(
+            list(row.llm_missing_skills) if row.llm_missing_skills else None
+        ),
+        llm_stretch_flag=row.llm_stretch_flag,
+    )
