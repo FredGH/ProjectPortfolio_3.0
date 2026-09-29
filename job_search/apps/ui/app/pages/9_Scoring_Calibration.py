@@ -71,17 +71,31 @@ except httpx.HTTPError as exc:
 
 st.progress(min(len(labels) / 30, 1.0), text=f"{len(labels)} / 30 labeled")
 
-try:
-    candidate_response = _get("/scoring/labeling-candidate")
-    candidate_response.raise_for_status()
-except httpx.HTTPError as exc:
-    st.error(f"Failed to load a candidate: {exc}")
-    candidate_response = None
+# Streamlit re-runs this whole script on every interaction, including the
+# run that processes a button click below -- fetching a *new* candidate at
+# the top of that same run (pick_labeling_candidate picks uniformly at
+# random) would silently label whatever job that fresh fetch happened to
+# return, not the job the user actually saw and clicked for. Caching the
+# candidate in session_state, and only clearing it after a label/un-label
+# actually changes the pool, keeps the displayed job and the labeled job
+# the same one across reruns.
+if "calibration_candidate" not in st.session_state:
+    try:
+        candidate_response = _get("/scoring/labeling-candidate")
+        candidate_response.raise_for_status()
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to load a candidate: {exc}")
+        candidate_response = None
+    if candidate_response is not None and candidate_response.status_code == 204:
+        st.session_state.calibration_candidate = None
+    elif candidate_response is not None:
+        st.session_state.calibration_candidate = candidate_response.json()
 
-if candidate_response is not None and candidate_response.status_code == 204:
+candidate = st.session_state.get("calibration_candidate")
+
+if candidate is None:
     st.info("No more eligible jobs to label right now.")
-elif candidate_response is not None:
-    candidate = candidate_response.json()
+else:
     st.markdown(f"### {candidate['title']} — {candidate['company']}")
     st.caption(f"{candidate['location']} · {candidate['engagement_type']}")
     with st.expander("Job description"):
@@ -101,13 +115,15 @@ elif candidate_response is not None:
     col1, col2, col3 = st.columns(3)
     for col, label in ((col1, "strong"), (col2, "maybe"), (col3, "no")):
         with col:
-            if st.button(label.capitalize(), key=f"label-{label}", use_container_width=True):
+            button_key = f"label-{label}-{candidate['job_group_id']}"
+            if st.button(label.capitalize(), key=button_key, use_container_width=True):
                 response = _put(
                     f"/scoring/labels/{candidate['job_group_id']}", {"label": label}
                 )
                 if response.status_code != 200:
                     st.error(f"Failed to save label: {response.text}")
                 else:
+                    del st.session_state["calibration_candidate"]
                     st.rerun()
 
 if labels:
@@ -116,8 +132,14 @@ if labels:
             col1, col2 = st.columns([4, 1])
             col1.write(f"{label['job_group_id']} — **{label['label']}**")
             if col2.button("Un-label", key=f"unlabel-{label['job_group_id']}"):
-                _delete(f"/scoring/labels/{label['job_group_id']}")
-                st.rerun()
+                response = _delete(f"/scoring/labels/{label['job_group_id']}")
+                if response.status_code != 200:
+                    st.error(f"Failed to un-label: {response.text}")
+                else:
+                    # Un-labeling can make this job eligible again --
+                    # discard the cached candidate so it's reconsidered.
+                    st.session_state.pop("calibration_candidate", None)
+                    st.rerun()
 
 st.divider()
 st.subheader("2. Fit & validate")
@@ -136,6 +158,21 @@ if history:
         f"Last saved: {history[0]['calibrated_at']} "
         f"(embedding model: {latest_embedding_model})"
     )
+    try:
+        current_model_response = _get("/scoring/embedding-model")
+        current_model_response.raise_for_status()
+        current_embedding_model = current_model_response.json()["embedding_model"]
+    except httpx.HTTPError as exc:
+        st.error(f"Failed to check the current embedding model: {exc}")
+        current_embedding_model = latest_embedding_model
+    if current_embedding_model != latest_embedding_model:
+        st.warning(
+            f"The embedding model has changed since your last saved "
+            f"calibration ({latest_embedding_model} → "
+            f"{current_embedding_model}) — PLAN.md Step 16 calls this out "
+            f"explicitly: different vectors, different distances, invalid "
+            f"weights. Recalibrating now is recommended."
+        )
 
 if len(labels) < 30:
     st.info(f"Label {30 - len(labels)} more job(s) to enable fitting.")
@@ -163,15 +200,8 @@ else:
         else:
             st.metric("Holdout agreement (Spearman)", f"{preview['holdout_agreement']:.3f}")
 
-        if history and preview["embedding_model"] != history[0]["embedding_model"]:
-            st.warning(
-                f"The embedding model has changed since your last saved "
-                f"calibration ({history[0]['embedding_model']} → "
-                f"{preview['embedding_model']}) — PLAN.md Step 16 calls "
-                f"this out explicitly: different vectors, different "
-                f"distances, invalid weights. Recalibrating now is "
-                f"recommended."
-            )
+        # The embedding-model staleness check runs proactively above, on
+        # every page load whenever history exists -- not repeated here.
 
         calibrated_by = st.text_input("Your name")
         if st.button("Save weights"):
