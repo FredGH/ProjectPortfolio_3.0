@@ -12,11 +12,12 @@ import uuid
 
 from app.dependencies import get_app_db_engine
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import Engine, text
 
 from core.db.session import get_current_user_id, session_scope
 from core.scoring.calibration import (
+    _COMPONENTS,
     CalibrationPreview,
     JobLabel,
     LabelCandidate,
@@ -28,6 +29,7 @@ from core.scoring.calibration import (
     write_label,
 )
 from core.scoring.preferences import UserPreference, read_preference, write_preference
+from core.settings import get_settings
 
 router = APIRouter()
 
@@ -126,12 +128,56 @@ class CalibrationPreviewModel(BaseModel):
     holdout_agreement: float | None
     embedding_model: str
 
+    @model_validator(mode="after")
+    def _weights_are_a_valid_distribution(self) -> CalibrationPreviewModel:
+        """Reject a malformed `weights` dict before it reaches the DB.
+
+        The server always produces a valid dict here (from
+        `split_and_fit`), but this model also parses the client-submitted
+        body of POST /scoring/calibration-runs — an unknown key there
+        would violate `scoring.weight`'s CHECK constraint (500), a
+        missing key would KeyError inside `blend.py` (500), and an
+        out-of-range or non-summing set of weights would be silently
+        saved and read by `score-blend` (including a `weight_sum == 0`
+        outcome, which needs everything to be non-negative to be
+        impossible). Rejecting all of that at the boundary, as a 422,
+        keeps `scoring.weight` always internally consistent.
+
+        Returns:
+            This instance, unchanged, once validated.
+
+        Raises:
+            ValueError: If `weights`'s keys aren't exactly the four
+                scoring components, any value is outside [0, 1], or the
+                values don't sum to 1 (within floating-point tolerance).
+        """
+        if set(self.weights) != set(_COMPONENTS):
+            raise ValueError(
+                f"weights must have exactly these keys: {sorted(_COMPONENTS)} "
+                f"(got {sorted(self.weights)})"
+            )
+        for component, value in self.weights.items():
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(
+                    f"weights[{component!r}] must be within [0, 1] (got {value})"
+                )
+        total = sum(self.weights.values())
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"weights must sum to 1.0 (got {total})")
+        return self
+
 
 class SaveCalibrationBody(BaseModel):
     """Request body for POST /scoring/calibration-runs."""
 
     preview: CalibrationPreviewModel
     calibrated_by: str | None = None
+
+
+class EmbeddingModelModel(BaseModel):
+    """Response body for GET /scoring/embedding-model."""
+
+    embedding_model: str
 
 
 class CalibrationRunModel(BaseModel):
@@ -346,6 +392,21 @@ def _read_calibration_history(
         )
         for row in rows
     ]
+
+
+@router.get("/scoring/embedding-model", response_model=EmbeddingModelModel)
+def get_embedding_model() -> EmbeddingModelModel:
+    """Return the embedding model currently configured for scoring.
+
+    This is the same `settings.embedding_model` value the pipeline stamps
+    onto every freshly-scored `scoring.job_score` row -- the UI compares
+    it against a saved calibration's `embedding_model` to warn when that
+    calibration has gone stale, without requiring a fit preview first.
+
+    Returns:
+        The configured embedding model name.
+    """
+    return EmbeddingModelModel(embedding_model=get_settings().embedding_model)
 
 
 @router.get("/scoring/calibration-runs", response_model=list[CalibrationRunModel])

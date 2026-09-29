@@ -171,6 +171,86 @@ class TestCalibrationRouter(unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["calibrated_by"], "zzfixture tester")
 
+    def _valid_preview(self, **overrides: object) -> dict:
+        preview = {
+            "fit_count": 20,
+            "holdout_count": 10,
+            "weights": {
+                "vector_similarity": 0.25,
+                "reranker": 0.25,
+                "skill_coverage": 0.25,
+                "llm_fit": 0.25,
+            },
+            "holdout_agreement": 0.5,
+            "embedding_model": "nomic-embed-text",
+        }
+        preview.update(overrides)
+        return preview
+
+    def test_save_calibration_rejects_weights_that_do_not_sum_to_one(self) -> None:
+        preview = self._valid_preview(
+            weights={
+                "vector_similarity": 0.9,
+                "reranker": 0.9,
+                "skill_coverage": 0.9,
+                "llm_fit": 0.9,
+            }
+        )
+        response = self.client.post(
+            "/scoring/calibration-runs", json={"preview": preview}
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_save_calibration_rejects_a_missing_component_key(self) -> None:
+        preview = self._valid_preview(
+            weights={
+                "vector_similarity": 0.4,
+                "reranker": 0.3,
+                "skill_coverage": 0.3,
+            }
+        )
+        response = self.client.post(
+            "/scoring/calibration-runs", json={"preview": preview}
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_save_calibration_rejects_an_unknown_component_key(self) -> None:
+        preview = self._valid_preview(
+            weights={
+                "vector_similarity": 0.25,
+                "reranker": 0.25,
+                "skill_coverage": 0.25,
+                "not_a_real_component": 0.25,
+            }
+        )
+        response = self.client.post(
+            "/scoring/calibration-runs", json={"preview": preview}
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_save_calibration_rejects_a_negative_weight(self) -> None:
+        preview = self._valid_preview(
+            weights={
+                "vector_similarity": 1.25,
+                "reranker": 0.25,
+                "skill_coverage": 0.25,
+                "llm_fit": -0.75,
+            }
+        )
+        response = self.client.post(
+            "/scoring/calibration-runs", json={"preview": preview}
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_get_embedding_model_returns_the_configured_model(self) -> None:
+        from core.settings import get_settings
+
+        response = self.client.get("/scoring/embedding-model")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(), {"embedding_model": get_settings().embedding_model}
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
