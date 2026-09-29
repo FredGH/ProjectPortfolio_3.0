@@ -198,6 +198,37 @@ class TestSpearmanAgreement(unittest.TestCase):
         agreement = _spearman_agreement(rows, labels, weights)
         self.assertIsNone(agreement)
 
+    def test_falls_back_to_equal_weights_when_every_fit_label_is_identical(
+        self,
+    ) -> None:
+        # Every candidate weight vector's Spearman agreement is undefined
+        # (None) against a constant label array — best_weights never gets
+        # set, so _grid_search_weights must hit its equal-weights fallback
+        # rather than returning None or raising.
+        rows = [
+            {
+                "vector_similarity": 0.9,
+                "reranker": 0.1,
+                "skill_coverage": 0.5,
+                "llm_fit": 0.3,
+            },
+            {
+                "vector_similarity": 0.2,
+                "reranker": 0.8,
+                "skill_coverage": 0.4,
+                "llm_fit": 0.6,
+            },
+            {
+                "vector_similarity": 0.5,
+                "reranker": 0.5,
+                "skill_coverage": 0.5,
+                "llm_fit": 0.5,
+            },
+        ]
+        labels = [1.0, 1.0, 1.0]
+        weights = _grid_search_weights(rows, labels)
+        self.assertEqual(weights, {c: 0.25 for c in _COMPONENTS})
+
 
 class TestSplitAndFit(unittest.TestCase):
     @classmethod
@@ -281,6 +312,35 @@ class TestSplitAndFit(unittest.TestCase):
             self._insert_labeled_job(i, "maybe")
         with self.assertRaises(ValueError):
             split_and_fit(self.app_engine, self.user_id)
+
+    def test_a_label_whose_job_score_row_is_gone_does_not_count_toward_30(
+        self,
+    ) -> None:
+        # A label survives its job_score row disappearing (e.g. a dbt
+        # rebuild changed job identity, or the job dropped out of the
+        # scored pool) -- the INNER JOIN in _SELECT_LABELED_JOB_SCORES
+        # means that label just isn't counted, not that the query breaks.
+        for i in range(30):
+            self._insert_labeled_job(i, "maybe")
+        with self.owner_engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM scoring.job_score "
+                    "WHERE user_id = :u AND job_group_id = 'zzfixture-fit-0'"
+                ),
+                {"u": self.user_id},
+            )
+        # 30 labels exist, but only 29 have a matching job_score row.
+        with self.assertRaises(ValueError):
+            split_and_fit(self.app_engine, self.user_id)
+
+        # With a 31st label (30 of which still have a matching row), the
+        # vanished one is silently excluded rather than crashing or being
+        # counted -- fit/holdout still split 20/10 from the 30 valid rows.
+        self._insert_labeled_job(30, "maybe")
+        preview = split_and_fit(self.app_engine, self.user_id)
+        self.assertEqual(preview.fit_count, 20)
+        self.assertEqual(preview.holdout_count, 10)
 
     def test_splits_30_labels_into_20_fit_and_10_holdout_with_no_overlap(
         self,
