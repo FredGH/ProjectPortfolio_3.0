@@ -333,11 +333,28 @@ The **Scoring Preferences** page (`apps/ui/app/pages/8_Scoring_Preferences.py`,
 `http://localhost:8501/Scoring_Preferences`) is where Stage 1's hard-filter
 settings (location/remote, contract type, IR35 exclusions, seniority band,
 salary/rate floor, posting age) are edited — it does not tune the Stage 2-4
-blend weights; those are calibrated per user by Step 16 (not built yet) and
-stored in `scoring.weight`, read automatically by `score-blend` with an
-equal-weight default until a user has been calibrated. The settings page needs
+blend weights; those are calibrated per user by Step 16 and stored in
+`scoring.weight`, read automatically by `score-blend` with an equal-weight
+default until a user has been calibrated. The settings page needs
 Step 22a's authentication to work in a browser today (`/whoami` and
 `/scoring/preferences` endpoints return 501 until then); this is a known,
 accepted, and documented gap, not a bug — the CLI pipeline works without it.
 Read the final blended scores from `fct_job_score` (with `embedding_model` and
 other scoring metadata), or direct from `scoring.job_score` before dbt runs.
+
+### Calibrating the scoring (Step 16)
+
+Until calibrated, every present scoring component is weighted equally —
+a placeholder, not a real preference. To calibrate:
+
+1. Open the **Scoring Calibration** page in the UI.
+2. Label at least 30 jobs as strong/maybe/no — only jobs that made it
+   through the full funnel (all four components present) are shown.
+3. Click **Preview calibration**, review the fitted weights and the
+   holdout agreement figure (a Spearman correlation computed only on 10
+   labels never used for fitting), then **Save weights**.
+4. Re-run `score-blend` for the new weights to take effect:
+   `docker compose run --rm pipeline score-blend --user-id <your-user-id>`
+
+Re-calibrate after any embedding-model change — the UI warns when the
+current embedding model differs from your last saved calibration's.
