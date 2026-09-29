@@ -189,11 +189,13 @@ class TestAnthropicAdapter(unittest.TestCase):
             model="claude-sonnet-5",
             max_tokens=4096,
             messages=[{"role": "user", "content": "say hello"}],
-            temperature=0.0,
         )
 
-    def test_complete_sends_temperature_but_not_seed(self) -> None:
-        """Verify Anthropic adapter forwards temperature but drops seed."""
+    def test_complete_does_not_forward_temperature_or_seed(self) -> None:
+        """Anthropic now hard-rejects `temperature` for current models (400:
+        'temperature is deprecated for this model') — verified live against
+        claude-sonnet-5. Both params are accepted by this method (Protocol
+        parity with OllamaAdapter) but neither reaches the API call."""
         fake_message = mock.Mock()
         fake_message.content = [mock.Mock(text="hello from claude")]
         fake_message.usage = mock.Mock(input_tokens=20, output_tokens=9)
@@ -210,7 +212,6 @@ class TestAnthropicAdapter(unittest.TestCase):
             model="claude-sonnet-5",
             max_tokens=4096,
             messages=[{"role": "user", "content": "say hello"}],
-            temperature=0.5,
         )
 
     def test_repeat_penalty_and_repeat_last_n_are_accepted_and_ignored(self) -> None:

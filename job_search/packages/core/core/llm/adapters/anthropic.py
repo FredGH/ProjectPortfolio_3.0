@@ -47,10 +47,15 @@ class AnthropicAdapter:
         Args:
             model: The Anthropic model identifier, e.g. "claude-sonnet-5".
             prompt: The prompt text.
-            temperature: Sampling temperature, passed straight through.
+            temperature: Ignored — verified live that the Anthropic Messages
+                API now hard-rejects an explicit `temperature` for current
+                models (400: "temperature is deprecated for this model", on
+                claude-sonnet-5). Accepted (not rejected) so this adapter
+                satisfies the same `LLMAdapter` Protocol as `OllamaAdapter`,
+                which does support it.
             seed: Ignored — the Anthropic Messages API has no seed
                 parameter, and Anthropic does not guarantee bit-for-bit
-                reproducibility even at `temperature=0`. Accepted (not
+                reproducibility even at a fixed temperature. Accepted (not
                 rejected) so this adapter satisfies the same `LLMAdapter`
                 Protocol as `OllamaAdapter`, which does support it.
             max_tokens: Cap on the reply's length; defaults to this adapter's
@@ -67,7 +72,6 @@ class AnthropicAdapter:
             model=model,
             max_tokens=max_tokens if max_tokens is not None else _MAX_TOKENS,
             messages=[{"role": "user", "content": prompt}],
-            temperature=temperature,
         )
         return LLMResponse(
             text=message.content[0].text,
