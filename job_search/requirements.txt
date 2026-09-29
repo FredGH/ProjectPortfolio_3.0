@@ -22,6 +22,13 @@ anthropic==0.40.0
 pyyaml==6.0.2
 python-ulid==1.1.0
 rapidfuzz==3.14.5
+# setuptools is not required directly, but dlt's dbt helper
+# (dlt.helpers.dbt) imports pkg_resources at module load time; recent
+# python:3.11-slim base images no longer bundle setuptools by default, so
+# without this pin `python -m app.cli` fails with ModuleNotFoundError on
+# any dlt-touching command, including ones that never use the dbt helper.
+# Pinned to llama-index-core's floor (>=80.9.0); dlt only needs >=65.6.0.
+setuptools==80.9.0
 dlt[postgres]==1.5.0
 fsspec==2024.10.0
 docling==2.126.0
