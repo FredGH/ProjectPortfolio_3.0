@@ -75,6 +75,13 @@ def compute_final_scores(app_engine: Engine, user_id: uuid.UUID) -> int:
                 for component in present
             }
             weight_sum = sum(weights.values())
+            if weight_sum == 0:
+                # A grid search can legitimately fit 0.0 for a component. If
+                # every component actually present on this job got fitted
+                # 0.0, weight_sum is 0 -- fall back to equal weight over the
+                # present components rather than dividing by zero.
+                weights = {component: 1.0 / len(present) for component in present}
+                weight_sum = 1.0
             final = sum(present[c] * weights[c] for c in present) / weight_sum
             conn.execute(
                 _UPDATE_FINAL,
