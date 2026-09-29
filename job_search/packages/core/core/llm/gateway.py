@@ -55,8 +55,10 @@ def complete(
             together with `provider` — an override that supplies one
             without the other resolves the missing one from task config,
             which is almost never what an eval-time caller wants.
-        temperature: Sampling temperature, passed straight through to the
-            adapter. Defaults to 0.0 for maximum reproducibility.
+        temperature: Sampling temperature, passed to the adapter. Defaults
+            to 0.0 for maximum reproducibility. Some Anthropic models
+            (see `AnthropicAdapter._MODELS_WITHOUT_TEMPERATURE`) reject an
+            explicit temperature and have it dropped by that adapter.
         seed: A fixed seed, passed straight through — honoured by Ollama,
             ignored by Anthropic (see `AnthropicAdapter.complete`).
         max_tokens: Cap on the reply's length in tokens. Forwarded to the
