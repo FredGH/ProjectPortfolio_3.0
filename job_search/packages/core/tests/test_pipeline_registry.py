@@ -4,7 +4,6 @@ is pure Python data plus imports."""
 from __future__ import annotations
 
 import ast
-import re
 import unittest
 from pathlib import Path
 

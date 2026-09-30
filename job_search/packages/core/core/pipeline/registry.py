@@ -9,12 +9,15 @@ README section for the requirement this enforces.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from sqlalchemy import Engine, text
 
+from core.db.session import session_scope
 from core.pipeline import stage_functions as sf
+from core.skills.review import count_unmapped
 
 
 @dataclass(frozen=True)
@@ -57,19 +60,20 @@ class ReviewStageSpec:
             page-path convention, e.g. "Dedup_Review_Queue").
         pending_count: Runs directly against the engine — no HTTP call
             to the existing page's own API endpoints, since those often
-            return the sample itself, not just a count.
+            return the sample itself, not just a count. Takes engine and
+            optional user_id (for RLS-scoped tables).
     """
 
     name: str
     depends_on: tuple[str, ...]
     page_path: str
-    pending_count: Callable[[Engine], int]
+    pending_count: Callable[[Engine, uuid.UUID | None], int]
 
 
-def _count_dedup_pending(engine: Engine) -> int:
+def _count_dedup_pending(engine: Engine, user_id: uuid.UUID | None) -> int:
     """Mirrors GET /dedup/pairs-to-label's own two-mode WHERE clause
     (apps/api/app/routers/dedup.py:124), as a plain COUNT(*) instead of
-    a stratified sample."""
+    a stratified sample. Global stage — user_id unused."""
     with engine.connect() as conn:
         thresholds_row = conn.execute(
             text(
@@ -101,14 +105,17 @@ def _count_dedup_pending(engine: Engine) -> int:
         ).scalar_one()
 
 
-def _count_categorisation_pending(engine: Engine) -> int:
+def _count_categorisation_pending(
+    engine: Engine, user_id: uuid.UUID | None
+) -> int:
     """Mirrors GET /classification/jobs-to-review's own
     total_unreviewed_count query (apps/api/app/routers/classification.py:225),
     unfiltered (no country_iso) and without the snippet-only-sources
     exclusion — a documented simplification: this count may run very
     slightly high relative to the review page's own filtered sample
     when snippet-only-source jobs are pending, which is acceptable for
-    a dashboard status number, not the review queue itself."""
+    a dashboard status number, not the review queue itself. Global
+    stage — user_id unused."""
     with engine.connect() as conn:
         return conn.execute(
             text(
@@ -120,25 +127,23 @@ def _count_categorisation_pending(engine: Engine) -> int:
         ).scalar_one()
 
 
-def _count_skill_review_pending(engine: Engine) -> int:
-    """Mirrors GET /skills/review/count's own query
-    (apps/api/app/routers/skills.py:230), unfiltered (no `q` search)."""
+def _count_skill_review_pending(engine: Engine, user_id: uuid.UUID | None) -> int:
+    """Reuses core.skills.review.count_unmapped — the exact same
+    function GET /skills/review/count itself calls — rather than a
+    hand-duplicated query, so this can never drift from the real
+    schema. Global stage — user_id unused."""
     with engine.connect() as conn:
-        return conn.execute(
-            text(
-                "SELECT count(*) FROM silver.job_skill_extraction AS e "
-                "LEFT JOIN silver.skill_mapping AS m "
-                "ON e.skill_string_normalized = m.skill_string_normalized "
-                "WHERE m.skill_string_normalized IS NULL"
-            )
-        ).scalar_one()
+        return count_unmapped(conn)
 
 
-def _count_scoring_calibration_pending(engine: Engine) -> int:
-    """How many more labels the current user needs before 30 — read
-    directly (COUNT, not the full read_labels list this counts don't
-    need)."""
-    with engine.connect() as conn:
+def _count_scoring_calibration_pending(
+    engine: Engine, user_id: uuid.UUID | None
+) -> int:
+    """How many more labels the current user needs before 30. Must run
+    through session_scope with the real user_id — scoring.job_label is
+    RLS-scoped, so a bare engine.connect() silently returns 0 for every
+    user rather than each user's own count."""
+    with session_scope(engine, user_id=user_id) as conn:
         labeled = conn.execute(
             text("SELECT count(*) FROM scoring.job_label")
         ).scalar_one()
@@ -220,7 +225,7 @@ STAGES: dict[str, StageSpec] = {
         per_user=True, run=sf.run_score_similarity,
     ),
     "score-skill-coverage": StageSpec(
-        name="score-skill-coverage", depends_on=("chunk-embed-cv", "llm-map-skills"),
+        name="score-skill-coverage", depends_on=("map-cv-skills", "llm-map-skills"),
         per_user=True, run=sf.run_score_skill_coverage,
     ),
     "score-llm-rerank": StageSpec(
