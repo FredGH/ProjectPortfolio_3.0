@@ -5,8 +5,9 @@ implemented and tested separately (see `test_extraction_run_loop.py`)
 since it needs a fake LLM adapter and a fake Ollama transport rather
 than just live Postgres.
 
-silver.skill_extraction_run has at most one `status = 'running'` row,
-enforced by a partial unique index (migration 0025) — `start_run`
+Run state lives in pipeline.stage_run (migration 0031), which has at
+most one `status = 'running'` row system-wide, enforced by a partial
+unique index — `start_run` delegates to core.pipeline.runner, which
 relies on that index's IntegrityError rather than an application-level
 lock. See docs/superpowers/specs/2026-09-23-skill-extraction-batch-runner-design.md.
 """
@@ -22,7 +23,6 @@ from datetime import datetime
 
 import httpx
 from sqlalchemy import Engine, text
-from sqlalchemy.exc import IntegrityError
 
 from core.llm.types import LLMAdapter
 from core.pipeline import runner as pipeline_runner
@@ -174,33 +174,21 @@ def start_run(
     """
     total_pending = count_pending_jobs(engine, sources=sources, countries=countries)
     params = {"sources": sources, "countries": countries}
-    if total_pending == 0:
-        run_id = pipeline_runner.start_run(
-            engine, stage=_STAGE_NAME, user_id=None, params=params
-        )
-        # Immediately finish it as completed -- start_run always inserts
-        # `running`, and this scope has nothing to do.
-        with engine.begin() as conn:
-            conn.execute(
-                text(
-                    "UPDATE pipeline.stage_run SET status = 'completed', "
-                    "progress_total = 0, finished_at = now(), updated_at = now() "
-                    "WHERE run_id = :run_id"
-                ),
-                {"run_id": run_id},
-            )
-        return run_id, 0
+    # Single-statement insert (progress_total set atomically). A zero-pending
+    # scope is inserted already `completed`, which the partial unique index on
+    # status = 'running' does not block -- so it never conflicts with an
+    # active run.
     try:
         run_id = pipeline_runner.start_run(
-            engine, stage=_STAGE_NAME, user_id=None, params=params
+            engine,
+            stage=_STAGE_NAME,
+            user_id=None,
+            params=params,
+            progress_total=total_pending,
+            status="completed" if total_pending == 0 else "running",
         )
     except pipeline_runner.RunAlreadyActive as exc:
         raise RunAlreadyActive("an extraction run is already active") from exc
-    with engine.begin() as conn:
-        conn.execute(
-            text("UPDATE pipeline.stage_run SET progress_total = :total WHERE run_id = :run_id"),
-            {"total": total_pending, "run_id": run_id},
-        )
     return run_id, total_pending
 
 
@@ -314,6 +302,8 @@ _FINISH_RUN = text(
 
 def _record_progress(engine: Engine, run_id: uuid.UUID, extracted: int, failed: int) -> None:
     """Add counts onto a run's running totals and bump its `updated_at`.
+
+    Called after every job, so `updated_at` doubles as the run's heartbeat.
 
     Args:
         engine: The app-role engine.

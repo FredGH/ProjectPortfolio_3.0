@@ -232,7 +232,7 @@ writes raw strings; until they are mapped to ESCO they can't reach the review
 list or the job–skill bridge. So a completed run maps its new strings itself
 (what `map-skills` does — `core.skills.post_run_mapping`, in-process, as the
 app DB role, embedding against the same Ollama location the run used) and shows
-the outcome on the page and in `silver.skill_extraction_run.mapping_summary`,
+the outcome on the page and in `pipeline.stage_run.result` (`mapping_summary`),
 e.g. *"Mapped 4 new skill string(s) to ESCO; 25 need review."* A stopped or
 failed run skips it (so Stop stays instant, and a broken Ollama isn't asked to
 embed); the next completed run maps everything still unmapped. A mapping error
@@ -256,7 +256,7 @@ The API itself cannot start that container — that would need the Docker socket
 mounted into it — so the refresh is one command after a run rather than
 automatic.
 
-A run's status is persisted in `silver.skill_extraction_run`, so it survives
+A run's status is persisted in `pipeline.stage_run`, so it survives
 an API restart rather than silently vanishing. **Known limitation:** if the
 API process dies or restarts while a run is `running`, the row is left
 `running` — **Stop only sets a flag for the run's own loop to notice, and if
@@ -268,7 +268,7 @@ verifiably gone, never on a run that is still alive (that would let a second
 run start alongside it):
 
 ```sql
-UPDATE silver.skill_extraction_run SET status = 'cancelled', finished_at = now(), updated_at = now() WHERE run_id = '<id>';
+UPDATE pipeline.stage_run SET status = 'cancelled', finished_at = now(), updated_at = now() WHERE run_id = '<id>';
 ```
 
 Not built: clearing an orphaned run automatically (from the API on startup, or

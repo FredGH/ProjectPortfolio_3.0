@@ -77,8 +77,10 @@ _COLUMNS = (
 _SELECT_ACTIVE = text(f"SELECT {_COLUMNS} FROM pipeline.stage_run WHERE status = 'running'")
 _SELECT_ONE = text(f"SELECT {_COLUMNS} FROM pipeline.stage_run WHERE run_id = :run_id")
 _INSERT_RUNNING = text(
-    "INSERT INTO pipeline.stage_run (stage, user_id, status, params) "
-    "VALUES (:stage, :user_id, 'running', CAST(:params AS jsonb)) RETURNING run_id"
+    "INSERT INTO pipeline.stage_run "
+    "(stage, user_id, status, params, progress_total, finished_at) "
+    "VALUES (:stage, :user_id, :status, CAST(:params AS jsonb), :progress_total, "
+    "CASE WHEN :status = 'running' THEN NULL ELSE now() END) RETURNING run_id"
 )
 _REQUEST_CANCEL = text(
     "UPDATE pipeline.stage_run SET cancel_requested = TRUE "
@@ -117,15 +119,29 @@ def _row_to_snapshot(row) -> RunSnapshot:
 
 
 def start_run(
-    engine: Engine, *, stage: str, user_id: uuid.UUID | None, params: dict
+    engine: Engine,
+    *,
+    stage: str,
+    user_id: uuid.UUID | None,
+    params: dict,
+    progress_total: int | None = None,
+    status: str = "running",
 ) -> uuid.UUID:
-    """Insert a `running` row for `stage`.
+    """Insert a row for `stage` in a single statement.
+
+    Normally `running`. A caller may instead insert an already-terminal
+    row (e.g. `completed` for a zero-work run) -- such a row does not
+    take the one-active-run lock, and gets `finished_at` set.
 
     Args:
         engine: The app-role engine.
         stage: Which stage this run is for.
         user_id: Who this run is scoped to, or None for a global stage.
         params: This run's input arguments, stored as JSONB.
+        progress_total: Items expected, or None. Set in the same
+            statement as the insert so a crash can't leave a `running`
+            row without it.
+        status: "running" (default) or a terminal status.
 
     Returns:
         The new run's id.
@@ -140,7 +156,13 @@ def start_run(
         with engine.begin() as conn:
             return conn.execute(
                 _INSERT_RUNNING,
-                {"stage": stage, "user_id": user_id, "params": json.dumps(params)},
+                {
+                    "stage": stage,
+                    "user_id": user_id,
+                    "params": json.dumps(params),
+                    "progress_total": progress_total,
+                    "status": status,
+                },
             ).scalar_one()
     except IntegrityError as exc:
         constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
