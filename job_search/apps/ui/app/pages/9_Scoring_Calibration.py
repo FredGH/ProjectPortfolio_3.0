@@ -36,6 +36,21 @@ not a real preference.
 
 Saved weights take effect the next time the pipeline's `score-blend`
 step runs for you.
+
+**"No more eligible jobs to label right now"?** This means too few jobs
+currently have all four components present at once — `score-similarity`
+only gives a reranker score to its top N jobs (200 by default), which
+may barely overlap with `score-skill-coverage`'s and `score-llm-rerank`'s
+own top-K pools. Widen the pool from the CLI:
+
+```bash
+docker compose run --rm pipeline score-similarity --user-id <id> --top-n 800
+docker compose run --rm pipeline score-llm-rerank --user-id <id>
+docker compose run --rm pipeline score-blend --user-id <id>
+```
+
+`score-llm-rerank` makes real (small, but non-zero) Anthropic API calls
+for up to 50 jobs each time — avoid running it more than you need to.
 """
     )
 

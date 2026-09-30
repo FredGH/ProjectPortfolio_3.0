@@ -358,3 +358,16 @@ a placeholder, not a real preference. To calibrate:
 
 Re-calibrate after any embedding-model change — the UI warns when the
 current embedding model differs from your last saved calibration's.
+
+If the page says "No more eligible jobs to label right now," too few
+jobs currently have all four scoring components present — `score-similarity`,
+`score-skill-coverage`, and `score-llm-rerank` each independently top-K
+their own pool (200/all/50 by default), and those pools may barely
+overlap. Widen `score-similarity`'s pool and re-run downstream:
+```bash
+docker compose run --rm pipeline score-similarity --user-id <id> --top-n 800
+docker compose run --rm pipeline score-llm-rerank --user-id <id>
+docker compose run --rm pipeline score-blend --user-id <id>
+```
+`score-llm-rerank` makes real Anthropic API calls (up to 50 jobs) each
+run — don't repeat it more than needed.
