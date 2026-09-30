@@ -120,6 +120,27 @@ class TestBlend(unittest.TestCase):
         # The stored llm_fit_score column itself stays human-readable 0-100.
         self.assertAlmostEqual(float(stored_llm_fit_score), 40.0, places=4)
 
+    def test_a_zero_weight_on_every_present_component_falls_back_to_equal_weight(
+        self,
+    ) -> None:
+        # A grid search can legitimately fit 0.0 for a component -- if every
+        # component actually present on a job got fitted 0.0 (e.g. a job
+        # with only vector_similarity, and vector_similarity's fitted
+        # weight is 0.0), weight_sum must not be 0 and divide-by-zero the
+        # whole run. Falls back to equal weight over present components,
+        # the same fallback used when no weights are fitted at all.
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO scoring.weight (user_id, component, weight) "
+                    "VALUES (:u, 'vector_similarity', 0.0), "
+                    "(:u, 'skill_coverage', 0.0)"
+                ),
+                {"u": self.user_id},
+            )
+        compute_final_scores(self.app_engine, self.user_id)
+        self.assertAlmostEqual(self._final(), 0.7, places=4)
+
     def test_a_fitted_weight_overrides_the_default(self) -> None:
         with self.owner.begin() as conn:
             conn.execute(
