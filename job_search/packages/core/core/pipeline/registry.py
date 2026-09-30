@@ -150,6 +150,11 @@ def _count_scoring_calibration_pending(
     return max(0, 30 - labeled)
 
 
+def _extract_job_skills_not_via_run_stage(params: dict) -> dict:
+    """Guard: extract-job-skills is driven by its own runner, never run_stage."""
+    raise RuntimeError("extract-job-skills must be started via extraction_run")
+
+
 STAGES: dict[str, StageSpec] = {
     "enrich-engagement-terms": StageSpec(
         name="enrich-engagement-terms", depends_on=(), per_user=False,
@@ -189,12 +194,13 @@ STAGES: dict[str, StageSpec] = {
     ),
     "extract-job-skills": StageSpec(
         name="extract-job-skills", depends_on=(), per_user=False,
-        # Migrated onto pipeline.stage_run in Task 8 -- placeholder run
-        # callable is never actually invoked via run_stage (Task 6);
-        # this stage's own runner (core.skills.extraction_run) drives it
-        # directly. Present here only so the dependency graph and
-        # completeness test see it.
-        run=lambda params: {},
+        # Never run via run_stage: POST /pipeline/stages/extract-job-skills/run
+        # special-cases this stage and drives core.skills.extraction_run
+        # (start_run + run_loop) directly. The callable below exists only
+        # so the dependency graph and completeness test see the stage,
+        # and raises so a mistaken run_stage call can't record a false
+        # "completed".
+        run=_extract_job_skills_not_via_run_stage,
     ),
     "map-skills": StageSpec(
         name="map-skills", depends_on=("embed-esco", "extract-job-skills"),

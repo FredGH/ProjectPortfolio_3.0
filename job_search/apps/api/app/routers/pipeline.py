@@ -7,12 +7,25 @@ from __future__ import annotations
 
 import uuid
 
-from app.dependencies import get_app_db_engine
+from collections.abc import Callable
+
+import httpx
+from app.dependencies import (
+    NATIVE_OLLAMA_BASE_URL,
+    get_app_db_engine,
+    get_http_client,
+    get_llm_adapters,
+    get_native_ollama_adapter,
+    get_ollama_http_client,
+    get_owner_db_engine,
+    get_skill_mapping_hook_factory,
+)
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import Engine, text
 
-from core.db.session import session_scope
+from core.llm.task_config import load_task_config
+from core.llm.types import LLMAdapter
 from core.pipeline.registry import REVIEW_STAGES, STAGES
 from core.pipeline.runner import (
     RunAlreadyActive,
@@ -23,6 +36,10 @@ from core.pipeline.runner import (
     start_run,
 )
 from core.pipeline.staleness import compute_stage_states
+from core.settings import get_settings
+from core.skills.extraction_run import RunAlreadyActive as ExtractionRunAlreadyActive
+from core.skills.extraction_run import run_loop
+from core.skills.extraction_run import start_run as start_extraction_run
 
 router = APIRouter()
 
@@ -138,18 +155,19 @@ def get_stages(
 
 
 @router.get("/pipeline/users", response_model=list[UserModel])
-def get_users(engine: Engine = Depends(get_app_db_engine)) -> list[UserModel]:
+def get_users(engine: Engine = Depends(get_owner_db_engine)) -> list[UserModel]:
     """List every app_user, for the dashboard's user-picker.
 
     Args:
-        engine: Injected via `get_app_db_engine`.
+        engine: Injected via `get_owner_db_engine`.
 
     Returns:
         Every user, ordered by email.
     """
-    # app_user is RLS-isolated: under the app role with no user context
-    # (nil-UUID GUC) this returns zero rows -- see the task-9 report.
-    with session_scope(engine) as conn:
+    # app_user is RLS-isolated, so the app role would see zero rows here;
+    # the owner-role engine (injected above) lists every user. Only the
+    # three picker columns are selected.
+    with engine.connect() as conn:
         rows = conn.execute(
             text("SELECT id, email, display_name FROM app_user ORDER BY email")
         ).all()
@@ -157,6 +175,78 @@ def get_users(engine: Engine = Depends(get_app_db_engine)) -> list[UserModel]:
         UserModel(id=row.id, email=row.email, display_name=row.display_name)
         for row in rows
     ]
+
+
+def _start_extraction(
+    params: dict,
+    background_tasks: BackgroundTasks,
+    engine: Engine,
+    adapters: dict[str, LLMAdapter],
+    native_ollama_adapter: LLMAdapter,
+    http_client: httpx.Client,
+    ollama_http_client: httpx.Client,
+    mapping_hook_factory: Callable[..., Callable[[], str]],
+) -> RunResponseModel:
+    """Start an extract-job-skills run and schedule its `run_loop`.
+
+    Args:
+        params: Request `params`: optional `sources`, `countries`,
+            `ollama_location` ("docker" or "native").
+        background_tasks: FastAPI's background-task scheduler.
+        engine: The app-role engine.
+        adapters: LLM adapters (Docker Ollama by default).
+        native_ollama_adapter: Adapter for Ollama on the host machine.
+        http_client: Used for the Ollama unload call between sub-batches.
+        ollama_http_client: Used for the post-run mapping's embeddings.
+        mapping_hook_factory: Builds the post-completion skill mapping.
+
+    Returns:
+        The new run's id.
+
+    Raises:
+        fastapi.HTTPException: `400` for an invalid `ollama_location`;
+            `409` if a run is already active.
+    """
+    sources = params.get("sources")
+    countries = params.get("countries")
+    location = params.get("ollama_location", "docker")
+    if location not in ("docker", "native"):
+        raise HTTPException(
+            status_code=400, detail="ollama_location must be 'docker' or 'native'"
+        )
+    try:
+        run_id, total_pending = start_extraction_run(
+            engine, sources=sources, countries=countries
+        )
+    except ExtractionRunAlreadyActive as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if total_pending > 0:
+        task_config = load_task_config("skill_extraction")
+        if location == "native":
+            ollama_base_url = NATIVE_OLLAMA_BASE_URL
+            adapters = {**adapters, "ollama": native_ollama_adapter}
+        else:
+            ollama_base_url = get_settings().ollama_base_url
+        background_tasks.add_task(
+            run_loop,
+            run_id,
+            engine,
+            adapters=adapters,
+            http_client=http_client,
+            ollama_base_url=ollama_base_url,
+            model=task_config.model,
+            provider=task_config.provider,
+            sources=sources,
+            countries=countries,
+            map_skills=mapping_hook_factory(
+                engine,
+                ollama_base_url=ollama_base_url,
+                embedding_model=get_settings().embedding_model,
+                http_client=ollama_http_client,
+                llm_adapters=adapters,
+            ),
+        )
+    return RunResponseModel(run_id=run_id)
 
 
 @router.post(
@@ -167,8 +257,22 @@ def run_pipeline_stage(
     body: RunRequestBody,
     background_tasks: BackgroundTasks,
     engine: Engine = Depends(get_app_db_engine),
+    adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
+    native_ollama_adapter: LLMAdapter = Depends(get_native_ollama_adapter),
+    http_client: httpx.Client = Depends(get_http_client),
+    ollama_http_client: httpx.Client = Depends(get_ollama_http_client),
+    mapping_hook_factory: Callable[..., Callable[[], str]] = Depends(
+        get_skill_mapping_hook_factory
+    ),
 ) -> RunResponseModel:
     """Start a stage's run in the background.
+
+    `extract-job-skills` is special-cased: it runs through
+    `core.skills.extraction_run` (its own `run_loop`, with Ollama
+    location selection and post-run skill mapping), not `run_stage`.
+    Its `params` may carry `sources`, `countries` (lists or omitted) and
+    `ollama_location` ("docker" default, or "native"). The extra
+    Ollama/mapping dependencies are used only by that branch.
 
     Args:
         stage: The stage name, must be a key of `STAGES`.
@@ -178,8 +282,7 @@ def run_pipeline_stage(
         engine: Injected via `get_app_db_engine`.
 
     Returns:
-        The new run's id, `202` (FastAPI's default for a POST that
-        returns 200 by model — Task 10's UI treats any 2xx as started).
+        The new run's id, with status `202` (set on the route decorator).
 
     Raises:
         fastapi.HTTPException: `404` if `stage` is unknown; `400` if
@@ -199,6 +302,17 @@ def run_pipeline_stage(
         raise HTTPException(status_code=400, detail=f"{stage} requires user_id")
     if not spec.per_user and body.user_id is not None:
         raise HTTPException(status_code=400, detail=f"{stage} is not a per-user stage")
+    if stage == "extract-job-skills":
+        return _start_extraction(
+            body.params,
+            background_tasks,
+            engine,
+            adapters,
+            native_ollama_adapter,
+            http_client,
+            ollama_http_client,
+            mapping_hook_factory,
+        )
     params = dict(body.params)
     if spec.per_user:
         params["user_id"] = body.user_id

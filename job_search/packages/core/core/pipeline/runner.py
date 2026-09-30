@@ -159,7 +159,7 @@ def start_run(
                 {
                     "stage": stage,
                     "user_id": user_id,
-                    "params": json.dumps(params),
+                    "params": json.dumps(params, default=str),
                     "progress_total": progress_total,
                     "status": status,
                 },
