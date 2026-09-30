@@ -144,8 +144,8 @@ class TestExtractionRunsApi(unittest.TestCase):
         with self.owner.connect() as conn:
             status, extracted = conn.execute(
                 text(
-                    "SELECT status, extracted_count "
-                    "FROM silver.skill_extraction_run WHERE run_id = :r"
+                    "SELECT status, COALESCE(progress_current, 0) AS extracted_count "
+                    "FROM pipeline.stage_run WHERE run_id = :r"
                 ),
                 {"r": run_id},
             ).one()

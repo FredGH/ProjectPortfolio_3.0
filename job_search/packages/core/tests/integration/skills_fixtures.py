@@ -115,10 +115,7 @@ def purge_fixtures(engine: Engine) -> None:
         )
         conn.execute(text("DELETE FROM esco.skill WHERE skill_id LIKE 'fixture-%'"))
         conn.execute(
-            text(
-                "DELETE FROM silver.skill_extraction_run "
-                "WHERE sources && ARRAY['zzfixture-source', 'zzfixture-nonexistent']"
-            )
+            text("DELETE FROM pipeline.stage_run WHERE stage = 'extract-job-skills'")
         )
 
 

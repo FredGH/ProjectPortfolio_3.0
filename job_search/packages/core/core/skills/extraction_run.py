@@ -25,6 +25,7 @@ from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
 
 from core.llm.types import LLMAdapter
+from core.pipeline import runner as pipeline_runner
 from core.skills.write_job_skills import (
     CURRENT_PROMPT_VERSION,
     count_pending_jobs,
@@ -102,33 +103,8 @@ class FilterOptions:
     countries: list[str]
 
 
-_COLUMNS = (
-    "run_id, status, sources, countries, total_pending, extracted_count, "
-    "failed_count, cancel_requested, error_message, started_at, updated_at, "
-    "finished_at, mapping_summary"
-)
-_SELECT_ACTIVE = text(
-    f"SELECT {_COLUMNS} FROM silver.skill_extraction_run WHERE status = 'running'"
-)
-_SELECT_ONE = text(
-    f"SELECT {_COLUMNS} FROM silver.skill_extraction_run WHERE run_id = :run_id"
-)
-_INSERT_RUNNING = text(
-    "INSERT INTO silver.skill_extraction_run "
-    "(status, sources, countries, total_pending) "
-    "VALUES ('running', CAST(:sources AS text[]), CAST(:countries AS text[]), "
-    ":total_pending) RETURNING run_id"
-)
-_INSERT_COMPLETED = text(
-    "INSERT INTO silver.skill_extraction_run "
-    "(status, sources, countries, total_pending, finished_at) "
-    "VALUES ('completed', CAST(:sources AS text[]), CAST(:countries AS text[]), "
-    "0, now()) RETURNING run_id"
-)
-_REQUEST_CANCEL = text(
-    "UPDATE silver.skill_extraction_run SET cancel_requested = TRUE "
-    "WHERE run_id = :run_id AND status = 'running'"
-)
+_STAGE_NAME = "extract-job-skills"
+
 _SELECT_PENDING_SOURCES = text(
     "SELECT DISTINCT js.apply_source_name AS value "
     "FROM silver.job_survivorship AS js "
@@ -149,44 +125,38 @@ _SELECT_PENDING_COUNTRIES = text(
 )
 
 
-def _row_to_status(row) -> RunStatus:
-    """Convert one `silver.skill_extraction_run` row into a `RunStatus`.
-
-    Args:
-        row: A row from `_SELECT_ACTIVE` or `_SELECT_ONE`.
-
-    Returns:
-        The row as a `RunStatus`.
-    """
+def _row_to_status(snapshot: pipeline_runner.RunSnapshot) -> RunStatus:
+    """Convert a generic RunSnapshot into this module's own RunStatus
+    shape -- the field names below are what 7_Skill_Extraction_Runner.py
+    already reads; only their source (params/result vs. dedicated
+    columns) changed."""
+    params = snapshot.params
+    result = snapshot.result or {}
     return RunStatus(
-        run_id=row.run_id,
-        status=row.status,
-        sources=row.sources,
-        countries=row.countries,
-        total_pending=row.total_pending,
-        extracted_count=row.extracted_count,
-        failed_count=row.failed_count,
-        cancel_requested=row.cancel_requested,
-        error_message=row.error_message,
-        started_at=row.started_at,
-        updated_at=row.updated_at,
-        finished_at=row.finished_at,
-        mapping_summary=row.mapping_summary,
+        run_id=snapshot.run_id,
+        status=snapshot.status,
+        sources=params.get("sources"),
+        countries=params.get("countries"),
+        total_pending=snapshot.progress_total or 0,
+        extracted_count=snapshot.progress_current or 0,
+        failed_count=result.get("failed_count", 0),
+        cancel_requested=snapshot.cancel_requested,
+        error_message=snapshot.error_message,
+        started_at=snapshot.started_at,
+        updated_at=snapshot.updated_at,
+        finished_at=snapshot.finished_at,
+        mapping_summary=result.get("mapping_summary"),
     )
 
 
 def start_run(
-    engine: Engine,
-    *,
-    sources: list[str] | None,
-    countries: list[str] | None,
+    engine: Engine, *, sources: list[str] | None, countries: list[str] | None,
 ) -> tuple[uuid.UUID, int]:
     """Start a new extraction run for the given scope.
 
     If nothing is pending in scope, the run is recorded already
-    `completed` (so it shows in history and the caller can tell "ran,
-    found nothing to do" apart from "never started") and the caller
-    should not schedule `run_loop` for it.
+    `completed` so the caller can tell "ran, found nothing to do" apart
+    from "never started" and should not schedule `run_loop` for it.
 
     Args:
         engine: The app-role engine.
@@ -199,36 +169,57 @@ def start_run(
         `(run_id, total_pending)`.
 
     Raises:
-        RunAlreadyActive: If a run is already `running`.
+        RunAlreadyActive: If any pipeline run is already active
+            (system-wide lock — see core.pipeline.runner).
     """
     total_pending = count_pending_jobs(engine, sources=sources, countries=countries)
     params = {"sources": sources, "countries": countries}
     if total_pending == 0:
+        run_id = pipeline_runner.start_run(
+            engine, stage=_STAGE_NAME, user_id=None, params=params
+        )
+        # Immediately finish it as completed -- start_run always inserts
+        # `running`, and this scope has nothing to do.
         with engine.begin() as conn:
-            run_id = conn.execute(_INSERT_COMPLETED, params).scalar_one()
+            conn.execute(
+                text(
+                    "UPDATE pipeline.stage_run SET status = 'completed', "
+                    "progress_total = 0, finished_at = now(), updated_at = now() "
+                    "WHERE run_id = :run_id"
+                ),
+                {"run_id": run_id},
+            )
         return run_id, 0
     try:
-        with engine.begin() as conn:
-            run_id = conn.execute(
-                _INSERT_RUNNING, {**params, "total_pending": total_pending}
-            ).scalar_one()
-    except IntegrityError as exc:
+        run_id = pipeline_runner.start_run(
+            engine, stage=_STAGE_NAME, user_id=None, params=params
+        )
+    except pipeline_runner.RunAlreadyActive as exc:
         raise RunAlreadyActive("an extraction run is already active") from exc
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE pipeline.stage_run SET progress_total = :total WHERE run_id = :run_id"),
+            {"total": total_pending, "run_id": run_id},
+        )
     return run_id, total_pending
 
 
 def get_active_run(engine: Engine) -> RunStatus | None:
-    """Return the currently active run, if any.
+    """Return the currently active extraction run, if any.
 
     Args:
         engine: The app-role engine.
 
     Returns:
-        The active run's status, or None if no run is active.
+        The active run's status, or None if no extraction run is
+        active (note: the system-wide lock means at most one run of
+        ANY stage can be active — this returns None if a different
+        stage currently holds it, since that isn't an extraction run).
     """
-    with engine.connect() as conn:
-        row = conn.execute(_SELECT_ACTIVE).first()
-    return _row_to_status(row) if row is not None else None
+    snapshot = pipeline_runner.get_active_run(engine)
+    if snapshot is None or snapshot.stage != _STAGE_NAME:
+        return None
+    return _row_to_status(snapshot)
 
 
 def get_run(engine: Engine, run_id: uuid.UUID) -> RunStatus | None:
@@ -241,13 +232,12 @@ def get_run(engine: Engine, run_id: uuid.UUID) -> RunStatus | None:
     Returns:
         The run's status, or None if `run_id` is unknown.
     """
-    with engine.connect() as conn:
-        row = conn.execute(_SELECT_ONE, {"run_id": run_id}).first()
-    return _row_to_status(row) if row is not None else None
+    snapshot = pipeline_runner.get_run(engine, run_id)
+    return _row_to_status(snapshot) if snapshot is not None else None
 
 
 def request_cancel(engine: Engine, run_id: uuid.UUID) -> None:
-    """Ask a running run to stop after its current sub-batch.
+    """Ask a running run to stop after its current job.
 
     Args:
         engine: The app-role engine.
@@ -257,10 +247,10 @@ def request_cancel(engine: Engine, run_id: uuid.UUID) -> None:
         RunNotFound: If `run_id` is unknown, or names a run that is
             not currently `running`.
     """
-    with engine.begin() as conn:
-        result = conn.execute(_REQUEST_CANCEL, {"run_id": run_id})
-    if result.rowcount == 0:
-        raise RunNotFound(f"no active run with id {run_id}")
+    try:
+        pipeline_runner.request_cancel(engine, run_id)
+    except pipeline_runner.RunNotFound as exc:
+        raise RunNotFound(str(exc)) from exc
 
 
 def list_filter_options(engine: Engine) -> FilterOptions:
@@ -305,41 +295,34 @@ DEFAULT_PAUSE_SECONDS = 10.0
 scripts/extract_in_batches.sh."""
 
 _UPDATE_PROGRESS = text(
-    "UPDATE silver.skill_extraction_run SET "
-    "extracted_count = extracted_count + :extracted, "
-    "failed_count = failed_count + :failed, "
-    "updated_at = now() "
-    "WHERE run_id = :run_id"
+    "UPDATE pipeline.stage_run SET "
+    "progress_current = COALESCE(progress_current, 0) + :extracted, "
+    "result = jsonb_set(COALESCE(result, '{}'::jsonb), '{failed_count}', "
+    "to_jsonb(COALESCE((result ->> 'failed_count')::int, 0) + :failed)), "
+    "updated_at = now() WHERE run_id = :run_id"
 )
 _SELECT_CANCEL_REQUESTED = text(
-    "SELECT cancel_requested FROM silver.skill_extraction_run " "WHERE run_id = :run_id"
+    "SELECT cancel_requested FROM pipeline.stage_run WHERE run_id = :run_id"
 )
 _FINISH_RUN = text(
-    "UPDATE silver.skill_extraction_run SET status = :status, "
-    "error_message = :error_message, mapping_summary = :mapping_summary, "
-    "finished_at = now(), updated_at = now() "
+    "UPDATE pipeline.stage_run SET status = :status, error_message = :error_message, "
+    "result = COALESCE(result, '{}'::jsonb) || jsonb_build_object('mapping_summary', "
+    "CAST(:mapping_summary AS text)), finished_at = now(), updated_at = now() "
     "WHERE run_id = :run_id"
 )
 
 
-def _record_progress(
-    engine: Engine, run_id: uuid.UUID, extracted: int, failed: int
-) -> None:
+def _record_progress(engine: Engine, run_id: uuid.UUID, extracted: int, failed: int) -> None:
     """Add counts onto a run's running totals and bump its `updated_at`.
-
-    Called after every job, so `updated_at` doubles as the run's heartbeat.
 
     Args:
         engine: The app-role engine.
         run_id: The run to update.
-        extracted: Jobs to add to `extracted_count`.
-        failed: Jobs to add to `failed_count`.
+        extracted: Jobs to add to progress_current.
+        failed: Jobs to add to result.failed_count.
     """
     with engine.begin() as conn:
-        conn.execute(
-            _UPDATE_PROGRESS,
-            {"run_id": run_id, "extracted": extracted, "failed": failed},
-        )
+        conn.execute(_UPDATE_PROGRESS, {"run_id": run_id, "extracted": extracted, "failed": failed})
 
 
 def _is_cancel_requested(engine: Engine, run_id: uuid.UUID) -> bool:
@@ -357,12 +340,8 @@ def _is_cancel_requested(engine: Engine, run_id: uuid.UUID) -> bool:
 
 
 def _finish_run(
-    engine: Engine,
-    run_id: uuid.UUID,
-    *,
-    status: str,
-    error_message: str | None = None,
-    mapping_summary: str | None = None,
+    engine: Engine, run_id: uuid.UUID, *, status: str,
+    error_message: str | None = None, mapping_summary: str | None = None,
 ) -> None:
     """Mark a run terminal.
 
@@ -371,16 +350,13 @@ def _finish_run(
         run_id: The run to finish.
         status: "completed", "cancelled", or "failed".
         error_message: Set when `status == "failed"`.
-        mapping_summary: What the automatic skill mapping did, or why it did
-            not run; None when the run was started without mapping.
+        mapping_summary: What the automatic skill mapping did, or None.
     """
     with engine.begin() as conn:
         conn.execute(
             _FINISH_RUN,
             {
-                "run_id": run_id,
-                "status": status,
-                "error_message": error_message,
+                "run_id": run_id, "status": status, "error_message": error_message,
                 "mapping_summary": mapping_summary,
             },
         )
