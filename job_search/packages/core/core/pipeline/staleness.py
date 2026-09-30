@@ -69,7 +69,10 @@ def compute_stage_states(engine: Engine, *, user_id: UUID | None) -> dict[str, S
         engine: The app-role engine.
         user_id: Whose per-user stage runs to read; ignored (matched
             against NULL) for global stages, since a global stage's
-            rows always have `user_id IS NULL`.
+            rows always have `user_id IS NULL`. When `user_id=None`,
+            per-user stages report "never completed" (fail-closed
+            behavior — a per-user stage called with no user ID has no
+            rows to inspect, so all such stages appear blocked).
 
     Returns:
         Every `STAGES` name mapped to its `StageState`.

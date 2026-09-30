@@ -30,7 +30,7 @@ class TestComputeStageStates(unittest.TestCase):
                 text(
                     "DELETE FROM pipeline.stage_run WHERE stage IN "
                     "('cluster-jobs', 'compute-survivorship', 'classify-jobs', "
-                    "'compute-title-similarity-scores')"
+                    "'compute-title-similarity-scores', 'score-blend')"
                 )
             )
 
@@ -104,6 +104,42 @@ class TestComputeStageStates(unittest.TestCase):
                 conn.execute(text("DELETE FROM pipeline.stage_run WHERE stage = 'score-blend'"))
                 for user_id in (user_a, user_b):
                     conn.execute(text("DELETE FROM app_user WHERE id = :id"), {"id": user_id})
+
+    def test_last_status_reflects_the_most_recent_attempt_even_if_it_failed(self) -> None:
+        now = datetime.now(timezone.utc)
+        self._insert_completed("cluster-jobs", now - timedelta(hours=2))
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO pipeline.stage_run (stage, user_id, status, finished_at) "
+                    "VALUES ('cluster-jobs', NULL, 'failed', :finished_at)"
+                ),
+                {"finished_at": now},
+            )
+        states = compute_stage_states(self.app_engine, user_id=None)
+        # last_completed_at still reflects the completed run, not the later failure
+        self.assertIsNotNone(states["cluster-jobs"].last_completed_at)
+        self.assertEqual(states["cluster-jobs"].last_status, "failed")
+
+    def test_user_id_none_against_a_per_user_stage_reports_never_completed(self) -> None:
+        user_id = uuid.uuid4()
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO app_user (id, email, display_name) "
+                    "VALUES (:id, :email, 'zzfixture staleness user')"
+                ),
+                {"id": user_id, "email": f"zzfixture-{user_id}@example.com"},
+            )
+        try:
+            now = datetime.now(timezone.utc)
+            self._insert_completed("score-blend", now, user_id=user_id)
+            states = compute_stage_states(self.app_engine, user_id=None)
+            self.assertIsNone(states["score-blend"].last_completed_at)
+        finally:
+            with self.owner.begin() as conn:
+                conn.execute(text("DELETE FROM pipeline.stage_run WHERE stage = 'score-blend'"))
+                conn.execute(text("DELETE FROM app_user WHERE id = :id"), {"id": user_id})
 
 
 if __name__ == "__main__":
