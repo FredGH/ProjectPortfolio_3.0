@@ -1,0 +1,110 @@
+"""Integration tests for core.pipeline.staleness against live Postgres,
+using fixture pipeline.stage_run rows with controlled finished_at
+timestamps -- this is the "timestamp-order comparison" the spec calls
+for, proven with real rows rather than a fake dependency graph, since
+the real STAGES graph's shape (does the review-stage skip actually
+land on the right automated stage) is exactly what needs proving.
+"""
+
+from __future__ import annotations
+
+import unittest
+import uuid
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import text
+from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
+
+from core.pipeline.staleness import compute_stage_states
+
+
+class TestComputeStageStates(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.owner = live_owner_engine()
+        cls.app_engine = live_app_engine()
+
+    def tearDown(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM pipeline.stage_run WHERE stage IN "
+                    "('cluster-jobs', 'compute-survivorship', 'classify-jobs', "
+                    "'compute-title-similarity-scores')"
+                )
+            )
+
+    def _insert_completed(self, stage: str, finished_at: datetime, user_id=None) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO pipeline.stage_run (stage, user_id, status, finished_at) "
+                    "VALUES (:stage, :user_id, 'completed', :finished_at)"
+                ),
+                {"stage": stage, "user_id": user_id, "finished_at": finished_at},
+            )
+
+    def test_a_stage_that_never_ran_is_blocked_if_its_dependency_never_ran(self) -> None:
+        states = compute_stage_states(self.app_engine, user_id=None)
+        self.assertIsNone(states["classify-jobs"].last_completed_at)
+        self.assertTrue(states["classify-jobs"].is_blocked)
+        self.assertFalse(states["classify-jobs"].is_stale)
+
+    def test_a_stage_is_stale_when_its_dependency_ran_more_recently(self) -> None:
+        now = datetime.now(timezone.utc)
+        self._insert_completed("cluster-jobs", now - timedelta(hours=2))
+        self._insert_completed("compute-survivorship", now - timedelta(hours=3))
+        states = compute_stage_states(self.app_engine, user_id=None)
+        self.assertTrue(states["compute-survivorship"].is_stale)
+        self.assertEqual(states["compute-survivorship"].stale_because, "cluster-jobs")
+        self.assertFalse(states["cluster-jobs"].is_stale)
+
+    def test_a_stage_is_fresh_when_it_ran_after_its_dependency(self) -> None:
+        now = datetime.now(timezone.utc)
+        self._insert_completed("cluster-jobs", now - timedelta(hours=3))
+        self._insert_completed("compute-survivorship", now - timedelta(hours=2))
+        states = compute_stage_states(self.app_engine, user_id=None)
+        self.assertFalse(states["compute-survivorship"].is_stale)
+        self.assertFalse(states["compute-survivorship"].is_blocked)
+
+    def test_staleness_skips_through_a_review_stage_to_the_automated_dependency(self) -> None:
+        # classify-jobs depends on compute-survivorship in STAGES; the
+        # Categorisation Review stage sits between classify-jobs and
+        # nothing downstream in STAGES (review stages are terminal in
+        # the automated graph) -- this proves classify-jobs's own
+        # staleness is computed against compute-survivorship directly,
+        # never against a review stage (which has no timestamp at all).
+        now = datetime.now(timezone.utc)
+        self._insert_completed("compute-survivorship", now - timedelta(hours=1))
+        self._insert_completed("classify-jobs", now)
+        states = compute_stage_states(self.app_engine, user_id=None)
+        self.assertFalse(states["classify-jobs"].is_stale)
+
+    def test_per_user_stage_staleness_is_scoped_to_that_user(self) -> None:
+        user_a = uuid.uuid4()
+        user_b = uuid.uuid4()
+        with self.owner.begin() as conn:
+            for user_id in (user_a, user_b):
+                conn.execute(
+                    text(
+                        "INSERT INTO app_user (id, email, display_name) "
+                        "VALUES (:id, :email, 'zzfixture staleness user')"
+                    ),
+                    {"id": user_id, "email": f"zzfixture-{user_id}@example.com"},
+                )
+        try:
+            now = datetime.now(timezone.utc)
+            self._insert_completed("score-blend", now, user_id=user_a)
+            states_a = compute_stage_states(self.app_engine, user_id=user_a)
+            states_b = compute_stage_states(self.app_engine, user_id=user_b)
+            self.assertIsNotNone(states_a["score-blend"].last_completed_at)
+            self.assertIsNone(states_b["score-blend"].last_completed_at)
+        finally:
+            with self.owner.begin() as conn:
+                conn.execute(text("DELETE FROM pipeline.stage_run WHERE stage = 'score-blend'"))
+                for user_id in (user_a, user_b):
+                    conn.execute(text("DELETE FROM app_user WHERE id = :id"), {"id": user_id})
+
+
+if __name__ == "__main__":
+    unittest.main()
