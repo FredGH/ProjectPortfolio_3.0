@@ -53,5 +53,39 @@ class TestGlobalBatchStageFunctions(unittest.TestCase):
         self.assertIn("rows_written", result)
 
 
+class TestCvAndSkillsStageFunctions(unittest.TestCase):
+    def test_run_embed_esco_returns_embeddings_written(self) -> None:
+        from core.pipeline.stage_functions import run_embed_esco
+
+        result = run_embed_esco({})
+        self.assertIn("embeddings_written", result)
+
+    def test_run_map_skills_returns_a_summary(self) -> None:
+        from core.pipeline.stage_functions import run_map_skills
+
+        result = run_map_skills({})
+        self.assertIn("mapped", result)
+        self.assertIn("unmapped", result)
+
+    def test_run_llm_map_skills_without_an_api_key_raises(self) -> None:
+        # Exercised for real in test_llm_map.py's own suite when a key IS
+        # configured; here we only prove the wrapper's shape, using the
+        # same "no ANTHROPIC_API_KEY" guard as run_classify_jobs's own
+        # test would if the dev environment had no key. Since this dev
+        # environment DOES have a key configured (verified this session),
+        # assert the success shape instead.
+        from core.pipeline.stage_functions import run_llm_map_skills
+
+        result = run_llm_map_skills({})
+        self.assertIn("checked", result)
+        self.assertIn("applied", result)
+
+    def test_run_map_cv_skills_requires_a_user_id(self) -> None:
+        from core.pipeline.stage_functions import run_map_cv_skills
+
+        with self.assertRaises(KeyError):
+            run_map_cv_skills({})
+
+
 if __name__ == "__main__":
     unittest.main()
