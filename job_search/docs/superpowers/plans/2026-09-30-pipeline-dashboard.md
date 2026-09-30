@@ -1139,8 +1139,15 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
+This test parses `apps/pipeline/app/cli.py`'s real source, which the
+`api` container never mounts (`apps/pipeline/app` and `apps/api/app`
+are separate top-level packages by design) — run it via the
+`pipeline` service instead, whose image already mounts both
+`packages/core` and `apps/pipeline/app` (its own `ENTRYPOINT` is
+`python -m app.cli`, so override it to run a plain `python` command):
+
 ```bash
-docker compose exec -T api python -m unittest tests.test_pipeline_registry -v
+docker compose run --rm --entrypoint python pipeline -m unittest tests.test_pipeline_registry -v
 ```
 
 Expected: FAIL/ERROR — `core.pipeline.registry` doesn't exist yet.
@@ -1416,8 +1423,10 @@ REVIEW_STAGES: dict[str, ReviewStageSpec] = {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
+Same container as Step 2, for the same reason:
+
 ```bash
-docker compose exec -T api python -m unittest tests.test_pipeline_registry -v
+docker compose run --rm --entrypoint python pipeline -m unittest tests.test_pipeline_registry -v
 ```
 
 Expected: 8/8 PASS.
@@ -2958,8 +2967,15 @@ confirm green.
 
 - [ ] **Step 7: Run the full scoring/pipeline regression suite**
 
+`test_pipeline_registry.py` needs the `pipeline` container (see Task
+5's Step 2/4 — it reads `apps/pipeline/app/cli.py`'s source, which
+`api` doesn't mount) — named explicitly here rather than a glob, to
+avoid ambiguity with `test_pipeline_runner.py`/`test_pipeline_router.py`
+(a naive "exclude names starting with r" glob wrongly catches both):
+
 ```bash
-docker compose exec -T api python -m unittest discover -s tests -p "test_pipeline_*.py" -v
+docker compose run --rm --entrypoint python pipeline -m unittest tests.test_pipeline_registry -v
+docker compose exec -T api python -m unittest tests.integration.test_pipeline_schema tests.integration.test_pipeline_stage_functions tests.integration.test_pipeline_runner tests.integration.test_pipeline_staleness tests.integration.test_pipeline_router -v
 docker compose exec -T api python -m unittest tests.integration.test_extraction_run tests.integration.test_extraction_runs_router -v
 ```
 
@@ -3339,8 +3355,12 @@ the same way.
 
 - [ ] **Step 2: Full regression suite**
 
+`test_pipeline_registry.py` needs the `pipeline` container (see Task
+5's Step 2/4), run separately from the rest:
+
 ```bash
-docker compose exec -T api python -m unittest discover -s tests -p "test_pipeline_*.py" -v
+docker compose run --rm --entrypoint python pipeline -m unittest tests.test_pipeline_registry -v
+docker compose exec -T api python -m unittest tests.integration.test_pipeline_schema tests.integration.test_pipeline_stage_functions tests.integration.test_pipeline_runner tests.integration.test_pipeline_staleness tests.integration.test_pipeline_router -v
 docker compose exec -T api python -m unittest tests.integration.test_extraction_run tests.integration.test_extraction_runs_router -v
 docker compose exec -T api python -m unittest discover -s tests -p "test_scoring_*.py" -v
 ```
