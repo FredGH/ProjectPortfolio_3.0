@@ -75,8 +75,8 @@ already extracted are safe. **Known limitation:** Stop only asks a live
 run to stop — if the process itself is gone (e.g. after an API
 restart), nothing is left to act on that request, so the row stays
 stuck. Clearing it currently needs a manual database update, e.g.:
-`UPDATE silver.skill_extraction_run SET status = 'cancelled',
-finished_at = now(), updated_at = now() WHERE run_id = '<id>';` —
+`UPDATE pipeline.stage_run SET status='cancelled', finished_at=now(),
+updated_at=now() WHERE run_id='<id>'` —
 before a new run can start.
 """
 
@@ -148,7 +148,7 @@ def _render_active_run(run: dict) -> None:
     """Render a running (or possibly stalled) run's progress.
 
     Args:
-        run: A `GET /skills/extraction-runs/active` response body.
+        run: A `GET /skills/extraction-runs/{run_id}` response body.
     """
     total = run["total_pending"] or 1
     done = run["extracted_count"] + run["failed_count"]
@@ -167,7 +167,7 @@ def _render_active_run(run: dict) -> None:
             "running to act on the request — see the User Guide."
         )
     if st.button("Stop", key="stop_run"):
-        response = _post(f"/skills/extraction-runs/{run['run_id']}/cancel")
+        response = _post("/pipeline/stages/extract-job-skills/cancel")
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -245,11 +245,13 @@ def _render_start_form() -> None:
     )
     if st.button("Start", key="start_run", disabled=pending["pending"] == 0):
         response = _post(
-            "/skills/extraction-runs",
+            "/pipeline/stages/extract-job-skills/run",
             {
-                "sources": sources or None,
-                "countries": countries or None,
-                "ollama_location": ollama_location,
+                "params": {
+                    "sources": sources or None,
+                    "countries": countries or None,
+                    "ollama_location": ollama_location,
+                }
             },
         )
         if response.status_code == 409:
@@ -276,7 +278,7 @@ with st.expander("User Guide", expanded=False):
 # is active into `extraction_run_id` so the rest of the flow is unified.
 if "extraction_run_id" not in st.session_state:
     try:
-        active_run = _get("/skills/extraction-runs/active")
+        active_run = _get("/pipeline/stages/extract-job-skills/active")
     except httpx.HTTPError as exc:
         st.error(f"Failed to load run status: {exc}")
         active_run = None
