@@ -37,6 +37,13 @@ from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import load_esco
 from core.skills.llm_map import propose_matches
 from core.skills.mapper import map_pending
+from core.scoring.blend import compute_final_scores
+from core.scoring.cv_chunking import chunk_and_embed_cv
+from core.scoring.hard_filters import run_hard_filters
+from core.scoring.job_chunking import chunk_and_embed_jobs
+from core.scoring.llm_rerank import run_llm_rerank
+from core.scoring.similarity import run_similarity
+from core.scoring.skill_coverage import run_skill_coverage
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -221,3 +228,99 @@ def run_map_cv_skills(params: dict) -> dict:
         "mapped": result.mapped, "unmapped": result.unmapped, "changed": result.changed,
         "truth_base_version": result.new_version,
     }
+
+
+def run_score_filter_jobs(params: dict) -> dict:
+    """Wraps `_cmd_score_filter_jobs` (cli.py:1076)."""
+    app_engine = build_engine(get_settings().app_database_url)
+    n = run_hard_filters(app_engine, params["user_id"], limit=params.get("limit"))
+    return {"considered": n}
+
+
+def run_chunk_embed_jobs(params: dict) -> dict:
+    """Wraps `_cmd_chunk_embed_jobs` (cli.py:1092). Shared/global -- no
+    user_id, matches every other user's eligible jobs too."""
+    settings = get_settings()
+    engine = build_engine(settings.database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        n = chunk_and_embed_jobs(
+            engine, embed=_build_embedder(http_client), embedding_model=settings.embedding_model,
+            limit=params.get("limit"),
+        )
+    finally:
+        http_client.close()
+    return {"jobs_chunked": n}
+
+
+def run_chunk_embed_cv(params: dict) -> dict:
+    """Wraps `_cmd_chunk_embed_cv` (cli.py:1117)."""
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=30.0)
+    try:
+        n = chunk_and_embed_cv(
+            app_engine, params["user_id"], embed=_build_embedder(http_client),
+            embedding_model=settings.embedding_model, refresh=params.get("refresh", False),
+        )
+    finally:
+        http_client.close()
+    return {"chunks_written": n}
+
+
+def _build_reranker():
+    """Same shape as cli.py's own `_build_reranker` helper."""
+    from sentence_transformers import CrossEncoder
+
+    model = CrossEncoder("BAAI/bge-reranker-base")
+
+    def rerank(cv_text: str, jd_text: str) -> float:
+        return float(model.predict([(cv_text, jd_text)])[0])
+
+    return rerank
+
+
+def run_score_similarity(params: dict) -> dict:
+    """Wraps `_cmd_score_similarity` (cli.py:1163). `params["top_n"]`
+    optional, defaults to 200 (score-similarity's own CLI default,
+    per cli.py:1570) — a dashboard user who hits "no eligible jobs"
+    widens this the same way the README's CLI mitigation already
+    documents."""
+    app_engine = build_engine(get_settings().app_database_url)
+    summary = run_similarity(
+        app_engine, params["user_id"], rerank=_build_reranker(), top_n=params.get("top_n", 200),
+    )
+    return {"jobs_scored": summary.jobs_scored, "mismatched": summary.mismatched}
+
+
+def run_score_skill_coverage(params: dict) -> dict:
+    """Wraps `_cmd_score_skill_coverage` (cli.py:1184)."""
+    app_engine = build_engine(get_settings().app_database_url)
+    n = run_skill_coverage(app_engine, params["user_id"])
+    return {"jobs_scored": n}
+
+
+def run_score_llm_rerank(params: dict) -> dict:
+    """Wraps `_cmd_score_llm_rerank` (cli.py:1204). `params["top_n"]`
+    optional, defaults to 50 (the plan's own cap, `TOP_N` in
+    llm_rerank.py)."""
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise RuntimeError("score-llm-rerank: ANTHROPIC_API_KEY is not set")
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=120.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        summary = run_llm_rerank(
+            app_engine, params["user_id"], adapters=adapters, top_n=params.get("top_n", 50),
+        )
+    finally:
+        http_client.close()
+    return {"jobs_checked": summary.checked, "jobs_reranked": summary.reranked}
+
+
+def run_score_blend(params: dict) -> dict:
+    """Wraps `_cmd_score_blend` (cli.py:1233)."""
+    app_engine = build_engine(get_settings().app_database_url)
+    n = compute_final_scores(app_engine, params["user_id"])
+    return {"jobs_blended": n}

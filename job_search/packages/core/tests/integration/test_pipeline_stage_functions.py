@@ -87,5 +87,25 @@ class TestCvAndSkillsStageFunctions(unittest.TestCase):
             run_map_cv_skills({})
 
 
+class TestScoringFunnelStageFunctions(unittest.TestCase):
+    def test_run_chunk_embed_jobs_returns_jobs_chunked(self) -> None:
+        from core.pipeline.stage_functions import run_chunk_embed_jobs
+
+        result = run_chunk_embed_jobs({})
+        self.assertIn("jobs_chunked", result)
+
+    def test_run_score_filter_jobs_requires_a_user_id(self) -> None:
+        from core.pipeline.stage_functions import run_score_filter_jobs
+
+        with self.assertRaises(KeyError):
+            run_score_filter_jobs({})
+
+    def test_run_score_blend_requires_a_user_id(self) -> None:
+        from core.pipeline.stage_functions import run_score_blend
+
+        with self.assertRaises(KeyError):
+            run_score_blend({})
+
+
 if __name__ == "__main__":
     unittest.main()
