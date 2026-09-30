@@ -1027,7 +1027,6 @@ is pure Python data plus imports."""
 from __future__ import annotations
 
 import ast
-import re
 import unittest
 from pathlib import Path
 
@@ -1168,12 +1167,15 @@ README section for the requirement this enforces.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from sqlalchemy import Engine, text
 
+from core.db.session import session_scope
 from core.pipeline import stage_functions as sf
+from core.skills.review import count_unmapped
 
 
 @dataclass(frozen=True)
@@ -1188,8 +1190,21 @@ class StageSpec:
         per_user: Whether this stage's runs are scoped by user_id.
         run: The wrapper from `stage_functions` — takes a `params` dict,
             returns a result dict, raises on failure.
-        has_run_button: False for `ingest`/`run-evals` — see this
-            plan's Global Constraints.
+        has_run_button: Reserved for a future stage that needs to be in
+            the dependency graph without a UI trigger. No current entry
+            sets this False — `ingest`/`run-evals` (the two stages this
+            plan's Global Constraints exclude from the Run-button
+            surface) are absent from `STAGES` entirely instead (see
+            `_EXCLUDED_FROM_RUN_BUTTON` in the test file), because a
+            `has_run_button=False` entry would still need a completed
+            run to ever exist for its dependents to not show
+            permanently "blocked" -- and nothing can ever complete a
+            run for a stage with no Run button. Stages that referenced
+            `ingest` as a dependency (`enrich-engagement-terms`,
+            `extract-job-skills`) have no dependency there instead, for
+            the same reason: ingestion happens outside this dashboard's
+            tracking, so gating on it observing a completion it can
+            never see would be a permanent false "blocked".
     """
 
     name: str
@@ -1216,19 +1231,26 @@ class ReviewStageSpec:
             page-path convention, e.g. "Dedup_Review_Queue").
         pending_count: Runs directly against the engine — no HTTP call
             to the existing page's own API endpoints, since those often
-            return the sample itself, not just a count.
+            return the sample itself, not just a count. Always takes
+            `(engine, user_id)` even though 3 of the 4 real review
+            stages are global and ignore `user_id` entirely --
+            `scoring-calibration`'s count is inherently per-user
+            (`scoring.job_label` is RLS-scoped), and a uniform call
+            site (Task 9's router calls every stage's `pending_count`
+            the same way) is simpler than special-casing the one
+            per-user stage.
     """
 
     name: str
     depends_on: tuple[str, ...]
     page_path: str
-    pending_count: Callable[[Engine], int]
+    pending_count: Callable[[Engine, uuid.UUID | None], int]
 
 
-def _count_dedup_pending(engine: Engine) -> int:
+def _count_dedup_pending(engine: Engine, user_id: uuid.UUID | None) -> int:
     """Mirrors GET /dedup/pairs-to-label's own two-mode WHERE clause
     (apps/api/app/routers/dedup.py:124), as a plain COUNT(*) instead of
-    a stratified sample."""
+    a stratified sample. Global stage -- `user_id` unused."""
     with engine.connect() as conn:
         thresholds_row = conn.execute(
             text(
@@ -1260,14 +1282,15 @@ def _count_dedup_pending(engine: Engine) -> int:
         ).scalar_one()
 
 
-def _count_categorisation_pending(engine: Engine) -> int:
+def _count_categorisation_pending(engine: Engine, user_id: uuid.UUID | None) -> int:
     """Mirrors GET /classification/jobs-to-review's own
     total_unreviewed_count query (apps/api/app/routers/classification.py:225),
     unfiltered (no country_iso) and without the snippet-only-sources
     exclusion — a documented simplification: this count may run very
     slightly high relative to the review page's own filtered sample
     when snippet-only-source jobs are pending, which is acceptable for
-    a dashboard status number, not the review queue itself."""
+    a dashboard status number, not the review queue itself. Global
+    stage -- `user_id` unused."""
     with engine.connect() as conn:
         return conn.execute(
             text(
@@ -1279,25 +1302,26 @@ def _count_categorisation_pending(engine: Engine) -> int:
         ).scalar_one()
 
 
-def _count_skill_review_pending(engine: Engine) -> int:
-    """Mirrors GET /skills/review/count's own query
-    (apps/api/app/routers/skills.py:230), unfiltered (no `q` search)."""
+def _count_skill_review_pending(engine: Engine, user_id: uuid.UUID | None) -> int:
+    """Reuses `core.skills.review.count_unmapped` — the exact same
+    function GET /skills/review/count itself calls — rather than a
+    hand-duplicated query, so this can never drift from the real
+    schema (`silver.skill_mapping`'s real PK is `raw_norm`, filtered by
+    `review_status`; there is no `skill_string_normalized` column on
+    any table, unlike an earlier draft of this function assumed).
+    Global stage -- `user_id` unused."""
     with engine.connect() as conn:
-        return conn.execute(
-            text(
-                "SELECT count(*) FROM silver.job_skill_extraction AS e "
-                "LEFT JOIN silver.skill_mapping AS m "
-                "ON e.skill_string_normalized = m.skill_string_normalized "
-                "WHERE m.skill_string_normalized IS NULL"
-            )
-        ).scalar_one()
+        return count_unmapped(conn)
 
 
-def _count_scoring_calibration_pending(engine: Engine) -> int:
+def _count_scoring_calibration_pending(engine: Engine, user_id: uuid.UUID | None) -> int:
     """How many more labels the current user needs before 30 — read
     directly (COUNT, not the full read_labels list this counts don't
-    need)."""
-    with engine.connect() as conn:
+    need). `scoring.job_label` is RLS-scoped per user (migration 0029),
+    so this must run through `session_scope` with the real `user_id`,
+    not a bare `engine.connect()` — otherwise RLS silently returns 0
+    rows for every user rather than each user's own count."""
+    with session_scope(engine, user_id=user_id) as conn:
         labeled = conn.execute(
             text("SELECT count(*) FROM scoring.job_label")
         ).scalar_one()
@@ -1305,12 +1329,12 @@ def _count_scoring_calibration_pending(engine: Engine) -> int:
 
 
 STAGES: dict[str, StageSpec] = {
-    "ingest": StageSpec(
-        name="ingest", depends_on=(), per_user=False, run=lambda params: {},
-        has_run_button=False,
-    ),
     "enrich-engagement-terms": StageSpec(
-        name="enrich-engagement-terms", depends_on=("ingest",), per_user=False,
+        name="enrich-engagement-terms", depends_on=(), per_user=False,
+        # No dependency on `ingest` -- see StageSpec.has_run_button's
+        # docstring: ingest is excluded from STAGES entirely (never a
+        # completed run to depend on), so this would otherwise show
+        # "blocked" forever.
         run=sf.run_enrich_engagement_terms,
     ),
     "compute-blocking-keys": StageSpec(
@@ -1346,7 +1370,7 @@ STAGES: dict[str, StageSpec] = {
         run=sf.run_embed_esco,
     ),
     "extract-job-skills": StageSpec(
-        name="extract-job-skills", depends_on=("ingest",), per_user=False,
+        name="extract-job-skills", depends_on=(), per_user=False,
         # Migrated onto pipeline.stage_run in Task 8 -- placeholder run
         # callable is never actually invoked via run_stage (Task 6);
         # this stage's own runner (core.skills.extraction_run) drives it
@@ -1383,7 +1407,13 @@ STAGES: dict[str, StageSpec] = {
         per_user=True, run=sf.run_score_similarity,
     ),
     "score-skill-coverage": StageSpec(
-        name="score-skill-coverage", depends_on=("chunk-embed-cv", "llm-map-skills"),
+        name="score-skill-coverage", depends_on=("map-cv-skills", "llm-map-skills"),
+        # NOT chunk-embed-cv: core/scoring/skill_coverage.py's own module
+        # docstring says this stage is "independent of stages 2/2b" --
+        # it reads only the CV truth base (map-cv-skills' output) and
+        # silver.silver__bridge_job_skill, never scoring.cv_chunk_embedding
+        # (chunk-embed-cv's only output). Verified by reading
+        # run_skill_coverage directly, not assumed.
         per_user=True, run=sf.run_score_skill_coverage,
     ),
     "score-llm-rerank": StageSpec(
@@ -1393,10 +1423,6 @@ STAGES: dict[str, StageSpec] = {
     "score-blend": StageSpec(
         name="score-blend", depends_on=("score-llm-rerank",), per_user=True,
         run=sf.run_score_blend,
-    ),
-    "run-evals": StageSpec(
-        name="run-evals", depends_on=(), per_user=False, run=lambda params: {},
-        has_run_button=False,
     ),
 }
 
@@ -2808,7 +2834,7 @@ def get_stages(
         result.append(
             ReviewStageStatusModel(
                 name=spec.name, page_path=spec.page_path,
-                pending_count=spec.pending_count(engine),
+                pending_count=spec.pending_count(engine, user_id),
             )
         )
     return result
