@@ -33,11 +33,7 @@ from core.llm.types import LLMAdapter
 from core.settings import get_settings
 from core.skills.aliases import sync_seed_aliases
 from core.skills.cv_map import map_cv_skills
-from core.skills.esco_embed import (
-    embed_esco_skills,
-    embedding_coverage,
-    embedding_coverage_warning,
-)
+from core.skills.esco_embed import embed_esco_skills
 from core.skills.esco_load import load_esco
 from core.skills.llm_map import propose_matches
 from core.skills.mapper import map_pending
