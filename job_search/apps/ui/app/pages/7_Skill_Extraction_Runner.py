@@ -180,7 +180,7 @@ def _render_terminal_run(run: dict) -> None:
     """Render a finished run's terminal state and a way to dismiss it.
 
     A run's terminal state (including its error, for a `failed` run)
-    was previously never shown — `GET /active` only returns a
+    was previously never shown — the `/active` endpoint only returns a
     `running` row, so the moment a run ended the UI had nothing left
     to poll and silently fell back to the start form. This renders
     whatever `GET /skills/extraction-runs/{run_id}` last returned for

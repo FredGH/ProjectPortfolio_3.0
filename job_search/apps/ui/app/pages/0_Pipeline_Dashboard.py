@@ -7,6 +7,7 @@ replacing any of them.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from datetime import datetime, UTC
 
 import httpx
@@ -14,13 +15,21 @@ import streamlit as st
 
 from core.settings import get_settings
 
+# A running stage that reports progress (progress_total set, so it
+# heartbeats updated_at) and whose updated_at is older than this is shown
+# as possibly stalled. Stages without progress reporting only touch
+# updated_at at start/finish, so no staleness signal is shown for them --
+# a long single-call stage would otherwise false-positive. (A comment,
+# not a bare string: Streamlit "magic" would render a bare string.)
 STALLED_THRESHOLD_SECONDS = 120
-"""A running stage whose progress heartbeat (updated_at) is older than
-this is shown as possibly stalled -- same signal the original
-skill-extraction runner used (2min while progress was still coarse
-per-sub-batch; kept at 2min here since most stages here report no
-fine-grained progress at all, so a shorter threshold would false-
-positive on any normal multi-minute stage)."""
+
+_PAGES_DIR = Path(__file__).parent
+_REVIEW_PAGE_FILES = {
+    "Dedup_Review_Queue": "2_Dedup_Review_Queue.py",
+    "Categorisation_Review": "4_Categorisation_Review.py",
+    "Skill_Review": "6_Skill_Review.py",
+    "Scoring_Calibration": "9_Scoring_Calibration.py",
+}
 
 st.set_page_config(page_title="Pipeline Dashboard", layout="wide")
 st.title("Pipeline Dashboard")
@@ -43,6 +52,10 @@ Only one pipeline action runs at a time, system-wide — starting a
 second stage while one is already running is refused, not queued.
 """
     )
+
+_flash = st.session_state.pop("pipeline_flash", None)
+if _flash:
+    st.error(_flash)
 
 _settings = get_settings()
 _base = _settings.api_base_url
@@ -166,7 +179,14 @@ for phase, stage_keys in _PHASES.items():
         if stage["kind"] == "review":
             col1.write(f"**{stage['name']}**")
             col2.write(f"{stage['pending_count']} pending")
-            col3.page_link(f"pages/{stage['page_path']}.py", label="Open →")
+            page_file = _REVIEW_PAGE_FILES.get(stage["page_path"])
+            if page_file is not None and (_PAGES_DIR / page_file).exists():
+                try:
+                    col3.page_link(f"pages/{page_file}", label="Open →")
+                except Exception:  # noqa: BLE001 - never let a link abort the page
+                    col3.caption(f"Open the {stage['name']} page from the sidebar")
+            else:
+                col3.caption(f"Open the {stage['name']} page from the sidebar")
             continue
 
         col1.write(
@@ -200,14 +220,21 @@ for phase, stage_keys in _PHASES.items():
             if updated_at.tzinfo is None:
                 updated_at = updated_at.replace(tzinfo=UTC)
             stalled_seconds = (datetime.now(UTC) - updated_at).total_seconds()
-            if stalled_seconds > STALLED_THRESHOLD_SECONDS:
+            if active["progress_total"] and stalled_seconds > STALLED_THRESHOLD_SECONDS:
                 col3.warning(
                     f"possibly stalled (no progress for "
                     f"{int(stalled_seconds // 60)}m) — "
                     "the API may have restarted. Cancel to clear it."
                 )
             if col3.button("Cancel", key=f"cancel-{key}"):
-                _post(f"/pipeline/stages/{key}/cancel", {})
+                cancel_response = _post(f"/pipeline/stages/{key}/cancel", {})
+                if (
+                    cancel_response.status_code >= 400
+                    and cancel_response.status_code != 404
+                ):
+                    st.session_state["pipeline_flash"] = (
+                        f"Failed to cancel: {cancel_response.text}"
+                    )
                 st.rerun()
         else:
             disabled = active_response is not None or stage["is_blocked"]
@@ -222,9 +249,13 @@ for phase, stage_keys in _PHASES.items():
                 body = {"user_id": selected_user_id} if stage["per_user"] else {}
                 response = _post(f"/pipeline/stages/{key}/run", body)
                 if response.status_code == 409:
-                    st.error("Another pipeline run just started — try again.")
+                    st.session_state["pipeline_flash"] = (
+                        "Another pipeline run just started — try again."
+                    )
                 elif response.status_code >= 400:
-                    st.error(f"Failed to start: {response.text}")
+                    st.session_state["pipeline_flash"] = (
+                        f"Failed to start: {response.text}"
+                    )
                 st.rerun()
 
 if active_response is not None:
