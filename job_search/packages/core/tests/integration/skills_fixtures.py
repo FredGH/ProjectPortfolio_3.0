@@ -115,7 +115,12 @@ def purge_fixtures(engine: Engine) -> None:
         )
         conn.execute(text("DELETE FROM esco.skill WHERE skill_id LIKE 'fixture-%'"))
         conn.execute(
-            text("DELETE FROM pipeline.stage_run WHERE stage = 'extract-job-skills'")
+            # Scoped to fixture runs only (their params carry a zzfixture
+            # source) -- never the dev DB's real run history.
+            text(
+                "DELETE FROM pipeline.stage_run WHERE stage = 'extract-job-skills' "
+                "AND params -> 'sources' ->> 0 LIKE 'zzfixture%'"
+            )
         )
 
 

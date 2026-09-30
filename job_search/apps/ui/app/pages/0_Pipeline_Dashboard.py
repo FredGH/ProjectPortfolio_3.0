@@ -7,8 +7,8 @@ replacing any of them.
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
 
 import httpx
 import streamlit as st
@@ -150,24 +150,12 @@ _PHASES = {
     "Other": ("run-evals",),
 }
 
-# StageStatusModel's "name" is already the registry key (e.g.
-# "classify-jobs"). ReviewStageStatusModel's "name" is a display name
-# instead ("Categorisation Review") -- its registry key is recovered
-# from page_path, which is unique and matches the phase table below.
-_REVIEW_KEY_BY_PAGE = {
-    "Dedup_Review_Queue": "dedup-review",
-    "Categorisation_Review": "categorisation-review",
-    "Skill_Review": "skill-review",
-    "Scoring_Calibration": "scoring-calibration",
+# Automated entries carry "name" (the registry key, e.g. "classify-jobs");
+# review entries carry "key" (the registry key) plus "name" (display name).
+stages_by_name = {
+    (stage["name"] if stage["kind"] == "automated" else stage["key"]): stage
+    for stage in stages
 }
-stages_by_name = {}
-for stage in stages:
-    key = (
-        stage["name"]
-        if stage["kind"] == "automated"
-        else _REVIEW_KEY_BY_PAGE[stage["page_path"]]
-    )
-    stages_by_name[key] = stage
 
 for phase, stage_keys in _PHASES.items():
     st.subheader(phase)
@@ -200,6 +188,8 @@ for phase, stage_keys in _PHASES.items():
             else ""
         )
         col2.caption(f"last completed: {last}{status_note}")
+        if stage["last_status"] == "failed" and stage.get("last_error_message"):
+            col2.caption(f"✖ last error: {stage['last_error_message']}")
         if stage["is_blocked"]:
             col2.caption("⛔ blocked — a dependency has never completed")
         elif stage["is_stale"]:
@@ -224,9 +214,16 @@ for phase, stage_keys in _PHASES.items():
                 col3.warning(
                     f"possibly stalled (no progress for "
                     f"{int(stalled_seconds // 60)}m) — "
-                    "the API may have restarted. Cancel to clear it."
+                    "the API may have restarted. Cancel only requests a stop; "
+                    "if the run is truly dead, mark it cancelled with the recovery "
+                    "SQL in job_search/README.md (Operational notes)."
                 )
-            if col3.button("Cancel", key=f"cancel-{key}"):
+            # Cancel is only honoured by stages that report progress; a
+            # single-call stage checks for cancel once, before it starts,
+            # so a Cancel button on it would be a silent no-op.
+            if not active["progress_total"]:
+                col3.caption("in progress — this stage can't be cancelled mid-run")
+            elif col3.button("Cancel", key=f"cancel-{key}"):
                 cancel_response = _post(f"/pipeline/stages/{key}/cancel", {})
                 if (
                     cancel_response.status_code >= 400

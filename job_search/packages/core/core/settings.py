@@ -23,8 +23,9 @@ class Settings(BaseSettings):
             an env var" rule.
         database_url: DSN for the migration/owner Postgres role. This role
             owns every table and therefore bypasses row-level security —
-            used only by Alembic and one-off bootstrap scripts, never by
-            request-serving code.
+            used by Alembic, ingest, the pipeline stage wrappers
+            (core.pipeline.stage_functions) and GET /pipeline/users.
+            Request-serving code otherwise uses the RLS-subject app role.
         app_database_url: DSN for the `job_search_app` Postgres role. This
             role is subject to row-level security on every per-user table
             and is the only role the API and pipeline use at runtime.

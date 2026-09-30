@@ -5,7 +5,7 @@ implemented and tested separately (see `test_extraction_run_loop.py`)
 since it needs a fake LLM adapter and a fake Ollama transport rather
 than just live Postgres.
 
-Run state lives in pipeline.stage_run (migration 0031), which has at
+Run state lives in pipeline.stage_run (migration 0030), which has at
 most one `status = 'running'` row system-wide, enforced by a partial
 unique index — `start_run` delegates to core.pipeline.runner, which
 relies on that index's IntegrityError rather than an application-level
@@ -415,7 +415,7 @@ def run_loop(
     """Run a started extraction run to completion, cancellation, or failure.
 
     Scheduled as a FastAPI `BackgroundTasks` callback by `POST
-    /skills/extraction-runs` — runs off the request/response cycle.
+    /pipeline/stages/extract-job-skills/run` (with `params`) — runs off the request/response cycle.
     Repeats a bounded `write_job_skills` sub-batch, unloads the Ollama
     model, and pauses, until nothing is left pending in scope or a cancel is
     requested. Progress is committed after **every job** (so the page's

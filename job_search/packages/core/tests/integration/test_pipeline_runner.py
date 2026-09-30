@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import unittest
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +27,16 @@ from core.pipeline.runner import (
 
 def _ok_stage(params: dict) -> dict:
     return {"did": "work"}
+
+
+def _non_json_stage(params: dict) -> dict:
+    return {"when": datetime(2026, 1, 2, tzinfo=UTC), "id": uuid.UUID(int=1)}
+
+
+def _unserializable_stage(params: dict) -> dict:
+    circular: dict = {}
+    circular["self"] = circular
+    return circular
 
 
 def _failing_stage(params: dict) -> dict:
@@ -78,6 +89,35 @@ class TestPipelineRunner(unittest.TestCase):
         self.assertEqual(run.status, "completed")
         self.assertEqual(run.result, {"did": "work"})
         self.assertIsNotNone(run.finished_at)
+
+    def test_run_stage_stringifies_non_json_native_result_values(self) -> None:
+        spec = StageSpec(name="zzfixture-a", depends_on=(), per_user=False, run=_non_json_stage)
+        run_id = start_run(self.app_engine, stage=spec.name, user_id=None, params={})
+        run_stage(run_id, self.app_engine, spec, {})
+        run = get_run(self.app_engine, run_id)
+        self.assertEqual(run.status, "completed")
+        self.assertEqual(run.result["id"], str(uuid.UUID(int=1)))
+
+    def test_run_stage_marks_failed_when_the_result_cannot_be_recorded(self) -> None:
+        # An unserializable result must not leave the row `running` (which
+        # would hold the global one-active-run lock forever).
+        spec = StageSpec(
+            name="zzfixture-a", depends_on=(), per_user=False, run=_unserializable_stage
+        )
+        run_id = start_run(self.app_engine, stage=spec.name, user_id=None, params={})
+        run_stage(run_id, self.app_engine, spec, {})
+        run = get_run(self.app_engine, run_id)
+        self.assertEqual(run.status, "failed")
+        self.assertIsNotNone(run.error_message)
+        self.assertIsNone(get_active_run(self.app_engine))
+
+    def test_run_stage_never_raises_when_the_cancel_precheck_fails(self) -> None:
+        spec = StageSpec(name="zzfixture-a", depends_on=(), per_user=False, run=_ok_stage)
+        run_id = start_run(self.app_engine, stage=spec.name, user_id=None, params={})
+        # An unknown run id makes the pre-check's scalar_one() raise; run_stage
+        # must swallow it (best-effort failed write touches no real row).
+        run_stage(uuid.uuid4(), self.app_engine, spec, {})
+        self.assertEqual(get_run(self.app_engine, run_id).status, "running")
 
     def test_run_stage_marks_failed_with_the_exception_message(self) -> None:
         spec = StageSpec(name="zzfixture-a", depends_on=(), per_user=False, run=_failing_stage)

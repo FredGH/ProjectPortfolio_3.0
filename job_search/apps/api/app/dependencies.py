@@ -37,8 +37,8 @@ def get_app_db_engine() -> Engine:
         An `Engine` built from `settings.app_database_url`, reused across
         requests. Used for reads that don't need per-user scoping (e.g.
         `GET /sources` against the shared `bronze.raw_jobs` table) — never
-        for the migration/owner DSN, which stays out of request-serving
-        code entirely.
+        for the migration/owner DSN, which is used only by ingest, the
+        pipeline stage wrappers and GET /pipeline/users.
     """
     return build_engine(get_settings().app_database_url)
 

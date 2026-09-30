@@ -9,7 +9,11 @@ fixture data is needed.
 
 from __future__ import annotations
 
+import os
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from core.pipeline.stage_functions import (
     run_classify_jobs,
@@ -48,6 +52,12 @@ class TestGlobalBatchStageFunctions(unittest.TestCase):
         result = run_compute_survivorship({})
         self.assertIn("rows_written", result)
 
+    # Makes a real, paid Anthropic call (classify-jobs' LLM residual), so it
+    # only runs when explicitly opted into with RUN_PAID_TESTS=1.
+    @unittest.skipUnless(
+        os.environ.get("RUN_PAID_TESTS") == "1",
+        "makes a real paid Anthropic call; set RUN_PAID_TESTS=1 to run",
+    )
     def test_run_classify_jobs_returns_rows_written(self) -> None:
         result = run_classify_jobs({})
         self.assertIn("rows_written", result)
@@ -67,7 +77,7 @@ class TestCvAndSkillsStageFunctions(unittest.TestCase):
         self.assertIn("mapped", result)
         self.assertIn("unmapped", result)
 
-    def test_run_llm_map_skills_without_an_api_key_raises(self) -> None:
+    def test_run_llm_map_skills_returns_a_summary(self) -> None:
         # Exercised for real in test_llm_map.py's own suite when a key IS
         # configured; here we only prove the wrapper's shape, using the
         # same "no ANTHROPIC_API_KEY" guard as run_classify_jobs's own
@@ -85,6 +95,27 @@ class TestCvAndSkillsStageFunctions(unittest.TestCase):
 
         with self.assertRaises(KeyError):
             run_map_cv_skills({})
+
+
+class TestLoadEscoStageFunction(unittest.TestCase):
+    _COUNTS = SimpleNamespace(
+        skills=1, skill_labels=2, occupations=3, occupation_skills=4, skipped_relations=0
+    )
+
+    def test_run_load_esco_defaults_directory_to_the_mounted_path(self) -> None:
+        from core.pipeline.stage_functions import DEFAULT_ESCO_DIRECTORY, run_load_esco
+
+        with patch("core.pipeline.stage_functions.load_esco", return_value=self._COUNTS) as m:
+            result = run_load_esco({})
+        self.assertEqual(m.call_args.args[1], Path(DEFAULT_ESCO_DIRECTORY))
+        self.assertEqual(result["skills"], 1)
+
+    def test_run_load_esco_honors_an_explicit_directory(self) -> None:
+        from core.pipeline.stage_functions import run_load_esco
+
+        with patch("core.pipeline.stage_functions.load_esco", return_value=self._COUNTS) as m:
+            run_load_esco({"directory": "/somewhere/else"})
+        self.assertEqual(m.call_args.args[1], Path("/somewhere/else"))
 
 
 class TestScoringFunnelStageFunctions(unittest.TestCase):

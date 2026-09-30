@@ -6,7 +6,6 @@ automated CLI stage and human-review step (docs/superpowers/specs/
 from __future__ import annotations
 
 import uuid
-
 from collections.abc import Callable
 
 import httpx
@@ -57,12 +56,14 @@ class StageStatusModel(BaseModel):
     is_blocked: bool
     is_stale: bool
     stale_because: str | None
+    last_error_message: str | None = None
 
 
 class ReviewStageStatusModel(BaseModel):
     """Response entry for one human-review stage."""
 
     kind: str = "review"
+    key: str
     name: str
     page_path: str
     pending_count: int
@@ -141,12 +142,14 @@ def get_stages(
                 is_blocked=state.is_blocked,
                 is_stale=state.is_stale,
                 stale_because=state.stale_because,
+                last_error_message=state.last_error_message,
             )
         )
-    for name, spec in REVIEW_STAGES.items():
+    for key, spec in REVIEW_STAGES.items():
         result.append(
             ReviewStageStatusModel(
-                name=name,
+                key=key,
+                name=spec.name,
                 page_path=spec.page_path,
                 pending_count=spec.pending_count(engine, user_id),
             )
@@ -164,6 +167,7 @@ def get_users(engine: Engine = Depends(get_owner_db_engine)) -> list[UserModel]:
     Returns:
         Every user, ordered by email.
     """
+    # TODO(Step 22a): require auth -- this lists every user via the owner role.
     # app_user is RLS-isolated, so the app role would see zero rows here;
     # the owner-role engine (injected above) lists every user. Only the
     # three picker columns are selected.
@@ -290,6 +294,8 @@ def run_pipeline_stage(
             `per_user` flag; `409` if any pipeline run is already
             active.
     """
+    # TODO(Step 22a): require auth -- this endpoint triggers stages whose
+    # wrappers use the owner-role DSN, with no caller identity check.
     spec = STAGES.get(stage)
     if spec is None:
         raise HTTPException(status_code=404, detail=f"unknown stage {stage!r}")

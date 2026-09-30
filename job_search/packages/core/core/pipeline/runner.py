@@ -238,37 +238,30 @@ def run_stage(run_id: uuid.UUID, engine: Engine, spec: StageSpec, params: dict) 
     """
     import json
 
-    with engine.connect() as conn:
-        cancelled = conn.execute(_SELECT_CANCEL_REQUESTED, {"run_id": run_id}).scalar_one()
-    if cancelled:
-        with engine.begin() as conn:
-            conn.execute(
-                _FINISH_RUN,
-                {"run_id": run_id, "status": "cancelled", "result": None, "error_message": None},
-            )
-        return
-    try:
-        result = spec.run(params)
-    except Exception as exc:  # noqa: BLE001 — any hard failure ends the run
-        logger.exception("pipeline run %s (%s) failed", run_id, spec.name)
+    def _finish(status: str, result_json: str | None, error_message: str | None) -> None:
         with engine.begin() as conn:
             conn.execute(
                 _FINISH_RUN,
                 {
                     "run_id": run_id,
-                    "status": "failed",
-                    "result": None,
-                    "error_message": str(exc),
+                    "status": status,
+                    "result": result_json,
+                    "error_message": error_message,
                 },
             )
-        return
-    with engine.begin() as conn:
-        conn.execute(
-            _FINISH_RUN,
-            {
-                "run_id": run_id,
-                "status": "completed",
-                "result": json.dumps(result),
-                "error_message": None,
-            },
-        )
+
+    try:
+        with engine.connect() as conn:
+            cancelled = conn.execute(_SELECT_CANCEL_REQUESTED, {"run_id": run_id}).scalar_one()
+        if cancelled:
+            _finish("cancelled", None, None)
+            return
+        result = spec.run(params)
+        _finish("completed", json.dumps(result, default=str), None)
+    except Exception as exc:  # noqa: BLE001 — any hard failure ends the run
+        logger.exception("pipeline run %s (%s) failed", run_id, spec.name)
+        # Best-effort: never leave the row `running` (it holds the global lock).
+        try:
+            _finish("failed", None, str(exc))
+        except Exception:  # noqa: BLE001
+            logger.exception("pipeline run %s: could not record failure", run_id)

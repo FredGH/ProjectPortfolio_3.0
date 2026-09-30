@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import httpx
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from tests.integration.skills_fixtures import live_owner_engine, purge_fixtures
 from tests.skills_fakes import FakeAdapter
 
@@ -43,6 +43,14 @@ class TestPipelineRouter(unittest.TestCase):
         cls.app_engine = build_engine(get_settings().app_database_url)
         cls.client = TestClient(app)
 
+    def setUp(self) -> None:
+        self._run_ids: list = []
+
+    def _start(self, **kwargs) -> uuid.UUID:
+        run_id = start_run(self.app_engine, **kwargs)
+        self._run_ids.append(run_id)
+        return run_id
+
     def tearDown(self) -> None:
         app.dependency_overrides.clear()
         purge_fixtures(self.owner_engine)
@@ -50,12 +58,15 @@ class TestPipelineRouter(unittest.TestCase):
             conn.execute(
                 text("DELETE FROM pipeline.stage_run WHERE stage LIKE 'zzfixture-%'")
             )
-            conn.execute(
-                text(
-                    "DELETE FROM pipeline.stage_run "
-                    "WHERE stage = 'enrich-engagement-terms'"
+            # Only rows this test class created (tracked by run_id) -- the dev
+            # DB holds real enrich-engagement-terms history.
+            if self._run_ids:
+                conn.execute(
+                    text(
+                        "DELETE FROM pipeline.stage_run WHERE run_id IN :ids"
+                    ).bindparams(bindparam("ids", expanding=True)),
+                    {"ids": self._run_ids},
                 )
-            )
 
     def test_get_stages_without_user_id_returns_422(self) -> None:
         response = self.client.get("/pipeline/stages")
@@ -65,9 +76,10 @@ class TestPipelineRouter(unittest.TestCase):
         user_id = uuid.uuid4()
         response = self.client.get(f"/pipeline/stages?user_id={user_id}")
         self.assertEqual(response.status_code, 200)
-        names = {row["name"] for row in response.json()}
-        self.assertIn("classify-jobs", names)
-        self.assertIn("dedup-review", names)
+        rows = response.json()
+        self.assertIn("classify-jobs", {r["name"] for r in rows if r["kind"] == "automated"})
+        review = {r["key"]: r["name"] for r in rows if r["kind"] == "review"}
+        self.assertEqual(review["dedup-review"], "Dedup Review")
 
     def test_get_users_lists_every_user_across_rls(self) -> None:
         user_id = uuid.uuid4()
@@ -94,18 +106,14 @@ class TestPipelineRouter(unittest.TestCase):
         # TestClient runs BackgroundTasks before returning, so a run
         # started via POST is already finished; hold the lock with a
         # run started directly through the runner instead.
-        start_run(
-            self.app_engine, stage="enrich-engagement-terms", user_id=None, params={}
-        )
+        self._start(stage="enrich-engagement-terms", user_id=None, params={})
         response2 = self.client.post(
             "/pipeline/stages/compute-blocking-keys/run", json={}
         )
         self.assertEqual(response2.status_code, 409)
 
     def test_cancel_on_the_active_run_returns_204(self) -> None:
-        run_id = start_run(
-            self.app_engine, stage="enrich-engagement-terms", user_id=None, params={}
-        )
+        run_id = self._start(stage="enrich-engagement-terms", user_id=None, params={})
         response = self.client.post("/pipeline/stages/enrich-engagement-terms/cancel")
         self.assertEqual(response.status_code, 204)
         with self.owner_engine.connect() as conn:
@@ -126,25 +134,30 @@ class TestPipelineRouter(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_active_run_includes_updated_at_for_stalled_detection(self) -> None:
-        start = self.client.post(
-            "/pipeline/stages/enrich-engagement-terms/run", json={}
-        )
-        self.assertEqual(start.status_code, 202)
-        active = self.client.get(
-            "/pipeline/stages/enrich-engagement-terms/active"
-        ).json()
-        # The run may already have completed by the time this reads it
-        # (a cheap stage) -- either way, updated_at was present on the
-        # snapshot while it was active; assert against the row directly
-        # to avoid a flaky race with the background task.
-        with self.owner_engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT updated_at FROM pipeline.stage_run WHERE run_id = :id"),
-                {"id": start.json()["run_id"]},
-            ).one()
-        self.assertIsNotNone(row.updated_at)
-        if active is not None:
-            self.assertIn("updated_at", active)
+        # TestClient runs BackgroundTasks before returning, so a run started
+        # via POST has already finished; hold a genuinely active run via the
+        # runner instead so the endpoint really returns a snapshot.
+        run_id = self._start(stage="enrich-engagement-terms", user_id=None, params={})
+        active = self.client.get("/pipeline/stages/enrich-engagement-terms/active").json()
+        self.assertIsNotNone(active)
+        self.assertEqual(active["run_id"], str(run_id))
+        self.assertIn("updated_at", active)
+
+    def test_get_stages_includes_a_failed_runs_error_message(self) -> None:
+        with self.owner_engine.begin() as conn:
+            run_id = conn.execute(
+                text(
+                    "INSERT INTO pipeline.stage_run "
+                    "(stage, status, finished_at, error_message) "
+                    "VALUES ('enrich-engagement-terms', 'failed', now(), 'zzfixture boom') "
+                    "RETURNING run_id"
+                )
+            ).scalar_one()
+        self._run_ids.append(run_id)
+        response = self.client.get(f"/pipeline/stages?user_id={uuid.uuid4()}")
+        row = next(r for r in response.json() if r["name"] == "enrich-engagement-terms")
+        self.assertEqual(row["last_status"], "failed")
+        self.assertEqual(row["last_error_message"], "zzfixture boom")
 
     def test_running_a_no_run_button_stage_returns_400(self) -> None:
         # `ingest`/`run-evals` are not in the STAGES catalog, so a

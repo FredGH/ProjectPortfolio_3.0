@@ -41,6 +41,8 @@ class StageState:
         is_stale: True if this stage has completed, but a dependency
             has completed more recently.
         stale_because: The dependency name responsible, or None.
+        last_error_message: The most recent run's error message when
+            that run failed, else None.
     """
 
     last_completed_at: datetime | None
@@ -48,10 +50,11 @@ class StageState:
     is_blocked: bool
     is_stale: bool
     stale_because: str | None
+    last_error_message: str | None = None
 
 
 _SELECT_LAST_RUN = text(
-    "SELECT status, finished_at FROM pipeline.stage_run "
+    "SELECT status, finished_at, error_message FROM pipeline.stage_run "
     "WHERE stage = :stage AND (user_id = :user_id OR (:user_id IS NULL AND user_id IS NULL)) "
     "ORDER BY started_at DESC LIMIT 1"
 )
@@ -79,6 +82,7 @@ def compute_stage_states(engine: Engine, *, user_id: UUID | None) -> dict[str, S
     """
     last_completed: dict[str, datetime | None] = {}
     last_status: dict[str, str | None] = {}
+    last_error: dict[str, str | None] = {}
     with engine.connect() as conn:
         for name, spec in STAGES.items():
             scope_user_id = user_id if spec.per_user else None
@@ -86,6 +90,11 @@ def compute_stage_states(engine: Engine, *, user_id: UUID | None) -> dict[str, S
                 _SELECT_LAST_RUN, {"stage": name, "user_id": scope_user_id}
             ).first()
             last_status[name] = last_row.status if last_row is not None else None
+            last_error[name] = (
+                last_row.error_message
+                if last_row is not None and last_row.status == "failed"
+                else None
+            )
             completed_row = conn.execute(
                 _SELECT_LAST_COMPLETED, {"stage": name, "user_id": scope_user_id}
             ).first()
@@ -101,6 +110,7 @@ def compute_stage_states(engine: Engine, *, user_id: UUID | None) -> dict[str, S
             states[name] = StageState(
                 last_completed_at=None, last_status=last_status[name],
                 is_blocked=any_dep_never_ran, is_stale=False, stale_because=None,
+                last_error_message=last_error[name],
             )
             continue
         stale_because = next(
@@ -113,6 +123,6 @@ def compute_stage_states(engine: Engine, *, user_id: UUID | None) -> dict[str, S
         states[name] = StageState(
             last_completed_at=own_completed, last_status=last_status[name],
             is_blocked=False, is_stale=stale_because is not None,
-            stale_because=stale_because,
+            stale_because=stale_because, last_error_message=last_error[name],
         )
     return states

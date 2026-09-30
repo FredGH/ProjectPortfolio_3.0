@@ -32,8 +32,10 @@ class StageSpec:
         per_user: Whether this stage's runs are scoped by user_id.
         run: The wrapper from `stage_functions` — takes a `params` dict,
             returns a result dict, raises on failure.
-        has_run_button: False for `ingest`/`run-evals` — see this
-            plan's Global Constraints.
+        has_run_button: Whether the dashboard shows a Run button and
+            POST /pipeline/stages/{stage}/run accepts this stage. Every
+            current STAGES entry is True (`ingest` and `run-evals` are
+            not in STAGES at all); the flag exists for CLI-only stages.
     """
 
     name: str

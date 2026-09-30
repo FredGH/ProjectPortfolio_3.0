@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import unittest
-import uuid
 
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
