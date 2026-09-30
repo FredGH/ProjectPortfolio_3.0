@@ -371,3 +371,104 @@ docker compose run --rm pipeline score-blend --user-id <id>
 ```
 `score-llm-rerank` makes real Anthropic API calls (up to 50 jobs) each
 run — don't repeat it more than needed.
+
+## Pipeline dashboard
+
+The **Pipeline Dashboard** page (`apps/ui/app/pages/0_Pipeline_Dashboard.py`,
+`http://localhost:8501/Pipeline_Dashboard`) is a status/control-center
+across the whole workflow — every automated stage and human-review step
+in one place. It sits alongside every other page; it shows state and
+links out, it never replaces a page's own UI.
+
+### The stage graph
+
+```
+ingest ─┬─→ enrich-engagement-terms ─→ compute-blocking-keys ─→ compute-similarity-features
+        │                                                              │
+        │                                                              ▼
+        │                                          compute-title-similarity-scores
+        │                                                              │
+        │                                                              ▼
+        │                                          [Dedup Review — review]
+        │                                                              │
+        │                                                              ▼
+        │                                        [Dedup Calibration — review]
+        │                                                              │
+        │                                                              ▼
+        │                                                        cluster-jobs
+        │                                                              │
+        │                                                              ▼
+        │                                                  compute-survivorship
+        │                                                              │
+        │                                                              ▼
+        │                                                       classify-jobs
+        │                                                              │
+        │                                                              ▼
+        │                                      [Categorisation Review — review]
+        │
+        ├─→ [CV Editor — review] ─→ map-cv-skills
+        │
+        ├─→ load-esco ─→ embed-esco ────────────────────────┐
+        │                                                     ▼
+        └─→ extract-job-skills ─→ map-skills ─→ llm-map-skills ─→ [Skill Review — review]
+
+── everything above feeds Step 15, per real user ──────────────────────
+
+score-filter-jobs ─→ chunk-embed-jobs (shared) ─┬─→ score-similarity ─→ score-skill-coverage
+map-cv-skills ─→ chunk-embed-cv ─────────────────┘         │                    │
+                                                              └────────┬─────────┘
+                                                                       ▼
+                                                                score-llm-rerank
+                                                                       │
+                                                                       ▼
+                                                                 score-blend
+                                                                       │
+                                                                       ▼
+                                                   [Scoring Calibration — review]
+```
+
+`load-esco`/`embed-esco` and `extract-job-skills` are independent of
+each other until `map-skills`. `ingest` and `run-evals` appear in the
+graph but have no dashboard Run button — `ingest` needs per-call
+source/query parameters that don't fit a generic Run button; `run-evals`
+is developer tooling, not a pipeline stage.
+
+### Staleness is timestamp-order, not content-aware
+
+A stage is flagged **stale** when a stage it depends on has completed
+more recently than it has. This is a cheap approximation, not a real
+"did the upstream data actually change" check — re-running a stage
+that processed zero new rows still clears any staleness flag on its
+downstream stages. A stage that has never run, with a dependency that
+has also never run, shows as **blocked** (a stronger state — its Run
+button is disabled) rather than stale.
+
+### Adding a new pipeline stage
+
+Every new `apps/pipeline/app/cli.py` subcommand must be added to
+`packages/core/core/pipeline/registry.py`'s `STAGES` (or the small,
+named exclusion list in `test_pipeline_registry.py`, for the rare
+stage that genuinely doesn't fit a dashboard Run button) before it
+ships. This is enforced, not just documented:
+`test_pipeline_registry.py`'s
+`test_every_cli_subcommand_has_a_stages_entry_or_is_excluded` fails CI
+otherwise. A new human-review step should get a `REVIEW_STAGES` entry
+the same way.
+
+### Operational notes
+
+- **No auth yet.** The dashboard has no authentication until Step 22a, so
+  `GET /pipeline/users` uses the owner-role engine (bypassing the
+  `app_user` row-level security) to list users for the per-user stages.
+- **Skill extraction runs through the generic stage API.** Start it with
+  `POST /pipeline/stages/extract-job-skills/run`, passing
+  `ollama_location` inside `params`. The old `silver.skill_extraction_run`
+  table is gone — migration `0031` drops it.
+- **Recovering a stuck run.** If a run row is stuck in `running` (e.g. the
+  worker died) and the dashboard's Cancel cannot clear it, mark it
+  cancelled by hand:
+  ```sql
+  UPDATE pipeline.stage_run
+     SET status = 'cancelled', finished_at = now(), updated_at = now()
+   WHERE run_id = '<id>';
+  ```
