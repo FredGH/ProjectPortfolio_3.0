@@ -264,8 +264,15 @@ def downgrade() -> None:
 
 - [ ] **Step 3: Run the migration**
 
+The `api` container has no bind mount for `db/` and this project's
+documented host-venv workflow (`README.md`'s Quick Start) may not work
+if the local venv is broken (verified broken on this machine:
+`pydantic_core` compiled for the wrong architecture) — mount `db/`
+ad-hoc for this one-off command instead of touching
+`docker-compose.yml` (never modify that file for this):
+
 ```bash
-docker compose exec -T api alembic -c db/alembic.ini upgrade head
+docker compose run --rm -v "$(pwd)/db:/app/db" --entrypoint alembic api -c db/alembic.ini upgrade head
 docker compose exec -T postgres psql -U job_search_owner -d job_search -c "SELECT version_num FROM alembic_version;"
 ```
 
@@ -2504,8 +2511,12 @@ def downgrade() -> None:
 
 - [ ] **Step 6: Run the migration and the full extraction-run test suite**
 
+Same ad-hoc mount as Task 1's migration — never add `db/` to
+`docker-compose.yml` itself (Task 1's review found and reverted exactly
+that mistake):
+
 ```bash
-docker compose exec -T api alembic -c db/alembic.ini upgrade head
+docker compose run --rm -v "$(pwd)/db:/app/db" --entrypoint alembic api -c db/alembic.ini upgrade head
 docker compose exec -T api python -m unittest tests.integration.test_extraction_run tests.integration.test_extraction_runs_router -v
 ```
 
