@@ -9,6 +9,7 @@ import unittest
 import uuid
 
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
 
 from core.pipeline.registry import StageSpec
@@ -52,6 +53,12 @@ class TestPipelineRunner(unittest.TestCase):
         start_run(self.app_engine, stage="zzfixture-a", user_id=None, params={})
         with self.assertRaises(RunAlreadyActive):
             start_run(self.app_engine, stage="zzfixture-b", user_id=None, params={})
+
+    def test_start_run_with_invalid_user_id_raises_foreign_key_violation(self) -> None:
+        # FK violations should propagate, not be mislabeled as RunAlreadyActive.
+        invalid_user_id = uuid.uuid4()
+        with self.assertRaises(IntegrityError):
+            start_run(self.app_engine, stage="zzfixture-a", user_id=invalid_user_id, params={})
 
     def test_request_cancel_sets_the_flag(self) -> None:
         run_id = start_run(self.app_engine, stage="zzfixture-a", user_id=None, params={})

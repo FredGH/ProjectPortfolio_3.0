@@ -143,7 +143,10 @@ def start_run(
                 {"stage": stage, "user_id": user_id, "params": json.dumps(params)},
             ).scalar_one()
     except IntegrityError as exc:
-        raise RunAlreadyActive("a pipeline run is already active") from exc
+        constraint_name = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if constraint_name == "ux_stage_run_one_active":
+            raise RunAlreadyActive("a pipeline run is already active") from exc
+        raise
 
 
 def get_active_run(engine: Engine) -> RunSnapshot | None:
