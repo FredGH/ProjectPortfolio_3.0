@@ -44,3 +44,10 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  # Step 17. Local in dev per DECISIONS.md §1; to move to Claude change
+  # these three lines to provider: anthropic, model: claude-sonnet-5,
+  # prompt_family: claude (prompts/cv_tailoring/claude.v1.md exists).
+  cv_tailoring:
+    provider: ollama
+    model: llama3.1:8b
+    prompt_family: local
