@@ -166,8 +166,9 @@ for stage in stages:
         continue
 
 # Column widths shared by the phase headings and every stage row, so the
-# Explain buttons line up vertically.
-_ROW_COLUMNS = [3, 2, 2, 1]
+# Explain buttons line up vertically. The last, empty column soaks up the
+# spare width of a wide screen so the real columns stay close together.
+_ROW_COLUMNS = [3, 3.5, 1, 1, 3]
 
 # Marks who does the work: the pipeline itself, or you.
 _ICON_AUTOMATED = "⚙️"
@@ -217,14 +218,14 @@ stages_by_name = {
 for phase, stage_keys in _PHASES.items():
     # Same column widths as the stage rows below, so every Explain
     # button (phase and stage) sits in one vertical line.
-    heading_col, _, _, explain_col = st.columns(_ROW_COLUMNS)
+    heading_col, _, _, explain_col, _ = st.columns(_ROW_COLUMNS)
     heading_col.subheader(phase)
     _explain_button(explain_col, f"phase-{phase}", phase, PHASE_DESCRIPTIONS.get(phase))
     for key in stage_keys:
         stage = stages_by_name.get(key)
         if stage is None:
             continue
-        col1, col2, col3, col4 = st.columns(_ROW_COLUMNS)
+        col1, col2, col3, col4, _ = st.columns(_ROW_COLUMNS)
         _explain_button(
             col4,
             key,
