@@ -166,10 +166,10 @@ for stage in stages:
         continue
 
 # Column widths shared by the phase headings and every stage row, so the
-# Explain buttons (first column) line up vertically. The last, empty
-# column soaks up the spare width of a wide screen so the real columns
-# stay close together.
-_ROW_COLUMNS = [1, 3, 3.5, 1, 2.5]
+# Explain buttons (second column, right after the name) line up
+# vertically. The last, empty column soaks up the spare width of a wide
+# screen so the real columns stay close together.
+_ROW_COLUMNS = [3, 1, 3.5, 1, 2.5]
 
 # Marks who does the work: the pipeline itself, or you.
 _ICON_AUTOMATED = "⚙️"
@@ -219,16 +219,16 @@ stages_by_name = {
 for phase, stage_keys in _PHASES.items():
     # Same column widths as the stage rows below, so every Explain
     # button (phase and stage) sits in one vertical line.
-    explain_col, heading_col, *_ = st.columns(_ROW_COLUMNS)
+    heading_col, explain_col, *_ = st.columns(_ROW_COLUMNS)
     heading_col.subheader(phase)
     _explain_button(explain_col, f"phase-{phase}", phase, PHASE_DESCRIPTIONS.get(phase))
     for key in stage_keys:
         stage = stages_by_name.get(key)
         if stage is None:
             continue
-        col0, col1, col2, col3, _ = st.columns(_ROW_COLUMNS)
+        col1, col_explain, col2, col3, _ = st.columns(_ROW_COLUMNS)
         _explain_button(
-            col0,
+            col_explain,
             key,
             stage["name"] if stage["kind"] == "review" else key,
             STAGE_DESCRIPTIONS.get(key),
