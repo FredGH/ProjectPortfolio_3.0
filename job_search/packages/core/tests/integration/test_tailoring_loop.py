@@ -397,6 +397,87 @@ class TestTailoringLoop(unittest.TestCase):
         outcome = self._run(tailor, _Critic())
         self.assertEqual((outcome.status, outcome.attempts), ("approved", 2))
 
+    # --- an earlier usable attempt is never thrown away (I1, I2) ----------
+
+    def test_a_final_unparseable_reply_persists_the_earlier_attempt(self) -> None:
+        self._store_cv()
+        # Attempt 1 has an orphan (so it is retried); attempts 2 and 3 are
+        # unparseable. The run must persist attempt 1, judged, not fail.
+        bad = self._clean_bullets() + [
+            {"text": "Led a team of 12", "evidence_refs": []}
+        ]
+        tailor = _Tailor([self._reply(bad), "not json", "not json"])
+        critic = _Critic()
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 3))
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertIsNotNone(run.document)
+        self.assertEqual(run.attempts, 3)
+        self.assertEqual(
+            [(o.kind, o.text) for o in run.orphans], [("orphan", "Led a team of 12")]
+        )
+        self.assertEqual(critic.calls, 1)
+
+    def test_an_unjudged_earlier_attempt_is_judged_before_it_is_persisted(
+        self,
+    ) -> None:
+        self._store_cv()
+        # Attempt 1 has a code problem, so the critic is skipped on it; the
+        # later replies are unusable. Attempt 1's reworded line must still
+        # be judged (here: rejected) before it is persisted.
+        bad = [
+            {
+                "text": "Built dbt models powering risk reporting",
+                "evidence_refs": [self.ref0],
+            },
+            {"text": "Invented", "evidence_refs": ["nope"]},
+        ]
+        tailor = _Tailor([self._reply(bad), "not json"])
+        critic = _Critic(unsupported={"e0b0"})
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 3))
+        self.assertEqual(critic.calls, 1)
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            [(o.bullet_index, o.kind) for o in run.orphans],
+            [(0, "unsupported"), (1, "orphan")],
+        )
+        self.assertEqual(run.critic_prompt_version, "claude.v1")
+
+    def test_a_clean_attempt_is_kept_when_the_keyword_retry_adds_an_orphan(
+        self,
+    ) -> None:
+        self._store_cv()
+        first = self._reply(self._clean_bullets(), skills=["dbt"], drop_older_role=True)
+        worse = self._reply(
+            self._clean_bullets() + [{"text": "Led a team of 12", "evidence_refs": []}],
+            skills=["dbt", "SQL"],
+        )
+        tailor = _Tailor([first, worse])
+        outcome = self._run(tailor, _Critic())
+        self.assertEqual(outcome.status, "approved")
+        self.assertGreaterEqual(len(tailor.prompts), 2)  # the keyword retry ran
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(run.orphans, [])
+        texts = [b.text for b in run.document.experience[0].bullets]
+        self.assertNotIn("Led a team of 12", texts)
+        self.assertEqual(run.document.experience[1].bullets, [])  # attempt 1's
+
+    def test_a_clean_attempt_is_kept_when_the_keyword_retry_is_unparseable(
+        self,
+    ) -> None:
+        self._store_cv()
+        first = self._reply(self._clean_bullets(), skills=["dbt"], drop_older_role=True)
+        tailor = _Tailor([first, "not json"])
+        outcome = self._run(tailor, _Critic())
+        self.assertEqual(outcome.status, "approved")
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertIsNotNone(run.document)
+        self.assertEqual(run.orphans, [])
+        self.assertEqual(
+            run.document.keyword_coverage.missing_evidenced, ["SQL"]
+        )  # attempt 1's document
+
     def test_a_critic_routed_to_a_weaker_model_fails_the_run_without_a_call(
         self,
     ) -> None:

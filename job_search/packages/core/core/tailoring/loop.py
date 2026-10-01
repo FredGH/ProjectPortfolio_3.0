@@ -36,7 +36,7 @@ from core.tailoring.schema import (
     TailorOutputError,
 )
 from core.tailoring.store import OrphanDraft, create_run, finish_run, read_run
-from core.tailoring.tailor import run_tailor
+from core.tailoring.tailor import TailorResult, run_tailor
 
 MAX_RETRIES = 2
 """Tailor retries after the first attempt (PLAN.md Step 17: at most twice)."""
@@ -259,6 +259,40 @@ def _orphan_drafts(
     )
 
 
+@dataclass(frozen=True)
+class _Attempt:
+    """One Tailor attempt that assembled a document.
+
+    Attributes:
+        tailor_result: The Tailor call's result.
+        document: The assembled document (with keyword coverage).
+        problems: Its code-check problems.
+        critic: Its critic result, or None when the critic was skipped.
+    """
+
+    tailor_result: TailorResult
+    document: TailoredDocument
+    problems: list[Problem]
+    critic: CriticResult | None
+
+
+def _is_clean(attempt: _Attempt) -> bool:
+    """Whether an attempt can be approved as it stands.
+
+    Args:
+        attempt: The attempt.
+
+    Returns:
+        True when it has no code problems, was judged by the critic, and
+        leaves no orphan or unsupported line. Keyword gaps do not count.
+    """
+    return (
+        not attempt.problems
+        and attempt.critic is not None
+        and not _orphan_drafts(attempt.document, attempt.problems, attempt.critic)
+    )
+
+
 def _execute(
     app_engine: Engine,
     user_id: uuid.UUID,
@@ -297,10 +331,9 @@ def _execute(
         raise RuntimeError(f"job {run.job_group_id!r} no longer exists")
 
     feedback: list[str] = []
-    tailor_result = None
-    critic: CriticResult | None = None
-    document: TailoredDocument | None = None
-    problems: list[Problem] = []
+    best: _Attempt | None = None
+    last: _Attempt | None = None
+    parse_error: TailorOutputError | None = None
     attempts = 0
     for attempts in range(1, max_retries + 2):
         progress[0] = attempts
@@ -310,8 +343,9 @@ def _execute(
                 truth_base, job, feedback, adapters=adapters, config_path=config_path
             )
         except TailorOutputError as exc:
+            parse_error = exc
             if final:
-                raise
+                break
             feedback = [f"Your previous reply could not be used: {exc}"]
             continue
         document = assemble(
@@ -331,20 +365,35 @@ def _execute(
             if not problems or final
             else None
         )
+        last = _Attempt(tailor_result, document, problems, critic)
+        if _is_clean(last):
+            best = last
         feedback = _feedback(problems, document, critic, coverage)
         if not feedback or final:
             break
 
-    assert document is not None and tailor_result is not None
-    structural = [p for p in problems if p.code in STRUCTURAL_CODES]
+    # A clean attempt is never replaced by a later, worse one (or by a
+    # reply that could not be parsed); otherwise the last usable attempt.
+    chosen = best or last
+    if chosen is None:
+        assert parse_error is not None
+        raise parse_error
+    structural = [p for p in chosen.problems if p.code in STRUCTURAL_CODES]
     if structural:
         raise RuntimeError(
             "the document failed a structural check: "
             + "; ".join(p.message for p in structural)
         )
-    if critic is not None:
-        document = document.model_copy(update={"stretch": critic.stretch})
-    orphans = _orphan_drafts(document, problems, critic)
+    critic = chosen.critic
+    if critic is None:
+        # The critic was skipped on this attempt (it had code problems) and
+        # no later attempt was usable: judge it now — an unjudged reworded
+        # line must never be persisted as approved.
+        critic = run_critic(
+            chosen.document, truth_base, job, adapters=adapters, config_path=config_path
+        )
+    document = chosen.document.model_copy(update={"stretch": critic.stretch})
+    orphans = _orphan_drafts(document, chosen.problems, critic)
     status = "needs_review" if orphans else "approved"
     finish_run(
         app_engine,
@@ -354,10 +403,10 @@ def _execute(
         document=document,
         orphans=orphans,
         attempts=attempts,
-        tailor_model=tailor_result.model,
-        tailor_prompt_version=tailor_result.prompt_version,
-        critic_model=critic.model if critic else None,
-        critic_prompt_version=critic.prompt_version if critic else None,
+        tailor_model=chosen.tailor_result.model,
+        tailor_prompt_version=chosen.tailor_result.prompt_version,
+        critic_model=critic.model,
+        critic_prompt_version=critic.prompt_version,
     )
     return TailoringOutcome(run_id=run_id, status=status, attempts=attempts)
 
