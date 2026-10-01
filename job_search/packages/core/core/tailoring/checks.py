@@ -164,6 +164,24 @@ def check_headline(document: TailoredDocument) -> list[Problem]:
     return []
 
 
+def line_location(
+    section: str, experience_index: int | None, bullet_index: int | None
+) -> str:
+    """Build a line's location id from an orphan's position fields.
+
+    Args:
+        section: `summary` or `experience`.
+        experience_index: The role, for an experience line.
+        bullet_index: The line's position in that role.
+
+    Returns:
+        `summary` or `e{role}b{bullet}`.
+    """
+    if section == "summary":
+        return "summary"
+    return f"e{experience_index}b{bullet_index}"
+
+
 def _mentions(text: str, label: str) -> bool:
     """Whether `label` appears in `text` as a whole word or phrase.
 
@@ -182,22 +200,38 @@ def compute_keyword_coverage(
     document: TailoredDocument,
     truth_base: CVTruthBase,
     job_skills: list[JobSkill],
+    *,
+    exclude: frozenset[str] = frozenset(),
 ) -> KeywordCoverage:
     """Split a job's skills into covered / missing-but-evidenced / unevidenced.
 
     Only the *evidenced* gap is ever asked of the Tailor; asking it to
     surface a skill the CV does not evidence would invite fabrication.
+    Only traced lines count as covering a skill: a line with origin
+    `orphan` never does, nor does any line whose location is in `exclude`
+    (lines still awaiting the user's decision).
 
     Args:
         document: The assembled document.
         truth_base: The truth base (the source of evidence).
         job_skills: The skills the job asks for.
+        exclude: Locations (`summary` / `e{role}b{bullet}`) to ignore.
 
     Returns:
         A `KeywordCoverage` of skill labels.
     """
-    pieces = [bullet.text for role in document.experience for bullet in role.bullets]
-    if document.summary is not None:
+    pieces = [
+        bullet.text
+        for role in document.experience
+        for position, bullet in enumerate(role.bullets)
+        if bullet.origin != "orphan"
+        and f"e{role.truth_index}b{position}" not in exclude
+    ]
+    if (
+        document.summary is not None
+        and document.summary.origin != "orphan"
+        and "summary" not in exclude
+    ):
         pieces.append(document.summary.text)
     pieces.extend(skill.name for skill in document.skills)
     document_text = " ".join(pieces).casefold()

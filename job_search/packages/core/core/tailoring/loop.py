@@ -27,6 +27,7 @@ from core.tailoring.checks import (
     check_experience_unchanged,
     check_headline,
     compute_keyword_coverage,
+    line_location,
 )
 from core.tailoring.context import load_job_context
 from core.tailoring.critic import TASK as CRITIC_TASK
@@ -424,6 +425,15 @@ def _execute(
         )
     document = chosen.document.model_copy(update={"stretch": critic.stretch})
     orphans = _orphan_drafts(document, chosen.problems, critic)
+    # Persisted coverage counts only traced lines: never a line awaiting a
+    # decision (orphan or unsupported).
+    pending = frozenset(
+        line_location(d.section, d.experience_index, d.bullet_index) for d in orphans
+    )
+    coverage = compute_keyword_coverage(
+        document, truth_base, job.skills, exclude=pending
+    )
+    document = document.model_copy(update={"keyword_coverage": coverage})
     status = "needs_review" if orphans else "approved"
     finish_run(
         app_engine,

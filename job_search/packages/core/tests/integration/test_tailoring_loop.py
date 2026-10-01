@@ -252,6 +252,24 @@ class TestTailoringLoop(unittest.TestCase):
         )
         self.assertEqual(run.status, "approved")
 
+    def test_untraced_lines_never_count_as_keyword_coverage(self) -> None:
+        # I5: an orphan line and a critic-rejected line both mention
+        # Kubernetes; neither may make it "covered" in the persisted run.
+        self._store_cv()
+        bullets = [
+            {"text": "Ran Kubernetes for dbt models", "evidence_refs": [self.ref0]},
+            {"text": "Led Kubernetes migrations", "evidence_refs": []},
+        ]
+        outcome = self._run(
+            _Tailor([self._reply(bullets, skills=["dbt"])]),
+            _Critic(unsupported={"e0b0"}),
+        )
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(sorted(o.kind for o in run.orphans), ["orphan", "unsupported"])
+        coverage = run.document.keyword_coverage
+        self.assertNotIn("Kubernetes", coverage.covered)
+        self.assertEqual(coverage.missing_unevidenced, ["Kubernetes"])
+
     # --- retries ---------------------------------------------------------
 
     def test_an_uncited_bullet_is_retried_with_feedback_then_approved(self) -> None:

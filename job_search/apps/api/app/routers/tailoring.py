@@ -19,7 +19,8 @@ from sqlalchemy import Engine
 from core.cv.store import read_truth_base_version
 from core.db.session import get_current_user_id
 from core.llm.types import LLMAdapter
-from core.tailoring.context import list_candidates
+from core.tailoring.checks import line_location
+from core.tailoring.context import list_candidates, load_job_context
 from core.tailoring.decisions import DecisionError, apply_decision
 from core.tailoring.loop import (
     CriticUnavailableError,
@@ -32,6 +33,7 @@ from core.tailoring.loop import (
 )
 from core.tailoring.store import (
     StaleDecisionError,
+    StoredOrphan,
     StoredRun,
     latest_run_id,
     read_orphan,
@@ -167,6 +169,39 @@ def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
         orphans=[OrphanModel(**o.__dict__) for o in run.orphans],
         sources=sources,
     )
+
+
+def _other_pending_locations(
+    run: StoredRun, decided: StoredOrphan, removed: tuple[int, int] | None
+) -> frozenset[str]:
+    """Locate the run's other pending lines in the post-decision document.
+
+    Mirrors `save_decision`'s re-indexing: when a line is removed, later
+    lines in the same role move up by one.
+
+    Args:
+        run: The run, as read before the decision.
+        decided: The orphan being decided (excluded).
+        removed: `(experience_index, bullet_index)` of a removed line.
+
+    Returns:
+        `summary` / `e{role}b{bullet}` locations.
+    """
+    locations: set[str] = set()
+    for other in run.orphans:
+        if other.id == decided.id or other.status != "pending":
+            continue
+        bullet = other.bullet_index
+        if (
+            removed is not None
+            and other.section == "experience"
+            and other.experience_index == removed[0]
+            and bullet is not None
+            and bullet > removed[1]
+        ):
+            bullet -= 1
+        locations.add(line_location(other.section, other.experience_index, bullet))
+    return frozenset(locations)
 
 
 @router.get("/tailoring/candidates", response_model=list[CandidateModel])
@@ -320,13 +355,25 @@ def post_decision(
     )
     if run is None or run.document is None or stored is None:
         raise HTTPException(status_code=409, detail="this run has no document")
+    job = load_job_context(engine, run.job_group_id)
     try:
+        # First pass: learn whether a line is removed, so the other pending
+        # lines' locations can be re-indexed before coverage is recomputed.
+        removed = apply_decision(
+            run.document,
+            orphan,
+            action=body.action,
+            evidence_ref=body.evidence_ref,
+            truth_base=stored.truth_base,
+        ).removed_position
         result = apply_decision(
             run.document,
             orphan,
             action=body.action,
             evidence_ref=body.evidence_ref,
             truth_base=stored.truth_base,
+            job_skills=job.skills if job is not None else None,
+            pending_locations=_other_pending_locations(run, orphan, removed),
         )
     except DecisionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

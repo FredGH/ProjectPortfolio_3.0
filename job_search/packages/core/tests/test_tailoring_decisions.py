@@ -10,6 +10,8 @@ from tests.tailoring_fixtures import bullet_id, make_truth_base
 from core.tailoring.assemble import assemble
 from core.tailoring.decisions import DecisionError, apply_decision
 from core.tailoring.schema import (
+    JobSkill,
+    KeywordCoverage,
     TailorBullet,
     TailorExperience,
     TailorOutput,
@@ -266,6 +268,95 @@ class TestApplyDecision(unittest.TestCase):
             truth_base=self.truth_base,
         )
         self.assertIsNone(result.document.summary)
+
+
+class TestDecisionsRecomputeCoverage(unittest.TestCase):
+    """A decision recomputes keyword coverage so it never goes stale (I5)."""
+
+    def setUp(self) -> None:
+        self.truth_base = make_truth_base()
+        self.ref0 = bullet_id(self.truth_base, 0, 0)
+        self.job_skills = [
+            JobSkill("zzfixture-skill-dbt", "dbt", "must_have"),
+            JobSkill("zzfixture-skill-k8s", "Kubernetes", "must_have"),
+        ]
+        output = TailorOutput(
+            experience=[
+                TailorExperience(
+                    truth_index=0,
+                    bullets=[
+                        TailorBullet(
+                            text="Ran Kubernetes for dbt", evidence_refs=[self.ref0]
+                        ),
+                        TailorBullet(
+                            text="Led Kubernetes migrations", evidence_refs=[]
+                        ),
+                    ],
+                )
+            ],
+            skills=["dbt"],
+        )
+        document = assemble(self.truth_base, output, target_title="T")
+        # Simulate the stale coverage of the old code: Kubernetes "covered".
+        self.document = document.model_copy(
+            update={"keyword_coverage": KeywordCoverage(covered=["dbt", "Kubernetes"])}
+        )
+        self.unsupported = _orphan(
+            kind="unsupported",
+            bullet_index=0,
+            text="Ran Kubernetes for dbt",
+            claimed_refs=[self.ref0],
+        )
+        self.orphan = _orphan(bullet_index=1, text="Led Kubernetes migrations")
+
+    def test_rejecting_the_line_drops_its_skill_from_coverage(self) -> None:
+        result = apply_decision(
+            self.document,
+            self.unsupported,
+            action="reject",
+            evidence_ref=None,
+            truth_base=self.truth_base,
+            job_skills=self.job_skills,
+        )
+        coverage = result.document.keyword_coverage
+        self.assertNotIn("Kubernetes", coverage.covered)
+        self.assertEqual(coverage.missing_unevidenced, ["Kubernetes"])
+
+    def test_linking_the_line_makes_its_skill_count(self) -> None:
+        result = apply_decision(
+            self.document,
+            self.orphan,
+            action="link",
+            evidence_ref=self.ref0,
+            truth_base=self.truth_base,
+            job_skills=self.job_skills,
+            pending_locations=frozenset({"e0b0"}),
+        )
+        self.assertIn("Kubernetes", result.document.keyword_coverage.covered)
+
+    def test_other_pending_lines_never_count(self) -> None:
+        result = apply_decision(
+            self.document,
+            self.orphan,
+            action="reject",
+            evidence_ref=None,
+            truth_base=self.truth_base,
+            job_skills=self.job_skills,
+            pending_locations=frozenset({"e0b0"}),
+        )
+        self.assertNotIn("Kubernetes", result.document.keyword_coverage.covered)
+
+    def test_without_job_skills_coverage_is_left_as_is(self) -> None:
+        result = apply_decision(
+            self.document,
+            self.orphan,
+            action="reject",
+            evidence_ref=None,
+            truth_base=self.truth_base,
+        )
+        self.assertEqual(
+            result.document.keyword_coverage, self.document.keyword_coverage
+        )
 
 
 if __name__ == "__main__":

@@ -530,8 +530,11 @@ CV is never modified.
 Safety details: the critic fails closed (an unanswered, malformed or
 contradictory verdict is treated as unsupported). An orphan decision is
 refused with HTTP 409 if the tailored CV changed since you opened it.
-Keyword coverage reports skills your CV evidences but the tailored text
-lacks, and never invents skills your CV does not evidence.
+Keyword coverage counts a job skill as covered only when a traced line (or
+a skill shown from your CV) mentions it — a line awaiting your decision
+never counts — and is recomputed after every Link/Reject. It reports skills
+your CV evidences but the tailored text lacks, and never invents skills
+your CV does not evidence.
 
 Cost: the critic makes one Claude call per attempt (a few cents at most).
 The Tailor is local (Ollama) by default; to use Claude instead, change the

@@ -15,7 +15,13 @@ from core.tailoring.checks import (
     check_headline,
     compute_keyword_coverage,
 )
-from core.tailoring.schema import JobSkill, TailorBullet, TailorExperience, TailorOutput
+from core.tailoring.schema import (
+    JobSkill,
+    TailorBullet,
+    TailorExperience,
+    TailorOutput,
+    TailorSummary,
+)
 
 TITLE = "Lead Data Engineer"
 
@@ -187,6 +193,49 @@ class TestKeywordCoverage(unittest.TestCase):
         )
         self.assertEqual(coverage.covered, [])
         self.assertEqual(coverage.missing_unevidenced, ["R"])
+
+    def test_an_orphan_line_never_covers_a_skill(self) -> None:
+        # A fabricated, untraced line must not make a skill look covered.
+        document = _document(
+            self.truth_base,
+            {0: [TailorBullet(text="Ran Kubernetes clusters", evidence_refs=[])]},
+            skills=["dbt"],
+        )
+        self.assertEqual(document.experience[0].bullets[0].origin, "orphan")
+        coverage = compute_keyword_coverage(document, self.truth_base, self.job_skills)
+        self.assertNotIn("Kubernetes", coverage.covered)
+        self.assertEqual(coverage.missing_unevidenced, ["Kubernetes"])
+
+    def test_an_excluded_location_never_covers_a_skill(self) -> None:
+        ref0 = bullet_id(self.truth_base, 0, 0)
+        document = _document(
+            self.truth_base,
+            {0: [TailorBullet(text="Ran Kubernetes with dbt", evidence_refs=[ref0])]},
+            skills=["dbt"],
+        )
+        self.assertIn(
+            "Kubernetes",
+            compute_keyword_coverage(
+                document, self.truth_base, self.job_skills
+            ).covered,
+        )
+        coverage = compute_keyword_coverage(
+            document, self.truth_base, self.job_skills, exclude=frozenset({"e0b0"})
+        )
+        self.assertNotIn("Kubernetes", coverage.covered)
+
+    def test_an_excluded_summary_never_covers_a_skill(self) -> None:
+        ref0 = bullet_id(self.truth_base, 0, 0)
+        output = TailorOutput(
+            summary=TailorSummary(text="Kubernetes expert", evidence_refs=[ref0]),
+            experience=[TailorExperience(truth_index=0, bullets=[])],
+            skills=["dbt"],
+        )
+        document = assemble(self.truth_base, output, target_title=TITLE)
+        coverage = compute_keyword_coverage(
+            document, self.truth_base, self.job_skills, exclude=frozenset({"summary"})
+        )
+        self.assertNotIn("Kubernetes", coverage.covered)
 
     def test_canonical_id_match_covers_a_differently_named_skill(self) -> None:
         self.truth_base.skills.append(

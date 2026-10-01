@@ -52,13 +52,21 @@ class _Tailor:
 
 
 class _Critic:
+    def __init__(self, unsupported: frozenset[str] = frozenset()) -> None:
+        self.unsupported = unsupported
+
     def complete(self, *, model: str, prompt: str, **_: object) -> LLMResponse:
         ids = re.findall(r'"id": "([^"]+)"', prompt)
         return LLMResponse(
             text=json.dumps(
                 {
                     "verdicts": [
-                        {"id": i, "supported": True, "issue": ""} for i in ids
+                        {
+                            "id": i,
+                            "supported": i not in self.unsupported,
+                            "issue": "adds a claim" if i in self.unsupported else "",
+                        }
+                        for i in ids
                     ],
                     "stretch": {"is_stretch": False, "reason": ""},
                 }
@@ -174,8 +182,10 @@ class TestTailoringRouter(unittest.TestCase):
             }
         )
 
-    def _set_replies(self, tailor_reply: str) -> None:
-        adapters = {"ollama": _Tailor(tailor_reply), "anthropic": _Critic()}
+    def _set_replies(
+        self, tailor_reply: str, unsupported: frozenset[str] = frozenset()
+    ) -> None:
+        adapters = {"ollama": _Tailor(tailor_reply), "anthropic": _Critic(unsupported)}
         app.dependency_overrides[get_llm_adapters] = lambda: adapters
 
     def _store_cv(self) -> None:
@@ -389,6 +399,86 @@ class TestTailoringRouter(unittest.TestCase):
             f"/tailoring/orphans/{uuid.uuid4()}/decision", json={"action": "reject"}
         )
         self.assertEqual(response.status_code, 404)
+
+    # --- keyword coverage follows the decisions (I5) ----------------------
+
+    def _add_job_skills(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO silver.silver__bridge_job_skill "
+                    "(job_group_id, skill_id, requirement_level, mention_count) "
+                    "VALUES (:j, 'zzfixture-skill-dbt', 'must_have', 1), "
+                    "(:j, 'zzfixture-skill-k8s', 'must_have', 1)"
+                ),
+                {"j": _JOB},
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO silver.silver__skill "
+                    "(skill_id, canonical_label, source) "
+                    "VALUES ('zzfixture-skill-dbt', 'dbt', 'custom'), "
+                    "('zzfixture-skill-k8s', 'Kubernetes', 'custom')"
+                )
+            )
+        self.addCleanup(self._drop_job_skills)
+
+    def _drop_job_skills(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM silver.silver__bridge_job_skill "
+                    "WHERE job_group_id LIKE 'zzfixture-tlr-api-%'"
+                )
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM silver.silver__skill "
+                    "WHERE skill_id LIKE 'zzfixture-skill-%'"
+                )
+            )
+
+    def test_keyword_coverage_is_recomputed_after_each_decision(self) -> None:
+        self._store_cv()
+        self._add_job_skills()
+        reply = json.dumps(
+            {
+                "experience": [
+                    {
+                        "truth_index": 0,
+                        "bullets": [
+                            {"text": "Led a team of 12", "evidence_refs": []},
+                            {
+                                "text": "Ran Kubernetes for dbt",
+                                "evidence_refs": [self.ref0],
+                            },
+                        ],
+                    }
+                ],
+                "skills": ["dbt"],
+            }
+        )
+        self._set_replies(reply, unsupported=frozenset({"e0b1"}))
+        run_id = self._start().json()["run_id"]
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertNotIn("Kubernetes", body["document"]["keyword_coverage"]["covered"])
+        orphans = {o["kind"]: o for o in body["orphans"]}
+        # Rejecting the orphan at b0 shifts the pending Kubernetes line from
+        # b1 to b0; it must still be excluded at its new position.
+        after = self.client.post(
+            f"/tailoring/orphans/{orphans['orphan']['id']}/decision",
+            json={"action": "reject"},
+        ).json()
+        self.assertEqual(after["status"], "needs_review")
+        coverage = after["document"]["keyword_coverage"]
+        self.assertNotIn("Kubernetes", coverage["covered"])
+        self.assertIn("dbt", coverage["covered"])
+        linked = self.client.post(
+            f"/tailoring/orphans/{orphans['unsupported']['id']}/decision",
+            json={"action": "link", "evidence_ref": self.ref0},
+        ).json()
+        self.assertEqual(linked["status"], "approved")
+        self.assertIn("Kubernetes", linked["document"]["keyword_coverage"]["covered"])
 
     def test_an_unknown_action_is_422(self) -> None:
         body = self._orphan_run()

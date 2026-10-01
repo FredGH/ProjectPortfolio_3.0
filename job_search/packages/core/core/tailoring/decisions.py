@@ -10,7 +10,13 @@ from dataclasses import dataclass
 
 from core.cv.schema import CVTruthBase
 from core.tailoring.assemble import bullet_index
-from core.tailoring.schema import TailoredBullet, TailoredDocument, TailoredSummary
+from core.tailoring.checks import compute_keyword_coverage
+from core.tailoring.schema import (
+    JobSkill,
+    TailoredBullet,
+    TailoredDocument,
+    TailoredSummary,
+)
 from core.tailoring.store import StoredOrphan
 
 
@@ -68,6 +74,8 @@ def apply_decision(
     action: str,
     evidence_ref: str | None,
     truth_base: CVTruthBase,
+    job_skills: list[JobSkill] | None = None,
+    pending_locations: frozenset[str] = frozenset(),
 ) -> DecisionResult:
     """Apply a link or reject decision to a document.
 
@@ -78,6 +86,11 @@ def apply_decision(
         evidence_ref: For `link`, the truth-base `bullet_id` that evidences
             the line.
         truth_base: The truth base the document was built from.
+        job_skills: The job's skills. When given, the resulting document's
+            keyword coverage is recomputed so it never goes stale.
+        pending_locations: Locations (in the *resulting* document) of the
+            run's other lines still awaiting a decision; they never count
+            as coverage.
 
     Returns:
         The updated document and any removed position.
@@ -86,6 +99,40 @@ def apply_decision(
         DecisionError: On an unknown action; a link with no ref, an
             unknown ref, or (for an experience line) a ref from another
             role; or a stale/out-of-range orphan.
+    """
+    result = _apply(document, orphan, action, evidence_ref, truth_base)
+    if job_skills is None:
+        return result
+    coverage = compute_keyword_coverage(
+        result.document, truth_base, job_skills, exclude=pending_locations
+    )
+    return DecisionResult(
+        result.document.model_copy(update={"keyword_coverage": coverage}),
+        result.removed_position,
+    )
+
+
+def _apply(
+    document: TailoredDocument,
+    orphan: StoredOrphan,
+    action: str,
+    evidence_ref: str | None,
+    truth_base: CVTruthBase,
+) -> DecisionResult:
+    """Apply the link/reject rules (see `apply_decision`), without coverage.
+
+    Args:
+        document: The current document.
+        orphan: The orphan being decided.
+        action: `link` or `reject`.
+        evidence_ref: For `link`, the evidencing truth-base `bullet_id`.
+        truth_base: The truth base the document was built from.
+
+    Returns:
+        The updated document and any removed position.
+
+    Raises:
+        DecisionError: See `apply_decision`.
     """
     if action not in ("link", "reject"):
         raise DecisionError(f"unknown action {action!r}")
