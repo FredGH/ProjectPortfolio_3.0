@@ -14,6 +14,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class Description:
+    """One Explain-modal entry.
+
+    Attributes:
+        summary: What the stage or phase does, in plain language.
+        input: What it reads.
+        output: What it produces, and where it is stored.
+    """
+
     summary: str
     input: str
     output: str

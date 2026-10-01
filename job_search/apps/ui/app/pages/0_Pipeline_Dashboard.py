@@ -65,10 +65,16 @@ _dialog_open = False
 
 
 def _explain(title: str, description: Description) -> None:
-    """Open a modal with what a stage/phase does, its input and output."""
+    """Open a modal with what a stage/phase does, its input and output.
+
+    Args:
+        title: The modal's heading.
+        description: The text to show.
+    """
 
     @st.dialog(title)
     def _body() -> None:
+        """Render the three sections inside the dialog."""
         st.markdown(f"**What it does**\n\n{description.summary}")
         st.markdown(f"**Input**\n\n{description.input}")
         st.markdown(f"**Output**\n\n{description.output}")
@@ -77,7 +83,16 @@ def _explain(title: str, description: Description) -> None:
 
 
 def _explain_button(container, key: str, title: str, description: Description | None):
-    """An Explain button that opens the modal; nothing if there is no text."""
+    """Render an Explain button that opens the modal.
+
+    Draws nothing when there is no description for the entry.
+
+    Args:
+        container: The Streamlit container (column) to draw the button in.
+        key: Unique suffix for the button's widget key.
+        title: The modal's heading.
+        description: The text to show, or None to draw no button.
+    """
     global _dialog_open
     if description is not None and container.button("Explain", key=f"explain-{key}"):
         _dialog_open = True
