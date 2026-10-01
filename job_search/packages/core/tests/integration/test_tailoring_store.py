@@ -1,0 +1,243 @@
+"""Integration tests for tailoring persistence (real Postgres)."""
+
+from __future__ import annotations
+
+import unittest
+import uuid
+
+from sqlalchemy import text
+from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
+from tests.tailoring_fixtures import bullet_id, make_truth_base
+
+from core.tailoring.assemble import assemble
+from core.tailoring.decisions import apply_decision
+from core.tailoring.schema import TailorBullet, TailorExperience, TailorOutput
+from core.tailoring.store import (
+    OrphanDraft,
+    create_run,
+    finish_run,
+    read_orphan,
+    read_run,
+    save_decision,
+)
+
+
+class TestTailoringStore(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.owner = live_owner_engine()
+        cls.app_engine = live_app_engine()
+
+    def setUp(self) -> None:
+        self.user_a = uuid.uuid4()
+        self.user_b = uuid.uuid4()
+        with self.owner.begin() as conn:
+            for user_id in (self.user_a, self.user_b):
+                conn.execute(
+                    text(
+                        "INSERT INTO app_user (id, email, display_name) "
+                        "VALUES (:id, :email, 'zzfixture store user')"
+                    ),
+                    {"id": user_id, "email": f"zzfixture-{user_id}@example.com"},
+                )
+        self.truth_base = make_truth_base()
+        self.ref0 = bullet_id(self.truth_base, 0, 0)
+
+    def tearDown(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text("DELETE FROM tailoring.tailored_cv WHERE user_id IN (:a, :b)"),
+                {"a": self.user_a, "b": self.user_b},
+            )
+            conn.execute(
+                text("DELETE FROM app_user WHERE id IN (:a, :b)"),
+                {"a": self.user_a, "b": self.user_b},
+            )
+
+    def _document(self):
+        output = TailorOutput(
+            experience=[
+                TailorExperience(
+                    truth_index=0,
+                    bullets=[
+                        TailorBullet(text="Invented one", evidence_refs=[]),
+                        TailorBullet(text="Invented two", evidence_refs=[]),
+                        TailorBullet(text="Invented three", evidence_refs=[]),
+                    ],
+                )
+            ]
+        )
+        return assemble(self.truth_base, output, target_title="Lead Data Engineer")
+
+    def _draft(self, position: int, text_: str) -> OrphanDraft:
+        return OrphanDraft(
+            kind="orphan",
+            section="experience",
+            experience_index=0,
+            bullet_index=position,
+            text=text_,
+            claimed_refs=[],
+            issue="no evidence_ref in the CV",
+        )
+
+    def _finished_run(self):
+        run_id = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id="zzfixture-job",
+            truth_base_version=3,
+            target_title="Lead Data Engineer",
+        )
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            status="needs_review",
+            document=self._document(),
+            orphans=[
+                self._draft(0, "Invented one"),
+                self._draft(1, "Invented two"),
+                self._draft(2, "Invented three"),
+            ],
+            attempts=3,
+            tailor_model="llama3.1:8b",
+            tailor_prompt_version="local.v1",
+            critic_model="claude-sonnet-5",
+            critic_prompt_version="claude.v1",
+        )
+        return run_id
+
+    def test_a_new_run_starts_generating_with_no_document(self) -> None:
+        run_id = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id="zzfixture-job",
+            truth_base_version=3,
+            target_title="Lead Data Engineer",
+        )
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.status, "generating")
+        self.assertIsNone(run.document)
+        self.assertEqual(run.truth_base_version, 3)
+        self.assertEqual(run.orphans, [])
+
+    def test_a_finished_run_round_trips_document_orphans_and_versions(self) -> None:
+        run_id = self._finished_run()
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.status, "needs_review")
+        self.assertEqual(run.attempts, 3)
+        self.assertEqual(run.document, self._document())
+        self.assertEqual(
+            [o.text for o in run.orphans],
+            ["Invented one", "Invented two", "Invented three"],
+        )
+        self.assertEqual(run.tailor_prompt_version, "local.v1")
+        self.assertEqual(run.critic_model, "claude-sonnet-5")
+
+    def test_a_failed_run_keeps_its_error_message(self) -> None:
+        run_id = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id="zzfixture-job",
+            truth_base_version=1,
+            target_title="T",
+        )
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            status="failed",
+            document=None,
+            orphans=[],
+            attempts=3,
+            error_message="the Tailor's reply hit the output cap",
+        )
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.status, "failed")
+        self.assertIn("output cap", run.error_message)
+        self.assertIsNone(run.document)
+
+    def test_another_user_cannot_read_the_run_or_its_orphans(self) -> None:
+        run_id = self._finished_run()
+        self.assertIsNone(read_run(self.app_engine, self.user_b, run_id))
+        orphan = read_run(self.app_engine, self.user_a, run_id).orphans[0]
+        self.assertIsNone(read_orphan(self.app_engine, self.user_b, orphan.id))
+
+    def test_read_orphan_returns_the_row(self) -> None:
+        run_id = self._finished_run()
+        orphan = read_run(self.app_engine, self.user_a, run_id).orphans[1]
+        again = read_orphan(self.app_engine, self.user_a, orphan.id)
+        self.assertEqual(again.text, "Invented two")
+        self.assertEqual(again.status, "pending")
+
+    def test_deciding_the_last_pending_orphan_approves_the_run(self) -> None:
+        run_id = self._finished_run()
+        run = read_run(self.app_engine, self.user_a, run_id)
+        document = run.document
+        statuses = []
+        for orphan in run.orphans:
+            result = apply_decision(
+                document,
+                read_orphan(self.app_engine, self.user_a, orphan.id),
+                action="link",
+                evidence_ref=self.ref0,
+                truth_base=self.truth_base,
+            )
+            document = result.document
+            statuses.append(
+                save_decision(
+                    self.app_engine,
+                    self.user_a,
+                    orphan=orphan,
+                    status="linked",
+                    evidence_ref=self.ref0,
+                    document=document,
+                    removed_position=result.removed_position,
+                )
+            )
+        self.assertEqual(statuses, ["needs_review", "needs_review", "approved"])
+        final = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(final.status, "approved")
+        self.assertTrue(all(o.status == "linked" for o in final.orphans))
+        self.assertTrue(
+            all(b.origin == "linked" for b in final.document.experience[0].bullets)
+        )
+
+    def test_removing_a_bullet_reindexes_the_runs_other_orphans(self) -> None:
+        run_id = self._finished_run()
+        run = read_run(self.app_engine, self.user_a, run_id)
+        first = run.orphans[0]  # position 0
+        result = apply_decision(
+            run.document,
+            first,
+            action="reject",
+            evidence_ref=None,
+            truth_base=self.truth_base,
+        )
+        save_decision(
+            self.app_engine,
+            self.user_a,
+            orphan=first,
+            status="rejected",
+            evidence_ref=None,
+            document=result.document,
+            removed_position=result.removed_position,
+        )
+        after = read_run(self.app_engine, self.user_a, run_id)
+        positions = {o.text: o.bullet_index for o in after.orphans}
+        self.assertEqual(positions["Invented two"], 0)
+        self.assertEqual(positions["Invented three"], 1)
+        # And the reindexed orphan still matches its bullet in the document.
+        second = next(o for o in after.orphans if o.text == "Invented two")
+        again = apply_decision(
+            after.document,
+            second,
+            action="reject",
+            evidence_ref=None,
+            truth_base=self.truth_base,
+        )
+        self.assertEqual(again.removed_position, (0, 0))
+
+
+if __name__ == "__main__":
+    unittest.main()
