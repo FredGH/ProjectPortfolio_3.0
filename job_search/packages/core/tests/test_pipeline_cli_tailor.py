@@ -17,7 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "apps" / "pipeline"
 
 from app.cli import main  # noqa: E402
 
-from core.tailoring.loop import NoCvError, TailoringOutcome  # noqa: E402
+from core.tailoring.loop import (  # noqa: E402
+    CriticUnavailableError,
+    NoCvError,
+    TailoringOutcome,
+)
 
 
 class TestTailorCvSubcommand(unittest.TestCase):
@@ -48,6 +52,25 @@ class TestTailorCvSubcommand(unittest.TestCase):
             )
         self.assertEqual(exit_code, 1)
         self.assertIn("this user has no CV", out.getvalue())
+
+    def test_no_anthropic_key_prints_the_reason_and_exits_one(self) -> None:
+        out = io.StringIO()
+        message = (
+            "the fabrication critic needs an Anthropic API key (set ANTHROPIC_API_KEY)"
+        )
+        with (
+            mock.patch(
+                "app.cli.run_tailoring", side_effect=CriticUnavailableError(message)
+            ),
+            mock.patch("app.cli.build_engine"),
+            mock.patch("app.cli._build_llm_adapters"),
+            contextlib.redirect_stdout(out),
+        ):
+            exit_code = main(
+                ["tailor-cv", "--user-id", str(uuid.uuid4()), "--job-group-id", "j1"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn(message, out.getvalue())
 
     def test_a_failed_run_exits_one_and_a_review_run_exits_zero(self) -> None:
         run_id = uuid.uuid4()

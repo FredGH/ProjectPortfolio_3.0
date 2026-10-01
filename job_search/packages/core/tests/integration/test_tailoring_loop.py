@@ -18,6 +18,7 @@ from core.cv.store import write_truth_base
 from core.llm.types import LLMResponse
 from core.tailoring.checks import Problem
 from core.tailoring.loop import (
+    CriticUnavailableError,
     NoCvError,
     NoTargetTitleError,
     UnknownJobError,
@@ -573,6 +574,46 @@ class TestTailoringLoop(unittest.TestCase):
         self.assertEqual((outcome.status, outcome.attempts), ("failed", 0))
         self.assertEqual(tailor.prompts, [])
         self.assertEqual(read_run(self.app_engine, self.user_id, run_id).attempts, 0)
+
+    # --- no Anthropic key (I3) -------------------------------------------
+
+    def _run_count(self) -> int:
+        with self.owner.begin() as conn:
+            return conn.execute(
+                text("SELECT count(*) FROM tailoring.tailored_cv WHERE user_id = :u"),
+                {"u": self.user_id},
+            ).scalar_one()
+
+    def test_no_anthropic_adapter_refuses_to_start_without_a_tailor_call(
+        self,
+    ) -> None:
+        self._store_cv()
+        tailor = _Tailor([self._reply(self._clean_bullets())])
+        with self.assertRaises(CriticUnavailableError) as ctx:
+            run_tailoring(
+                self.app_engine, self.user_id, _JOB, adapters={"ollama": tailor}
+            )
+        self.assertIn("ANTHROPIC_API_KEY", str(ctx.exception))
+        self.assertEqual(tailor.prompts, [])
+        self.assertEqual(self._run_count(), 0)
+
+    def test_executing_without_an_anthropic_adapter_fails_with_a_clear_message(
+        self,
+    ) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        tailor = _Tailor([self._reply(self._clean_bullets())])
+        outcome = execute_tailoring(
+            self.app_engine, self.user_id, run_id, adapters={"ollama": tailor}
+        )
+        self.assertEqual((outcome.status, outcome.attempts), ("failed", 0))
+        self.assertEqual(tailor.prompts, [])
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertIn(
+            "the fabrication critic needs an Anthropic API key "
+            "(set ANTHROPIC_API_KEY)",
+            run.error_message,
+        )
 
     # --- preconditions ---------------------------------------------------
 

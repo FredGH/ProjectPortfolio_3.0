@@ -22,9 +22,11 @@ from core.llm.types import LLMAdapter
 from core.tailoring.context import list_candidates
 from core.tailoring.decisions import DecisionError, apply_decision
 from core.tailoring.loop import (
+    CriticUnavailableError,
     NoCvError,
     NoTargetTitleError,
     UnknownJobError,
+    ensure_critic_available,
     execute_tailoring,
     start_tailoring,
 )
@@ -210,9 +212,15 @@ def post_run(
         The run's id; poll `GET /tailoring/runs/{run_id}`.
 
     Raises:
-        HTTPException: 409 if the user has no CV, 404 if the job does not
-            exist, 422 if the job has no title to mirror.
+        HTTPException: 503 if there is no Anthropic API key for the critic
+            (checked before any run is created), 409 if the user has no CV,
+            404 if the job does not exist, 422 if the job has no title to
+            mirror.
     """
+    try:
+        ensure_critic_available(adapters)
+    except CriticUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
         run_id = start_tailoring(engine, user_id, body.job_group_id)
     except NoCvError as exc:

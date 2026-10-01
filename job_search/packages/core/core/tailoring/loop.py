@@ -17,6 +17,7 @@ from pathlib import Path
 from sqlalchemy import Engine
 
 from core.cv.store import read_truth_base, read_truth_base_version
+from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
 from core.tailoring.assemble import assemble
 from core.tailoring.checks import (
@@ -28,6 +29,7 @@ from core.tailoring.checks import (
     compute_keyword_coverage,
 )
 from core.tailoring.context import load_job_context
+from core.tailoring.critic import TASK as CRITIC_TASK
 from core.tailoring.critic import CriticResult, run_critic
 from core.tailoring.schema import (
     JobContext,
@@ -58,6 +60,33 @@ class UnknownJobError(TailoringError):
 
 class NoTargetTitleError(TailoringError):
     """The job has no `title_for_display`, so there is nothing to mirror."""
+
+
+class CriticUnavailableError(TailoringError):
+    """No adapter exists for the critic's provider (no Anthropic API key)."""
+
+
+def ensure_critic_available(
+    adapters: dict[str, LLMAdapter], config_path: Path | None = None
+) -> None:
+    """Refuse to start unless the fabrication critic can actually be called.
+
+    The critic always runs on Claude; without an Anthropic adapter every
+    run would only fail after the (slow) Tailor call.
+
+    Args:
+        adapters: LLM adapters keyed by provider.
+        config_path: Task-config override (tests).
+
+    Raises:
+        CriticUnavailableError: If `adapters` has no adapter for the
+            `fabrication_critic` task's provider.
+    """
+    provider = load_task_config(CRITIC_TASK, config_path).provider
+    if provider not in adapters:
+        raise CriticUnavailableError(
+            "the fabrication critic needs an Anthropic API key (set ANTHROPIC_API_KEY)"
+        )
 
 
 @dataclass(frozen=True)
@@ -319,6 +348,7 @@ def _execute(
         The outcome. Raises on any failure — `execute_tailoring` turns that
         into a `failed` run.
     """
+    ensure_critic_available(adapters, config_path)
     run = read_run(app_engine, user_id, run_id)
     if run is None:
         raise RuntimeError(f"run {run_id} not found")
@@ -483,8 +513,11 @@ def run_tailoring(
         The outcome.
 
     Raises:
-        TailoringError: If the run cannot start (see `start_tailoring`).
+        TailoringError: If the run cannot start (see `start_tailoring`), or
+            `CriticUnavailableError` when there is no Anthropic adapter
+            (raised before any run is created or any LLM is called).
     """
+    ensure_critic_available(adapters, config_path)
     run_id = start_tailoring(app_engine, user_id, job_group_id)
     return execute_tailoring(
         app_engine,

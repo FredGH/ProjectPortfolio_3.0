@@ -249,6 +249,24 @@ class TestTailoringRouter(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertIn("title", response.json()["detail"])
 
+    def test_no_anthropic_key_is_503_and_creates_no_run(self) -> None:
+        self._store_cv()
+        adapters = {"ollama": _Tailor(self._clean_reply())}
+        app.dependency_overrides[get_llm_adapters] = lambda: adapters
+        response = self._start()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["detail"],
+            "the fabrication critic needs an Anthropic API key "
+            "(set ANTHROPIC_API_KEY)",
+        )
+        with self.owner.begin() as conn:
+            count = conn.execute(
+                text("SELECT count(*) FROM tailoring.tailored_cv WHERE user_id = :u"),
+                {"u": self.user_id},
+            ).scalar_one()
+        self.assertEqual(count, 0)
+
     def test_a_started_run_returns_202_and_finishes_approved(self) -> None:
         self._store_cv()
         response = self._start()
