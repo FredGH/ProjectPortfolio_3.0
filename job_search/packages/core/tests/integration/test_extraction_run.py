@@ -72,6 +72,27 @@ class TestStartRun(unittest.TestCase):
         self.assertEqual(status.status, "completed")
         self.assertIsNotNone(status.finished_at)
 
+    def test_nothing_pending_start_succeeds_while_another_run_is_active(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO silver.job_survivorship (job_group_id, "
+                    "winning_description, apply_source_name, "
+                    "apply_source_job_id, apply_job_url, "
+                    "apply_title_for_display) VALUES "
+                    "('fixture-job-run3', 'Python required.', "
+                    "'zzfixture-source', 'src-3', "
+                    "'https://example.test/y', 'Data Engineer')"
+                )
+            )
+        active_id, _ = start_run(self.app, sources=_FIXTURE_SOURCES, countries=None)
+        run_id, total_pending = start_run(
+            self.app, sources=["zzfixture-nonexistent"], countries=None
+        )
+        self.assertEqual(total_pending, 0)
+        self.assertEqual(get_run(self.app, run_id).status, "completed")
+        self.assertEqual(get_active_run(self.app).run_id, active_id)
+
     def test_a_second_start_while_one_is_active_raises(self) -> None:
         with self.owner.begin() as conn:
             conn.execute(

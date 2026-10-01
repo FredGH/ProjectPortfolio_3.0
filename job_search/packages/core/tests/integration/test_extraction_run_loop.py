@@ -60,7 +60,7 @@ class _CancelAfterFirstCall(FakeAdapter):
             with self._engine.begin() as conn:
                 conn.execute(
                     text(
-                        "UPDATE silver.skill_extraction_run "
+                        "UPDATE pipeline.stage_run "
                         "SET cancel_requested = TRUE WHERE run_id = :r"
                     ),
                     {"r": self._run_id},
@@ -190,7 +190,7 @@ class TestRunLoop(unittest.TestCase):
         with self.app.begin() as conn:
             conn.execute(
                 text(
-                    "UPDATE silver.skill_extraction_run "
+                    "UPDATE pipeline.stage_run "
                     "SET cancel_requested = TRUE WHERE run_id = :r"
                 ),
                 {"r": run_id},

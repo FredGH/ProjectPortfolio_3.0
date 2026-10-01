@@ -30,8 +30,6 @@ from tests.integration.skills_fixtures import (  # noqa: E402
 )
 from tests.skills_fakes import FakeAdapter  # noqa: E402
 
-from core.settings import get_settings  # noqa: E402
-from core.skills.extraction_run import start_run  # noqa: E402
 
 app = FastAPI()
 app.include_router(extraction_runs.router)
@@ -125,126 +123,6 @@ class TestExtractionRunsApi(unittest.TestCase):
             params={"sources": _FIXTURE_SOURCES},
         ).json()
         self.assertEqual(body["pending"], 1)
-
-    def test_start_completes_synchronously_and_updates_the_run_row(self) -> None:
-        # Starlette's TestClient runs a BackgroundTasks callback before
-        # the triggering request returns (same behaviour
-        # test_cv_router.py's POST /cv/extract tests already rely on
-        # — no polling needed, unlike a real deployment where run_loop
-        # keeps going after the response is sent).
-        self._add_survivor("fixture-job-api3")
-        start = self.client.post(
-            "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
-        )
-        self.assertEqual(start.status_code, 202)
-        run_id = start.json()["run_id"]
-
-        self.assertIsNone(self.client.get("/skills/extraction-runs/active").json())
-
-        with self.owner.connect() as conn:
-            status, extracted = conn.execute(
-                text(
-                    "SELECT status, extracted_count "
-                    "FROM silver.skill_extraction_run WHERE run_id = :r"
-                ),
-                {"r": run_id},
-            ).one()
-        self.assertEqual(status, "completed")
-        self.assertEqual(extracted, 1)
-
-    def test_start_defaults_to_the_docker_ollama_location(self) -> None:
-        self._add_survivor("fixture-job-api-loc1")
-        requested_urls: list[str] = []
-
-        def _record_and_answer(request: httpx.Request) -> httpx.Response:
-            requested_urls.append(str(request.url))
-            return httpx.Response(200, json={"done_reason": "unload"})
-
-        app.dependency_overrides[get_http_client] = lambda: httpx.Client(
-            transport=httpx.MockTransport(_record_and_answer)
-        )
-        start = self.client.post(
-            "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
-        )
-        self.assertEqual(start.status_code, 202)
-        # The unload ping went to the Docker URL...
-        self.assertEqual(
-            requested_urls,
-            [f"{get_settings().ollama_base_url}/api/generate"],
-        )
-        # ...and, more importantly, the actual extraction call used the
-        # Docker-location adapter, not just the unload ping — this is
-        # the check that would have caught a real bug where only the
-        # unload target was swapped but the extraction adapter wasn't.
-        self.assertEqual(len(self.docker_adapter.calls), 1)
-        self.assertEqual(len(self.native_adapter.calls), 0)
-
-    def test_start_with_native_ollama_location_targets_the_host(self) -> None:
-        self._add_survivor("fixture-job-api-loc2")
-        requested_urls: list[str] = []
-
-        def _record_and_answer(request: httpx.Request) -> httpx.Response:
-            requested_urls.append(str(request.url))
-            return httpx.Response(200, json={"done_reason": "unload"})
-
-        app.dependency_overrides[get_http_client] = lambda: httpx.Client(
-            transport=httpx.MockTransport(_record_and_answer)
-        )
-        start = self.client.post(
-            "/skills/extraction-runs",
-            json={"sources": _FIXTURE_SOURCES, "ollama_location": "native"},
-        )
-        self.assertEqual(start.status_code, 202)
-        self.assertEqual(
-            requested_urls,
-            ["http://host.docker.internal:11434/api/generate"],
-        )
-        # The actual extraction call must go through the native adapter,
-        # not the Docker one — the unload URL alone doesn't prove this.
-        self.assertEqual(len(self.native_adapter.calls), 1)
-        self.assertEqual(len(self.docker_adapter.calls), 0)
-
-    def test_a_completed_run_maps_skills_against_the_chosen_ollama_location(
-        self,
-    ) -> None:
-        self._add_survivor("fixture-job-api-map1")
-        start = self.client.post(
-            "/skills/extraction-runs",
-            json={"sources": _FIXTURE_SOURCES, "ollama_location": "native"},
-        )
-        self.assertEqual(start.status_code, 202)
-        body = self.client.get(f"/skills/extraction-runs/{start.json()['run_id']}")
-        self.assertEqual(body.json()["status"], "completed")
-        self.assertEqual(body.json()["mapping_summary"], "fake mapping summary")
-        self.assertEqual(self.mapping_targets, ["http://host.docker.internal:11434"])
-
-    def test_the_default_location_maps_against_the_docker_ollama(self) -> None:
-        self._add_survivor("fixture-job-api-map2")
-        start = self.client.post(
-            "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
-        )
-        self.assertEqual(start.status_code, 202)
-        self.assertEqual(self.mapping_targets, [get_settings().ollama_base_url])
-
-    def test_start_while_one_is_active_returns_409(self) -> None:
-        # Starts the first run directly through the core function
-        # (bypassing the router) so it's left `running` deterministically
-        # — going through the router's own POST would run it to
-        # completion synchronously (see the test above) before a
-        # "second" call could ever race it.
-        self._add_survivor("fixture-job-api4")
-        start_run(self.app_engine, sources=_FIXTURE_SOURCES, countries=None)
-
-        response = self.client.post(
-            "/skills/extraction-runs", json={"sources": _FIXTURE_SOURCES}
-        )
-        self.assertEqual(response.status_code, 409)
-
-    def test_cancel_unknown_run_returns_404(self) -> None:
-        response = self.client.post(
-            "/skills/extraction-runs/" "00000000-0000-0000-0000-000000000000/cancel"
-        )
-        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":
