@@ -205,6 +205,66 @@ class TestRunCritic(unittest.TestCase):
         )
         self.assertNotIn("e9b9", result.verdicts)
 
+    def _run_raw(self, reply: str):
+        return run_critic(
+            self.document,
+            self.truth_base,
+            _job(),
+            adapters={"anthropic": _Adapter(reply)},
+        )
+
+    def _with_e0b1(self, entry: dict | str) -> str:
+        body = entry if isinstance(entry, str) else json.dumps(entry)
+        return (
+            '{"verdicts": [{"id": "e0b0", "supported": true, "issue": ""}, '
+            + body
+            + '], "stretch": {"is_stretch": false, "reason": ""}}'
+        )
+
+    def test_a_string_false_is_unsupported(self) -> None:
+        result = self._run_raw(
+            self._with_e0b1({"id": "e0b1", "supported": "false", "issue": "adds 40%"})
+        )
+        self.assertFalse(result.verdicts["e0b1"].supported)
+        self.assertEqual(result.verdicts["e0b1"].issue, "adds 40%")
+
+    def test_other_non_boolean_verdicts_are_unsupported(self) -> None:
+        for value in ('"no"', '"0"', '{"v": false}', "null", "NaN", "1"):
+            with self.subTest(value=value):
+                result = self._run_raw(
+                    self._with_e0b1(f'{{"id": "e0b1", "supported": {value}}}')
+                )
+                verdict = result.verdicts["e0b1"]
+                self.assertFalse(verdict.supported)
+                self.assertIn("not a boolean", verdict.issue)
+
+    def test_a_null_issue_is_empty_not_the_text_none(self) -> None:
+        result = self._run_raw(
+            self._with_e0b1({"id": "e0b1", "supported": True, "issue": None})
+        )
+        self.assertTrue(result.verdicts["e0b1"].supported)
+        self.assertEqual(result.verdicts["e0b1"].issue, "")
+
+    def test_duplicate_ids_any_rejection_wins_in_both_orders(self) -> None:
+        rejected = {"id": "e0b1", "supported": False, "issue": "x"}
+        approved = {"id": "e0b1", "supported": True, "issue": ""}
+        for first, second in ((rejected, approved), (approved, rejected)):
+            with self.subTest(first=first["supported"]):
+                result = self._run_raw(
+                    self._reply([{"id": "e0b0", "supported": True}, first, second])
+                )
+                self.assertFalse(result.verdicts["e0b1"].supported)
+                self.assertEqual(result.verdicts["e0b1"].issue, "x")
+
+    def test_supported_true_with_an_issue_is_unsupported(self) -> None:
+        result = self._run_raw(
+            self._with_e0b1(
+                {"id": "e0b1", "supported": True, "issue": "adds 12 engineers"}
+            )
+        )
+        self.assertFalse(result.verdicts["e0b1"].supported)
+        self.assertEqual(result.verdicts["e0b1"].issue, "adds 12 engineers")
+
     def test_an_unparseable_reply_raises(self) -> None:
         adapter = _Adapter("looks fine to me!")
         with self.assertRaises(CriticError):

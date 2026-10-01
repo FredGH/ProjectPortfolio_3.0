@@ -164,6 +164,32 @@ def _render_role_history(truth_base: CVTruthBase) -> str:
     )
 
 
+def _parse_verdict(entry: dict) -> Verdict:
+    """Parse one verdict entry, failing closed on anything but a clean approval.
+
+    Args:
+        entry: One element of the reply's `verdicts` list.
+
+    Returns:
+        A supported verdict only if `supported` is the JSON boolean true and
+        no issue text is attached; otherwise an unsupported verdict.
+
+    Raises:
+        KeyError: If `id` or `supported` is missing.
+        TypeError: If `entry` is not a mapping.
+    """
+    item_id = str(entry["id"])
+    supported = entry["supported"]
+    raw_issue = entry.get("issue")
+    issue = "" if raw_issue is None else str(raw_issue)
+    if supported is not True and supported is not False:
+        issue = issue or "the critic's verdict was not a boolean"
+        return Verdict(item_id, False, issue)
+    if supported and issue.strip():
+        return Verdict(item_id, False, issue)
+    return Verdict(item_id, supported, issue)
+
+
 def run_critic(
     document: TailoredDocument,
     truth_base: CVTruthBase,
@@ -211,14 +237,13 @@ def run_critic(
     )
     try:
         data = parse_json_response(response.text.strip())
-        answered = {
-            str(entry["id"]): Verdict(
-                item_id=str(entry["id"]),
-                supported=bool(entry["supported"]),
-                issue=str(entry.get("issue", "")),
-            )
-            for entry in data.get("verdicts", [])
-        }
+        answered: dict[str, Verdict] = {}
+        for entry in data.get("verdicts", []):
+            verdict = _parse_verdict(entry)
+            previous = answered.get(verdict.item_id)
+            # Fail closed: any rejection of an id outranks an approval.
+            if previous is None or (previous.supported and not verdict.supported):
+                answered[verdict.item_id] = verdict
         stretch = StretchAssessment.model_validate(data.get("stretch") or {})
     except (
         json.JSONDecodeError,
