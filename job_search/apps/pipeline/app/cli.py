@@ -78,6 +78,7 @@ from core.skills.write_job_skills import (
     count_pending_jobs,
     write_job_skills,
 )
+from core.tailoring.loop import TailoringError, run_tailoring
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -1246,6 +1247,39 @@ def _cmd_score_blend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_tailor_cv(args: argparse.Namespace) -> int:
+    """Run the `tailor-cv` subcommand: tailor one user's CV to one job.
+
+    On demand, not a batch stage, so it is deliberately absent from the
+    pipeline dashboard (core.pipeline.registry).
+
+    Args:
+        args: Parsed CLI arguments — `user_id`, `job_group_id`.
+
+    Returns:
+        0 when the run ends `approved` or `needs_review`; 1 when it ends
+        `failed` or cannot start.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=2000.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        outcome = run_tailoring(
+            app_engine, args.user_id, args.job_group_id, adapters=adapters
+        )
+    except TailoringError as exc:
+        print(f"tailor-cv: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    print(
+        f"tailor-cv complete: run_id={outcome.run_id} status={outcome.status} "
+        f"attempts={outcome.attempts}"
+    )
+    return 1 if outcome.status == "failed" else 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1598,6 +1632,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     score_blend_parser.add_argument("--user-id", required=True, type=uuid.UUID)
 
+    tailor_cv_parser = subparsers.add_parser(
+        "tailor-cv",
+        help="Tailor one user's CV to one job, with the fabrication guard "
+        "(PLAN.md Step 17); on demand, not a pipeline stage",
+    )
+    tailor_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    tailor_cv_parser.add_argument("--job-group-id", required=True)
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1642,6 +1684,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_llm_rerank(args)
     if args.command == "score-blend":
         return _cmd_score_blend(args)
+    if args.command == "tailor-cv":
+        return _cmd_tailor_cv(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
