@@ -142,6 +142,7 @@ selected_user_id = st.selectbox(
     format_func=lambda uid: user_labels[uid],
     key="pipeline_user_id",
 )
+st.caption("⚙️ automated — runs on its own   ·   👤 needs you — a human review step")
 
 try:
     stages_response = _get(f"/pipeline/stages?user_id={selected_user_id}")
@@ -163,6 +164,14 @@ for stage in stages:
             break
     except httpx.HTTPError:
         continue
+
+# Column widths shared by the phase headings and every stage row, so the
+# Explain buttons line up vertically.
+_ROW_COLUMNS = [3, 2, 2, 1]
+
+# Marks who does the work: the pipeline itself, or you.
+_ICON_AUTOMATED = "⚙️"
+_ICON_REVIEW = "👤"
 
 _PHASES = {
     "Ingestion & Dedup": (
@@ -206,14 +215,16 @@ stages_by_name = {
 }
 
 for phase, stage_keys in _PHASES.items():
-    heading_col, explain_col = st.columns([8, 1])
+    # Same column widths as the stage rows below, so every Explain
+    # button (phase and stage) sits in one vertical line.
+    heading_col, _, _, explain_col = st.columns(_ROW_COLUMNS)
     heading_col.subheader(phase)
     _explain_button(explain_col, f"phase-{phase}", phase, PHASE_DESCRIPTIONS.get(phase))
     for key in stage_keys:
         stage = stages_by_name.get(key)
         if stage is None:
             continue
-        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        col1, col2, col3, col4 = st.columns(_ROW_COLUMNS)
         _explain_button(
             col4,
             key,
@@ -221,7 +232,7 @@ for phase, stage_keys in _PHASES.items():
             STAGE_DESCRIPTIONS.get(key),
         )
         if stage["kind"] == "review":
-            col1.write(f"**{stage['name']}**")
+            col1.write(f"{_ICON_REVIEW} **{stage['name']}**")
             col2.write(f"{stage['pending_count']} pending")
             page_file = _REVIEW_PAGE_FILES.get(stage["page_path"])
             if page_file is not None and (_PAGES_DIR / page_file).exists():
@@ -234,7 +245,7 @@ for phase, stage_keys in _PHASES.items():
             continue
 
         col1.write(
-            f"**{stage['name']}**"
+            f"{_ICON_AUTOMATED} **{stage['name']}**"
             + ("" if stage["has_run_button"] else " _(CLI only)_")
         )
         last = stage["last_completed_at"] or "never"
