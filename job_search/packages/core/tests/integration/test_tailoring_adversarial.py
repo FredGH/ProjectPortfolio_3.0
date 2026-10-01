@@ -165,6 +165,8 @@ class _Base(unittest.TestCase):
         flagged = [o for o in run.orphans if o.kind == "unsupported"]
         self.assertEqual([o.text for o in flagged], [_EXAGGERATED])
         self.assertEqual(flagged[0].status, "pending")
+        # The verdict path ran: the issue is the critic's own wording.
+        self.assertIn("adds numbers not in the source", flagged[0].issue or "")
         # Never emitted as approved: the run is not approved and the
         # exaggerated line is still waiting for a decision.
         self.assertNotEqual(run.status, "approved")
@@ -193,6 +195,14 @@ class _Base(unittest.TestCase):
         self.assertNotIn(_EXAGGERATED, texts)
         self.assertIn("Built dbt models for risk reporting", texts)  # reverted
         self.assertEqual(after.status, "approved")
+        reverted = [
+            b
+            for b in after.document.experience[0].bullets
+            if b.text == "Built dbt models for risk reporting"
+        ]
+        self.assertEqual(len(reverted), 1)
+        self.assertEqual(reverted[0].origin, "original")
+        self.assertEqual(reverted[0].evidence_refs, [bullet_id(self.truth_base, 0, 0)])
 
 
 class TestExaggerationIsCaughtOffline(_Base):
@@ -211,7 +221,11 @@ class TestExaggerationIsCaughtOffline(_Base):
             _ExaggeratingTailor(self.truth_base, honest_second=True),
             _RuleApplyingCritic(),
         )
+        self.assertEqual(outcome.status, "needs_review")
         self.assertEqual([o.text for o in run.orphans], [_EXAGGERATED])
+        honest = [b for b in run.document.experience[0].bullets if b.text == _HONEST]
+        self.assertEqual(len(honest), 1)
+        self.assertEqual(honest[0].origin, "reworded")
 
 
 @unittest.skipUnless(
@@ -237,11 +251,14 @@ class TestExaggerationIsCaughtByRealClaude(_Base):
         self._assert_exaggeration_was_surfaced(outcome, run)
 
     def test_the_real_critic_does_not_flag_an_honest_rewording(self) -> None:
-        _, run = self._run(
+        outcome, run = self._run(
             _ExaggeratingTailor(self.truth_base, honest_second=True),
             self._real_critic(),
         )
-        self.assertNotIn(_HONEST, [o.text for o in run.orphans])
+        # A failed run has no orphans, which would pass vacuously: require
+        # that the critic really judged the lines.
+        self.assertEqual(outcome.status, "needs_review")
+        self.assertEqual([o.text for o in run.orphans], [_EXAGGERATED])
 
 
 if __name__ == "__main__":
