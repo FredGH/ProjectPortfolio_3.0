@@ -125,6 +125,11 @@ _RUN = {
 }
 
 
+def _choose_link_target(app: AppTest) -> None:
+    picker = next(s for s in app.selectbox if s.key == f"link-select-{_ORPHAN_ID}")
+    picker.select("b1").run()
+
+
 def _fake_get(candidates, run):
     def _fake(url: str, **_kwargs) -> httpx.Response:
         request = httpx.Request("GET", url)
@@ -229,7 +234,9 @@ class TestTailoredCvReviewPage(unittest.TestCase):
                 200, json=_RUN, request=httpx.Request("POST", "http://x")
             )
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            _choose_link_target(app)
             link = next(b for b in app.button if b.key == f"link-{_ORPHAN_ID}")
+            self.assertFalse(link.disabled)
             link.click().run()
         url = post.call_args.args[0]
         self.assertTrue(url.endswith(f"/tailoring/orphans/{_ORPHAN_ID}/decision"))
@@ -247,6 +254,7 @@ class TestTailoredCvReviewPage(unittest.TestCase):
                 request=httpx.Request("POST", "http://x"),
             )
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            _choose_link_target(app)
             next(b for b in app.button if b.key == f"link-{_ORPHAN_ID}").click().run()
         self.assertIn("same role", " ".join(e.value for e in app.error))
 
@@ -317,6 +325,8 @@ class TestTailoredCvReviewPage(unittest.TestCase):
             mock.patch("httpx.post", **post_kwargs),
         ):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            if key.startswith("link-"):
+                _choose_link_target(app)
             next(b for b in app.button if b.key == key).click().run()
         return app
 
@@ -345,6 +355,77 @@ class TestTailoredCvReviewPage(unittest.TestCase):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(app.error)
+
+    # --- each line beside its source (I4) and no one-click Link (I6) ------
+
+    def test_each_bullet_shows_its_source_text_not_its_id(self) -> None:
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        texts = [t.value for t in app.text]
+        self.assertIn("reworded · source: Built dbt models for risk reporting", texts)
+        self.assertIn("orphan · source: no source", texts)
+        self.assertIn(
+            "summary · reworded · source: Built dbt models for risk reporting", texts
+        )
+        self.assertFalse([t for t in texts if t.endswith("source: b1")])
+
+    def test_a_long_source_text_is_truncated(self) -> None:
+        long_text = "Built " + "very " * 80 + "long pipelines"
+        sources = [{**_RUN["sources"][0], "text": long_text}, _RUN["sources"][1]]
+        run = {**_RUN, "sources": sources}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        line = next(
+            t.value for t in app.text if t.value.startswith("reworded · source:")
+        )
+        self.assertLess(len(line), len(long_text))
+        self.assertTrue(line.endswith("…"))
+
+    def test_the_orphan_header_names_the_role(self) -> None:
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        texts = [t.value for t in app.text]
+        self.assertIn("Senior Data Engineer at Acme Bank (orphan)", texts)
+        self.assertFalse([t for t in texts if t.startswith("Role 0")])
+
+    def test_an_unsupported_orphan_shows_its_claimed_source_text(self) -> None:
+        orphan = {
+            **_RUN["orphans"][0],
+            "kind": "unsupported",
+            "bullet_index": 0,
+            "text": "Built dbt models powering risk reporting",
+            "claimed_refs": ["b1"],
+            "issue": "adds a claim",
+        }
+        run = {**_RUN, "orphans": [orphan]}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertIn(
+            "Claimed source: Built dbt models for risk reporting",
+            [t.value for t in app.text],
+        )
+
+    def test_hostile_source_text_is_shown_as_plain_text(self) -> None:
+        sources = [{**_RUN["sources"][0], "text": _HOSTILE}, _RUN["sources"][1]]
+        run = {**_RUN, "sources": sources}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self._assert_no_live_markdown(app)
+        self.assertIn(_HOSTILE, " ".join(t.value for t in app.text))
+
+    def test_link_is_disabled_until_a_bullet_is_chosen(self) -> None:
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            picker = next(
+                s for s in app.selectbox if s.key == f"link-select-{_ORPHAN_ID}"
+            )
+            self.assertIsNone(picker.value)
+            link = next(b for b in app.button if b.key == f"link-{_ORPHAN_ID}")
+            self.assertTrue(link.disabled)
+            _choose_link_target(app)
+            link = next(b for b in app.button if b.key == f"link-{_ORPHAN_ID}")
+            self.assertFalse(link.disabled)
 
 
 if __name__ == "__main__":

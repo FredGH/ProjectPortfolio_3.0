@@ -40,6 +40,7 @@ scope than your CV shows. That is advice, not an error.
 _settings = get_settings()
 _base = _settings.api_base_url
 _POLL_SECONDS = 3
+_MAX_SOURCE_CHARS = 160
 
 _MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
 
@@ -231,19 +232,72 @@ if coverage["missing_unevidenced"]:
         "added): " + ", ".join(coverage["missing_unevidenced"])
     )
 
+sources = run["sources"]
+_source_text = {s["bullet_id"]: s["text"] for s in sources}
+
+
+def _shorten(text: str) -> str:
+    """Truncate a long source text for display.
+
+    Args:
+        text: A truth-base bullet text.
+
+    Returns:
+        The text, cut at `_MAX_SOURCE_CHARS` with an ellipsis when longer.
+    """
+    if len(text) <= _MAX_SOURCE_CHARS:
+        return text
+    return text[: _MAX_SOURCE_CHARS - 1].rstrip() + "…"
+
+
+def _sources_of(refs: list[str]) -> str:
+    """Render the truth-base text(s) a line's refs point to.
+
+    Args:
+        refs: `bullet_id`s cited by the line.
+
+    Returns:
+        The known source texts joined by " | ", or `no source` when none
+        of the refs is known.
+    """
+    texts = [_shorten(_source_text[ref]) for ref in refs if ref in _source_text]
+    return " | ".join(texts) or "no source"
+
+
+def _role_name(experience_index: int | None) -> str:
+    """Name a role of the tailored CV for an orphan header.
+
+    Args:
+        experience_index: The role's index in the document.
+
+    Returns:
+        `<title> at <company>`, or `Role <n>` when the index is unknown.
+    """
+    roles = document["experience"]
+    if experience_index is not None and 0 <= experience_index < len(roles):
+        role = roles[experience_index]
+        return f"{role['title']} at {role['company']}"
+    return f"Role {experience_index}"
+
+
 st.subheader("Tailored CV")
 st.text(document["headline"])
 if document["summary"]:
-    st.text(document["summary"]["text"])
-    st.text(f"summary · {document['summary']['origin']}")
+    summary = document["summary"]
+    st.text(summary["text"])
+    summary_source = (
+        "your CV's summary"
+        if summary["origin"] == "original" and not summary["evidence_refs"]
+        else _sources_of(summary["evidence_refs"])
+    )
+    st.text(f"summary · {summary['origin']} · source: {summary_source}")
 for role in document["experience"]:
     st.markdown("---")
     st.text(f"{role['title']} — {role['company']}")
     st.text(f"{role['start'] or '?'} – {role['end'] or 'present'}")
     for bullet in role["bullets"]:
         st.text(bullet["text"])
-        refs = ", ".join(bullet["evidence_refs"]) or "no source"
-        st.text(f"{bullet['origin']} · source: {refs}")
+        st.text(f"{bullet['origin']} · source: {_sources_of(bullet['evidence_refs'])}")
 st.markdown("---")
 st.text("Skills: " + ", ".join(skill["name"] for skill in document["skills"]))
 
@@ -252,32 +306,37 @@ if status == "approved":
     st.success("Approved — every line traces to your CV.")
 if pending:
     st.subheader("Needs your decision")
-sources = run["sources"]
+_labels = {s["bullet_id"]: f"{s['role']}: {s['text']}" for s in sources}
 for orphan in pending:
     st.markdown("---")
     where = (
         "Summary"
         if orphan["section"] == "summary"
-        else f"Role {orphan['experience_index']}, bullet {orphan['bullet_index']}"
+        else _role_name(orphan["experience_index"])
     )
     st.text(f"{where} ({orphan['kind']})")
     st.text(orphan["text"])
+    if orphan["kind"] == "unsupported":
+        st.text(f"Claimed source: {_sources_of(orphan['claimed_refs'])}")
     if orphan["issue"]:
         st.text(orphan["issue"])
     options = [
-        s
+        s["bullet_id"]
         for s in sources
         if orphan["section"] == "summary"
         or s["experience_index"] == orphan["experience_index"]
     ]
+    # No preselection: linking must be a deliberate choice, never one click.
     choice = st.selectbox(
         "Evidenced by",
         options=options,
-        format_func=lambda s: f"{s['role']}: {s['text']}",
+        index=None,
+        placeholder="Choose the bullet that evidences this",
+        format_func=lambda bullet_id: _labels[bullet_id],
         key=f"link-select-{orphan['id']}",
     )
     link_col, reject_col, _ = st.columns([1, 1, 4])
     if link_col.button("Link", key=f"link-{orphan['id']}", disabled=choice is None):
-        _decide(orphan["id"], {"action": "link", "evidence_ref": choice["bullet_id"]})
+        _decide(orphan["id"], {"action": "link", "evidence_ref": choice})
     if reject_col.button("Reject", key=f"reject-{orphan['id']}"):
         _decide(orphan["id"], {"action": "reject"})
