@@ -1,10 +1,10 @@
-# Warm-cream / green theme (see .claude/web-design/DESIGN.md). Native
-# widget colours come from here; shapes, fonts and the sidebar are
-# styled in core.ui.theme.apply_theme(), which every page calls.
+# Purple-on-white theme (see .claude/web-design/DESIGN.md). Native
+# widget colours come from here; shapes, fonts and shadows are styled in
+# core.ui.theme.apply_theme(), which every page calls.
 [theme]
 base = "light"
-primaryColor = "#00754A"
-backgroundColor = "#f2f0eb"
-secondaryBackgroundColor = "#edebe9"
-textColor = "#212121"
+primaryColor = "#7132f5"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f4f4f6"
+textColor = "#101114"
 font = "sans serif"
