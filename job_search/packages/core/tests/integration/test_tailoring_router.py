@@ -194,6 +194,46 @@ class TestTailoringRouter(unittest.TestCase):
         self.assertEqual(mine[0]["title_for_display"], "Lead Data Engineer")
         self.assertIsNone(mine[0]["latest_status"])
 
+    def test_latest_run_works_for_an_unscored_job(self) -> None:
+        self._store_cv()
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO gold.dim_job "
+                    "(job_group_id, title_for_display, company, description) "
+                    "VALUES ('zzfixture-tlr-api-3', 'Data Lead', 'Delta', 'x')"
+                )
+            )
+        run_id = self._start("zzfixture-tlr-api-3").json()["run_id"]
+        latest = self.client.get("/tailoring/jobs/zzfixture-tlr-api-3/latest-run")
+        self.assertEqual(latest.status_code, 200)
+        self.assertEqual(latest.json()["run_id"], run_id)
+
+    def test_another_users_latest_run_is_404(self) -> None:
+        self._store_cv()
+        self._start()
+        app.dependency_overrides[get_current_user_id] = lambda: self.other_user
+        self.assertEqual(
+            self.client.get(f"/tailoring/jobs/{_JOB}/latest-run").status_code, 404
+        )
+
+    def test_another_users_orphan_is_404_and_undecidable(self) -> None:
+        body = self._orphan_run()
+        orphan_id = body["orphans"][0]["id"]
+        app.dependency_overrides[get_current_user_id] = lambda: self.other_user
+        response = self.client.post(
+            f"/tailoring/orphans/{orphan_id}/decision", json={"action": "reject"}
+        )
+        self.assertEqual(response.status_code, 404)
+        app.dependency_overrides[get_current_user_id] = lambda: self.user_id
+        after = self.client.get(f"/tailoring/runs/{body['run_id']}").json()
+        self.assertEqual(after["orphans"][0]["status"], "pending")
+
+    def test_candidates_limit_is_bounded(self) -> None:
+        for limit in (0, 1000):
+            response = self.client.get(f"/tailoring/candidates?limit={limit}")
+            self.assertEqual(response.status_code, 422)
+
     # --- starting runs ---------------------------------------------------
 
     def test_a_run_without_a_cv_is_409(self) -> None:

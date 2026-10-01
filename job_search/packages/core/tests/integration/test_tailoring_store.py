@@ -17,6 +17,7 @@ from core.tailoring.store import (
     StaleDecisionError,
     create_run,
     finish_run,
+    latest_run_id,
     read_orphan,
     read_run,
     save_decision,
@@ -312,6 +313,22 @@ class TestTailoringStore(unittest.TestCase):
         with self.assertRaises(StaleDecisionError):
             self._decide(run, run.orphans[0], "reject", user=self.user_b)
         self.assertEqual(self._snapshot(run_id), before)
+
+    def test_latest_run_id_is_the_newest_visible_run(self) -> None:
+        job = "zzfixture-tlr-store-latest"
+        self.assertIsNone(latest_run_id(self.app_engine, self.user_a, job))
+        ids = [
+            create_run(
+                self.app_engine,
+                self.user_a,
+                job_group_id=job,
+                truth_base_version=1,
+                target_title="Lead Data Engineer",
+            )
+            for _ in range(2)
+        ]
+        self.assertEqual(latest_run_id(self.app_engine, self.user_a, job), ids[1])
+        self.assertIsNone(latest_run_id(self.app_engine, self.user_b, job))
 
 
 if __name__ == "__main__":

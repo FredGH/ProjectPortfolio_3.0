@@ -185,6 +185,30 @@ def create_run(
         ).scalar_one()
 
 
+def latest_run_id(
+    engine: Engine, user_id: uuid.UUID, job_group_id: str
+) -> uuid.UUID | None:
+    """Find the user's most recent run for a job.
+
+    Args:
+        engine: The app-role engine.
+        user_id: The owner.
+        job_group_id: The target job.
+
+    Returns:
+        The newest run's id, or None if the user has no run for the job.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        return conn.execute(
+            text(
+                "SELECT id FROM tailoring.tailored_cv "
+                "WHERE job_group_id = :job_group_id "
+                "ORDER BY created_at DESC, id DESC LIMIT 1"
+            ),
+            {"job_group_id": job_group_id},
+        ).scalar_one_or_none()
+
+
 def finish_run(
     engine: Engine,
     user_id: uuid.UUID,

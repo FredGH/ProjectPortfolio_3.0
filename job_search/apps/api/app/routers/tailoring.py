@@ -12,7 +12,7 @@ import uuid
 from typing import Literal
 
 from app.dependencies import get_app_db_engine, get_llm_adapters
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, model_validator
 from sqlalchemy import Engine
 
@@ -31,6 +31,7 @@ from core.tailoring.loop import (
 from core.tailoring.store import (
     StaleDecisionError,
     StoredRun,
+    latest_run_id,
     read_orphan,
     read_run,
     save_decision,
@@ -168,7 +169,7 @@ def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
 
 @router.get("/tailoring/candidates", response_model=list[CandidateModel])
 def get_candidates(
-    limit: int = 25,
+    limit: int = Query(25, ge=1, le=100),
     user_id: uuid.UUID = Depends(get_current_user_id),
     engine: Engine = Depends(get_app_db_engine),
 ) -> list[CandidateModel]:
@@ -270,9 +271,9 @@ def get_latest_run(
     Raises:
         HTTPException: 404 if the user has never tailored for this job.
     """
-    for candidate in list_candidates(engine, user_id, limit=1000):
-        if candidate.job_group_id == job_group_id and candidate.latest_run_id:
-            return LatestRun(run_id=candidate.latest_run_id)
+    run_id = latest_run_id(engine, user_id, job_group_id)
+    if run_id is not None:
+        return LatestRun(run_id=run_id)
     raise HTTPException(status_code=404, detail="no run for this job")
 
 
@@ -335,5 +336,6 @@ def post_decision(
     except StaleDecisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     updated = read_run(engine, user_id, run.id)
-    assert updated is not None
+    if updated is None:
+        raise HTTPException(status_code=409, detail="the run disappeared")
     return _run_model(engine, user_id, updated)
