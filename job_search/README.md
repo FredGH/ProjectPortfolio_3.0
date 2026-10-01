@@ -479,3 +479,28 @@ the same way.
      SET status = 'cancelled', finished_at = now(), updated_at = now()
    WHERE run_id = '<id>';
   ```
+
+## UI theme
+
+The Streamlit UI uses a dark, black-and-electric-yellow theme taken from
+the **ClickHouse** design in
+[voltagent/awesome-design-md](https://github.com/voltagent/awesome-design-md).
+The design spec is kept in
+[.claude/web-design/DESIGN.md](.claude/web-design/DESIGN.md). This is a
+styling reference only: the project is not affiliated with ClickHouse and
+uses none of its logos or other assets.
+
+It is applied in two places:
+
+- `apps/ui/.streamlit/config.toml` — the native widget colours (dark base,
+  yellow primary).
+- `core.ui.theme.apply_theme()` in `packages/core/core/ui/theme.py` —
+  button and card shapes, Inter / JetBrains Mono type, hairline borders,
+  and the sidebar. Every page calls it once, right after
+  `st.set_page_config`; a new page must do the same to match.
+
+The config file is baked into the UI image and also bind-mounted in
+`docker-compose.yml`, so after editing it only
+`docker compose restart ui` is needed, not a rebuild. Inter and
+JetBrains Mono load from Google Fonts and fall back to system fonts
+offline.
