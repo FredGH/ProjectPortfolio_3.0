@@ -23,6 +23,7 @@ from core.classification.review import UNRESOLVED_COUNTRY as _UNRESOLVED_COUNTRY
 from core.settings import get_settings
 from core.stats import margin_of_error_for_sample_size, recommended_sample_size
 from core.text import readable_description
+from core.ui.theme import apply_theme
 
 _CATEGORIES = (
     "software_engineer",
@@ -40,6 +41,7 @@ _DEFAULT_MARGIN = 0.08  # only used to seed the calculator the first
 # time a region is opened — after that, target and margin are user-set.
 
 st.set_page_config(page_title="Categorisation Review", layout="wide")
+apply_theme()
 st.title("Categorisation Review")
 st.write(
     "Confirm or correct each job's category and seniority band. Both "

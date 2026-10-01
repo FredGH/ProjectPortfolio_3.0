@@ -17,8 +17,10 @@ import streamlit as st
 from core.cv.bullet_id import compute_bullet_id
 from core.settings import get_settings
 from core.skills.cv_map import carry_over_canonical_ids
+from core.ui.theme import apply_theme
 
 st.set_page_config(page_title="CV Editor", layout="wide")
+apply_theme()
 st.title("CV Editor")
 
 _settings = get_settings()

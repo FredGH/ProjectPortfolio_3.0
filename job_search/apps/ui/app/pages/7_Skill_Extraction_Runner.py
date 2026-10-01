@@ -13,8 +13,10 @@ import httpx
 import streamlit as st
 
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 st.set_page_config(page_title="Skill Extraction Runner", layout="wide")
+apply_theme()
 st.title("Skill Extraction Runner")
 
 _API = get_settings().api_base_url

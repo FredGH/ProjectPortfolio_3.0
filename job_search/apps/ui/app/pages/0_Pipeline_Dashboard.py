@@ -19,6 +19,7 @@ from core.pipeline.descriptions import (
     Description,
 )
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 # A running stage that reports progress (progress_total set, so it
 # heartbeats updated_at) and whose updated_at is older than this is shown
@@ -37,6 +38,7 @@ _REVIEW_PAGE_FILES = {
 }
 
 st.set_page_config(page_title="Pipeline Dashboard", layout="wide")
+apply_theme()
 st.title("Pipeline Dashboard")
 
 with st.expander("User manual"):

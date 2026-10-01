@@ -11,6 +11,7 @@ import httpx
 import streamlit as st
 
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 
 def _lookup_curve_point(curve: list[dict], threshold: float) -> dict:
@@ -46,6 +47,7 @@ def _lookup_curve_point(curve: list[dict], threshold: float) -> dict:
 
 
 st.set_page_config(page_title="Dedup Calibration", layout="wide")
+apply_theme()
 st.title("Dedup Calibration")
 
 with st.expander("User manual"):

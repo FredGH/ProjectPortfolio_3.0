@@ -9,8 +9,10 @@ import httpx
 import streamlit as st
 
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 st.set_page_config(page_title="Scoring Calibration", layout="wide")
+apply_theme()
 st.title("Scoring Calibration")
 
 with st.expander("User manual"):

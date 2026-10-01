@@ -16,6 +16,7 @@ import httpx
 import streamlit as st
 
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 _USER_GUIDE = """
 #### What this page is for
@@ -137,6 +138,7 @@ page:
 """
 
 st.set_page_config(page_title="Skill Review", layout="wide")
+apply_theme()
 st.title("Skill Review")
 with st.expander("User Guide", expanded=False):
     st.markdown(_USER_GUIDE)

@@ -44,6 +44,7 @@ services:
       - "8501:8501"
     volumes:
       - ./apps/ui/app:/app/apps/ui/app
+      - ./apps/ui/.streamlit:/app/.streamlit
       - ./packages/core:/app/packages/core
     depends_on:
       - api

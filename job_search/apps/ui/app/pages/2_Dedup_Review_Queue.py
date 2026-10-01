@@ -12,8 +12,10 @@ import streamlit as st
 
 from core.settings import get_settings
 from core.text import readable_description
+from core.ui.theme import apply_theme
 
 st.set_page_config(page_title="Dedup Review Queue", layout="wide")
+apply_theme()
 st.title("Dedup Review Queue")
 st.write(
     "Label each pair as the same job posting or not. Before any "

@@ -8,8 +8,10 @@ import httpx
 import streamlit as st
 
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 st.set_page_config(page_title="Manual Job Entry", layout="wide")
+apply_theme()
 st.title("Manual Job Entry")
 st.write("Paste a job posting you found by browsing — LinkedIn has no usable API.")
 

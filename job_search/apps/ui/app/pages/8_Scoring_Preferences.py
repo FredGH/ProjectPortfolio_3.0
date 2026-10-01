@@ -11,6 +11,7 @@ import httpx
 import streamlit as st
 
 from core.settings import get_settings
+from core.ui.theme import apply_theme
 
 _USER_GUIDE = """
 #### What this page is for
@@ -60,6 +61,7 @@ passed and scored under the old preferences until that command runs again.
 """
 
 st.set_page_config(page_title="Scoring Preferences", layout="wide")
+apply_theme()
 st.title("Scoring Preferences")
 with st.expander("User Guide", expanded=False):
     st.markdown(_USER_GUIDE)

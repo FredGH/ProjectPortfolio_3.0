@@ -20,6 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY packages/core /app/packages/core
 COPY config /app/config
 COPY apps/ui/app /app/apps/ui/app
+COPY apps/ui/.streamlit /app/.streamlit
 
 ENV PYTHONPATH=/app/packages/core
 
