@@ -1,10 +1,10 @@
-# Purple-on-white theme (see .claude/web-design/DESIGN.md). Native
-# widget colours come from here; shapes, fonts and shadows are styled in
-# core.ui.theme.apply_theme(), which every page calls.
+# Black-and-electric-yellow theme (see .claude/web-design/DESIGN.md).
+# Native widget colours come from here; shapes, fonts and borders are
+# styled in core.ui.theme.apply_theme(), which every page calls.
 [theme]
-base = "light"
-primaryColor = "#7132f5"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f4f4f6"
-textColor = "#101114"
+base = "dark"
+primaryColor = "#faff69"
+backgroundColor = "#0a0a0a"
+secondaryBackgroundColor = "#1a1a1a"
+textColor = "#ffffff"
 font = "sans serif"

@@ -1,8 +1,8 @@
 """Shared look for every Streamlit page (see
-.claude/web-design/DESIGN.md): white canvas, one purple scale, 12px
-rounded (never pill) buttons, whisper-level shadows. Native widget
-colours come from apps/ui/.streamlit/config.toml; this module injects
-the rest.
+.claude/web-design/DESIGN.md): near-black canvas, one electric-yellow
+brand colour, Inter at weight 700 for headlines, 8px buttons and 12px
+cards, hairline borders instead of shadows. Native widget colours come
+from apps/ui/.streamlit/config.toml; this module injects the rest.
 
 Selectors target Streamlit's `data-testid` attributes, which are far
 more stable across versions than its generated class names.
@@ -12,116 +12,132 @@ from __future__ import annotations
 
 import streamlit as st
 
-PURPLE = "#7132f5"
-PURPLE_DARK = "#5741d8"
-PURPLE_SUBTLE = "rgba(133, 91, 251, 0.16)"
-TEXT = "#101114"
-BORDER = "#dedee5"
-SUCCESS_TEXT = "#026b3f"
-SUBTLE_SHADOW = "rgba(0, 0, 0, 0.03) 0px 4px 24px"
-MICRO_SHADOW = "rgba(16, 24, 40, 0.04) 0px 1px 4px"
+YELLOW = "#faff69"
+YELLOW_ACTIVE = "#e6eb52"
+YELLOW_DISABLED = "#3a3a1f"
+ON_YELLOW = "#0a0a0a"
+CANVAS = "#0a0a0a"
+SURFACE_SOFT = "#121212"
+SURFACE_CARD = "#1a1a1a"
+SURFACE_ELEVATED = "#242424"
+HAIRLINE = "#2a2a2a"
+HAIRLINE_STRONG = "#3a3a3a"
+BODY = "#cccccc"
+MUTED = "#888888"
 
-# Kraken-Brand / Kraken-Product are proprietary; the design's own stated
-# fallbacks are used instead (IBM Plex Sans for display, Helvetica for UI).
 _CSS = f"""
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap');
 
 html, body, [class*="st-"], button, input, textarea {{
-    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-family: Inter, sans-serif;
 }}
 
-/* Display type: bold, tightly tracked. */
-h1, h2, h3 {{
-    font-family: "IBM Plex Sans", Helvetica, Arial, sans-serif;
-    color: {TEXT};
+/* Headlines: Inter 700, tight negative tracking. Hierarchy by size. */
+h1, h2, h3 {{ color: #ffffff; font-weight: 700; }}
+h1 {{ font-size: 40px; line-height: 1.15; letter-spacing: -1.5px; }}
+h2 {{ font-size: 32px; line-height: 1.2; letter-spacing: -1px; }}
+h3 {{ font-size: 24px; line-height: 1.3; letter-spacing: -0.3px; }}
+h4, h5, h6 {{ font-weight: 600; }}
+
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stMarkdownContainer"] li {{ color: {BODY}; line-height: 1.55; }}
+[data-testid="stCaptionContainer"] {{ color: {MUTED}; }}
+a {{ color: {YELLOW}; text-decoration: underline; }}
+
+/* Stat numbers: large, yellow, bold. */
+[data-testid="stMetricValue"] {{
+    color: {YELLOW};
+    font-weight: 700;
+    letter-spacing: -1.5px;
 }}
-h1 {{ font-size: 36px; font-weight: 700; line-height: 1.22; letter-spacing: -0.5px; }}
-h2 {{ font-size: 28px; font-weight: 700; line-height: 1.29; letter-spacing: -0.5px; }}
-h3 {{ font-size: 22px; font-weight: 600; line-height: 1.2; }}
 
-a {{ color: {PURPLE}; }}
-
-/* Buttons: 12px radius, never a pill. */
+/* Buttons: 8px radius. Primary is yellow with black text. */
 .stButton > button,
 .stDownloadButton > button,
 .stFormSubmitButton > button,
 [data-testid="stBaseButton-primary"],
 [data-testid="stBaseButton-secondary"] {{
-    border-radius: 12px;
-    padding: 13px 16px;
-    font-weight: 500;
-    line-height: 1.38;
-    transition: all 0.2s ease;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
 }}
 [data-testid="stBaseButton-primary"] {{
-    background: {PURPLE};
-    border: 1px solid {PURPLE};
-    color: #ffffff;
+    background: {YELLOW};
+    border: 1px solid {YELLOW};
+    color: {ON_YELLOW};
 }}
-[data-testid="stBaseButton-primary"]:hover {{
-    background: {PURPLE_DARK};
-    border-color: {PURPLE_DARK};
+[data-testid="stBaseButton-primary"]:hover,
+[data-testid="stBaseButton-primary"]:active {{
+    background: {YELLOW_ACTIVE};
+    border-color: {YELLOW_ACTIVE};
+    color: {ON_YELLOW};
 }}
 [data-testid="stBaseButton-secondary"] {{
-    background: #ffffff;
-    border: 1px solid {PURPLE_DARK};
-    color: {PURPLE_DARK};
+    background: {SURFACE_CARD};
+    border: 1px solid {SURFACE_CARD};
+    color: #ffffff;
 }}
-[data-testid="stBaseButton-secondary"]:hover {{
-    background: {PURPLE_SUBTLE};
-    color: {PURPLE};
+[data-testid="stBaseButton-primary"]:disabled {{
+    background: {YELLOW_DISABLED};
+    border-color: {YELLOW_DISABLED};
+    color: {MUTED};
 }}
-[data-testid="stBaseButton-primary"]:disabled,
 [data-testid="stBaseButton-secondary"]:disabled {{
     opacity: 0.5;
 }}
 
-/* Cards: white, hairline border, whisper-level shadow. */
+/* Cards: surface-card fill, 1px hairline, 12px radius, no shadow. */
 [data-testid="stExpander"] details,
 [data-testid="stVerticalBlockBorderWrapper"] {{
     border-radius: 12px;
 }}
 [data-testid="stExpander"] details {{
-    background: #ffffff;
-    border: 1px solid {BORDER};
-    box-shadow: {SUBTLE_SHADOW};
+    background: {SURFACE_CARD};
+    border: 1px solid {HAIRLINE};
 }}
 div[role="dialog"] {{
-    border-radius: 16px;
-    box-shadow: {SUBTLE_SHADOW};
+    background: {SURFACE_CARD};
+    border: 1px solid {HAIRLINE};
+    border-radius: 12px;
 }}
 
-/* Inputs: white fields, purple focus ring. */
+/* Inputs: surface-card fill, 8px radius, yellow focus border. */
 [data-baseweb="input"],
 [data-baseweb="select"] > div,
 [data-baseweb="textarea"] {{
-    background: #ffffff;
-    border-color: {BORDER};
-    border-radius: 10px;
-    box-shadow: {MICRO_SHADOW};
+    background: {SURFACE_CARD};
+    border-color: {HAIRLINE_STRONG};
+    border-radius: 8px;
 }}
 [data-baseweb="input"]:focus-within,
 [data-baseweb="select"]:focus-within > div,
 [data-baseweb="textarea"]:focus-within {{
-    border-color: {PURPLE};
-    box-shadow: 0 0 0 1px {PURPLE};
+    border-color: {YELLOW};
+    box-shadow: 0 0 0 1px {YELLOW};
 }}
 
-/* Alerts: rounded; success reads as the design's green badge. */
-[data-testid="stAlert"] {{ border-radius: 12px; }}
-[data-testid="stAlert"]:has([data-testid="stAlertContentSuccess"]) {{
-    background: rgba(20, 158, 97, 0.16);
-    color: {SUCCESS_TEXT};
+/* Code: JetBrains Mono in a surface-card window. */
+code, pre, [data-testid="stCode"] {{
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 14px;
 }}
+[data-testid="stCode"] pre {{ background: {SURFACE_CARD}; border-radius: 12px; }}
 
-/* Sidebar navigation: active page as a subtle purple chip. */
+/* Alerts: 8px radius; status colours come from the theme's semantics. */
+[data-testid="stAlert"] {{ border-radius: 8px; }}
+
+/* Sidebar: soft surface with a hairline edge; active page like the
+   design's active category tab. */
+[data-testid="stSidebar"] {{
+    background: {SURFACE_SOFT};
+    border-right: 1px solid {HAIRLINE};
+}}
+[data-testid="stSidebarNav"] a {{ border-radius: 8px; color: {MUTED}; }}
 [data-testid="stSidebarNav"] a[aria-current="page"] {{
-    background: {PURPLE_SUBTLE};
-    border-radius: 12px;
-}}
-[data-testid="stSidebarNav"] a[aria-current="page"] span {{
-    color: {PURPLE};
-    font-weight: 600;
+    background: {SURFACE_CARD};
+    color: #ffffff;
 }}
 """
 
