@@ -123,7 +123,11 @@ def apply_decision(
         bullet.origin = "linked"
         return DecisionResult(updated, None)
 
-    valid = [ref for ref in orphan.claimed_refs if ref in known]
+    valid = [
+        ref
+        for ref in orphan.claimed_refs
+        if ref in known and known[ref][0] == role_index
+    ]
     if orphan.kind == "unsupported" and len(valid) == 1:
         bullet.text = known[valid[0]][1]
         bullet.evidence_refs = [valid[0]]

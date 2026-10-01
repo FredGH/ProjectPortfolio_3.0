@@ -14,6 +14,7 @@ from core.tailoring.decisions import apply_decision
 from core.tailoring.schema import TailorBullet, TailorExperience, TailorOutput
 from core.tailoring.store import (
     OrphanDraft,
+    StaleDecisionError,
     create_run,
     finish_run,
     read_orphan,
@@ -183,7 +184,7 @@ class TestTailoringStore(unittest.TestCase):
                 evidence_ref=self.ref0,
                 truth_base=self.truth_base,
             )
-            document = result.document
+            base, document = document, result.document
             statuses.append(
                 save_decision(
                     self.app_engine,
@@ -192,6 +193,7 @@ class TestTailoringStore(unittest.TestCase):
                     status="linked",
                     evidence_ref=self.ref0,
                     document=document,
+                    base_document=base,
                     removed_position=result.removed_position,
                 )
             )
@@ -221,6 +223,7 @@ class TestTailoringStore(unittest.TestCase):
             status="rejected",
             evidence_ref=None,
             document=result.document,
+            base_document=run.document,
             removed_position=result.removed_position,
         )
         after = read_run(self.app_engine, self.user_a, run_id)
@@ -237,6 +240,78 @@ class TestTailoringStore(unittest.TestCase):
             truth_base=self.truth_base,
         )
         self.assertEqual(again.removed_position, (0, 0))
+
+    def _decide(self, run, orphan, action, user=None, base=None, ref=None):
+        result = apply_decision(
+            run.document,
+            orphan,
+            action=action,
+            evidence_ref=ref,
+            truth_base=self.truth_base,
+        )
+        return save_decision(
+            self.app_engine,
+            user or self.user_a,
+            orphan=orphan,
+            status="linked" if action == "link" else "rejected",
+            evidence_ref=ref,
+            document=result.document,
+            base_document=base or run.document,
+            removed_position=result.removed_position,
+        )
+
+    def _snapshot(self, run_id):
+        run = read_run(self.app_engine, self.user_a, run_id)
+        return (
+            run.status,
+            run.document,
+            [(o.status, o.bullet_index) for o in run.orphans],
+        )
+
+    def test_a_decision_on_a_stale_base_is_refused_and_changes_nothing(self) -> None:
+        run_id = self._finished_run()
+        stale = read_run(self.app_engine, self.user_a, run_id)
+        self._decide(stale, stale.orphans[0], "reject")
+        before = self._snapshot(run_id)
+        with self.assertRaises(StaleDecisionError):
+            self._decide(stale, stale.orphans[1], "link", ref=self.ref0)
+        self.assertEqual(self._snapshot(run_id), before)
+
+    def test_a_double_submit_is_refused_and_does_not_double_reindex(self) -> None:
+        run_id = self._finished_run()
+        stale = read_run(self.app_engine, self.user_a, run_id)
+        self._decide(stale, stale.orphans[0], "reject")
+        before = self._snapshot(run_id)
+        with self.assertRaises(StaleDecisionError):
+            self._decide(stale, stale.orphans[0], "reject")
+        self.assertEqual(self._snapshot(run_id), before)
+        after = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(
+            {o.text: o.bullet_index for o in after.orphans if o.status == "pending"},
+            {"Invented two": 0, "Invented three": 1},
+        )
+
+    def test_three_decisions_from_one_base_only_the_first_succeeds(self) -> None:
+        run_id = self._finished_run()
+        base = read_run(self.app_engine, self.user_a, run_id)
+        self._decide(base, base.orphans[0], "reject")
+        for orphan in base.orphans[1:]:
+            with self.assertRaises(StaleDecisionError):
+                self._decide(base, orphan, "link", ref=self.ref0)
+        final = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(final.status, "needs_review")
+        self.assertEqual(len(final.document.experience[0].bullets), 2)
+        self.assertEqual(
+            [o.status for o in final.orphans], ["rejected", "pending", "pending"]
+        )
+
+    def test_a_decision_by_another_user_is_refused_and_changes_nothing(self) -> None:
+        run_id = self._finished_run()
+        run = read_run(self.app_engine, self.user_a, run_id)
+        before = self._snapshot(run_id)
+        with self.assertRaises(StaleDecisionError):
+            self._decide(run, run.orphans[0], "reject", user=self.user_b)
+        self.assertEqual(self._snapshot(run_id), before)
 
 
 if __name__ == "__main__":

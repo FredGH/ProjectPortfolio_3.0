@@ -166,6 +166,26 @@ class TestApplyDecision(unittest.TestCase):
         )
         self.assertEqual(result.removed_position, (0, 2))
 
+    def test_reject_of_an_unsupported_bullet_citing_another_role_removes_it(
+        self,
+    ) -> None:
+        orphan = _orphan(
+            kind="unsupported",
+            bullet_index=2,
+            text="Led 12 engineers using dbt",
+            claimed_refs=[self.ref_old],
+        )
+        result = apply_decision(
+            self.document,
+            orphan,
+            action="reject",
+            evidence_ref=None,
+            truth_base=self.truth_base,
+        )
+        self.assertEqual(result.removed_position, (0, 2))
+        texts = [b.text for b in result.document.experience[0].bullets]
+        self.assertNotIn("Led 12 engineers using dbt", texts)
+
     def test_a_stale_orphan_is_refused(self) -> None:
         with self.assertRaises(DecisionError):
             apply_decision(

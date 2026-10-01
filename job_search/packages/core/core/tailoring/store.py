@@ -16,6 +16,15 @@ from core.db.session import session_scope
 from core.tailoring.schema import TailoredDocument
 
 
+class StaleDecisionError(RuntimeError):
+    """A decision cannot be saved because the run or orphan has moved on.
+
+    Raised when the orphan was already decided (or is not visible to this
+    user), or when the stored document differs from the one the decision
+    was computed from.
+    """
+
+
 @dataclass(frozen=True)
 class OrphanDraft:
     """A line the loop could not trace, about to be saved for a decision.
@@ -368,6 +377,7 @@ def save_decision(
     status: str,
     evidence_ref: str | None,
     document: TailoredDocument,
+    base_document: TailoredDocument,
     removed_position: tuple[int, int] | None,
 ) -> str:
     """Persist one orphan decision and the updated document atomically.
@@ -379,22 +389,50 @@ def save_decision(
         status: `linked` or `rejected`.
         evidence_ref: The linked bullet id, for a link.
         document: The document after the decision was applied.
+        base_document: The document the decision was computed from; the
+            stored document must still equal it (compare-and-swap).
         removed_position: `(experience_index, bullet_index)` of a removed
             line, so later orphans in that role can be re-indexed.
 
     Returns:
         The run's new status: `approved` when no orphan is left pending,
         else `needs_review`.
+
+    Raises:
+        StaleDecisionError: If the run is not visible, the stored document
+            differs from `base_document`, or the orphan is no longer
+            pending (already decided, or not visible to this user).
     """
     with session_scope(engine, user_id=user_id) as conn:
-        conn.execute(
+        locked = conn.execute(
+            text(
+                "SELECT content FROM tailoring.tailored_cv "
+                "WHERE id = :run_id FOR UPDATE"
+            ),
+            {"run_id": orphan.tailored_cv_id},
+        ).one_or_none()
+        if locked is None or locked.content is None:
+            raise StaleDecisionError("this tailored CV is not available — reload")
+        if TailoredDocument.model_validate(locked.content) != base_document:
+            raise StaleDecisionError(
+                "the tailored CV changed since you opened it — reload"
+            )
+        updated = conn.execute(
             text(
                 "UPDATE tailoring.orphan_bullet SET status = :status, "
                 "evidence_ref = :evidence_ref, decided_at = now() "
-                "WHERE id = :orphan_id"
+                "WHERE id = :orphan_id AND tailored_cv_id = :run_id "
+                "AND status = 'pending'"
             ),
-            {"status": status, "evidence_ref": evidence_ref, "orphan_id": orphan.id},
+            {
+                "status": status,
+                "evidence_ref": evidence_ref,
+                "orphan_id": orphan.id,
+                "run_id": orphan.tailored_cv_id,
+            },
         )
+        if updated.rowcount != 1:
+            raise StaleDecisionError("this line was already decided")
         if removed_position is not None:
             _shift_later_bullets(
                 conn, orphan.tailored_cv_id, removed_position[0], removed_position[1]
