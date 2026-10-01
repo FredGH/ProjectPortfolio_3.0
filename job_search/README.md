@@ -504,3 +504,45 @@ The config file is baked into the UI image and also bind-mounted in
 `docker compose restart ui` is needed, not a rebuild. Inter and
 JetBrains Mono load from Google Fonts and fall back to system fonts
 offline.
+
+## Tailored CV (Step 17)
+
+Tailors your CV to one of your top-scored jobs with a fabrication guard:
+every generated line must trace to a bullet in your CV, and anything that
+doesn't is shown to you for an explicit decision. Design:
+[docs/superpowers/specs/2026-10-01-step17-tailoring-design.md](docs/superpowers/specs/2026-10-01-step17-tailoring-design.md).
+
+- **UI:** the *Tailored CV Review* page — pick a job, click Tailor, then
+  Link or Reject each line under "Needs your decision".
+- **CLI:** `docker compose run --rm pipeline tailor-cv --user-id <id>
+  --job-group-id <id>` (on demand; deliberately not a dashboard stage).
+- **API:** `/tailoring/candidates`, `/tailoring/runs`, `/tailoring/runs/{id}`,
+  `/tailoring/orphans/{id}/decision`.
+
+How it works: code assembles the CV from your truth base (companies, titles
+and dates are copied, never generated; the headline is the job's
+`title_for_display`); the `cv_tailoring` model only returns per-bullet
+wording and the bullet ids it draws on; code checks and the
+`fabrication_critic` (always Claude) verify it; the loop retries at most
+twice. Accepting an orphan means linking it to an existing CV bullet — your
+CV is never modified.
+
+Safety details: the critic fails closed (an unanswered, malformed or
+contradictory verdict is treated as unsupported). An orphan decision is
+refused with HTTP 409 if the tailored CV changed since you opened it.
+Keyword coverage reports skills your CV evidences but the tailored text
+lacks, and never invents skills your CV does not evidence.
+
+Cost: the critic makes one Claude call per attempt (a few cents at most).
+The Tailor is local (Ollama) by default; to use Claude instead, change the
+`cv_tailoring` entry in `config/llm_tasks.yml` (provider `anthropic`, prompt
+family `claude`).
+
+The `fabrication_critic` task **must** stay on `anthropic`: the critic
+refuses to run otherwise, and a test asserts it.
+
+The paid adversarial test (a deliberately exaggerating Tailor against the
+real critic) runs with `RUN_PAID_TESTS=1`.
+
+This step produces approved *content* only. The ATS `.docx` and the designed
+PDF are Steps 18a and 18b.
