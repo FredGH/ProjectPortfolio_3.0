@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
@@ -15,10 +16,12 @@ from tests.tailoring_fixtures import bullet_id, make_truth_base
 
 from core.cv.store import write_truth_base
 from core.llm.types import LLMResponse
+from core.tailoring.checks import Problem
 from core.tailoring.loop import (
     NoCvError,
     NoTargetTitleError,
     UnknownJobError,
+    _orphan_drafts,
     execute_tailoring,
     run_tailoring,
     start_tailoring,
@@ -369,8 +372,9 @@ class TestTailoringLoop(unittest.TestCase):
         outcome = self._run(
             _Tailor([self._reply(self._clean_bullets())]), _Critic(reply="lgtm")
         )
-        self.assertEqual(outcome.status, "failed")
+        self.assertEqual((outcome.status, outcome.attempts), ("failed", 1))
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(run.attempts, 1)
         self.assertIsNone(run.document)
         self.assertIn("critic", run.error_message)
 
@@ -380,6 +384,9 @@ class TestTailoringLoop(unittest.TestCase):
         tailor = _Tailor(["this is not json"])
         outcome = self._run(tailor, _Critic())
         self.assertEqual((outcome.status, outcome.attempts), ("failed", 3))
+        self.assertEqual(
+            read_run(self.app_engine, self.user_id, outcome.run_id).attempts, 3
+        )
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
         self.assertIn("unusable Tailor reply", run.error_message)
         self.assertEqual(run.orphans, [])
@@ -406,10 +413,85 @@ class TestTailoringLoop(unittest.TestCase):
                 "    prompt_family: claude\n"
             )
             outcome = self._run(tailor, critic, config_path=path)
-        self.assertEqual(outcome.status, "failed")
+        self.assertEqual((outcome.status, outcome.attempts), ("failed", 1))
         self.assertEqual(critic.calls, 0)
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(run.attempts, 1)
         self.assertIn("anthropic", run.error_message)
+
+    # --- the critic always runs on the final attempt ----------------------
+
+    def test_the_critic_runs_on_the_final_attempt_despite_code_problems(self) -> None:
+        self._store_cv()
+        # Every attempt: e0b1 has an unknown id (code problem); e0b0 is a
+        # reworded line the critic rejects. The critic must still be asked,
+        # once, on the final attempt only.
+        bad = [
+            {
+                "text": "Built dbt models powering risk reporting",
+                "evidence_refs": [self.ref0],
+            },
+            {"text": "Invented", "evidence_refs": ["nope"]},
+        ]
+        critic = _Critic(unsupported={"e0b0"})
+        outcome = self._run(_Tailor([self._reply(bad)]), critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 3))
+        self.assertEqual(critic.calls, 1)
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            [(o.bullet_index, o.kind) for o in run.orphans],
+            [(0, "unsupported"), (1, "orphan")],
+        )
+
+    def test_a_critic_rejection_wins_over_a_code_problem_on_the_same_line(self) -> None:
+        self._store_cv()
+        bad = [
+            {
+                "text": "Built dbt models powering risk reporting",
+                "evidence_refs": [self.ref0, "nope"],
+            },
+            {
+                "text": "Migrated nightly batch jobs to Airflow",
+                "evidence_refs": [self.ref1],
+            },
+        ]
+        outcome = self._run(_Tailor([self._reply(bad)]), _Critic(unsupported={"e0b0"}))
+        self.assertEqual(outcome.status, "needs_review")
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            [(o.bullet_index, o.kind) for o in run.orphans], [(0, "unsupported")]
+        )
+
+    def test_a_problem_on_an_unresolvable_location_raises_not_drops(self) -> None:
+        doc = SimpleNamespace(summary=None, experience=[])
+        for location in ("headline", "e0", "e5b0", "summary"):
+            with self.assertRaises(RuntimeError):
+                _orphan_drafts(doc, [Problem("evidence_missing", "m", location)], None)
+
+    def test_a_failure_before_any_tailor_call_records_zero_attempts(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM silver.silver__bridge_job_skill "
+                    "WHERE job_group_id = :j"
+                ),
+                {"j": _JOB},
+            )
+            conn.execute(
+                text("DELETE FROM gold.dim_job WHERE job_group_id = :j"), {"j": _JOB}
+            )
+        tailor = _Tailor([self._reply(self._clean_bullets())])
+        outcome = execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={"ollama": tailor, "anthropic": _Critic()},
+        )
+        self.assertEqual((outcome.status, outcome.attempts), ("failed", 0))
+        self.assertEqual(tailor.prompts, [])
+        self.assertEqual(read_run(self.app_engine, self.user_id, run_id).attempts, 0)
 
     # --- preconditions ---------------------------------------------------
 

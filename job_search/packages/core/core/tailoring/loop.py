@@ -160,8 +160,8 @@ def _feedback(
 
 def _draft(
     document: TailoredDocument, location: str, kind: str, issue: str | None
-) -> OrphanDraft | None:
-    """Build an orphan draft for a line, or None if the line is not there.
+) -> OrphanDraft:
+    """Build an orphan draft for a line.
 
     Args:
         document: The final document.
@@ -170,11 +170,15 @@ def _draft(
         issue: What is wrong.
 
     Returns:
-        The draft, or None when the location does not exist.
+        The draft.
+
+    Raises:
+        RuntimeError: If the location does not resolve to a line. A problem
+            that cannot be shown must fail the run, never be dropped.
     """
     if location == "summary":
         if document.summary is None:
-            return None
+            raise RuntimeError("cannot surface a problem on a missing summary")
         return OrphanDraft(
             kind=kind,
             section="summary",
@@ -186,12 +190,12 @@ def _draft(
         )
     match = _ITEM_ID_RE.match(location)
     if match is None:
-        return None
+        raise RuntimeError(f"cannot surface a problem at location {location!r}")
     role, position = int(match.group(1)), int(match.group(2))
     if role >= len(document.experience) or position >= len(
         document.experience[role].bullets
     ):
-        return None
+        raise RuntimeError(f"cannot surface a problem at location {location!r}")
     bullet = document.experience[role].bullets[position]
     return OrphanDraft(
         kind=kind,
@@ -242,9 +246,8 @@ def _orphan_drafts(
                 issues[item_id] = ("unsupported", verdict.issue)
 
     drafts = [
-        draft
+        _draft(document, location, kind, issue)
         for location, (kind, issue) in issues.items()
-        if (draft := _draft(document, location, kind, issue)) is not None
     ]
     return sorted(
         drafts,
@@ -264,6 +267,7 @@ def _execute(
     adapters: dict[str, LLMAdapter],
     config_path: Path | None,
     max_retries: int,
+    progress: list[int],
 ) -> TailoringOutcome:
     """Run the loop for an existing `generating` run.
 
@@ -274,6 +278,8 @@ def _execute(
         adapters: LLM adapters keyed by provider.
         config_path: Task-config override (tests).
         max_retries: Retries after the first attempt.
+        progress: One-element list updated with the number of Tailor attempts
+            started, so a failure can record the real count.
 
     Returns:
         The outcome. Raises on any failure — `execute_tailoring` turns that
@@ -297,6 +303,7 @@ def _execute(
     problems: list[Problem] = []
     attempts = 0
     for attempts in range(1, max_retries + 2):
+        progress[0] = attempts
         final = attempts == max_retries + 1
         try:
             tailor_result = run_tailor(
@@ -378,6 +385,7 @@ def execute_tailoring(
         The outcome; `failed` (with the message stored on the run) when
         anything went wrong, including a critic routed away from Anthropic.
     """
+    progress = [0]
     try:
         return _execute(
             app_engine,
@@ -386,6 +394,7 @@ def execute_tailoring(
             adapters=adapters,
             config_path=config_path,
             max_retries=max_retries,
+            progress=progress,
         )
     except Exception as exc:  # noqa: BLE001 — a background run must record, not raise
         message = f"{type(exc).__name__}: {exc}"[:500]
@@ -396,12 +405,10 @@ def execute_tailoring(
             status="failed",
             document=None,
             orphans=[],
-            attempts=max_retries + 1,
+            attempts=progress[0],
             error_message=message,
         )
-        return TailoringOutcome(
-            run_id=run_id, status="failed", attempts=max_retries + 1
-        )
+        return TailoringOutcome(run_id=run_id, status="failed", attempts=progress[0])
 
 
 def run_tailoring(
