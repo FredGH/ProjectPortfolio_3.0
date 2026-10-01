@@ -160,13 +160,17 @@ class _Base(unittest.TestCase):
         )
         return outcome, read_run(self.app_engine, self.user_id, outcome.run_id)
 
-    def _assert_exaggeration_was_surfaced(self, outcome, run) -> None:
+    def _assert_exaggeration_was_surfaced(
+        self, outcome, run, expected_issue_fragment: str | None = None
+    ) -> None:
         self.assertEqual(outcome.status, "needs_review")
         flagged = [o for o in run.orphans if o.kind == "unsupported"]
         self.assertEqual([o.text for o in flagged], [_EXAGGERATED])
         self.assertEqual(flagged[0].status, "pending")
-        # The verdict path ran: the issue is the critic's own wording.
-        self.assertIn("adds numbers not in the source", flagged[0].issue or "")
+        # The verdict path ran: the critic gave a reason (free-form text).
+        self.assertTrue(flagged[0].issue and flagged[0].issue.strip())
+        if expected_issue_fragment is not None:
+            self.assertIn(expected_issue_fragment, flagged[0].issue)
         # Never emitted as approved: the run is not approved and the
         # exaggerated line is still waiting for a decision.
         self.assertNotEqual(run.status, "approved")
@@ -210,7 +214,9 @@ class TestExaggerationIsCaughtOffline(_Base):
         outcome, run = self._run(
             _ExaggeratingTailor(self.truth_base), _RuleApplyingCritic()
         )
-        self._assert_exaggeration_was_surfaced(outcome, run)
+        self._assert_exaggeration_was_surfaced(
+            outcome, run, expected_issue_fragment="adds numbers not in the source"
+        )
 
     def test_rejecting_it_reverts_to_the_users_own_wording_and_approves(self) -> None:
         _, run = self._run(_ExaggeratingTailor(self.truth_base), _RuleApplyingCritic())
