@@ -18,6 +18,7 @@ _PAGE = (
     / "10_Tailored_CV_Review.py"
 )
 
+_HOSTILE = "[x](http://evil.example) ![p](http://evil/p.png) **b**"
 _RUN_ID = "11111111-1111-1111-1111-111111111111"
 _ORPHAN_ID = "22222222-2222-2222-2222-222222222222"
 
@@ -162,9 +163,7 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         warnings = " ".join(w.value for w in app.warning)
         self.assertIn("Lead implies managing people", warnings)
-        shown = " ".join(m.value for m in app.markdown) + " ".join(
-            c.value for c in app.caption
-        )
+        shown = " ".join(t.value for t in app.text)
         self.assertIn("SQL", shown)
         self.assertIn("Kubernetes", shown)
 
@@ -197,7 +196,7 @@ class TestTailoredCvReviewPage(unittest.TestCase):
             **_RUN,
             "status": "failed",
             "document": None,
-            "orphans": [],
+            "orphans": [_RUN["orphans"][0]],
             "error_message": "CriticError: unusable critic reply",
         }
         with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], failed)):
@@ -205,13 +204,20 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertIn("unusable critic reply", " ".join(e.value for e in app.error))
         self.assertFalse([b for b in app.button if b.key.startswith("link-")])
+        self.assertFalse([b for b in app.button if b.key.startswith("reject-")])
 
     def test_an_approved_run_has_no_orphan_controls(self) -> None:
-        approved = {**_RUN, "status": "approved", "orphans": []}
+        decided = [
+            {**_RUN["orphans"][0], "status": "linked", "evidence_ref": "b1"},
+            {**_RUN["orphans"][0], "id": "33", "status": "rejected"},
+        ]
+        approved = {**_RUN, "status": "approved", "orphans": decided}
         with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], approved)):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
         self.assertEqual(len(app.exception), 0)
         self.assertFalse([b for b in app.button if b.key.startswith("reject-")])
+        self.assertFalse([b for b in app.button if b.key.startswith("link-")])
+        self.assertTrue(app.success)
         self.assertIn("approved", " ".join(m.value for m in app.markdown).lower())
 
     def test_clicking_link_posts_the_decision(self) -> None:
@@ -246,6 +252,96 @@ class TestTailoredCvReviewPage(unittest.TestCase):
 
     def test_the_api_being_down_shows_an_error_not_a_crash(self) -> None:
         with mock.patch("httpx.get", side_effect=httpx.ConnectError("down")):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(app.error)
+
+    def _assert_no_live_markdown(self, app: AppTest) -> None:
+        elements = [
+            *app.markdown,
+            *app.caption,
+            *app.error,
+            *app.warning,
+            *app.info,
+            *app.success,
+        ]
+        for element in elements:
+            self.assertNotIn("[x](http", element.value)
+            self.assertNotIn("![p](http", element.value)
+            self.assertNotIn("**b**", element.value)
+
+    def test_hostile_api_text_never_renders_as_markdown(self) -> None:
+        doc = {
+            **_DOCUMENT,
+            "stretch": {"is_stretch": True, "reason": _HOSTILE},
+            "keyword_coverage": {
+                "covered": [_HOSTILE],
+                "missing_evidenced": [_HOSTILE],
+                "missing_unevidenced": [_HOSTILE],
+            },
+        }
+        orphan = {**_RUN["orphans"][0], "issue": _HOSTILE}
+        run = {**_RUN, "document": doc, "orphans": [orphan]}
+        with (
+            mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)),
+            mock.patch("httpx.post") as post,
+        ):
+            post.return_value = httpx.Response(
+                422,
+                json={"detail": _HOSTILE},
+                request=httpx.Request("POST", "http://x"),
+            )
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            self._assert_no_live_markdown(app)
+            self.assertIn(_HOSTILE, " ".join(t.value for t in app.text))
+            next(b for b in app.button if b.key == f"reject-{_ORPHAN_ID}").click().run()
+        self._assert_no_live_markdown(app)
+        self.assertTrue(app.error)
+
+    def test_hostile_run_error_never_renders_as_markdown(self) -> None:
+        failed = {
+            **_RUN,
+            "status": "failed",
+            "document": None,
+            "error_message": _HOSTILE,
+        }
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], failed)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(app.error)
+        self._assert_no_live_markdown(app)
+
+    def _click_with_post(self, key: str, post_kwargs: dict) -> AppTest:
+        with (
+            mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)),
+            mock.patch("httpx.post", **post_kwargs),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            next(b for b in app.button if b.key == key).click().run()
+        return app
+
+    def test_api_down_on_tailor_link_and_reject_shows_an_error(self) -> None:
+        for key in ("tailor-start", f"link-{_ORPHAN_ID}", f"reject-{_ORPHAN_ID}"):
+            with self.subTest(key=key):
+                app = self._click_with_post(
+                    key, {"side_effect": httpx.ConnectError("down")}
+                )
+                self.assertEqual(len(app.exception), 0)
+                self.assertTrue(app.error)
+
+    def test_a_202_with_a_non_json_body_shows_an_error_not_a_crash(self) -> None:
+        bad = httpx.Response(
+            202, content=b"<html>", request=httpx.Request("POST", "http://x")
+        )
+        app = self._click_with_post("tailor-start", {"return_value": bad})
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(app.error)
+
+    def test_a_non_json_get_body_shows_an_error_not_a_crash(self) -> None:
+        bad = httpx.Response(
+            200, content=b"<html>", request=httpx.Request("GET", "http://x")
+        )
+        with mock.patch("httpx.get", return_value=bad):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(app.error)

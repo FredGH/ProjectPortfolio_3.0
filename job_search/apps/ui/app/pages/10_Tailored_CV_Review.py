@@ -41,9 +41,28 @@ _settings = get_settings()
 _base = _settings.api_base_url
 _POLL_SECONDS = 3
 
+_MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
+
+
+def _plain(text: object) -> str:
+    """Escape text so Streamlit renders it literally, never as markdown.
+
+    `st.error`, `st.warning` and friends render GitHub-flavoured markdown;
+    API, CV, job and LLM text must not become links, images or emoji.
+
+    Args:
+        text: Untrusted text (anything `str()`-able).
+
+    Returns:
+        The text with every markdown, LaTeX and shortcode metacharacter
+        backslash-escaped.
+    """
+    return "".join(f"\\{ch}" if ch in _MD_META else ch for ch in str(text))
+
+
 _flash = st.session_state.pop("tailoring_flash", None)
 if _flash:
-    st.error(_flash)
+    st.error(_plain(_flash))
 
 
 def _get(path: str) -> httpx.Response:
@@ -81,9 +100,28 @@ def _detail(response: httpx.Response) -> str:
         The `detail` field when present, else the status code.
     """
     try:
-        return str(response.json().get("detail", response.status_code))
+        body = response.json()
     except ValueError:
         return f"HTTP {response.status_code}"
+    if isinstance(body, dict):
+        return str(body.get("detail", response.status_code))
+    return f"HTTP {response.status_code}"
+
+
+def _decide(orphan_id: str, body: dict) -> None:
+    """Post an orphan decision, flash any failure, and rerun.
+
+    Args:
+        orphan_id: The orphan's id.
+        body: The decision JSON body.
+    """
+    try:
+        decided = _post(f"/tailoring/orphans/{orphan_id}/decision", body)
+        if decided.status_code != 200:
+            st.session_state["tailoring_flash"] = _detail(decided)
+    except httpx.HTTPError as exc:
+        st.session_state["tailoring_flash"] = f"Could not save the decision: {exc}"
+    st.rerun()
 
 
 def _label(candidate: dict) -> str:
@@ -107,8 +145,8 @@ try:
     response = _get("/tailoring/candidates")
     response.raise_for_status()
     candidates = response.json()
-except httpx.HTTPError as exc:
-    st.error(f"Failed to load your jobs: {exc}")
+except (httpx.HTTPError, ValueError) as exc:
+    st.error(_plain(f"Failed to load your jobs: {exc}"))
     st.stop()
 
 if not candidates:
@@ -128,11 +166,14 @@ selected = st.selectbox(
 chosen = next(c for c in candidates if c["job_group_id"] == selected)
 
 if st.button("Tailor my CV to this job", key="tailor-start", type="primary"):
-    started = _post("/tailoring/runs", {"job_group_id": selected})
-    if started.status_code == 202:
-        st.session_state["tailoring_run_id"] = started.json()["run_id"]
-    else:
-        st.session_state["tailoring_flash"] = f"Could not start: {_detail(started)}"
+    try:
+        started = _post("/tailoring/runs", {"job_group_id": selected})
+        if started.status_code == 202:
+            st.session_state["tailoring_run_id"] = started.json()["run_id"]
+        else:
+            st.session_state["tailoring_flash"] = f"Could not start: {_detail(started)}"
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        st.session_state["tailoring_flash"] = f"Could not start: {exc}"
     st.rerun()
 
 run_id = st.session_state.get("tailoring_run_id") or chosen["latest_run_id"]
@@ -144,8 +185,8 @@ try:
     run_response = _get(f"/tailoring/runs/{run_id}")
     run_response.raise_for_status()
     run = run_response.json()
-except httpx.HTTPError as exc:
-    st.error(f"Failed to load the tailored CV: {exc}")
+except (httpx.HTTPError, ValueError) as exc:
+    st.error(_plain(f"Failed to load the tailored CV: {exc}"))
     st.stop()
 
 if run["job_group_id"] != selected:
@@ -158,7 +199,7 @@ if run["job_group_id"] != selected:
     st.stop()
 
 status = run["status"]
-st.markdown(f"**Status:** {status} · attempts: {run['attempts']}")
+st.markdown(f"**Status:** {_plain(status)} · attempts: {_plain(run['attempts'])}")
 
 if status == "generating":
     st.caption("Working… this page refreshes on its own.")
@@ -166,7 +207,7 @@ if status == "generating":
     st.rerun()
 
 if status == "failed":
-    st.error(f"This run failed: {run['error_message']}")
+    st.error(_plain(f"This run failed: {run['error_message']}"))
     st.stop()
 
 document = run["document"]
@@ -174,18 +215,18 @@ if document is None:
     st.stop()
 
 if document["stretch"]["is_stretch"]:
-    st.warning(f"Stretch: {document['stretch']['reason']}")
+    st.warning(_plain(f"Stretch: {document['stretch']['reason']}"))
 
 coverage = document["keyword_coverage"]
 st.subheader("Keyword coverage")
-st.caption(f"Covered: {', '.join(coverage['covered']) or 'none'}")
+st.text(f"Covered: {', '.join(coverage['covered']) or 'none'}")
 if coverage["missing_evidenced"]:
-    st.caption(
+    st.text(
         "Your CV evidences these, but the tailored CV doesn't show them: "
         + ", ".join(coverage["missing_evidenced"])
     )
 if coverage["missing_unevidenced"]:
-    st.caption(
+    st.text(
         "The job asks for these, but your CV doesn't evidence them (never "
         "added): " + ", ".join(coverage["missing_unevidenced"])
     )
@@ -194,15 +235,15 @@ st.subheader("Tailored CV")
 st.text(document["headline"])
 if document["summary"]:
     st.text(document["summary"]["text"])
-    st.caption(f"summary · {document['summary']['origin']}")
+    st.text(f"summary · {document['summary']['origin']}")
 for role in document["experience"]:
     st.markdown("---")
     st.text(f"{role['title']} — {role['company']}")
-    st.caption(f"{role['start'] or '?'} – {role['end'] or 'present'}")
+    st.text(f"{role['start'] or '?'} – {role['end'] or 'present'}")
     for bullet in role["bullets"]:
         st.text(bullet["text"])
         refs = ", ".join(bullet["evidence_refs"]) or "no source"
-        st.caption(f"{bullet['origin']} · source: {refs}")
+        st.text(f"{bullet['origin']} · source: {refs}")
 st.markdown("---")
 st.text("Skills: " + ", ".join(skill["name"] for skill in document["skills"]))
 
@@ -222,7 +263,7 @@ for orphan in pending:
     st.text(f"{where} ({orphan['kind']})")
     st.text(orphan["text"])
     if orphan["issue"]:
-        st.caption(orphan["issue"])
+        st.text(orphan["issue"])
     options = [
         s
         for s in sources
@@ -237,17 +278,6 @@ for orphan in pending:
     )
     link_col, reject_col, _ = st.columns([1, 1, 4])
     if link_col.button("Link", key=f"link-{orphan['id']}", disabled=choice is None):
-        decided = _post(
-            f"/tailoring/orphans/{orphan['id']}/decision",
-            {"action": "link", "evidence_ref": choice["bullet_id"]},
-        )
-        if decided.status_code != 200:
-            st.session_state["tailoring_flash"] = _detail(decided)
-        st.rerun()
+        _decide(orphan["id"], {"action": "link", "evidence_ref": choice["bullet_id"]})
     if reject_col.button("Reject", key=f"reject-{orphan['id']}"):
-        decided = _post(
-            f"/tailoring/orphans/{orphan['id']}/decision", {"action": "reject"}
-        )
-        if decided.status_code != 200:
-            st.session_state["tailoring_flash"] = _detail(decided)
-        st.rerun()
+        _decide(orphan["id"], {"action": "reject"})
