@@ -13,6 +13,11 @@ from pathlib import Path
 import httpx
 import streamlit as st
 
+from core.pipeline.descriptions import (
+    PHASE_DESCRIPTIONS,
+    STAGE_DESCRIPTIONS,
+    Description,
+)
 from core.settings import get_settings
 
 # A running stage that reports progress (progress_total set, so it
@@ -52,6 +57,32 @@ Only one pipeline action runs at a time, system-wide — starting a
 second stage while one is already running is refused, not queued.
 """
     )
+
+# Set when an Explain modal is opened in this script run. The page
+# auto-refreshes every 5s while a stage runs; a rerun closes any open
+# dialog, so the refresh is skipped for as long as the modal is showing.
+_dialog_open = False
+
+
+def _explain(title: str, description: Description) -> None:
+    """Open a modal with what a stage/phase does, its input and output."""
+
+    @st.dialog(title)
+    def _body() -> None:
+        st.markdown(f"**What it does**\n\n{description.summary}")
+        st.markdown(f"**Input**\n\n{description.input}")
+        st.markdown(f"**Output**\n\n{description.output}")
+
+    _body()
+
+
+def _explain_button(container, key: str, title: str, description: Description | None):
+    """An Explain button that opens the modal; nothing if there is no text."""
+    global _dialog_open
+    if description is not None and container.button("Explain", key=f"explain-{key}"):
+        _dialog_open = True
+        _explain(title, description)
+
 
 _flash = st.session_state.pop("pipeline_flash", None)
 if _flash:
@@ -158,12 +189,20 @@ stages_by_name = {
 }
 
 for phase, stage_keys in _PHASES.items():
-    st.subheader(phase)
+    heading_col, explain_col = st.columns([8, 1])
+    heading_col.subheader(phase)
+    _explain_button(explain_col, f"phase-{phase}", phase, PHASE_DESCRIPTIONS.get(phase))
     for key in stage_keys:
         stage = stages_by_name.get(key)
         if stage is None:
             continue
-        col1, col2, col3 = st.columns([3, 2, 2])
+        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+        _explain_button(
+            col4,
+            key,
+            stage["name"] if stage["kind"] == "review" else key,
+            STAGE_DESCRIPTIONS.get(key),
+        )
         if stage["kind"] == "review":
             col1.write(f"**{stage['name']}**")
             col2.write(f"{stage['pending_count']} pending")
@@ -255,6 +294,6 @@ for phase, stage_keys in _PHASES.items():
                     )
                 st.rerun()
 
-if active_response is not None:
+if active_response is not None and not _dialog_open:
     time.sleep(5)
     st.rerun()
