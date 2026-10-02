@@ -28,6 +28,22 @@ from core.tailoring.schema import (
 # only counts when whitespace follows it.
 _LEADING_MARKER_RE = re.compile(r"^\s*(?:[•▪●◦■–—*·]+\s*|-\s+)")
 
+# Markdown emphasis around a word or phrase: **x**, __x__, *x*, _x_. The
+# marker must hug non-space text on both sides, and a single `_`/`*` must
+# not touch a word character outside it, so "3 * 4", "2x*" and
+# "dim_job_score" are left alone.
+_STRONG_RE = re.compile(r"(\*\*|__)(\S(?:.*?\S)?)\1")
+_EMPHASIS_RE = re.compile(
+    r"(?<![\w*])\*(\S(?:[^*]*?\S)?)\*(?![\w*])|(?<![\w_])_(\S(?:[^_]*?\S)?)_(?![\w_])"
+)
+
+# Symbols (Unicode "So") that carry meaning in a CV and are kept.
+_KEPT_SYMBOLS = frozenset("°©®™℠℃℉")
+
+# Invisible emoji parts: variation selectors, zero-width joiner, and the
+# combining keycap. Left behind they corrupt the text an ATS reads.
+_INVISIBLE = frozenset([chr(c) for c in range(0xFE00, 0xFE10)] + ["\u200d", "\u20e3"])
+
 
 def _normalise(text: str) -> str:
     """Lowercase and collapse whitespace for comparison.
@@ -44,8 +60,10 @@ def _normalise(text: str) -> str:
 def clean_text(text: str) -> str:
     """Mechanically enforce content-level ATS hygiene on generated text.
 
-    Removes a leading bullet glyph, decorative symbols and emoji, and
-    collapses whitespace. Done in code rather than asked of the model
+    Removes markdown emphasis markers, a leading bullet glyph, decorative
+    symbols and emoji (including their invisible joiners and variation
+    selectors), and collapses whitespace. Meaningful symbols such as °, ©,
+    ® and ™ are kept. Done in code rather than asked of the model
     (PLAN.md Step 18: enforce mechanically, not by prompting).
 
     Args:
@@ -54,11 +72,19 @@ def clean_text(text: str) -> str:
     Returns:
         The cleaned text; may be empty.
     """
-    stripped = _LEADING_MARKER_RE.sub("", text.strip())
+    unemphasised = _STRONG_RE.sub(r"\2", text.strip())
+    unemphasised = _EMPHASIS_RE.sub(
+        lambda m: m.group(1) if m.group(1) is not None else m.group(2), unemphasised
+    )
+    stripped = _LEADING_MARKER_RE.sub("", unemphasised)
     kept = "".join(
         ch
         for ch in stripped
-        if unicodedata.category(ch) != "So" and not 0x1F000 <= ord(ch) <= 0x1FAFF
+        if ch not in _INVISIBLE
+        and (
+            ch in _KEPT_SYMBOLS
+            or (unicodedata.category(ch) != "So" and not 0x1F000 <= ord(ch) <= 0x1FAFF)
+        )
     )
     return re.sub(r"\s+", " ", kept).strip()
 

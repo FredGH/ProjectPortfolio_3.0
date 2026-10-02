@@ -30,6 +30,31 @@ class TestCleanText(unittest.TestCase):
     def test_removes_decorative_symbols_and_emoji(self) -> None:
         self.assertEqual(clean_text("Led ★ the team ✅ 🚀"), "Led the team")
 
+    def test_keeps_legitimate_symbols(self) -> None:
+        self.assertEqual(clean_text("Cooled to 20°C"), "Cooled to 20°C")
+        self.assertEqual(
+            clean_text("Built Tableau® dashboards"), "Built Tableau® dashboards"
+        )
+        self.assertEqual(clean_text("Shipped Acme™ © 2020"), "Shipped Acme™ © 2020")
+
+    def test_strips_the_invisible_parts_of_emoji_sequences(self) -> None:
+        self.assertEqual(clean_text("✅️ Shipped"), "Shipped")
+        self.assertEqual(clean_text("Coded 👩‍💻 daily"), "Coded daily")
+        self.assertEqual(clean_text("Step 1⃣ done"), "Step 1 done")
+        for invisible in ("️", "︀", "‍", "⃣"):
+            self.assertNotIn(invisible, clean_text(f"A{invisible}B"))
+
+    def test_strips_markdown_emphasis_markers(self) -> None:
+        self.assertEqual(clean_text("**Built** x"), "Built x")
+        self.assertEqual(clean_text("__Built__ x"), "Built x")
+        self.assertEqual(clean_text("Built *fast* pipelines"), "Built fast pipelines")
+        self.assertEqual(clean_text("Built _fast_ pipelines"), "Built fast pipelines")
+
+    def test_keeps_a_lone_asterisk_and_snake_case(self) -> None:
+        self.assertEqual(clean_text("Grew revenue 2x*"), "Grew revenue 2x*")
+        self.assertEqual(clean_text("Tuned 3 * 4 grid"), "Tuned 3 * 4 grid")
+        self.assertEqual(clean_text("Owned dim_job_score"), "Owned dim_job_score")
+
     def test_collapses_whitespace(self) -> None:
         self.assertEqual(clean_text("  Built   dbt\n models "), "Built dbt models")
 

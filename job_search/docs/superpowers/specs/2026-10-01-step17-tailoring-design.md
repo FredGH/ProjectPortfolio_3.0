@@ -135,8 +135,11 @@ in its output. It cannot add content without it showing up as an `orphan`
    the second is reported and never requested, so the loop cannot push the
    model toward claiming skills the user lacks.
 5. Content-level ATS hygiene is enforced **mechanically at assembly**
-   (`assemble.clean_text`: leading bullet glyphs, decorative symbols and
-   emoji are stripped from generated text), not checked after the fact —
+   (`assemble.clean_text`: leading bullet glyphs, markdown emphasis
+   markers, decorative symbols and emoji — including their invisible
+   joiners/variation selectors — are stripped from generated text, while
+   meaningful symbols such as °, ©, ® and ™ are kept), not checked after
+   the fact —
    there is nothing to retry because the fix is deterministic. Layout rules
    belong to the template in 18a.
 
