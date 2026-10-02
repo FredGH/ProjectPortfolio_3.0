@@ -1,8 +1,8 @@
 """The Tailor: renders the truth base and job into a prompt, calls the
 `cv_tailoring` LLM task, and parses the reply (Step 17).
 
-The Tailor never sees, and so can never change, companies' titles or
-dates as output fields — see core.tailoring.assemble.
+The Tailor's output has no company, job-title or date fields, so it can
+never change them — see core.tailoring.assemble.
 """
 
 from __future__ import annotations

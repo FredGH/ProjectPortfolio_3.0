@@ -516,15 +516,22 @@ doesn't is shown to you for an explicit decision. Design:
   Link or Reject each line under "Needs your decision".
 - **CLI:** `docker compose run --rm pipeline tailor-cv --user-id <id>
   --job-group-id <id>` (on demand; deliberately not a dashboard stage).
-- **API:** `/tailoring/candidates`, `/tailoring/runs`, `/tailoring/runs/{id}`,
-  `/tailoring/orphans/{id}/decision`.
+- **API:** `GET /tailoring/candidates`, `POST /tailoring/runs`,
+  `GET /tailoring/runs/{id}`, `GET /tailoring/jobs/{job_group_id}/latest-run`,
+  `POST /tailoring/orphans/{id}/decision`.
+
+**Requires an Anthropic API key** (`ANTHROPIC_API_KEY`): the critic always
+runs on Claude, so without a key tailoring refuses to start (HTTP 503 from
+the API, a clear message and exit 1 from the CLI) before any model is called.
 
 How it works: code assembles the CV from your truth base (companies, titles
 and dates are copied, never generated; the headline is the job's
 `title_for_display`); the `cv_tailoring` model only returns per-bullet
 wording and the bullet ids it draws on; code checks and the
 `fabrication_critic` (always Claude) verify it; the loop retries at most
-twice. Accepting an orphan means linking it to an existing CV bullet — your
+twice and keeps the best usable attempt (a clean attempt is never replaced
+by a worse retry, and an unusable final reply does not discard an earlier
+document). Accepting an orphan means linking it to an existing CV bullet — your
 CV is never modified.
 
 Safety details: the critic fails closed (an unanswered, malformed or
@@ -536,8 +543,8 @@ never counts — and is recomputed after every Link/Reject. It reports skills
 your CV evidences but the tailored text lacks, and never invents skills
 your CV does not evidence.
 
-Cost: the critic makes one Claude call per attempt (a few cents at most).
-The Tailor is local (Ollama) by default; to use Claude instead, change the
+Cost: the critic makes at most one Claude call per attempt (a few cents at
+most). The Tailor is local (Ollama) by default; to use Claude instead, change the
 `cv_tailoring` entry in `config/llm_tasks.yml` (provider `anthropic`, prompt
 family `claude`).
 
