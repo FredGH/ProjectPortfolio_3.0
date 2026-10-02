@@ -79,6 +79,7 @@ from core.skills.write_job_skills import (
     write_job_skills,
 )
 from core.tailoring.loop import TailoringError, run_tailoring
+from core.tailoring.store import read_run
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -1256,6 +1257,9 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
     Args:
         args: Parsed CLI arguments — `user_id`, `job_group_id`.
 
+    Prints the run's error message when it failed, and the number of lines
+    awaiting a decision when it needs review.
+
     Returns:
         0 when the run ends `approved` or `needs_review`; 1 when it ends
         `failed` or cannot start.
@@ -1277,6 +1281,12 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
         f"tailor-cv complete: run_id={outcome.run_id} status={outcome.status} "
         f"attempts={outcome.attempts}"
     )
+    run = read_run(app_engine, args.user_id, outcome.run_id)
+    if run is not None and outcome.status == "failed" and run.error_message:
+        print(f"tailor-cv error: {run.error_message}")
+    if run is not None and outcome.status == "needs_review":
+        pending = sum(1 for orphan in run.orphans if orphan.status == "pending")
+        print(f"tailor-cv needs_review: pending_orphans={pending}")
     return 1 if outcome.status == "failed" else 0
 
 
