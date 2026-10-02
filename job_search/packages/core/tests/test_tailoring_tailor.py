@@ -10,6 +10,7 @@ from tests.tailoring_fixtures import bullet_id, make_truth_base
 from core.llm.types import LLMResponse
 from core.tailoring.schema import JobContext, JobSkill, TailorOutputError
 from core.tailoring.tailor import (
+    PROMPT_VERSION_NUMBER,
     TASK,
     render_feedback,
     render_job_skills,
@@ -131,6 +132,23 @@ class TestRunTailor(unittest.TestCase):
         adapter = _ScriptedAdapter(["I cannot help with that."])
         with self.assertRaises(TailorOutputError):
             run_tailor(self.truth_base, _job(), [], adapters={"ollama": adapter})
+
+    def test_the_claude_prompt_formats_with_the_tailor_keys(self) -> None:
+        # The README's one-line switch to Claude must not break formatting.
+        import re
+
+        from core.llm.prompts import load_prompt
+
+        template = load_prompt(TASK, "claude", PROMPT_VERSION_NUMBER)
+        prompt = template.format(
+            cv_text="CV",
+            job_title="Lead Data Engineer",
+            job_description="Own it.",
+            job_skills="- SQL (must_have)",
+            feedback="",
+        )
+        self.assertIsNone(re.search(r"\{[A-Za-z_]+\}", prompt))
+        self.assertIn("Lead Data Engineer", prompt)
 
     def test_the_task_is_registered_in_the_task_config(self) -> None:
         from core.llm.task_config import load_task_config

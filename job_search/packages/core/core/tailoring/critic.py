@@ -190,6 +190,22 @@ def _parse_verdict(entry: dict) -> Verdict:
     return Verdict(item_id, supported, issue)
 
 
+def _parse_stretch(raw: object) -> StretchAssessment:
+    """Parse the advisory stretch judgement, never failing the run on it.
+
+    Args:
+        raw: The reply's `stretch` value.
+
+    Returns:
+        The parsed assessment, or the default (not a stretch) when the
+        value is missing or malformed — it is advice, unlike the verdicts.
+    """
+    try:
+        return StretchAssessment.model_validate(raw or {})
+    except ValidationError:
+        return StretchAssessment()
+
+
 def run_critic(
     document: TailoredDocument,
     truth_base: CVTruthBase,
@@ -222,7 +238,8 @@ def run_critic(
     items = critic_items(document, truth_base)
     prompt = template.format(
         role_history=_render_role_history(truth_base),
-        job_title=document.target_title,
+        # Quoted so a hostile title cannot break out of its line.
+        job_title=json.dumps(document.target_title),
         items=json.dumps(
             [{"id": i.item_id, "text": i.text, "sources": i.sources} for i in items],
             indent=2,
@@ -244,7 +261,7 @@ def run_critic(
             # Fail closed: any rejection of an id outranks an approval.
             if previous is None or (previous.supported and not verdict.supported):
                 answered[verdict.item_id] = verdict
-        stretch = StretchAssessment.model_validate(data.get("stretch") or {})
+        stretch = _parse_stretch(data.get("stretch"))
     except (
         json.JSONDecodeError,
         KeyError,
