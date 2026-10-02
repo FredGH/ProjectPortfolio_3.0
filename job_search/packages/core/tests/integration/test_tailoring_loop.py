@@ -27,7 +27,7 @@ from core.tailoring.loop import (
     run_tailoring,
     start_tailoring,
 )
-from core.tailoring.store import read_run
+from core.tailoring.store import finish_run, read_run
 
 _JOB = "zzfixture-tlr-loop-1"
 _NO_TITLE_JOB = "zzfixture-tlr-loop-2"
@@ -592,6 +592,69 @@ class TestTailoringLoop(unittest.TestCase):
         self.assertEqual((outcome.status, outcome.attempts), ("failed", 0))
         self.assertEqual(tailor.prompts, [])
         self.assertEqual(read_run(self.app_engine, self.user_id, run_id).attempts, 0)
+
+    # --- a finished run is never re-run or overwritten (M-finish) --------
+
+    def test_executing_an_already_finished_run_does_not_re_tailor(self) -> None:
+        self._store_cv()
+        outcome = self._run(_Tailor([self._reply(self._clean_bullets())]), _Critic())
+        before = read_run(self.app_engine, self.user_id, outcome.run_id)
+        tailor = _Tailor([self._reply(self._clean_bullets())])
+        critic = _Critic()
+        again = execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            outcome.run_id,
+            adapters={"ollama": tailor, "anthropic": critic},
+        )
+        self.assertEqual((again.status, again.attempts), ("approved", 1))
+        self.assertEqual((tailor.prompts, critic.calls), ([], 0))
+        after = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            (after.status, after.document, after.orphans),
+            (before.status, before.document, before.orphans),
+        )
+
+    def test_a_run_finished_meanwhile_is_not_overwritten(self) -> None:
+        # Another worker finishes the run while this one is tailoring: the
+        # late finish is refused, nothing is overwritten or duplicated, and
+        # the background task does not crash.
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        bad = self._clean_bullets() + [
+            {"text": "Led a team of 12", "evidence_refs": []}
+        ]
+        app_engine, user_id = self.app_engine, self.user_id
+
+        class _RacingTailor(_Tailor):
+            def complete(self, **kwargs: object) -> LLMResponse:
+                if not self.prompts:
+                    finish_run(
+                        app_engine,
+                        user_id,
+                        run_id,
+                        status="failed",
+                        document=None,
+                        orphans=[],
+                        attempts=0,
+                        error_message="finished elsewhere",
+                    )
+                return super().complete(**kwargs)
+
+        outcome = execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={
+                "ollama": _RacingTailor([self._reply(bad)]),
+                "anthropic": _Critic(),
+            },
+        )
+        self.assertEqual(outcome.status, "failed")
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertEqual(run.error_message, "finished elsewhere")
+        self.assertEqual(run.orphans, [])
+        self.assertIsNone(run.document)
 
     # --- no Anthropic key (I3) -------------------------------------------
 

@@ -25,6 +25,15 @@ class StaleDecisionError(RuntimeError):
     """
 
 
+class RunAlreadyFinishedError(RuntimeError):
+    """A run cannot be finished because it is no longer `generating`.
+
+    Raised when the run was already finished (or is not visible to this
+    user), so a late or duplicate finish never overwrites an outcome or
+    duplicates its orphan rows.
+    """
+
+
 @dataclass(frozen=True)
 class OrphanDraft:
     """A line the loop could not trace, about to be saved for a decision.
@@ -239,9 +248,13 @@ def finish_run(
         critic_model: Model used by the critic.
         critic_prompt_version: Critic prompt version.
         error_message: Why the run failed, if it did.
+
+    Raises:
+        RunAlreadyFinishedError: If the run is not `generating` (already
+            finished) or not visible to this user. Nothing is written.
     """
     with session_scope(engine, user_id=user_id) as conn:
-        conn.execute(
+        finished = conn.execute(
             text(
                 "UPDATE tailoring.tailored_cv SET status = :status, "
                 "content = CAST(:content AS jsonb), attempts = :attempts, "
@@ -250,7 +263,8 @@ def finish_run(
                 "critic_model = :critic_model, "
                 "critic_prompt_version = :critic_prompt_version, "
                 "error_message = :error_message, updated_at = now() "
-                "WHERE id = :run_id AND user_id = :user_id"
+                "WHERE id = :run_id AND user_id = :user_id "
+                "AND status = 'generating'"
             ),
             {
                 "status": status,
@@ -266,6 +280,10 @@ def finish_run(
                 "user_id": user_id,
             },
         )
+        if finished.rowcount != 1:
+            raise RunAlreadyFinishedError(
+                f"run {run_id} is not generating (already finished or not visible)"
+            )
         for draft in orphans:
             conn.execute(
                 text(
@@ -425,7 +443,8 @@ def save_decision(
     Raises:
         StaleDecisionError: If the run is not visible, the stored document
             differs from `base_document`, or the orphan is no longer
-            pending (already decided, or not visible to this user).
+            pending at the recorded position (already decided, shifted by
+            another decision, or not visible to this user).
     """
     with session_scope(engine, user_id=user_id) as conn:
         locked = conn.execute(
@@ -446,17 +465,27 @@ def save_decision(
                 "UPDATE tailoring.orphan_bullet SET status = :status, "
                 "evidence_ref = :evidence_ref, decided_at = now() "
                 "WHERE id = :orphan_id AND tailored_cv_id = :run_id "
-                "AND status = 'pending'"
+                "AND status = 'pending' "
+                # The position the decision was computed for must still be
+                # the orphan's: a same-role removal may have shifted it.
+                "AND experience_index IS NOT DISTINCT FROM "
+                "CAST(:experience_index AS integer) "
+                "AND bullet_index IS NOT DISTINCT FROM CAST(:bullet_index AS integer)"
             ),
             {
                 "status": status,
                 "evidence_ref": evidence_ref,
                 "orphan_id": orphan.id,
                 "run_id": orphan.tailored_cv_id,
+                "experience_index": orphan.experience_index,
+                "bullet_index": orphan.bullet_index,
             },
         )
         if updated.rowcount != 1:
-            raise StaleDecisionError("this line was already decided")
+            raise StaleDecisionError(
+                "this line was already decided or has moved since you opened "
+                "it — reload"
+            )
         if removed_position is not None:
             _shift_later_bullets(
                 conn, orphan.tailored_cv_id, removed_position[0], removed_position[1]

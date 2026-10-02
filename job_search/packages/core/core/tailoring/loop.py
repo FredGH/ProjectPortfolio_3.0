@@ -9,6 +9,7 @@ runs as a background task) and never raises — every failure ends the run
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from dataclasses import dataclass
@@ -38,8 +39,16 @@ from core.tailoring.schema import (
     TailoredDocument,
     TailorOutputError,
 )
-from core.tailoring.store import OrphanDraft, create_run, finish_run, read_run
+from core.tailoring.store import (
+    OrphanDraft,
+    RunAlreadyFinishedError,
+    create_run,
+    finish_run,
+    read_run,
+)
 from core.tailoring.tailor import TailorResult, run_tailor
+
+logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 2
 """Tailor retries after the first attempt (PLAN.md Step 17: at most twice)."""
@@ -353,6 +362,9 @@ def _execute(
     run = read_run(app_engine, user_id, run_id)
     if run is None:
         raise RuntimeError(f"run {run_id} not found")
+    if run.status != "generating":
+        # Already finished (a duplicate or late task): never re-tailor.
+        return TailoringOutcome(run_id=run_id, status=run.status, attempts=run.attempts)
     stored = read_truth_base_version(app_engine, user_id, run.truth_base_version)
     if stored is None:
         raise RuntimeError(f"CV version {run.truth_base_version} no longer exists")
@@ -473,6 +485,8 @@ def execute_tailoring(
     Returns:
         The outcome; `failed` (with the message stored on the run) when
         anything went wrong, including a critic routed away from Anthropic.
+        A run that is no longer `generating` (finished by another task) is
+        never re-tailored or overwritten: its stored outcome is returned.
     """
     progress = [0]
     try:
@@ -485,19 +499,45 @@ def execute_tailoring(
             max_retries=max_retries,
             progress=progress,
         )
+    except RunAlreadyFinishedError:
+        return _finished_elsewhere(app_engine, user_id, run_id)
     except Exception as exc:  # noqa: BLE001 — a background run must record, not raise
         message = f"{type(exc).__name__}: {exc}"[:500]
-        finish_run(
-            app_engine,
-            user_id,
-            run_id,
-            status="failed",
-            document=None,
-            orphans=[],
-            attempts=progress[0],
-            error_message=message,
-        )
+        try:
+            finish_run(
+                app_engine,
+                user_id,
+                run_id,
+                status="failed",
+                document=None,
+                orphans=[],
+                attempts=progress[0],
+                error_message=message,
+            )
+        except RunAlreadyFinishedError:
+            return _finished_elsewhere(app_engine, user_id, run_id)
         return TailoringOutcome(run_id=run_id, status="failed", attempts=progress[0])
+
+
+def _finished_elsewhere(
+    app_engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID
+) -> TailoringOutcome:
+    """Report a run that something else finished first, without touching it.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+
+    Returns:
+        The stored outcome; `failed` with 0 attempts if the run is not
+        visible at all.
+    """
+    logger.warning("tailoring run %s was already finished; not overwritten", run_id)
+    run = read_run(app_engine, user_id, run_id)
+    if run is None:
+        return TailoringOutcome(run_id=run_id, status="failed", attempts=0)
+    return TailoringOutcome(run_id=run_id, status=run.status, attempts=run.attempts)
 
 
 def run_tailoring(

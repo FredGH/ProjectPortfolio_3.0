@@ -14,6 +14,7 @@ from core.tailoring.decisions import apply_decision
 from core.tailoring.schema import TailorBullet, TailorExperience, TailorOutput
 from core.tailoring.store import (
     OrphanDraft,
+    RunAlreadyFinishedError,
     StaleDecisionError,
     create_run,
     finish_run,
@@ -313,6 +314,68 @@ class TestTailoringStore(unittest.TestCase):
         with self.assertRaises(StaleDecisionError):
             self._decide(run, run.orphans[0], "reject", user=self.user_b)
         self.assertEqual(self._snapshot(run_id), before)
+
+    def test_a_decision_on_a_shifted_orphan_position_is_refused(self) -> None:
+        # M-race: orphan 2 was read before orphan 0's removal shifted it to
+        # position 1; deciding it with the stale position must not land.
+        run_id = self._finished_run()
+        stale = read_run(self.app_engine, self.user_a, run_id)
+        self._decide(stale, stale.orphans[0], "reject")
+        current = read_run(self.app_engine, self.user_a, run_id)
+        before = self._snapshot(run_id)
+        with self.assertRaises(StaleDecisionError):
+            save_decision(
+                self.app_engine,
+                self.user_a,
+                orphan=stale.orphans[2],  # still says bullet_index=2
+                status="rejected",
+                evidence_ref=None,
+                document=current.document,
+                base_document=current.document,
+                removed_position=None,
+            )
+        self.assertEqual(self._snapshot(run_id), before)
+
+    def test_finishing_a_run_twice_is_refused_and_adds_no_orphans(self) -> None:
+        run_id = self._finished_run()
+        before = self._snapshot(run_id)
+        with self.assertRaises(RunAlreadyFinishedError):
+            finish_run(
+                self.app_engine,
+                self.user_a,
+                run_id,
+                status="failed",
+                document=None,
+                orphans=[self._draft(0, "Invented one")],
+                attempts=1,
+                error_message="late failure",
+            )
+        self.assertEqual(self._snapshot(run_id), before)
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(len(run.orphans), 3)
+        self.assertIsNone(run.error_message)
+
+    def test_finishing_another_users_run_is_refused(self) -> None:
+        run_id = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id="zzfixture-job",
+            truth_base_version=1,
+            target_title="T",
+        )
+        with self.assertRaises(RunAlreadyFinishedError):
+            finish_run(
+                self.app_engine,
+                self.user_b,
+                run_id,
+                status="failed",
+                document=None,
+                orphans=[],
+                attempts=0,
+            )
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).status, "generating"
+        )
 
     def test_latest_run_id_is_the_newest_visible_run(self) -> None:
         job = "zzfixture-tlr-store-latest"
