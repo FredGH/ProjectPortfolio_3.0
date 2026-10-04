@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
 import httpx
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 _PAGE = (
@@ -318,6 +320,107 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(app.error)
         self._assert_no_live_markdown(app)
+
+    # --- live progress of a generating run ---------------------------------
+
+    @staticmethod
+    def _generating(**overrides) -> dict:
+        now = datetime.now(UTC)
+        run = {
+            **_RUN,
+            "status": "generating",
+            "attempts": 0,
+            "document": None,
+            "orphans": [],
+            "progress": {
+                "attempt": 2,
+                "max_attempts": 3,
+                "phase": "critic",
+                "message": "Attempt 2 of 3: Claude is fact-checking 4 line(s)…",
+                "phase_started_at": now.isoformat(),
+                "history": ["Attempt 1: 2 point(s) to fix — trying again"],
+            },
+            "started_at": (now - timedelta(seconds=125)).isoformat(),
+            "updated_at": (now - timedelta(seconds=7)).isoformat(),
+        }
+        run.update(overrides)
+        return run
+
+    def _render_generating(self, run: dict) -> AppTest:
+        # The page polls with sleep + rerun; stop after the first render.
+        with (
+            mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)),
+            mock.patch("time.sleep", side_effect=lambda _s: st.stop()),
+        ):
+            return AppTest.from_file(str(_PAGE), default_timeout=10).run()
+
+    @staticmethod
+    def _all_text(app: AppTest) -> str:
+        return " | ".join(
+            e.value for e in [*app.text, *app.caption, *app.warning, *app.markdown]
+        )
+
+    def test_a_generating_run_shows_phase_history_and_timers(self) -> None:
+        app = self._render_generating(self._generating())
+        self.assertEqual(len(app.exception), 0)
+        shown = self._all_text(app)
+        self.assertIn("Attempt 2 of 3: Claude is fact-checking 4 line", shown)
+        self.assertIn("Attempt 1: 2 point(s) to fix", shown)
+        self.assertRegex(shown, r"Running for 0[2-3]:\d\d")
+        self.assertRegex(shown, r"Last activity 00:\d\d ago")
+        self.assertIn("can take several minutes per attempt", shown)
+        self.assertEqual(len(app.warning), 0)
+
+    def test_a_generating_run_without_progress_says_starting(self) -> None:
+        app = self._render_generating(self._generating(progress=None))
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn("Starting…", self._all_text(app))
+
+    def test_a_stale_generating_run_warns_it_may_have_stopped(self) -> None:
+        old = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
+        app = self._render_generating(self._generating(updated_at=old))
+        warning = " ".join(w.value for w in app.warning)
+        self.assertIn("no activity for 20 minutes", warning)
+        self.assertIn("Tailor my CV to this job", warning)
+
+    def test_a_recent_run_just_under_the_threshold_does_not_warn(self) -> None:
+        recent = (datetime.now(UTC) - timedelta(minutes=14)).isoformat()
+        app = self._render_generating(self._generating(updated_at=recent))
+        self.assertEqual(len(app.warning), 0)
+
+    def test_naive_and_future_timestamps_are_tolerated(self) -> None:
+        naive = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        future = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+        app = self._render_generating(
+            self._generating(started_at=naive, updated_at=future)
+        )
+        self.assertEqual(len(app.exception), 0)
+        shown = self._all_text(app)
+        self.assertIn("Running for 00:0", shown)
+        self.assertIn("Last activity 00:00 ago", shown)
+
+    def test_malformed_timestamps_and_progress_do_not_crash(self) -> None:
+        for overrides in (
+            {"started_at": "garbage", "updated_at": None},
+            {"started_at": 12, "updated_at": ["x"]},
+            {"progress": "oops"},
+            {"progress": {"message": 5, "history": "no"}},
+            {"progress": {"message": "ok", "history": [1, None, "fine"]}},
+        ):
+            with self.subTest(overrides=overrides):
+                app = self._render_generating(self._generating(**overrides))
+                self.assertEqual(len(app.exception), 0)
+                self.assertIn("Status", self._all_text(app))
+
+    def test_hostile_progress_text_is_not_rendered_as_markdown(self) -> None:
+        progress = {
+            "message": _HOSTILE,
+            "history": [_HOSTILE],
+        }
+        app = self._render_generating(self._generating(progress=progress))
+        self.assertEqual(len(app.exception), 0)
+        self._assert_no_live_markdown(app)
+        self.assertIn(_HOSTILE, " ".join(t.value for t in app.text))
 
     def _click_with_post(self, key: str, post_kwargs: dict) -> AppTest:
         with (

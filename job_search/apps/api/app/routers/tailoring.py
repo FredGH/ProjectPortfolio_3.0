@@ -9,6 +9,7 @@ background task; poll `GET /tailoring/runs/{run_id}`.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from app.dependencies import get_app_db_engine, get_llm_adapters
@@ -98,7 +99,12 @@ class OrphanModel(BaseModel):
 
 
 class RunModel(BaseModel):
-    """A tailoring run with its document, orphans and link targets."""
+    """A tailoring run with its document, orphans and link targets.
+
+    `progress` is the live progress of a `generating` run (phase, message,
+    finished-attempt history), else None; `started_at`/`updated_at` let the
+    page show how long it has been running and how recent the last update is.
+    """
 
     run_id: uuid.UUID
     job_group_id: str
@@ -109,6 +115,9 @@ class RunModel(BaseModel):
     document: dict | None
     orphans: list[OrphanModel]
     sources: list[SourceBullet]
+    progress: dict | None
+    started_at: datetime
+    updated_at: datetime
 
 
 class DecisionRequest(BaseModel):
@@ -168,6 +177,9 @@ def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
         document=run.document.model_dump() if run.document else None,
         orphans=[OrphanModel(**o.__dict__) for o in run.orphans],
         sources=sources,
+        progress=run.progress,
+        started_at=run.created_at,
+        updated_at=run.updated_at,
     )
 
 

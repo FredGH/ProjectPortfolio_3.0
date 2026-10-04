@@ -288,6 +288,16 @@ class TestTailoringRouter(unittest.TestCase):
         self.assertEqual(body["document"]["headline"], "Lead Data Engineer")
         self.assertEqual(body["orphans"], [])
 
+    def test_the_run_response_includes_progress_and_timestamps(self) -> None:
+        self._store_cv()
+        run_id = self._start().json()["run_id"]
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertEqual(body["progress"]["phase"], "saving")
+        self.assertEqual(body["progress"]["history"], ["Attempt 1: clean"])
+        self.assertIn("T", body["started_at"])
+        self.assertIn("T", body["updated_at"])
+        self.assertGreaterEqual(body["updated_at"], body["started_at"])
+
     def test_the_run_response_lists_source_bullets_for_the_picker(self) -> None:
         self._store_cv()
         run_id = self._start().json()["run_id"]

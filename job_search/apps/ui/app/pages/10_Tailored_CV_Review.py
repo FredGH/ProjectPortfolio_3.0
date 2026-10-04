@@ -6,6 +6,7 @@ decide every line the fabrication guard could not trace to your CV
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 
 import httpx
 import streamlit as st
@@ -41,6 +42,7 @@ _settings = get_settings()
 _base = _settings.api_base_url
 _POLL_SECONDS = 3
 _MAX_SOURCE_CHARS = 160
+_STALE_MINUTES = 15
 
 _MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
 
@@ -59,6 +61,84 @@ def _plain(text: object) -> str:
         backslash-escaped.
     """
     return "".join(f"\\{ch}" if ch in _MD_META else ch for ch in str(text))
+
+
+def _seconds_since(value: object) -> int | None:
+    """Whole seconds from an API timestamp to now, never negative.
+
+    Args:
+        value: An ISO-8601 string from the API (naive means UTC), or
+            anything else.
+
+    Returns:
+        Elapsed seconds (0 on clock skew), or None when `value` is not a
+        usable timestamp.
+    """
+    if not isinstance(value, str):
+        return None
+    try:
+        then = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return max(0, int((datetime.now(UTC) - then).total_seconds()))
+
+
+def _clock(seconds: int) -> str:
+    """Format seconds as MM:SS.
+
+    Args:
+        seconds: A non-negative duration.
+
+    Returns:
+        `MM:SS` (minutes may exceed two digits).
+    """
+    return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def _show_progress(run: dict) -> None:
+    """Show what a `generating` run is doing right now.
+
+    Everything derived from the API goes through `st.text` / `_plain`.
+    A missing or malformed shape falls back to the minimal caption.
+
+    Args:
+        run: The run from `GET /tailoring/runs/{id}`.
+    """
+    progress = run.get("progress")
+    if progress is None:
+        message, history = "Starting…", []
+    elif isinstance(progress, dict) and isinstance(progress.get("message"), str):
+        message = progress["message"]
+        raw = progress.get("history")
+        history = (
+            [h for h in raw if isinstance(h, str)] if isinstance(raw, list) else []
+        )
+    else:
+        st.caption("Working… this page refreshes on its own.")
+        return
+    st.text(message)
+    for line in history:
+        st.text(line)
+    running = _seconds_since(run.get("started_at"))
+    idle = _seconds_since(run.get("updated_at"))
+    if running is not None:
+        st.text(f"Running for {_clock(running)}")
+    if idle is not None:
+        st.text(f"Last activity {_clock(idle)} ago")
+        if idle > _STALE_MINUTES * 60:
+            st.warning(
+                _plain(
+                    f"This run has had no activity for {idle // 60} minutes and "
+                    "may have stopped (for example after the API restarted). "
+                    'Click "Tailor my CV to this job" to start again.'
+                )
+            )
+    st.caption(
+        "A local model works through one step at a time and can take several "
+        "minutes per attempt; the timer shows it is still running."
+    )
 
 
 _flash = st.session_state.pop("tailoring_flash", None)
@@ -203,7 +283,7 @@ status = run["status"]
 st.markdown(f"**Status:** {_plain(status)} · attempts: {_plain(run['attempts'])}")
 
 if status == "generating":
-    st.caption("Working… this page refreshes on its own.")
+    _show_progress(run)
     time.sleep(_POLL_SECONDS)
     st.rerun()
 
