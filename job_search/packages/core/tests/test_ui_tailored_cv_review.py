@@ -377,14 +377,15 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self.assertIn("Starting…", self._all_text(app))
 
     def test_a_stale_generating_run_warns_it_may_have_stopped(self) -> None:
-        old = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
+        old = (datetime.now(UTC) - timedelta(minutes=40)).isoformat()
         app = self._render_generating(self._generating(updated_at=old))
         warning = " ".join(w.value for w in app.warning)
-        self.assertIn("no activity for 20 minutes", warning)
+        self.assertIn("No activity for 40 minutes", warning)
         self.assertIn("Tailor my CV to this job", warning)
 
     def test_a_recent_run_just_under_the_threshold_does_not_warn(self) -> None:
-        recent = (datetime.now(UTC) - timedelta(minutes=14)).isoformat()
+        # One local Tailor call can legitimately take ~33 minutes.
+        recent = (datetime.now(UTC) - timedelta(minutes=20)).isoformat()
         app = self._render_generating(self._generating(updated_at=recent))
         self.assertEqual(len(app.warning), 0)
 

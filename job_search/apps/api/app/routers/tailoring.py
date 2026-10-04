@@ -177,7 +177,7 @@ def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
         document=run.document.model_dump() if run.document else None,
         orphans=[OrphanModel(**o.__dict__) for o in run.orphans],
         sources=sources,
-        progress=run.progress,
+        progress=run.progress if run.status == "generating" else None,
         started_at=run.created_at,
         updated_at=run.updated_at,
     )

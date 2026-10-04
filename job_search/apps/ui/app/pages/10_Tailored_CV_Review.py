@@ -42,7 +42,10 @@ _settings = get_settings()
 _base = _settings.api_base_url
 _POLL_SECONDS = 3
 _MAX_SOURCE_CHARS = 160
-_STALE_MINUTES = 15
+STALE_AFTER_MINUTES = 35
+"""Minutes without activity before the page doubts a run is alive: just above
+the 2000 s (~33 min) client timeout of one local Ollama call, during which
+nothing is written."""
 
 _MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
 
@@ -127,12 +130,13 @@ def _show_progress(run: dict) -> None:
         st.text(f"Running for {_clock(running)}")
     if idle is not None:
         st.text(f"Last activity {_clock(idle)} ago")
-        if idle > _STALE_MINUTES * 60:
+        if idle > STALE_AFTER_MINUTES * 60:
             st.warning(
                 _plain(
-                    f"This run has had no activity for {idle // 60} minutes and "
-                    "may have stopped (for example after the API restarted). "
-                    'Click "Tailor my CV to this job" to start again.'
+                    f"No activity for {idle // 60} minutes. A local model can take "
+                    "up to ~33 minutes for one step, so this run may have stopped "
+                    "(for example after the API restarted). If it stays like "
+                    'this, click "Tailor my CV to this job" to start again.'
                 )
             )
     st.caption(

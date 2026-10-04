@@ -762,6 +762,30 @@ class TestTailoringLoop(unittest.TestCase):
             ],
         )
 
+    def test_the_late_critic_names_the_attempt_it_is_judging(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        # Attempt 1 has a code problem (critic skipped); attempts 2 and 3
+        # are unusable, so attempt 1 is judged after the loop.
+        bad = [
+            {
+                "text": "Built dbt models powering risk reporting",
+                "evidence_refs": [self.ref0],
+            },
+            {"text": "Invented", "evidence_refs": ["nope"]},
+        ]
+        seen: list = []
+        adapters = self._recording(run_id, seen, [self._reply(bad), "not json"])
+        outcome = execute_tailoring(
+            self.app_engine, self.user_id, run_id, adapters=adapters
+        )
+        self.assertEqual(outcome.attempts, 3)
+        critic_seen = [p for who, p in seen if who == "critic"]
+        self.assertEqual(len(critic_seen), 1)
+        self.assertEqual(critic_seen[0]["phase"], "critic")
+        self.assertEqual(critic_seen[0]["attempt"], 1)
+        self.assertIn("Attempt 1 of 3", critic_seen[0]["message"])
+
     def test_a_progress_write_failure_does_not_fail_the_run(self) -> None:
         self._store_cv()
         with mock.patch(

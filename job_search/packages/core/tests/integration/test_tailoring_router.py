@@ -15,6 +15,7 @@ import re
 import sys
 import unittest
 import uuid
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,7 +32,11 @@ from app.main import app  # noqa: E402
 from core.cv.store import write_truth_base  # noqa: E402
 from core.db.session import get_current_user_id  # noqa: E402
 from core.llm.types import LLMResponse  # noqa: E402
-from core.tailoring.store import StaleDecisionError  # noqa: E402
+from core.tailoring.store import (  # noqa: E402
+    StaleDecisionError,
+    create_run,
+    set_progress,
+)
 
 _JOB = "zzfixture-tlr-api-1"
 _NO_TITLE_JOB = "zzfixture-tlr-api-2"
@@ -288,15 +293,32 @@ class TestTailoringRouter(unittest.TestCase):
         self.assertEqual(body["document"]["headline"], "Lead Data Engineer")
         self.assertEqual(body["orphans"], [])
 
-    def test_the_run_response_includes_progress_and_timestamps(self) -> None:
+    def test_a_generating_run_exposes_progress_and_timestamps(self) -> None:
+        self._store_cv()
+        run_id = create_run(
+            self.app_engine,
+            self.user_id,
+            job_group_id=_JOB,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        progress = {"phase": "tailoring", "message": "m", "history": ["h"]}
+        set_progress(self.app_engine, self.user_id, run_id, progress)
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertEqual(body["status"], "generating")
+        self.assertEqual(body["progress"], progress)
+        started = datetime.fromisoformat(body["started_at"])
+        updated = datetime.fromisoformat(body["updated_at"])
+        self.assertGreaterEqual(updated, started)
+
+    def test_a_finished_run_has_no_progress(self) -> None:
         self._store_cv()
         run_id = self._start().json()["run_id"]
         body = self.client.get(f"/tailoring/runs/{run_id}").json()
-        self.assertEqual(body["progress"]["phase"], "saving")
-        self.assertEqual(body["progress"]["history"], ["Attempt 1: clean"])
-        self.assertIn("T", body["started_at"])
-        self.assertIn("T", body["updated_at"])
-        self.assertGreaterEqual(body["updated_at"], body["started_at"])
+        self.assertEqual(body["status"], "approved")
+        self.assertIsNone(body["progress"])
+        datetime.fromisoformat(body["started_at"])
+        datetime.fromisoformat(body["updated_at"])
 
     def test_the_run_response_lists_source_bullets_for_the_picker(self) -> None:
         self._store_cv()

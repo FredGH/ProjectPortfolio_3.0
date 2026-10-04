@@ -110,7 +110,8 @@ class StoredRun:
         critic_prompt_version: Critic prompt version.
         created_at: When the run started.
         updated_at: When the row last changed (progress writes bump it).
-        progress: Live progress while `generating`, else None. A plain dict:
+        progress: Live progress written while `generating` (None until the
+            first update; the API only exposes it while generating). A dict:
             `{"attempt": int, "max_attempts": int, "phase": "tailoring" |
             "checking" | "critic" | "saving", "message": str,
             "phase_started_at": ISO-8601 UTC string, "history": [str, ...]}`.

@@ -310,12 +310,14 @@ class _Attempt:
         document: The assembled document (with keyword coverage).
         problems: Its code-check problems.
         critic: Its critic result, or None when the critic was skipped.
+        number: Its 1-based attempt number (for progress messages).
     """
 
     tailor_result: TailorResult
     document: TailoredDocument
     problems: list[Problem]
     critic: CriticResult | None
+    number: int
 
 
 def _is_clean(attempt: _Attempt) -> bool:
@@ -544,7 +546,7 @@ def _execute(
             if not problems or final
             else None
         )
-        last = _Attempt(tailor_result, document, problems, critic)
+        last = _Attempt(tailor_result, document, problems, critic, attempts)
         if _is_clean(last):
             best = last
         feedback = _feedback(problems, document, critic, coverage)
@@ -582,11 +584,11 @@ def _execute(
             app_engine,
             user_id,
             run_id,
-            attempt=attempts,
+            attempt=chosen.number,
             max_attempts=max_attempts,
             phase="critic",
             message=_critic_message(
-                chosen.document, truth_base, attempts, max_attempts
+                chosen.document, truth_base, chosen.number, max_attempts
             ),
             history=history,
         )
