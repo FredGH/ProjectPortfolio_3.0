@@ -22,6 +22,7 @@ from core.tailoring.store import (
     read_orphan,
     read_run,
     save_decision,
+    set_progress,
 )
 
 
@@ -56,6 +57,60 @@ class TestTailoringStore(unittest.TestCase):
                 text("DELETE FROM app_user WHERE id IN (:a, :b)"),
                 {"a": self.user_a, "b": self.user_b},
             )
+
+    _PROGRESS = {
+        "attempt": 1,
+        "max_attempts": 3,
+        "phase": "tailoring",
+        "message": "Attempt 1 of 3: the Tailor is rewriting your CV…",
+        "phase_started_at": "2026-10-04T10:00:00+00:00",
+        "history": [],
+    }
+
+    def _new_run(self) -> uuid.UUID:
+        return create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id="zzfixture-job",
+            truth_base_version=1,
+            target_title="Zz Title",
+        )
+
+    def test_a_new_run_has_no_progress_and_an_updated_at(self) -> None:
+        run = read_run(self.app_engine, self.user_a, self._new_run())
+        self.assertIsNone(run.progress)
+        self.assertIsNotNone(run.updated_at)
+
+    def test_set_progress_writes_while_generating(self) -> None:
+        run_id = self._new_run()
+        before = read_run(self.app_engine, self.user_a, run_id)
+        set_progress(self.app_engine, self.user_a, run_id, self._PROGRESS)
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.progress, self._PROGRESS)
+        self.assertGreaterEqual(run.updated_at, before.updated_at)
+
+    def test_set_progress_is_ignored_once_the_run_is_finished(self) -> None:
+        run_id = self._new_run()
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            status="failed",
+            document=None,
+            orphans=[],
+            attempts=1,
+            error_message="boom",
+        )
+        before = read_run(self.app_engine, self.user_a, run_id)
+        set_progress(self.app_engine, self.user_a, run_id, self._PROGRESS)
+        after = read_run(self.app_engine, self.user_a, run_id)
+        self.assertIsNone(after.progress)
+        self.assertEqual(after.updated_at, before.updated_at)
+
+    def test_another_user_cannot_write_progress(self) -> None:
+        run_id = self._new_run()
+        set_progress(self.app_engine, self.user_b, run_id, self._PROGRESS)
+        self.assertIsNone(read_run(self.app_engine, self.user_a, run_id).progress)
 
     def _document(self):
         output = TailorOutput(

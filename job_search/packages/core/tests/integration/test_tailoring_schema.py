@@ -97,6 +97,38 @@ class TestTailoringSchema(unittest.TestCase):
             ).all()
         self.assertEqual(rows, [])
 
+    def test_progress_column_is_nullable_jsonb_the_app_role_can_write(self) -> None:
+        run_id = self._insert_run(self.user_a)
+        with self.owner.connect() as conn:
+            col = conn.execute(
+                text(
+                    "SELECT data_type, is_nullable FROM information_schema.columns "
+                    "WHERE table_schema = 'tailoring' AND table_name = 'tailored_cv' "
+                    "AND column_name = 'progress'"
+                )
+            ).one()
+        self.assertEqual((col.data_type, col.is_nullable), ("jsonb", "YES"))
+        with session_scope(self.app_engine, user_id=self.user_a) as conn:
+            self.assertIsNone(
+                conn.execute(
+                    text("SELECT progress FROM tailoring.tailored_cv WHERE id = :id"),
+                    {"id": run_id},
+                ).scalar_one()
+            )
+            conn.execute(
+                text(
+                    "UPDATE tailoring.tailored_cv "
+                    "SET progress = CAST(:p AS jsonb) WHERE id = :id"
+                ),
+                {"p": '{"attempt": 1}', "id": run_id},
+            )
+        with session_scope(self.app_engine, user_id=self.user_a) as conn:
+            value = conn.execute(
+                text("SELECT progress FROM tailoring.tailored_cv WHERE id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+        self.assertEqual(value, {"attempt": 1})
+
     def test_invalid_run_status_is_rejected(self) -> None:
         with self.assertRaises(IntegrityError):
             with self.owner.begin() as conn:

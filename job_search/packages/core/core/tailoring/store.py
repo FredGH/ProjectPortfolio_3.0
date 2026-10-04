@@ -6,6 +6,7 @@ Every function takes the app-role engine and a `user_id` and runs inside
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -108,6 +109,11 @@ class StoredRun:
         critic_model: Model used by the critic.
         critic_prompt_version: Critic prompt version.
         created_at: When the run started.
+        updated_at: When the row last changed (progress writes bump it).
+        progress: Live progress while `generating`, else None. A plain dict:
+            `{"attempt": int, "max_attempts": int, "phase": "tailoring" |
+            "checking" | "critic" | "saving", "message": str,
+            "phase_started_at": ISO-8601 UTC string, "history": [str, ...]}`.
         orphans: Every orphan row, in position order.
     """
 
@@ -125,6 +131,8 @@ class StoredRun:
     critic_model: str | None
     critic_prompt_version: str | None
     created_at: datetime
+    updated_at: datetime
+    progress: dict | None
     orphans: list[StoredOrphan]
 
 
@@ -216,6 +224,32 @@ def latest_run_id(
             ),
             {"job_group_id": job_group_id},
         ).scalar_one_or_none()
+
+
+def set_progress(
+    engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID, progress: dict
+) -> None:
+    """Record live progress on a run that is still `generating`.
+
+    A run that already finished (or is not visible to this user) is left
+    untouched: late progress is silently ignored, never an error.
+
+    Args:
+        engine: The app-role engine.
+        user_id: The owner.
+        run_id: The run.
+        progress: The progress dict (see `StoredRun.progress`).
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        conn.execute(
+            text(
+                "UPDATE tailoring.tailored_cv "
+                "SET progress = CAST(:p AS jsonb), updated_at = now() "
+                "WHERE id = :run_id AND user_id = :user_id "
+                "AND status = 'generating'"
+            ),
+            {"p": json.dumps(progress), "run_id": run_id, "user_id": user_id},
+        )
 
 
 def finish_run(
@@ -324,7 +358,8 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
                 "SELECT id, user_id, job_group_id, truth_base_version, target_title, "
                 "status, attempts, error_message, content, tailor_model, "
                 "tailor_prompt_version, critic_model, critic_prompt_version, "
-                "created_at FROM tailoring.tailored_cv WHERE id = :run_id"
+                "created_at, updated_at, progress "
+                "FROM tailoring.tailored_cv WHERE id = :run_id"
             ),
             {"run_id": run_id},
         ).one_or_none()
@@ -357,6 +392,8 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
         critic_model=row.critic_model,
         critic_prompt_version=row.critic_prompt_version,
         created_at=row.created_at,
+        updated_at=row.updated_at,
+        progress=row.progress,
         orphans=[_orphan_from_row(r) for r in orphan_rows],
     )
 
