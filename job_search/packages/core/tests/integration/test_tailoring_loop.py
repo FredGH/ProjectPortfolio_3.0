@@ -9,6 +9,7 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
@@ -655,6 +656,122 @@ class TestTailoringLoop(unittest.TestCase):
         self.assertEqual(run.error_message, "finished elsewhere")
         self.assertEqual(run.orphans, [])
         self.assertIsNone(run.document)
+
+    # --- live progress ---------------------------------------------------
+
+    def _recording(self, run_id, seen, replies, unsupported=None):
+        """Build adapters that record the run's stored progress mid-call."""
+        app_engine, user_id = self.app_engine, self.user_id
+
+        class _RecTailor(_Tailor):
+            def complete(self, **kwargs: object) -> LLMResponse:
+                run = read_run(app_engine, user_id, run_id)
+                seen.append(("tailor", run.progress))
+                return super().complete(**kwargs)
+
+        class _RecCritic(_Critic):
+            def complete(self, **kwargs: object) -> LLMResponse:
+                run = read_run(app_engine, user_id, run_id)
+                seen.append(("critic", run.progress))
+                return super().complete(**kwargs)
+
+        return {
+            "ollama": _RecTailor(replies),
+            "anthropic": _RecCritic(unsupported),
+        }
+
+    def test_progress_is_visible_during_each_tailor_and_critic_call(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        bad = self._clean_bullets() + [
+            {"text": "Led a team of 12", "evidence_refs": []}
+        ]
+        seen: list = []
+        adapters = self._recording(
+            run_id, seen, [self._reply(bad), self._reply(self._clean_bullets())]
+        )
+        outcome = execute_tailoring(
+            self.app_engine, self.user_id, run_id, adapters=adapters
+        )
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 2))
+        tailor_seen = [p for who, p in seen if who == "tailor"]
+        self.assertEqual([p["phase"] for p in tailor_seen], ["tailoring"] * 2)
+        self.assertEqual([p["attempt"] for p in tailor_seen], [1, 2])
+        self.assertEqual(tailor_seen[0]["max_attempts"], 3)
+        self.assertIn("Attempt 2 of 3", tailor_seen[1]["message"])
+        self.assertIn("phase_started_at", tailor_seen[0])
+        critic_seen = [p for who, p in seen if who == "critic"]
+        self.assertEqual([p["phase"] for p in critic_seen], ["critic"] * 2)
+        # Attempt 1 had an orphan but no code problem, so the critic ran;
+        # its message names how many lines it will judge.
+        self.assertRegex(critic_seen[1]["message"], r"fact-checking \d+ line\(s\)")
+        self.assertEqual(
+            critic_seen[1]["history"],
+            ["Attempt 1: 1 point(s) to fix — trying again"],
+        )
+        # The history accumulated across the retry.
+        self.assertEqual(tailor_seen[1]["history"], critic_seen[1]["history"])
+
+    def test_the_last_progress_before_finishing_is_saving(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        seen: list = []
+        adapters = self._recording(run_id, seen, [self._reply(self._clean_bullets())])
+        execute_tailoring(self.app_engine, self.user_id, run_id, adapters=adapters)
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertEqual(run.status, "approved")
+        self.assertEqual(run.progress["phase"], "saving")
+        self.assertEqual(run.progress["history"], ["Attempt 1: clean"])
+
+    def test_a_surfaced_orphan_is_recorded_in_the_history(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        bad = self._clean_bullets() + [
+            {"text": "Led a team of 12", "evidence_refs": []}
+        ]
+        seen: list = []
+        adapters = self._recording(run_id, seen, [self._reply(bad)])
+        outcome = execute_tailoring(
+            self.app_engine, self.user_id, run_id, adapters=adapters
+        )
+        self.assertEqual(outcome.status, "needs_review")
+        history = read_run(self.app_engine, self.user_id, run_id).progress["history"]
+        self.assertEqual(
+            history,
+            [
+                "Attempt 1: 1 point(s) to fix — trying again",
+                "Attempt 2: 1 point(s) to fix — trying again",
+                "Attempt 3: 1 line(s) still need your decision",
+            ],
+        )
+
+    def test_an_unusable_reply_is_recorded_in_the_history(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        seen: list = []
+        adapters = self._recording(
+            run_id, seen, ["not json", self._reply(self._clean_bullets())]
+        )
+        execute_tailoring(self.app_engine, self.user_id, run_id, adapters=adapters)
+        history = read_run(self.app_engine, self.user_id, run_id).progress["history"]
+        self.assertEqual(
+            history,
+            [
+                "Attempt 1: the Tailor's reply could not be used — trying again",
+                "Attempt 2: clean",
+            ],
+        )
+
+    def test_a_progress_write_failure_does_not_fail_the_run(self) -> None:
+        self._store_cv()
+        with mock.patch(
+            "core.tailoring.loop.set_progress", side_effect=RuntimeError("db down")
+        ) as patched:
+            outcome = self._run(
+                _Tailor([self._reply(self._clean_bullets())]), _Critic()
+            )
+        self.assertGreaterEqual(patched.call_count, 3)
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 1))
 
     # --- no Anthropic key (I3) -------------------------------------------
 

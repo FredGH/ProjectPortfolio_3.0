@@ -13,10 +13,12 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Engine
 
+from core.cv.schema import CVTruthBase
 from core.cv.store import read_truth_base, read_truth_base_version
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
@@ -32,7 +34,7 @@ from core.tailoring.checks import (
 )
 from core.tailoring.context import load_job_context
 from core.tailoring.critic import TASK as CRITIC_TASK
-from core.tailoring.critic import CriticResult, run_critic
+from core.tailoring.critic import CriticResult, critic_items, run_critic
 from core.tailoring.schema import (
     JobContext,
     KeywordCoverage,
@@ -45,6 +47,7 @@ from core.tailoring.store import (
     create_run,
     finish_run,
     read_run,
+    set_progress,
 )
 from core.tailoring.tailor import TailorResult, run_tailor
 
@@ -332,6 +335,111 @@ def _is_clean(attempt: _Attempt) -> bool:
     )
 
 
+def _report(
+    app_engine: Engine,
+    user_id: uuid.UUID,
+    run_id: uuid.UUID,
+    *,
+    attempt: int,
+    max_attempts: int,
+    phase: str,
+    message: str,
+    history: list[str],
+) -> None:
+    """Record live progress for the review page, best effort.
+
+    A progress write must never fail or slow the run, so every exception is
+    logged and swallowed.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+        attempt: The Tailor attempt in progress (1-based).
+        max_attempts: The most attempts this run can make.
+        phase: `tailoring`, `checking`, `critic` or `saving`.
+        message: What is happening, in words.
+        history: One line per finished attempt (copied, not kept).
+    """
+    try:
+        set_progress(
+            app_engine,
+            user_id,
+            run_id,
+            {
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+                "phase": phase,
+                "message": message,
+                "phase_started_at": datetime.now(UTC).isoformat(),
+                "history": list(history),
+            },
+        )
+    except Exception:  # noqa: BLE001 — progress is advisory, never fatal
+        logger.warning("could not record progress for run %s", run_id, exc_info=True)
+
+
+def _critic_message(
+    document: TailoredDocument,
+    truth_base: CVTruthBase,
+    attempt: int,
+    max_attempts: int,
+) -> str:
+    """Describe an imminent critic call.
+
+    Args:
+        document: The document the critic will judge.
+        truth_base: The truth base.
+        attempt: The attempt number.
+        max_attempts: The most attempts this run can make.
+
+    Returns:
+        The progress message; falls back to a generic one if the lines
+        cannot be counted.
+    """
+    prefix = f"Attempt {attempt} of {max_attempts}: Claude is fact-checking"
+    try:
+        count = len(critic_items(document, truth_base))
+    except Exception:  # noqa: BLE001 — a message must never fail the run
+        return f"{prefix} your CV…"
+    return f"{prefix} {count} line(s)…" if count else f"{prefix} the title…"
+
+
+def _attempt_line(
+    attempt: int,
+    *,
+    final: bool,
+    feedback: list[str],
+    document: TailoredDocument,
+    problems: list[Problem],
+    critic: CriticResult | None,
+) -> str:
+    """Summarise a finished attempt for the progress history.
+
+    Args:
+        attempt: The attempt number.
+        final: Whether it was the last attempt allowed.
+        feedback: The feedback it produced (empty when nothing to fix).
+        document: The attempt's document.
+        problems: Its code-check problems.
+        critic: Its critic result.
+
+    Returns:
+        One human line.
+    """
+    try:
+        pending = len(_orphan_drafts(document, problems, critic))
+    except Exception:  # noqa: BLE001 — a message must never fail the run
+        pending = len(feedback)
+    if not feedback:
+        return f"Attempt {attempt}: clean"
+    if final:
+        if pending:
+            return f"Attempt {attempt}: {pending} line(s) still need your decision"
+        return f"Attempt {attempt}: finished"
+    return f"Attempt {attempt}: {len(feedback)} point(s) to fix — trying again"
+
+
 def _execute(
     app_engine: Engine,
     user_id: uuid.UUID,
@@ -378,15 +486,32 @@ def _execute(
     last: _Attempt | None = None
     parse_error: TailorOutputError | None = None
     attempts = 0
-    for attempts in range(1, max_retries + 2):
+    max_attempts = max_retries + 1
+    history: list[str] = []
+    for attempts in range(1, max_attempts + 1):
         progress[0] = attempts
         final = attempts == max_retries + 1
+        _report(
+            app_engine,
+            user_id,
+            run_id,
+            attempt=attempts,
+            max_attempts=max_attempts,
+            phase="tailoring",
+            message=f"Attempt {attempts} of {max_attempts}: "
+            "the Tailor is rewriting your CV…",
+            history=history,
+        )
         try:
             tailor_result = run_tailor(
                 truth_base, job, feedback, adapters=adapters, config_path=config_path
             )
         except TailorOutputError as exc:
             parse_error = exc
+            history.append(
+                f"Attempt {attempts}: the Tailor's reply could not be used"
+                + ("" if final else " — trying again")
+            )
             if final:
                 break
             feedback = [f"Your previous reply could not be used: {exc}"]
@@ -401,6 +526,17 @@ def _execute(
         )
         coverage = compute_keyword_coverage(document, truth_base, job.skills)
         document = document.model_copy(update={"keyword_coverage": coverage})
+        if not problems or final:
+            _report(
+                app_engine,
+                user_id,
+                run_id,
+                attempt=attempts,
+                max_attempts=max_attempts,
+                phase="critic",
+                message=_critic_message(document, truth_base, attempts, max_attempts),
+                history=history,
+            )
         critic = (
             run_critic(
                 document, truth_base, job, adapters=adapters, config_path=config_path
@@ -412,6 +548,16 @@ def _execute(
         if _is_clean(last):
             best = last
         feedback = _feedback(problems, document, critic, coverage)
+        history.append(
+            _attempt_line(
+                attempts,
+                final=final,
+                feedback=feedback,
+                document=document,
+                problems=problems,
+                critic=critic,
+            )
+        )
         if not feedback or final:
             break
 
@@ -432,6 +578,18 @@ def _execute(
         # The critic was skipped on this attempt (it had code problems) and
         # no later attempt was usable: judge it now — an unjudged reworded
         # line must never be persisted as approved.
+        _report(
+            app_engine,
+            user_id,
+            run_id,
+            attempt=attempts,
+            max_attempts=max_attempts,
+            phase="critic",
+            message=_critic_message(
+                chosen.document, truth_base, attempts, max_attempts
+            ),
+            history=history,
+        )
         critic = run_critic(
             chosen.document, truth_base, job, adapters=adapters, config_path=config_path
         )
@@ -447,6 +605,16 @@ def _execute(
     )
     document = document.model_copy(update={"keyword_coverage": coverage})
     status = "needs_review" if orphans else "approved"
+    _report(
+        app_engine,
+        user_id,
+        run_id,
+        attempt=attempts,
+        max_attempts=max_attempts,
+        phase="saving",
+        message="Saving your tailored CV…",
+        history=history,
+    )
     finish_run(
         app_engine,
         user_id,
