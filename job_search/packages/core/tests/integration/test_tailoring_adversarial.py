@@ -21,8 +21,8 @@ from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
 from tests.tailoring_fixtures import (
     bullet_id,
+    forbid_real_ollama,
     make_truth_base,
-    write_pinned_task_config,
 )
 
 from core.cv.store import write_truth_base
@@ -111,10 +111,11 @@ class _RuleApplyingCritic:
 
 
 def _pinned_config(directory: str) -> Path:
-    """Write the shared pinned config with the real critic model.
+    """Write a task config routing BOTH tasks to anthropic.
 
-    The paid variant calls the critic for real, so it uses the live
-    `fabrication_critic` model; the fake Tailor's model name is a marker.
+    No Ollama backend is then involved (the loop builds a real Ollama
+    adapter for those, bypassing injected fakes). Both tasks use the live
+    critic model so the paid variant calls the critic for real.
 
     Args:
         directory: Where to write the file.
@@ -122,11 +123,33 @@ def _pinned_config(directory: str) -> Path:
     Returns:
         The config file's path.
     """
-    return write_pinned_task_config(
-        directory,
-        tailor_model="zzfixture-fake-tailor",
-        critic_model=load_task_config("fabrication_critic").model,
+    model = load_task_config("fabrication_critic").model
+    path = Path(directory) / "llm_tasks.yml"
+    path.write_text(
+        "tasks:\n"
+        "  cv_tailoring:\n"
+        "    provider: anthropic\n"
+        f"    model: {model}\n"
+        "    prompt_family: claude\n"
+        "  fabrication_critic:\n"
+        "    provider: anthropic\n"
+        f"    model: {model}\n"
+        "    prompt_family: claude\n"
     )
+    return path
+
+
+class _Dispatcher:
+    """One `anthropic` adapter sending Tailor prompts to the fake Tailor and
+    critic prompts (they contain "JSON list") to the critic."""
+
+    def __init__(self, tailor, critic) -> None:
+        self.tailor = tailor
+        self.critic = critic
+
+    def complete(self, *, model: str, prompt: str, **kwargs: object) -> LLMResponse:
+        target = self.critic if "JSON list" in prompt else self.tailor
+        return target.complete(model=model, prompt=prompt, **kwargs)
 
 
 class _Base(unittest.TestCase):
@@ -136,6 +159,7 @@ class _Base(unittest.TestCase):
         cls.app_engine = live_app_engine()
 
     def setUp(self) -> None:
+        forbid_real_ollama(self)
         config_dir = tempfile.TemporaryDirectory()
         self.addCleanup(config_dir.cleanup)
         self.config_path = _pinned_config(config_dir.name)
@@ -185,7 +209,7 @@ class _Base(unittest.TestCase):
             self.app_engine,
             self.user_id,
             _JOB,
-            adapters={"ollama": tailor, "anthropic": critic},
+            adapters={"anthropic": _Dispatcher(tailor, critic)},
             config_path=self.config_path,
         )
         return outcome, read_run(self.app_engine, self.user_id, outcome.run_id)
@@ -244,8 +268,9 @@ class TestExaggerationIsCaughtOffline(_Base):
         # Flipping cv_tailoring in the real config must not turn the fake
         # Tailor into a real model: the run used the pinned route.
         _, run = self._run(_ExaggeratingTailor(self.truth_base), _RuleApplyingCritic())
-        self.assertEqual(run.tailor_model, "zzfixture-fake-tailor")
-        self.assertEqual(run.tailor_prompt_version, "local.v2")
+        self.assertEqual(run.tailor_model, load_task_config("fabrication_critic").model)
+        self.assertEqual(run.critic_model, load_task_config("fabrication_critic").model)
+        self.assertEqual(run.tailor_prompt_version, "claude.v2")
         self.assertEqual(run.critic_prompt_version, "claude.v1")
 
     def test_an_exaggerated_bullet_is_surfaced_and_never_approved(self) -> None:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import unittest
 from pathlib import Path
+from unittest import mock
 
 from core.cv.bullet_id import compute_bullet_id
 from core.cv.schema import Bullet, CVTruthBase, Education, Experience, Skill
@@ -117,3 +119,26 @@ def write_pinned_task_config(
         "    prompt_family: claude\n"
     )
     return path
+
+
+def forbid_real_ollama(test_case: unittest.TestCase) -> None:
+    """Make any attempt to build the loop's real Ollama client fail loudly.
+
+    The loop builds a real client for an Ollama backend regardless of the
+    adapters a test injects, so a test that silently resolves to one would
+    try to reach the network. A test that deliberately exercises an Ollama
+    backend patches `_new_ollama_client` itself inside its own `with`
+    block, which takes precedence over this patch while it is active.
+
+    Args:
+        test_case: The test whose cleanup stops the patch.
+
+    Raises:
+        AssertionError: Raised by the patched client factory when called.
+    """
+    patcher = mock.patch(
+        "core.tailoring.loop._new_ollama_client",
+        side_effect=AssertionError("this test tried to reach a real Ollama"),
+    )
+    patcher.start()
+    test_case.addCleanup(patcher.stop)

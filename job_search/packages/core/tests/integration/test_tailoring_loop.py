@@ -19,6 +19,7 @@ from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
 from tests.tailoring_fixtures import (
     bullet_id,
+    forbid_real_ollama,
     make_truth_base,
     write_pinned_task_config,
 )
@@ -146,6 +147,7 @@ class _LoopFixtures(unittest.TestCase):
         cls.app_engine = live_app_engine()
 
     def setUp(self) -> None:
+        forbid_real_ollama(self)
         _RELEASE.clear()
         self.addCleanup(_RELEASE.set)
         config_dir = tempfile.TemporaryDirectory()
