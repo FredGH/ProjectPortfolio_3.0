@@ -270,7 +270,7 @@ class TestExaggerationIsCaughtOffline(_Base):
         _, run = self._run(_ExaggeratingTailor(self.truth_base), _RuleApplyingCritic())
         self.assertEqual(run.tailor_model, load_task_config("fabrication_critic").model)
         self.assertEqual(run.critic_model, load_task_config("fabrication_critic").model)
-        self.assertEqual(run.tailor_prompt_version, "claude.v2")
+        self.assertEqual(run.tailor_prompt_version, "claude.v3")
         self.assertEqual(run.critic_prompt_version, "claude.v1")
 
     def test_an_exaggerated_bullet_is_surfaced_and_never_approved(self) -> None:

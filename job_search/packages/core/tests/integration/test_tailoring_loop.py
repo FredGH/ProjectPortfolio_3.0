@@ -309,9 +309,30 @@ class TestTailoringLoop(_LoopFixtures):
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
         self.assertEqual(run.orphans, [])
         self.assertEqual(run.document.headline, "Lead Data Engineer")
-        self.assertEqual(run.tailor_prompt_version, "local.v2")
+        self.assertEqual(run.tailor_prompt_version, "local.v3")
         self.assertEqual(run.critic_prompt_version, "claude.v1")
         self.assertEqual(len(tailor.prompts), 1)
+        self.assertEqual(critic.calls, 1)
+
+    def test_a_keep_based_reply_is_approved_when_everything_is_clean(self) -> None:
+        self._store_cv()
+        bullets = [
+            {"keep": self.ref0},
+            {"keep": self.ref1},
+        ]
+        tailor = _Tailor([self._reply(bullets)])
+        critic = _Critic()
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 1))
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            [(b.text, b.origin) for b in run.document.experience[0].bullets],
+            [
+                ("Built dbt models for risk reporting", "original"),
+                ("Migrated nightly batch jobs to Airflow", "original"),
+            ],
+        )
+        self.assertEqual(run.orphans, [])
         self.assertEqual(critic.calls, 1)
 
     def test_keyword_coverage_is_recorded_and_gaps_alone_never_block(self) -> None:
@@ -1514,7 +1535,7 @@ class TestTailoringBackends(_LoopFixtures):
         self.assertEqual(url, "http://ollama:11434/api/generate")
         self.assertEqual(body["model"], "llama3.1:8b")
         run = read_run(self.app_engine, self.user_id, run_id)
-        self.assertEqual(run.tailor_prompt_version, "local.v2")
+        self.assertEqual(run.tailor_prompt_version, "local.v3")
         self.assertEqual(run.tailor_model, "llama3.1:8b")
         self.assertTrue(client.is_closed)
         self.unloads.assert_not_called()

@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from core.cv.schema import (
     Activity,
@@ -165,13 +165,38 @@ class TailoredDocument(BaseModel):
 class TailorBullet(BaseModel):
     """One bullet instruction from the Tailor.
 
+    Exactly one of `keep` (the candidate's bullet, unchanged) or `text` (a
+    reworded or new line) is given.
+
     Attributes:
-        text: The (possibly reworded) bullet.
-        evidence_refs: `bullet_id`s it is based on.
+        keep: The `bullet_id` of a truth-base bullet left exactly as it is.
+        text: The (possibly reworded) bullet; None for a `keep` item.
+        evidence_refs: `bullet_id`s a text item is based on (ignored for
+            `keep`).
     """
 
-    text: str
+    keep: str | None = None
+    text: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _exactly_one_of_keep_or_text(self) -> TailorBullet:
+        """Require exactly one of a non-empty `keep` or a non-empty `text`.
+
+        Returns:
+            The validated bullet.
+
+        Raises:
+            ValueError: If both or neither is given, or the one given is
+                blank.
+        """
+        has_keep = self.keep is not None
+        has_text = self.text is not None
+        if has_keep == has_text:
+            raise ValueError("a bullet needs exactly one of 'keep' or 'text'")
+        if not (self.keep if has_keep else self.text or "").strip():
+            raise ValueError("a bullet's 'keep' or 'text' must not be empty")
+        return self
 
 
 class TailorSummary(BaseModel):

@@ -119,7 +119,7 @@ class TestRunTailor(unittest.TestCase):
             config_path=self.config_path,
         )
         self.assertEqual(result.output.skills, ["dbt"])
-        self.assertEqual(result.prompt_version, "local.v2")
+        self.assertEqual(result.prompt_version, "local.v3")
         self.assertEqual(result.model, "llama3.1:8b")
 
     def test_a_backend_overrides_provider_model_and_prompt_family(self) -> None:
@@ -145,7 +145,7 @@ class TestRunTailor(unittest.TestCase):
             backend=backend,
         )
         self.assertEqual(seen, ["claude-test"])
-        self.assertEqual(result.prompt_version, "claude.v2")
+        self.assertEqual(result.prompt_version, "claude.v3")
         self.assertEqual(result.model, "claude-test")
 
     def test_the_prompt_carries_the_cv_the_job_and_the_feedback(self) -> None:
@@ -193,7 +193,7 @@ class TestRunTailor(unittest.TestCase):
         from core.llm.prompts import load_prompt
 
         for family in ("claude", "local"):
-            for version in (1, 2):
+            for version in (1, 2, 3):
                 with self.subTest(family=family, version=version):
                     template = load_prompt(TASK, family, version)
                     prompt = template.format(
@@ -219,7 +219,7 @@ class TestRunTailor(unittest.TestCase):
                     load_prompt(TASK, family, 1),
                 )
 
-    def test_the_live_config_records_claude_v2(self) -> None:
+    def test_the_live_config_records_claude_v3(self) -> None:
         adapter = _ScriptedAdapter([self.reply])
         result = run_tailor(
             self.truth_base,
@@ -227,8 +227,8 @@ class TestRunTailor(unittest.TestCase):
             [],
             adapters={"anthropic": adapter},
         )
-        self.assertEqual(PROMPT_VERSION_NUMBER, 2)
-        self.assertEqual(result.prompt_version, "claude.v2")
+        self.assertEqual(PROMPT_VERSION_NUMBER, 3)
+        self.assertEqual(result.prompt_version, "claude.v3")
 
     def test_the_task_is_registered_in_the_task_config(self) -> None:
         from core.llm.task_config import load_task_config

@@ -10,6 +10,7 @@ from tests.tailoring_fixtures import bullet_id, make_truth_base
 from core.tailoring.schema import (
     JobContext,
     JobSkill,
+    TailorBullet,
     TailoredBullet,
     TailoredDocument,
     TailorOutputError,
@@ -65,6 +66,36 @@ class TestParseTailorOutput(unittest.TestCase):
                 '{"experience": [{"truth_index": 0, '
                 '"bullets": [{"evidence_refs": []}]}]}'
             )
+
+
+class TestTailorBullet(unittest.TestCase):
+    def test_a_keep_item_is_valid(self) -> None:
+        bullet = TailorBullet.model_validate({"keep": "b-1"})
+        self.assertEqual((bullet.keep, bullet.text), ("b-1", None))
+
+    def test_a_text_item_is_valid(self) -> None:
+        bullet = TailorBullet.model_validate(
+            {"text": "Built x", "evidence_refs": ["b"]}
+        )
+        self.assertEqual((bullet.keep, bullet.text), (None, "Built x"))
+
+    def test_both_keep_and_text_is_an_error(self) -> None:
+        with self.assertRaises(TailorOutputError):
+            parse_tailor_output(
+                '{"experience": [{"truth_index": 0, '
+                '"bullets": [{"keep": "b", "text": "x"}]}]}'
+            )
+
+    def test_neither_keep_nor_text_is_an_error(self) -> None:
+        with self.assertRaises(TailorOutputError):
+            parse_tailor_output('{"experience": [{"truth_index": 0, "bullets": [{}]}]}')
+
+    def test_empty_text_or_empty_keep_is_an_error(self) -> None:
+        for bullet in ('{"text": "  "}', '{"keep": ""}'):
+            with self.subTest(bullet=bullet), self.assertRaises(TailorOutputError):
+                parse_tailor_output(
+                    '{"experience": [{"truth_index": 0, "bullets": [' + bullet + "]}]}"
+                )
 
 
 class TestTailoredDocument(unittest.TestCase):

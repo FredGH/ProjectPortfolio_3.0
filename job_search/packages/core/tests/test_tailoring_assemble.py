@@ -284,5 +284,115 @@ class TestAssemble(unittest.TestCase):
         self.assertEqual(document.email, "zz@example.com")
 
 
+class TestAssembleKeep(unittest.TestCase):
+    def setUp(self) -> None:
+        self.truth_base = make_truth_base()
+        self.ref0 = bullet_id(self.truth_base, 0, 0)
+        self.ref1 = bullet_id(self.truth_base, 0, 1)
+        self.ref_old = bullet_id(self.truth_base, 1, 0)
+
+    def _bullets(self, items: list[TailorBullet], role: int = 0):
+        output = TailorOutput(
+            experience=[TailorExperience(truth_index=role, bullets=items)]
+        )
+        document = assemble(self.truth_base, output, target_title=TITLE)
+        return document.experience[role].bullets
+
+    def test_keep_for_every_unchanged_bullet_equals_the_full_text_reply(self) -> None:
+        full = TailorOutput(
+            experience=[
+                TailorExperience(
+                    truth_index=0,
+                    bullets=[
+                        TailorBullet(
+                            text="Migrated nightly batch jobs to Airflow",
+                            evidence_refs=[self.ref1],
+                        ),
+                        TailorBullet(
+                            text="Built dbt models powering risk reporting",
+                            evidence_refs=[self.ref0],
+                        ),
+                    ],
+                ),
+                TailorExperience(
+                    truth_index=1,
+                    bullets=[
+                        TailorBullet(
+                            text="Wrote SQL reports for the finance team",
+                            evidence_refs=[self.ref_old],
+                        )
+                    ],
+                ),
+            ]
+        )
+        compact = TailorOutput(
+            experience=[
+                TailorExperience(
+                    truth_index=0,
+                    bullets=[
+                        TailorBullet(keep=self.ref1),
+                        TailorBullet(
+                            text="Built dbt models powering risk reporting",
+                            evidence_refs=[self.ref0],
+                        ),
+                    ],
+                ),
+                TailorExperience(
+                    truth_index=1, bullets=[TailorBullet(keep=self.ref_old)]
+                ),
+            ]
+        )
+        self.assertEqual(
+            assemble(self.truth_base, compact, target_title=TITLE),
+            assemble(self.truth_base, full, target_title=TITLE),
+        )
+
+    def test_a_keep_resolves_to_the_original_text_refs_and_origin(self) -> None:
+        (bullet,) = self._bullets([TailorBullet(keep=self.ref0)])
+        self.assertEqual(bullet.text, "Built dbt models for risk reporting")
+        self.assertEqual(bullet.evidence_refs, [self.ref0])
+        self.assertEqual(bullet.origin, "original")
+
+    def test_a_keep_of_another_roles_bullet_is_placed_and_flagged(self) -> None:
+        from core.tailoring.checks import check_evidence_refs
+
+        bullets = self._bullets([TailorBullet(keep=self.ref_old)])
+        self.assertEqual([b.evidence_refs for b in bullets], [[self.ref_old]])
+        output = TailorOutput(
+            experience=[
+                TailorExperience(
+                    truth_index=0, bullets=[TailorBullet(keep=self.ref_old)]
+                )
+            ]
+        )
+        document = assemble(self.truth_base, output, target_title=TITLE)
+        codes = [p.code for p in check_evidence_refs(document, self.truth_base)]
+        self.assertIn("cross_role_evidence", codes)
+
+    def test_an_unknown_keep_id_is_dropped(self) -> None:
+        bullets = self._bullets(
+            [TailorBullet(keep="nope"), TailorBullet(keep=self.ref1)]
+        )
+        self.assertEqual([b.evidence_refs for b in bullets], [[self.ref1]])
+
+    def test_a_repeated_keep_id_is_added_once(self) -> None:
+        bullets = self._bullets(
+            [TailorBullet(keep=self.ref0), TailorBullet(keep=self.ref0)]
+        )
+        self.assertEqual(len(bullets), 1)
+
+    def test_keep_and_reworded_text_are_classified_together(self) -> None:
+        bullets = self._bullets(
+            [
+                TailorBullet(keep=self.ref0),
+                TailorBullet(text="Airflow migration lead", evidence_refs=[self.ref1]),
+                TailorBullet(text="Led a team of 12"),
+            ]
+        )
+        self.assertEqual(
+            [b.origin for b in bullets], ["original", "reworded", "orphan"]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

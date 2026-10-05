@@ -176,7 +176,8 @@ def assemble(
 
     Returns:
         A `TailoredDocument`. Roles are always the truth base's, in order.
-        A role the model omitted keeps its original bullets; a role index
+        A `keep` item becomes the truth-base bullet's original text. A
+        role the model omitted keeps its original bullets; a role index
         outside the truth base is ignored; for a repeated role index the
         first entry wins.
     """
@@ -198,8 +199,24 @@ def assemble(
             ]
         else:
             bullets = []
+            kept: set[str] = set()
             for item in chosen.bullets:
-                text = clean_text(item.text)
+                if item.keep is not None:
+                    # An unchanged bullet: the truth base's own text. An
+                    # unknown id is dropped (nothing to fabricate); an id
+                    # from another role is still placed, so the evidence
+                    # check flags it like any cross-role citation.
+                    if item.keep in known and item.keep not in kept:
+                        kept.add(item.keep)
+                        bullets.append(
+                            TailoredBullet(
+                                text=known[item.keep][1],
+                                evidence_refs=[item.keep],
+                                origin="original",
+                            )
+                        )
+                    continue
+                text = clean_text(item.text or "")
                 if not text:
                     continue
                 refs = list(item.evidence_refs)
