@@ -152,6 +152,34 @@ class TestTailorCvSubcommand(unittest.TestCase):
             self.assertIn(status, out.getvalue())
             self.assertIn(str(run_id), out.getvalue())
 
+    def test_the_completion_line_shows_tokens_and_estimated_cost(self) -> None:
+        outcome = TailoringOutcome(run_id=uuid.uuid4(), status="approved", attempts=1)
+        stored = self._stored("approved", None, [])
+        stored.usage = {
+            "calls": [],
+            "input_tokens": 4300,
+            "output_tokens": 4200,
+            "cost_usd": 0.0466,
+        }
+        _, out = self._main_with(outcome, stored)
+        self.assertIn("tokens_in=4300 tokens_out=4200 est_cost_usd=0.0466", out)
+
+    def test_an_unpriced_run_shows_tokens_without_a_cost(self) -> None:
+        outcome = TailoringOutcome(run_id=uuid.uuid4(), status="approved", attempts=1)
+        stored = self._stored("approved", None, [])
+        stored.usage = {"input_tokens": 5, "output_tokens": 6, "cost_usd": None}
+        _, out = self._main_with(outcome, stored)
+        self.assertIn("tokens_in=5 tokens_out=6", out)
+        self.assertNotIn("est_cost_usd", out)
+
+    def test_a_run_without_usage_prints_no_token_text(self) -> None:
+        outcome = TailoringOutcome(run_id=uuid.uuid4(), status="approved", attempts=1)
+        for usage in (None, "junk", {"input_tokens": "x"}):
+            stored = self._stored("approved", None, [])
+            stored.usage = usage
+            _, out = self._main_with(outcome, stored)
+            self.assertNotIn("tokens_in", out)
+
     def test_backend_is_passed_through_and_labelled_in_the_completion_line(
         self,
     ) -> None:

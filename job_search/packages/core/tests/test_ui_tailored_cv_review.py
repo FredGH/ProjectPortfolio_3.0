@@ -877,5 +877,103 @@ class TestSummaryOrphanHasNoLink(unittest.TestCase):
         self.assertIn(f"link-select-{_ORPHAN_ID}", [s.key for s in app.selectbox])
 
 
+def _usage(cost, calls_cost=None) -> dict:
+    return {
+        "calls": [
+            {
+                "task": "cv_tailoring",
+                "model": "m",
+                "input_tokens": 3300,
+                "output_tokens": 4000,
+                "cost_usd": cost if calls_cost is None else calls_cost,
+            }
+        ],
+        "input_tokens": 3300,
+        "output_tokens": 4000,
+        "cost_usd": cost,
+    }
+
+
+class TestUsageLine(unittest.TestCase):
+    def setUp(self) -> None:
+        st.cache_data.clear()
+        self.addCleanup(st.cache_data.clear)
+
+    def _texts(self, run: dict) -> list[str]:
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        return [t.value for t in app.text]
+
+    def test_a_claude_run_shows_tokens_and_the_estimated_cost(self) -> None:
+        texts = self._texts({**_RUN, "usage": _usage(0.0466)})
+        self.assertIn(
+            "Tokens: 3,300 in / 4,000 out \u00b7 estimated cost $0.047 (estimate)",
+            texts,
+        )
+
+    def test_a_local_run_says_there_is_no_api_cost(self) -> None:
+        texts = self._texts({**_RUN, "usage": _usage(0.0)})
+        self.assertIn(
+            "Tokens: 3,300 in / 4,000 out \u00b7 local model: no API cost", texts
+        )
+
+    def test_an_unpriced_run_omits_the_cost(self) -> None:
+        texts = self._texts({**_RUN, "usage": _usage(None)})
+        self.assertIn("Tokens: 3,300 in / 4,000 out", texts)
+
+    def test_a_run_without_usage_shows_no_tokens_line(self) -> None:
+        for run in (_RUN, {**_RUN, "usage": None}):
+            self.assertFalse([t for t in self._texts(run) if t.startswith("Tokens:")])
+
+    def test_a_generating_run_shows_the_running_totals(self) -> None:
+        run = {**_RUN, "status": "generating", "progress": None, "usage": _usage(0.01)}
+        with (
+            mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)),
+            mock.patch("time.sleep", side_effect=lambda _s: st.stop()),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(
+            [t.value for t in app.text if t.value.startswith("Tokens: 3,300 in")]
+        )
+
+    def test_failed_and_cancelled_runs_keep_their_usage_line(self) -> None:
+        for status in ("failed", "cancelled"):
+            run = {
+                **_RUN,
+                "status": status,
+                "document": None,
+                "error_message": "boom",
+                "usage": _usage(0.5),
+            }
+            self.assertTrue(
+                [t for t in self._texts(run) if t.startswith("Tokens: 3,300 in")],
+                status,
+            )
+
+    def test_a_malformed_usage_never_crashes_the_page(self) -> None:
+        for bad in (
+            "junk",
+            [1, 2],
+            {},
+            {"input_tokens": "x", "output_tokens": None},
+            {"input_tokens": 1, "output_tokens": 2, "cost_usd": "free", "calls": 5},
+            {"input_tokens": True, "output_tokens": 2},
+            {"input_tokens": 1, "output_tokens": 2, "cost_usd": [1], "calls": [3]},
+        ):
+            texts = self._texts({**_RUN, "usage": bad})
+            self.assertFalse([t for t in texts if "$" in t and "Tokens" in t], bad)
+
+    def test_hostile_text_in_usage_is_not_rendered_as_markdown(self) -> None:
+        usage = {**_usage(0.1), "cost_usd": 0.1, "calls": [{"cost_usd": _HOSTILE}]}
+        with mock.patch(
+            "httpx.get", side_effect=_fake_get([_CANDIDATE], {**_RUN, "usage": usage})
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertNotIn("evil", " ".join(m.value for m in app.markdown))
+
+
 if __name__ == "__main__":
     unittest.main()

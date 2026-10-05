@@ -38,7 +38,15 @@ class CriticConfigError(RuntimeError):
 
 
 class CriticError(RuntimeError):
-    """The critic's reply could not be used."""
+    """The critic's reply could not be used.
+
+    Attributes:
+        spent: `(model, input_tokens, output_tokens)` of the call whose reply
+            was unusable, set by `run_critic` so the run still accounts for
+            the tokens; None when unknown.
+    """
+
+    spent: tuple[str, int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -81,12 +89,16 @@ class CriticResult:
         stretch: The seniority/scope judgement of the target title.
         model: The model that answered.
         prompt_version: The prompt file version used, e.g. `claude.v1`.
+        input_tokens: Prompt tokens, as the provider reported them.
+        output_tokens: Completion tokens, as the provider reported them.
     """
 
     verdicts: dict[str, Verdict]
     stretch: StretchAssessment
     model: str
     prompt_version: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def assert_critic_provider(config_path: Path | None = None) -> None:
@@ -229,7 +241,8 @@ def run_critic(
 
     Raises:
         CriticConfigError: If the critic is not routed to Anthropic.
-        CriticError: If the reply is not usable JSON of the expected shape.
+        CriticError: If the reply is not usable JSON of the expected shape
+            (its `spent` carries the call's model and token counts).
     """
     assert_critic_provider(config_path)
     config = load_task_config(TASK, config_path)
@@ -269,7 +282,9 @@ def run_critic(
         AttributeError,
         ValidationError,
     ) as exc:
-        raise CriticError(f"unusable critic reply: {exc}") from exc
+        error = CriticError(f"unusable critic reply: {exc}")
+        error.spent = (response.model, response.input_tokens, response.output_tokens)
+        raise error from exc
 
     verdicts = {
         item.item_id: answered.get(
@@ -283,4 +298,6 @@ def run_critic(
         stretch=stretch,
         model=response.model,
         prompt_version=prompt_version,
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
     )

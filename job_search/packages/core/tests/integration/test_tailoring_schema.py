@@ -129,6 +129,38 @@ class TestTailoringSchema(unittest.TestCase):
             ).scalar_one()
         self.assertEqual(value, {"attempt": 1})
 
+    def test_usage_column_is_nullable_jsonb_the_app_role_can_write(self) -> None:
+        run_id = self._insert_run(self.user_a)
+        with self.owner.connect() as conn:
+            col = conn.execute(
+                text(
+                    "SELECT data_type, is_nullable FROM information_schema.columns "
+                    "WHERE table_schema = 'tailoring' AND table_name = 'tailored_cv' "
+                    "AND column_name = 'usage'"
+                )
+            ).one()
+        self.assertEqual((col.data_type, col.is_nullable), ("jsonb", "YES"))
+        with session_scope(self.app_engine, user_id=self.user_a) as conn:
+            self.assertIsNone(
+                conn.execute(
+                    text("SELECT usage FROM tailoring.tailored_cv WHERE id = :id"),
+                    {"id": run_id},
+                ).scalar_one()
+            )
+            conn.execute(
+                text(
+                    "UPDATE tailoring.tailored_cv "
+                    "SET usage = CAST(:u AS jsonb) WHERE id = :id"
+                ),
+                {"u": '{"input_tokens": 5}', "id": run_id},
+            )
+        with session_scope(self.app_engine, user_id=self.user_a) as conn:
+            value = conn.execute(
+                text("SELECT usage FROM tailoring.tailored_cv WHERE id = :id"),
+                {"id": run_id},
+            ).scalar_one()
+        self.assertEqual(value, {"input_tokens": 5})
+
     def test_tailor_backend_is_nullable_and_checked(self) -> None:
         run_id = self._insert_run(self.user_a)
         with self.owner.connect() as conn:

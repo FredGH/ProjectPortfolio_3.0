@@ -37,7 +37,9 @@ from core.settings import get_settings  # noqa: E402
 from core.tailoring.store import (  # noqa: E402
     StaleDecisionError,
     create_run,
+    finish_run,
     set_progress,
+    set_usage,
 )
 
 _JOB = "zzfixture-tlr-api-1"
@@ -414,6 +416,38 @@ class TestTailoringRouter(unittest.TestCase):
         started = datetime.fromisoformat(body["started_at"])
         updated = datetime.fromisoformat(body["updated_at"])
         self.assertGreaterEqual(updated, started)
+
+    def test_a_run_returns_its_usage_for_every_status(self) -> None:
+        self._store_cv()
+        run_id = create_run(
+            self.app_engine,
+            self.user_id,
+            job_group_id=_JOB,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        self.assertIsNone(self.client.get(f"/tailoring/runs/{run_id}").json()["usage"])
+        usage = {
+            "calls": [],
+            "input_tokens": 12,
+            "output_tokens": 34,
+            "cost_usd": 0.5,
+        }
+        set_usage(self.app_engine, self.user_id, run_id, usage)
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertEqual((body["status"], body["usage"]), ("generating", usage))
+        finish_run(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            status="failed",
+            document=None,
+            orphans=[],
+            attempts=1,
+            error_message="boom",
+        )
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertEqual((body["status"], body["usage"]), ("failed", usage))
 
     def test_a_finished_run_has_no_progress(self) -> None:
         self._store_cv()

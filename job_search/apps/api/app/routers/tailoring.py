@@ -125,6 +125,8 @@ class RunModel(BaseModel):
     `progress` is the live progress of a `generating` run (phase, message,
     finished-attempt history), else None; `started_at`/`updated_at` let the
     page show how long it has been running and how recent the last update is.
+    `usage` is the run's token use and estimated cost (see
+    `core.tailoring.store.StoredRun.usage`), None until a call finishes.
     """
 
     run_id: uuid.UUID
@@ -141,6 +143,7 @@ class RunModel(BaseModel):
     updated_at: datetime
     tailor_backend: str | None = None
     tailor_label: str | None = None
+    usage: dict | None = None
 
 
 class DecisionRequest(BaseModel):
@@ -242,6 +245,7 @@ def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
         updated_at=run.updated_at,
         tailor_backend=run.tailor_backend,
         tailor_label=_backend_label(run.tailor_backend),
+        usage=run.usage,
     )
 
 

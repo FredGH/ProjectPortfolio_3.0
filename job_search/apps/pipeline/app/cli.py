@@ -1249,6 +1249,29 @@ def _cmd_score_blend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _usage_suffix(usage: object) -> str:
+    """Describe a run's token use for the `tailor-cv` completion line.
+
+    Args:
+        usage: The run's `usage` (see `StoredRun.usage`); anything else
+            (None, a malformed value) yields no text.
+
+    Returns:
+        ` tokens_in=… tokens_out=…` plus ` est_cost_usd=…` when every call
+        was priced, or an empty string when there is nothing usable.
+    """
+    if not isinstance(usage, dict):
+        return ""
+    tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
+    if not isinstance(tokens_in, int) or not isinstance(tokens_out, int):
+        return ""
+    text = f" tokens_in={tokens_in} tokens_out={tokens_out}"
+    cost = usage.get("cost_usd")
+    if isinstance(cost, int | float) and not isinstance(cost, bool):
+        text += f" est_cost_usd={cost:.4f}"
+    return text
+
+
 def _cmd_tailor_cv(args: argparse.Namespace) -> int:
     """Run the `tailor-cv` subcommand: tailor one user's CV to one job.
 
@@ -1292,6 +1315,7 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
         f"tailor-cv complete: run_id={outcome.run_id} status={outcome.status} "
         f"attempts={outcome.attempts}"
         + (f" backend={backend.label}" if backend is not None else "")
+        + _usage_suffix(getattr(run, "usage", None))
     )
     if run is not None and outcome.status == "failed" and run.error_message:
         print(f"tailor-cv error: {run.error_message}")

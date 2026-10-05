@@ -119,6 +119,13 @@ class StoredRun:
         orphans: Every orphan row, in position order.
         tailor_backend: `claude`, `native` or `docker`; None for a run made
             before the backend selector existed.
+        usage: Token use and estimated cost, None until the first LLM call
+            finishes. A dict: `{"calls": [{"task": "cv_tailoring" |
+            "fabrication_critic", "model": str, "input_tokens": int,
+            "output_tokens": int, "cost_usd": float | None}, ...],
+            "input_tokens": int, "output_tokens": int,
+            "cost_usd": float | None}`; the totals' `cost_usd` is None if
+            any call's cost is None (unknown model).
     """
 
     id: uuid.UUID
@@ -139,6 +146,7 @@ class StoredRun:
     progress: dict | None
     orphans: list[StoredOrphan]
     tailor_backend: str | None = None
+    usage: dict | None = None
 
 
 _ORPHAN_COLUMNS = (
@@ -262,6 +270,32 @@ def set_progress(
         )
 
 
+def set_usage(
+    engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID, usage: dict
+) -> None:
+    """Record token use and cost on a run that is still `generating`.
+
+    A run that already finished (or is not visible to this user) is left
+    untouched: a late write is silently ignored, never an error.
+
+    Args:
+        engine: The app-role engine.
+        user_id: The owner.
+        run_id: The run.
+        usage: The usage dict (see `StoredRun.usage`).
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        conn.execute(
+            text(
+                "UPDATE tailoring.tailored_cv "
+                "SET usage = CAST(:u AS jsonb) "
+                "WHERE id = :run_id AND user_id = :user_id "
+                "AND status = 'generating'"
+            ),
+            {"u": json.dumps(usage), "run_id": run_id, "user_id": user_id},
+        )
+
+
 def cancel_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> bool:
     """Cancel a run that is still `generating`.
 
@@ -324,6 +358,7 @@ def finish_run(
     critic_model: str | None = None,
     critic_prompt_version: str | None = None,
     error_message: str | None = None,
+    usage: dict | None = None,
 ) -> None:
     """Record a run's outcome and its orphan rows in one transaction.
 
@@ -340,6 +375,8 @@ def finish_run(
         critic_model: Model used by the critic.
         critic_prompt_version: Critic prompt version.
         error_message: Why the run failed, if it did.
+        usage: The run's token use and cost (see `StoredRun.usage`); None
+            leaves whatever `set_usage` already recorded.
 
     Raises:
         RunAlreadyFinishedError: If the run is not `generating` (already
@@ -354,7 +391,9 @@ def finish_run(
                 "tailor_prompt_version = :tailor_prompt_version, "
                 "critic_model = :critic_model, "
                 "critic_prompt_version = :critic_prompt_version, "
-                "error_message = :error_message, updated_at = now() "
+                "error_message = :error_message, "
+                "usage = COALESCE(CAST(:usage AS jsonb), usage), "
+                "updated_at = now() "
                 "WHERE id = :run_id AND user_id = :user_id "
                 "AND status = 'generating'"
             ),
@@ -368,6 +407,7 @@ def finish_run(
                 "critic_model": critic_model,
                 "critic_prompt_version": critic_prompt_version,
                 "error_message": error_message,
+                "usage": json.dumps(usage) if usage is not None else None,
                 "run_id": run_id,
                 "user_id": user_id,
             },
@@ -416,7 +456,7 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
                 "SELECT id, user_id, job_group_id, truth_base_version, target_title, "
                 "status, attempts, error_message, content, tailor_model, "
                 "tailor_prompt_version, critic_model, critic_prompt_version, "
-                "created_at, updated_at, progress, tailor_backend "
+                "created_at, updated_at, progress, tailor_backend, usage "
                 "FROM tailoring.tailored_cv WHERE id = :run_id"
             ),
             {"run_id": run_id},
@@ -454,6 +494,7 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
         progress=row.progress,
         orphans=[_orphan_from_row(r) for r in orphan_rows],
         tailor_backend=row.tailor_backend,
+        usage=row.usage,
     )
 
 

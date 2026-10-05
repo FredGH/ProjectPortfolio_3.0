@@ -24,6 +24,7 @@ from sqlalchemy import Engine
 from core.cv.schema import CVTruthBase
 from core.cv.store import read_truth_base, read_truth_base_version
 from core.llm.adapters.ollama import OllamaAdapter
+from core.llm.pricing import estimate_cost_usd
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
 from core.tailoring.assemble import assemble
@@ -45,7 +46,7 @@ from core.tailoring.checks import (
 )
 from core.tailoring.context import load_job_context
 from core.tailoring.critic import TASK as CRITIC_TASK
-from core.tailoring.critic import CriticResult, critic_items, run_critic
+from core.tailoring.critic import CriticError, CriticResult, critic_items, run_critic
 from core.tailoring.schema import (
     JobContext,
     KeywordCoverage,
@@ -61,7 +62,9 @@ from core.tailoring.store import (
     is_cancelled,
     read_run,
     set_progress,
+    set_usage,
 )
+from core.tailoring.tailor import TASK as TAILOR_TASK
 from core.tailoring.tailor import TailorResult, run_tailor
 
 logger = logging.getLogger(__name__)
@@ -539,6 +542,147 @@ def _attempt_line(
     return f"Attempt {attempt}: {len(feedback)} point(s) to fix — trying again"
 
 
+def _usage_total(calls: list[dict]) -> dict | None:
+    """Total a run's recorded LLM calls.
+
+    Args:
+        calls: The per-call records (`task`, `model`, `input_tokens`,
+            `output_tokens`, `cost_usd`).
+
+    Returns:
+        The usage dict (see `StoredRun.usage`), or None when there is no
+        call. The total cost is None if any call's cost is unknown.
+    """
+    if not calls:
+        return None
+    costs = [call["cost_usd"] for call in calls]
+    return {
+        "calls": [dict(call) for call in calls],
+        "input_tokens": sum(call["input_tokens"] for call in calls),
+        "output_tokens": sum(call["output_tokens"] for call in calls),
+        "cost_usd": None if None in costs else round(sum(costs), 6),
+    }
+
+
+def _record_call(
+    app_engine: Engine,
+    user_id: uuid.UUID,
+    run_id: uuid.UUID,
+    calls: list[dict],
+    *,
+    task: str,
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+) -> None:
+    """Add one finished LLM call to the run's usage, best effort.
+
+    A usage write must never fail or slow the run, so every exception is
+    logged and swallowed (the call stays in `calls` for the final write).
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+        calls: The run's per-call records (appended to).
+        task: `cv_tailoring` or `fabrication_critic`.
+        provider: Who served the call (`ollama` is free).
+        model: The model that answered.
+        input_tokens: Prompt tokens.
+        output_tokens: Completion tokens.
+    """
+    try:
+        cost = estimate_cost_usd(provider, model, input_tokens, output_tokens)
+    except Exception:  # noqa: BLE001 — a price lookup must never fail the run
+        logger.warning("could not price a call of run %s", run_id, exc_info=True)
+        cost = None
+    calls.append(
+        {
+            "task": task,
+            "model": model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": cost,
+        }
+    )
+    try:
+        set_usage(app_engine, user_id, run_id, _usage_total(calls) or {})
+    except Exception:  # noqa: BLE001 — usage is advisory, never fatal
+        logger.warning("could not record usage for run %s", run_id, exc_info=True)
+
+
+def _judge(
+    app_engine: Engine,
+    user_id: uuid.UUID,
+    run_id: uuid.UUID,
+    calls: list[dict],
+    *,
+    document: TailoredDocument,
+    truth_base: CVTruthBase,
+    job: JobContext,
+    adapters: dict[str, LLMAdapter],
+    config_path: Path | None,
+    stop: Callable[[], bool],
+) -> CriticResult:
+    """Run the critic (cancellable) and record its tokens and cost.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+        calls: The run's per-call records (appended to).
+        document: The document to judge.
+        truth_base: The truth base.
+        job: The target job.
+        adapters: LLM adapters keyed by provider.
+        config_path: Task-config override (tests).
+        stop: The "has this run been cancelled?" probe.
+
+    Returns:
+        The critic's result.
+
+    Raises:
+        CriticError: If the reply was unusable (its tokens are recorded).
+        RunCancelled: If the run was cancelled meanwhile.
+    """
+    try:
+        result = run_cancellable(
+            lambda: run_critic(
+                document, truth_base, job, adapters=adapters, config_path=config_path
+            ),
+            should_stop=stop,
+            abort=None,
+        )
+    except CriticError as exc:
+        if exc.spent is not None:
+            model, tokens_in, tokens_out = exc.spent
+            _record_call(
+                app_engine,
+                user_id,
+                run_id,
+                calls,
+                task=CRITIC_TASK,
+                provider="anthropic",
+                model=model,
+                input_tokens=tokens_in,
+                output_tokens=tokens_out,
+            )
+        raise
+    _record_call(
+        app_engine,
+        user_id,
+        run_id,
+        calls,
+        task=CRITIC_TASK,
+        provider="anthropic",
+        model=result.model,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+    )
+    return result
+
+
 def _execute(
     app_engine: Engine,
     user_id: uuid.UUID,
@@ -548,6 +692,7 @@ def _execute(
     config_path: Path | None,
     max_retries: int,
     progress: list[int],
+    usage: list[dict],
 ) -> TailoringOutcome:
     """Run the loop for an existing `generating` run.
 
@@ -560,6 +705,8 @@ def _execute(
         max_retries: Retries after the first attempt.
         progress: One-element list updated with the number of Tailor attempts
             started, so a failure can record the real count.
+        usage: Per-call usage records, appended to as calls finish, so a
+            failure can record what was spent.
 
     Returns:
         The outcome. Raises on any failure — `execute_tailoring` turns that
@@ -594,6 +741,7 @@ def _execute(
             config_path=config_path,
             max_retries=max_retries,
             progress=progress,
+            usage=usage,
             abort=(
                 (lambda: _abort_local_call(client, backend))
                 if client is not None
@@ -616,6 +764,7 @@ def _run_loop(
     config_path: Path | None,
     max_retries: int,
     progress: list[int],
+    usage: list[dict],
     abort: Callable[[], None] | None,
 ) -> TailoringOutcome:
     """Tailor, check and judge until the run can be saved.
@@ -631,6 +780,8 @@ def _run_loop(
         config_path: Task-config override (tests).
         max_retries: Retries after the first attempt.
         progress: One-element list updated with the Tailor attempts started.
+        usage: Per-call usage records (tokens, cost), appended to after every
+            Tailor and critic call.
         abort: Cuts a Tailor call short on cancel: shuts the local
             model's socket down, then unloads the model (Ollama keeps
             computing through a long prompt after a disconnect); None for
@@ -684,6 +835,19 @@ def _run_loop(
                 abort=abort,
             )
         except TailorOutputError as exc:
+            if exc.spent is not None:
+                spent_model, tokens_in, tokens_out = exc.spent
+                _record_call(
+                    app_engine,
+                    user_id,
+                    run_id,
+                    usage,
+                    task=TAILOR_TASK,
+                    provider=backend.provider,
+                    model=spent_model,
+                    input_tokens=tokens_in,
+                    output_tokens=tokens_out,
+                )
             parse_error = exc
             history.append(
                 f"Attempt {attempts}: the Tailor's reply could not be used"
@@ -693,6 +857,17 @@ def _run_loop(
                 break
             feedback = [f"Your previous reply could not be used: {exc}"]
             continue
+        _record_call(
+            app_engine,
+            user_id,
+            run_id,
+            usage,
+            task=TAILOR_TASK,
+            provider=backend.provider,
+            model=tailor_result.model,
+            input_tokens=tailor_result.input_tokens,
+            output_tokens=tailor_result.output_tokens,
+        )
         document = assemble(
             truth_base, tailor_result.output, target_title=run.target_title
         )
@@ -716,16 +891,17 @@ def _run_loop(
                 history=history,
             )
         critic = (
-            run_cancellable(
-                lambda: run_critic(
-                    document,
-                    truth_base,
-                    job,
-                    adapters=adapters,
-                    config_path=config_path,
-                ),
-                should_stop=stop,
-                abort=None,
+            _judge(
+                app_engine,
+                user_id,
+                run_id,
+                usage,
+                document=document,
+                truth_base=truth_base,
+                job=job,
+                adapters=adapters,
+                config_path=config_path,
+                stop=stop,
             )
             if not problems or final
             else None
@@ -777,16 +953,17 @@ def _run_loop(
             ),
             history=history,
         )
-        critic = run_cancellable(
-            lambda: run_critic(
-                chosen.document,
-                truth_base,
-                job,
-                adapters=adapters,
-                config_path=config_path,
-            ),
-            should_stop=stop,
-            abort=None,
+        critic = _judge(
+            app_engine,
+            user_id,
+            run_id,
+            usage,
+            document=chosen.document,
+            truth_base=truth_base,
+            job=job,
+            adapters=adapters,
+            config_path=config_path,
+            stop=stop,
         )
     document = chosen.document.model_copy(update={"stretch": critic.stretch})
     orphans = _orphan_drafts(document, chosen.problems, critic)
@@ -823,6 +1000,7 @@ def _run_loop(
         tailor_prompt_version=chosen.tailor_result.prompt_version,
         critic_model=critic.model,
         critic_prompt_version=critic.prompt_version,
+        usage=_usage_total(usage),
     )
     return TailoringOutcome(run_id=run_id, status=status, attempts=attempts)
 
@@ -855,6 +1033,7 @@ def execute_tailoring(
         never re-tailored or overwritten: its stored outcome is returned.
     """
     progress = [0]
+    usage: list[dict] = []
     try:
         return _execute(
             app_engine,
@@ -864,6 +1043,7 @@ def execute_tailoring(
             config_path=config_path,
             max_retries=max_retries,
             progress=progress,
+            usage=usage,
         )
     except RunCancelled:
         return _cancelled_outcome(run_id, progress[0])
@@ -889,6 +1069,7 @@ def execute_tailoring(
                 orphans=[],
                 attempts=progress[0],
                 error_message=message,
+                usage=_usage_total(usage),
             )
         except RunAlreadyFinishedError:
             return _finished_elsewhere(app_engine, user_id, run_id)

@@ -40,11 +40,15 @@ class TailorResult:
         output: The parsed instructions.
         model: The model that produced them.
         prompt_version: The prompt file version used, e.g. `local.v2`.
+        input_tokens: Prompt tokens, as the provider reported them.
+        output_tokens: Completion tokens, as the provider reported them.
     """
 
     output: TailorOutput
     model: str
     prompt_version: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def render_truth_base(truth_base: CVTruthBase) -> str:
@@ -128,7 +132,8 @@ def run_tailor(
         The parsed result with the model and prompt version used.
 
     Raises:
-        TailorOutputError: If the reply was truncated or unusable.
+        TailorOutputError: If the reply was truncated or unusable (its
+            `spent` carries the call's model and token counts).
     """
     if backend is None:
         family = load_task_config(TASK, config_path).prompt_family
@@ -154,10 +159,18 @@ def run_tailor(
         max_tokens=MAX_TOKENS,
         **overrides,
     )
-    if response.truncated:
-        raise TailorOutputError("the Tailor's reply hit the output cap (truncated)")
+    try:
+        if response.truncated:
+            raise TailorOutputError("the Tailor's reply hit the output cap (truncated)")
+        output = parse_tailor_output(response.text)
+    except TailorOutputError as exc:
+        # The tokens were spent even though the reply is unusable.
+        exc.spent = (response.model, response.input_tokens, response.output_tokens)
+        raise
     return TailorResult(
-        output=parse_tailor_output(response.text),
+        output=output,
         model=response.model,
         prompt_version=prompt_version,
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
     )

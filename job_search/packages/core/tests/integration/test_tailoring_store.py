@@ -25,6 +25,7 @@ from core.tailoring.store import (
     read_run,
     save_decision,
     set_progress,
+    set_usage,
 )
 
 
@@ -113,6 +114,93 @@ class TestTailoringStore(unittest.TestCase):
         run_id = self._new_run()
         set_progress(self.app_engine, self.user_b, run_id, self._PROGRESS)
         self.assertIsNone(read_run(self.app_engine, self.user_a, run_id).progress)
+
+    _USAGE = {
+        "calls": [
+            {
+                "task": "cv_tailoring",
+                "model": "claude-sonnet-5",
+                "input_tokens": 3300,
+                "output_tokens": 4000,
+                "cost_usd": 0.0466,
+            }
+        ],
+        "input_tokens": 3300,
+        "output_tokens": 4000,
+        "cost_usd": 0.0466,
+    }
+
+    def test_a_new_run_has_no_usage(self) -> None:
+        self.assertIsNone(read_run(self.app_engine, self.user_a, self._new_run()).usage)
+
+    def test_set_usage_writes_while_generating(self) -> None:
+        run_id = self._new_run()
+        set_usage(self.app_engine, self.user_a, run_id, self._USAGE)
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).usage, self._USAGE
+        )
+
+    def test_set_usage_is_ignored_once_the_run_is_finished(self) -> None:
+        run_id = self._new_run()
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            status="failed",
+            document=None,
+            orphans=[],
+            attempts=1,
+            error_message="boom",
+        )
+        set_usage(self.app_engine, self.user_a, run_id, self._USAGE)
+        self.assertIsNone(read_run(self.app_engine, self.user_a, run_id).usage)
+
+    def test_another_user_cannot_write_usage(self) -> None:
+        run_id = self._new_run()
+        set_usage(self.app_engine, self.user_b, run_id, self._USAGE)
+        self.assertIsNone(read_run(self.app_engine, self.user_a, run_id).usage)
+
+    def test_finish_run_writes_usage_even_for_a_failed_run(self) -> None:
+        run_id = self._new_run()
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            status="failed",
+            document=None,
+            orphans=[],
+            attempts=1,
+            error_message="boom",
+            usage=self._USAGE,
+        )
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).usage, self._USAGE
+        )
+
+    def test_finish_run_without_usage_keeps_what_was_recorded(self) -> None:
+        run_id = self._new_run()
+        set_usage(self.app_engine, self.user_a, run_id, self._USAGE)
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            status="failed",
+            document=None,
+            orphans=[],
+            attempts=1,
+            error_message="boom",
+        )
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).usage, self._USAGE
+        )
+
+    def test_cancel_run_keeps_the_usage(self) -> None:
+        run_id = self._new_run()
+        set_usage(self.app_engine, self.user_a, run_id, self._USAGE)
+        cancel_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).usage, self._USAGE
+        )
 
     def _document(self):
         output = TailorOutput(

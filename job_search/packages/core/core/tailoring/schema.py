@@ -213,7 +213,15 @@ class TailorOutput(BaseModel):
 
 
 class TailorOutputError(ValueError):
-    """The Tailor's reply could not be parsed into a `TailorOutput`."""
+    """The Tailor's reply could not be parsed into a `TailorOutput`.
+
+    Attributes:
+        spent: `(model, input_tokens, output_tokens)` of the call whose reply
+            was unusable, set by `run_tailor` so the run still accounts for
+            the tokens; None when unknown.
+    """
+
+    spent: tuple[str, int, int] | None = None
 
 
 def parse_tailor_output(text: str) -> TailorOutput:

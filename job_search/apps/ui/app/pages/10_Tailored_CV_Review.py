@@ -31,8 +31,8 @@ Anything that can't be traced to your CV shows up under **Needs your
 decision**. For each reworded bullet either **Link** it to the bullet in
 your CV that evidences it (the case where your CV states it obliquely), or
 **Reject** it. A summary cannot be linked (it condenses many bullets): reject
-it and your own summary is restored. Nothing is written to your CV itself. The tailored CV is **approved**
-once no line is waiting.
+it and your own summary is restored. Nothing is written to your CV itself.
+The tailored CV is **approved** once no line is waiting.
 
 Use **Run the Tailor on** to choose who rewrites the CV: Claude, Ollama
 on this Mac, or the Docker Ollama service (CPU only, slow). The fact
@@ -104,6 +104,40 @@ def _clock(seconds: int) -> str:
         `MM:SS` (minutes may exceed two digits).
     """
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def _usage_line(usage: object) -> str | None:
+    """Describe a run's token use and estimated cost in one plain line.
+
+    Never raises: a missing or malformed `usage` just yields no line.
+
+    Args:
+        usage: The run's `usage` from the API (see the router's `RunModel`).
+
+    Returns:
+        `Tokens: N in / M out`, followed by the estimated cost, or by
+        `local model: no API cost` when every call cost 0.0; None when
+        there is nothing usable to show.
+    """
+    if not isinstance(usage, dict):
+        return None
+    tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
+    for value in (tokens_in, tokens_out):
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+    line = f"Tokens: {tokens_in:,} in / {tokens_out:,} out"
+    calls = usage.get("calls")
+    free = (
+        isinstance(calls, list)
+        and bool(calls)
+        and all(isinstance(c, dict) and c.get("cost_usd") == 0.0 for c in calls)
+    )
+    cost = usage.get("cost_usd")
+    if free:
+        line += " · local model: no API cost"
+    elif isinstance(cost, int | float) and not isinstance(cost, bool):
+        line += f" · estimated cost ${cost:.3f} (estimate)"
+    return line
 
 
 def _show_progress(run: dict) -> None:
@@ -405,6 +439,9 @@ status = run["status"]
 st.markdown(f"**Status:** {_plain(status)} · attempts: {_plain(run['attempts'])}")
 if run.get("tailor_label"):
     st.text(f"Tailor: {run['tailor_label']}")
+_usage_text = _usage_line(run.get("usage"))
+if _usage_text:
+    st.text(_usage_text)
 
 if status == "generating":
     _show_progress(run)

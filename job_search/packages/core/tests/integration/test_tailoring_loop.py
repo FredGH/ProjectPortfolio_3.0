@@ -88,24 +88,35 @@ def run_tailoring(*args, adapters, **kwargs):
 class _Tailor:
     """Replays tailor replies in order (the last repeats) and records prompts."""
 
-    def __init__(self, replies: list[str]) -> None:
+    def __init__(self, replies: list[str], tokens: tuple[int, int] = (1, 1)) -> None:
         self.replies = list(replies)
+        self.tokens = tokens
         self.prompts: list[str] = []
 
     def complete(self, *, model: str, prompt: str, **_: object) -> LLMResponse:
         self.prompts.append(prompt)
         reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
         return LLMResponse(
-            text=reply, provider="ollama", model=model, input_tokens=1, output_tokens=1
+            text=reply,
+            provider="ollama",
+            model=model,
+            input_tokens=self.tokens[0],
+            output_tokens=self.tokens[1],
         )
 
 
 class _Critic:
     """Marks the given item ids unsupported and everything else supported."""
 
-    def __init__(self, unsupported: set[str] | None = None, reply: str | None = None):
+    def __init__(
+        self,
+        unsupported: set[str] | None = None,
+        reply: str | None = None,
+        tokens: tuple[int, int] = (1, 1),
+    ):
         self.unsupported = unsupported or set()
         self.reply = reply
+        self.tokens = tokens
         self.calls = 0
 
     def complete(self, *, model: str, prompt: str, **_: object) -> LLMResponse:
@@ -115,8 +126,8 @@ class _Critic:
                 text=self.reply,
                 provider="anthropic",
                 model=model,
-                input_tokens=1,
-                output_tokens=1,
+                input_tokens=self.tokens[0],
+                output_tokens=self.tokens[1],
             )
         ids = re.findall(r'"id": "([^"]+)"', prompt)
         verdicts = [
@@ -133,8 +144,8 @@ class _Critic:
             ),
             provider="anthropic",
             model=model,
-            input_tokens=1,
-            output_tokens=1,
+            input_tokens=self.tokens[0],
+            output_tokens=self.tokens[1],
         )
 
 
@@ -1040,6 +1051,199 @@ class TestTailoringLoop(_LoopFixtures):
         )
         run = read_run(self.app_engine, self.user_id, run_id)
         self.assertEqual(run.document.experience[0].company, "Acme Bank")
+
+
+class _ClaudeBoth:
+    """One Anthropic adapter serving the Tailor and the critic (backend claude)."""
+
+    def __init__(self, tailor: _Tailor, critic: _Critic) -> None:
+        self.tailor = tailor
+        self.critic = critic
+
+    def complete(self, **kwargs: object) -> LLMResponse:
+        side = self.critic if "verdicts" in kwargs["prompt"] else self.tailor
+        response = side.complete(**kwargs)
+        return LLMResponse(
+            text=response.text,
+            provider="anthropic",
+            model=response.model,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+        )
+
+
+class TestTailoringUsage(_LoopFixtures):
+    """Tokens and estimated cost per run."""
+
+    _TAILOR = (3300, 4000)
+    _CRITIC = (1000, 200)
+    _CRITIC_COST = (1000 * 2.0 + 200 * 10.0) / 1e6
+    _TAILOR_COST = (3300 * 2.0 + 4000 * 10.0) / 1e6
+
+    def _usage(self, run_id):
+        return read_run(self.app_engine, self.user_id, run_id).usage
+
+    def test_a_local_run_records_free_tailor_and_priced_critic_calls(self) -> None:
+        self._store_cv()
+        outcome = self._run(
+            _Tailor([self._reply(self._clean_bullets())], self._TAILOR),
+            _Critic(tokens=self._CRITIC),
+        )
+        usage = self._usage(outcome.run_id)
+        self.assertEqual(
+            [
+                (c["task"], c["input_tokens"], c["output_tokens"])
+                for c in usage["calls"]
+            ],
+            [("cv_tailoring", 3300, 4000), ("fabrication_critic", 1000, 200)],
+        )
+        self.assertEqual(usage["calls"][0]["cost_usd"], 0.0)
+        self.assertEqual(usage["calls"][0]["model"], "llama3.1:8b")
+        self.assertEqual(usage["calls"][1]["model"], "claude-sonnet-5")
+        self.assertAlmostEqual(usage["calls"][1]["cost_usd"], self._CRITIC_COST)
+        self.assertEqual((usage["input_tokens"], usage["output_tokens"]), (4300, 4200))
+        self.assertAlmostEqual(usage["cost_usd"], self._CRITIC_COST)
+
+    def test_a_claude_run_prices_the_tailor_too(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(
+            self.app_engine,
+            self.user_id,
+            _JOB,
+            backend="claude",
+            config_path=self.config_path,
+        )
+        both = _ClaudeBoth(
+            _Tailor([self._reply(self._clean_bullets())], self._TAILOR),
+            _Critic(tokens=self._CRITIC),
+        )
+        outcome = execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={"anthropic": both},
+            config_path=self.config_path,
+        )
+        self.assertEqual(outcome.status, "approved")
+        usage = self._usage(run_id)
+        self.assertAlmostEqual(usage["calls"][0]["cost_usd"], self._TAILOR_COST)
+        self.assertAlmostEqual(usage["cost_usd"], self._TAILOR_COST + self._CRITIC_COST)
+
+    def test_a_retry_run_records_every_attempts_calls(self) -> None:
+        self._store_cv()
+        bad = [{"text": "Invented", "evidence_refs": ["nope"]}]
+        outcome = self._run(
+            _Tailor([self._reply(bad), self._reply(self._clean_bullets())], (10, 20)),
+            _Critic(tokens=(5, 6)),
+        )
+        self.assertEqual(outcome.attempts, 2)
+        usage = self._usage(outcome.run_id)
+        # Attempt 1 skipped the critic (code problem): tailor, tailor, critic.
+        self.assertEqual(
+            [c["task"] for c in usage["calls"]],
+            ["cv_tailoring", "cv_tailoring", "fabrication_critic"],
+        )
+        self.assertEqual((usage["input_tokens"], usage["output_tokens"]), (25, 46))
+
+    def test_an_unusable_tailor_reply_still_counts_its_tokens(self) -> None:
+        self._store_cv()
+        outcome = self._run(_Tailor(["not json"], (7, 9)), _Critic())
+        self.assertEqual(outcome.status, "failed")
+        usage = self._usage(outcome.run_id)
+        self.assertEqual(len(usage["calls"]), 3)
+        self.assertEqual((usage["input_tokens"], usage["output_tokens"]), (21, 27))
+        self.assertEqual(usage["cost_usd"], 0.0)
+
+    def test_a_failed_run_keeps_its_usage(self) -> None:
+        self._store_cv()
+        outcome = self._run(
+            _Tailor([self._reply(self._clean_bullets())], self._TAILOR),
+            _Critic(reply="lgtm", tokens=self._CRITIC),
+        )
+        self.assertEqual(outcome.status, "failed")
+        usage = self._usage(outcome.run_id)
+        self.assertEqual(
+            [c["task"] for c in usage["calls"]],
+            ["cv_tailoring", "fabrication_critic"],
+        )
+        self.assertEqual((usage["input_tokens"], usage["output_tokens"]), (4300, 4200))
+
+    def test_an_unknown_model_makes_the_total_cost_null(self) -> None:
+        self._store_cv()
+        with tempfile.TemporaryDirectory() as tmp:
+            config = write_pinned_task_config(tmp, critic_model="claude-mystery-1")
+            outcome = self._run(
+                _Tailor([self._reply(self._clean_bullets())], self._TAILOR),
+                _Critic(tokens=self._CRITIC),
+                config_path=config,
+            )
+        usage = self._usage(outcome.run_id)
+        self.assertIsNone(usage["calls"][1]["cost_usd"])
+        self.assertIsNone(usage["cost_usd"])
+        self.assertEqual(usage["input_tokens"], 4300)
+
+    def test_a_cancelled_run_keeps_the_usage_written_so_far(self) -> None:
+        self._store_cv()
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
+        critic = _CancellingCritic(
+            lambda: cancel_run(self.app_engine, self.user_id, run_id)
+        )
+        outcome = execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={
+                "ollama": _Tailor([self._reply(self._clean_bullets())], self._TAILOR),
+                "anthropic": critic,
+            },
+            config_path=self.config_path,
+        )
+        self.assertEqual(outcome.status, "cancelled")
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertEqual(run.status, "cancelled")
+        self.assertEqual(len(run.usage["calls"]), 1)
+        self.assertEqual(run.usage["input_tokens"], 3300)
+
+    def test_a_usage_write_failure_does_not_fail_the_run(self) -> None:
+        self._store_cv()
+        with mock.patch(
+            "core.tailoring.loop.set_usage", side_effect=RuntimeError("db down")
+        ) as patched:
+            outcome = self._run(
+                _Tailor([self._reply(self._clean_bullets())]), _Critic()
+            )
+        self.assertEqual(patched.call_count, 2)
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 1))
+        # The final write still carries everything the loop saw.
+        self.assertEqual(len(self._usage(outcome.run_id)["calls"]), 2)
+
+    def test_the_finished_run_has_usage_while_generating_has_the_running_total(
+        self,
+    ) -> None:
+        self._store_cv()
+        seen: list[dict | None] = []
+
+        class _Peek(_Critic):
+            def complete(peek, **kwargs):  # noqa: N805
+                seen.append(self._usage(run_id))
+                return super().complete(**kwargs)
+
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
+        execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={
+                "ollama": _Tailor([self._reply(self._clean_bullets())], self._TAILOR),
+                "anthropic": _Peek(),
+            },
+            config_path=self.config_path,
+        )
+        self.assertEqual(seen[0]["input_tokens"], 3300)
 
 
 class _CancellingTailor(_Tailor):
