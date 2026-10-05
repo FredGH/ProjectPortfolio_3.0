@@ -16,8 +16,10 @@ from core.tailoring.store import (
     OrphanDraft,
     RunAlreadyFinishedError,
     StaleDecisionError,
+    cancel_run,
     create_run,
     finish_run,
+    is_cancelled,
     latest_run_id,
     read_orphan,
     read_run,
@@ -409,6 +411,53 @@ class TestTailoringStore(unittest.TestCase):
         run = read_run(self.app_engine, self.user_a, run_id)
         self.assertEqual(len(run.orphans), 3)
         self.assertIsNone(run.error_message)
+
+    def test_cancel_run_marks_a_generating_run_and_clears_progress(self) -> None:
+        run_id = self._new_run()
+        set_progress(self.app_engine, self.user_a, run_id, self._PROGRESS)
+        self.assertFalse(is_cancelled(self.app_engine, self.user_a, run_id))
+        self.assertTrue(cancel_run(self.app_engine, self.user_a, run_id))
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.status, "cancelled")
+        self.assertIsNone(run.progress)
+        self.assertTrue(is_cancelled(self.app_engine, self.user_a, run_id))
+
+    def test_cancel_run_is_idempotent_and_leaves_finished_runs_alone(self) -> None:
+        run_id = self._new_run()
+        self.assertTrue(cancel_run(self.app_engine, self.user_a, run_id))
+        self.assertFalse(cancel_run(self.app_engine, self.user_a, run_id))
+        done = self._finished_run()
+        self.assertFalse(cancel_run(self.app_engine, self.user_a, done))
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, done).status, "needs_review"
+        )
+        self.assertFalse(is_cancelled(self.app_engine, self.user_a, done))
+
+    def test_cancel_run_ignores_another_users_run(self) -> None:
+        run_id = self._new_run()
+        self.assertFalse(cancel_run(self.app_engine, self.user_b, run_id))
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).status, "generating"
+        )
+        self.assertFalse(is_cancelled(self.app_engine, self.user_b, run_id))
+
+    def test_late_finish_on_a_cancelled_run_is_refused_without_orphans(self) -> None:
+        run_id = self._new_run()
+        cancel_run(self.app_engine, self.user_a, run_id)
+        with self.assertRaises(RunAlreadyFinishedError):
+            finish_run(
+                self.app_engine,
+                self.user_a,
+                run_id,
+                status="needs_review",
+                document=self._document(),
+                orphans=[self._draft(0, "Invented one")],
+                attempts=1,
+            )
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.status, "cancelled")
+        self.assertEqual(run.orphans, [])
+        self.assertIsNone(run.document)
 
     def test_finishing_another_users_run_is_refused(self) -> None:
         run_id = create_run(

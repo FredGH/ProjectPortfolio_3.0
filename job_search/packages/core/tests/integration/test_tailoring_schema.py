@@ -141,6 +141,17 @@ class TestTailoringSchema(unittest.TestCase):
                     {"u": self.user_a},
                 )
 
+    def test_cancelled_run_status_is_accepted(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO tailoring.tailored_cv "
+                    "(user_id, job_group_id, truth_base_version, target_title, "
+                    "status) VALUES (:u, 'zzfixture-job', 1, 'T', 'cancelled')"
+                ),
+                {"u": self.user_a},
+            )
+
     def test_unknown_orphan_kind_is_rejected(self) -> None:
         run_id = self._insert_run(self.user_a)
         with self.assertRaises(IntegrityError):

@@ -100,7 +100,8 @@ class StoredRun:
         job_group_id: The target job.
         truth_base_version: The CV version it was built from.
         target_title: The injected title.
-        status: `generating`, `needs_review`, `approved` or `failed`.
+        status: `generating`, `needs_review`, `approved`, `failed`
+            or `cancelled`.
         attempts: Tailor attempts made.
         error_message: Why it failed, if it did.
         document: The assembled document, once there is one.
@@ -251,6 +252,52 @@ def set_progress(
             ),
             {"p": json.dumps(progress), "run_id": run_id, "user_id": user_id},
         )
+
+
+def cancel_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> bool:
+    """Cancel a run that is still `generating`.
+
+    Idempotent and safe: a finished, already cancelled or foreign run is
+    left untouched.
+
+    Args:
+        engine: The app-role engine.
+        user_id: The owner.
+        run_id: The run to cancel.
+
+    Returns:
+        True iff this call moved the run from `generating` to `cancelled`.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        result = conn.execute(
+            text(
+                "UPDATE tailoring.tailored_cv SET status = 'cancelled', "
+                "progress = NULL, updated_at = now() "
+                "WHERE id = :run_id AND user_id = :user_id "
+                "AND status = 'generating'"
+            ),
+            {"run_id": run_id, "user_id": user_id},
+        )
+        return result.rowcount == 1
+
+
+def is_cancelled(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> bool:
+    """Tell whether a run has been cancelled.
+
+    Args:
+        engine: The app-role engine.
+        user_id: The owner (RLS hides other users' runs).
+        run_id: The run.
+
+    Returns:
+        True iff the run exists for this user with status `cancelled`.
+    """
+    with session_scope(engine, user_id=user_id) as conn:
+        status = conn.execute(
+            text("SELECT status FROM tailoring.tailored_cv WHERE id = :run_id"),
+            {"run_id": run_id},
+        ).scalar_one_or_none()
+    return status == "cancelled"
 
 
 def finish_run(
