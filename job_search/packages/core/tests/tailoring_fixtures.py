@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from core.cv.bullet_id import compute_bullet_id
 from core.cv.schema import Bullet, CVTruthBase, Education, Experience, Skill
 
@@ -79,3 +81,39 @@ def bullet_id(truth_base: CVTruthBase, experience_index: int, bullet_index: int)
         The bullet's `bullet_id`.
     """
     return truth_base.experience[experience_index].bullets[bullet_index].bullet_id
+
+
+def write_pinned_task_config(
+    directory: str,
+    *,
+    tailor_model: str = "llama3.1:8b",
+    critic_model: str = "claude-sonnet-5",
+) -> Path:
+    """Write a task config pinning the Tailor/critic routing tests rely on.
+
+    The Tailor goes to ollama (prompt family `local`) and the critic to
+    anthropic (family `claude`), whatever the live `llm_tasks.yml` says, so
+    tests with a fake `ollama` Tailor and a fake `anthropic` critic keep
+    working when the live routing changes.
+
+    Args:
+        directory: Where to write the file.
+        tailor_model: The model name pinned for `cv_tailoring`.
+        critic_model: The model name pinned for `fabrication_critic`.
+
+    Returns:
+        The config file's path.
+    """
+    path = Path(directory) / "llm_tasks.yml"
+    path.write_text(
+        "tasks:\n"
+        "  cv_tailoring:\n"
+        "    provider: ollama\n"
+        f"    model: {tailor_model}\n"
+        "    prompt_family: local\n"
+        "  fabrication_critic:\n"
+        "    provider: anthropic\n"
+        f"    model: {critic_model}\n"
+        "    prompt_family: claude\n"
+    )
+    return path

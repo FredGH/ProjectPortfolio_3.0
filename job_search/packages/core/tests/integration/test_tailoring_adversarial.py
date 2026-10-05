@@ -19,7 +19,11 @@ from pathlib import Path
 
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
-from tests.tailoring_fixtures import bullet_id, make_truth_base
+from tests.tailoring_fixtures import (
+    bullet_id,
+    make_truth_base,
+    write_pinned_task_config,
+)
 
 from core.cv.store import write_truth_base
 from core.llm.adapters.anthropic import AnthropicAdapter
@@ -107,12 +111,10 @@ class _RuleApplyingCritic:
 
 
 def _pinned_config(directory: str) -> Path:
-    """Write a task config pinning the routing these tests rely on.
+    """Write the shared pinned config with the real critic model.
 
-    `cv_tailoring` -> ollama/local, so the fake Tailor is always the one
-    called whatever the real config says; `fabrication_critic` ->
-    anthropic/claude with the real configured model (the paid variant
-    calls it for real).
+    The paid variant calls the critic for real, so it uses the live
+    `fabrication_critic` model; the fake Tailor's model name is a marker.
 
     Args:
         directory: Where to write the file.
@@ -120,20 +122,11 @@ def _pinned_config(directory: str) -> Path:
     Returns:
         The config file's path.
     """
-    critic_model = load_task_config("fabrication_critic").model
-    path = Path(directory) / "llm_tasks.yml"
-    path.write_text(
-        "tasks:\n"
-        "  cv_tailoring:\n"
-        "    provider: ollama\n"
-        "    model: zzfixture-fake-tailor\n"
-        "    prompt_family: local\n"
-        "  fabrication_critic:\n"
-        "    provider: anthropic\n"
-        f"    model: {critic_model}\n"
-        "    prompt_family: claude\n"
+    return write_pinned_task_config(
+        directory,
+        tailor_model="zzfixture-fake-tailor",
+        critic_model=load_task_config("fabrication_critic").model,
     )
-    return path
 
 
 class _Base(unittest.TestCase):

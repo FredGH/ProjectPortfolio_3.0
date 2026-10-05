@@ -13,7 +13,11 @@ from unittest import mock
 
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
-from tests.tailoring_fixtures import bullet_id, make_truth_base
+from tests.tailoring_fixtures import (
+    bullet_id,
+    make_truth_base,
+    write_pinned_task_config,
+)
 
 from core.cv.store import write_truth_base
 from core.llm.types import LLMResponse
@@ -94,6 +98,9 @@ class TestTailoringLoop(unittest.TestCase):
         cls.app_engine = live_app_engine()
 
     def setUp(self) -> None:
+        config_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(config_dir.cleanup)
+        self.config_path = write_pinned_task_config(config_dir.name)
         self.user_id = uuid.uuid4()
         self.truth_base = make_truth_base()
         self.ref0 = bullet_id(self.truth_base, 0, 0)
@@ -223,7 +230,7 @@ class TestTailoringLoop(unittest.TestCase):
             self.user_id,
             _JOB,
             adapters={"ollama": tailor, "anthropic": critic},
-            **kwargs,
+            **{"config_path": self.config_path, **kwargs},
         )
 
     # --- happy path ------------------------------------------------------
@@ -589,6 +596,7 @@ class TestTailoringLoop(unittest.TestCase):
             self.user_id,
             run_id,
             adapters={"ollama": tailor, "anthropic": _Critic()},
+            config_path=self.config_path,
         )
         self.assertEqual((outcome.status, outcome.attempts), ("failed", 0))
         self.assertEqual(tailor.prompts, [])
@@ -607,6 +615,7 @@ class TestTailoringLoop(unittest.TestCase):
             self.user_id,
             outcome.run_id,
             adapters={"ollama": tailor, "anthropic": critic},
+            config_path=self.config_path,
         )
         self.assertEqual((again.status, again.attempts), ("approved", 1))
         self.assertEqual((tailor.prompts, critic.calls), ([], 0))
@@ -650,6 +659,7 @@ class TestTailoringLoop(unittest.TestCase):
                 "ollama": _RacingTailor([self._reply(bad)]),
                 "anthropic": _Critic(),
             },
+            config_path=self.config_path,
         )
         self.assertEqual(outcome.status, "failed")
         run = read_run(self.app_engine, self.user_id, run_id)
@@ -691,7 +701,11 @@ class TestTailoringLoop(unittest.TestCase):
             run_id, seen, [self._reply(bad), self._reply(self._clean_bullets())]
         )
         outcome = execute_tailoring(
-            self.app_engine, self.user_id, run_id, adapters=adapters
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters=adapters,
+            config_path=self.config_path,
         )
         self.assertEqual((outcome.status, outcome.attempts), ("approved", 2))
         tailor_seen = [p for who, p in seen if who == "tailor"]
@@ -717,7 +731,13 @@ class TestTailoringLoop(unittest.TestCase):
         run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
         seen: list = []
         adapters = self._recording(run_id, seen, [self._reply(self._clean_bullets())])
-        execute_tailoring(self.app_engine, self.user_id, run_id, adapters=adapters)
+        execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters=adapters,
+            config_path=self.config_path,
+        )
         run = read_run(self.app_engine, self.user_id, run_id)
         self.assertEqual(run.status, "approved")
         self.assertEqual(run.progress["phase"], "saving")
@@ -732,7 +752,11 @@ class TestTailoringLoop(unittest.TestCase):
         seen: list = []
         adapters = self._recording(run_id, seen, [self._reply(bad)])
         outcome = execute_tailoring(
-            self.app_engine, self.user_id, run_id, adapters=adapters
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters=adapters,
+            config_path=self.config_path,
         )
         self.assertEqual(outcome.status, "needs_review")
         history = read_run(self.app_engine, self.user_id, run_id).progress["history"]
@@ -752,7 +776,13 @@ class TestTailoringLoop(unittest.TestCase):
         adapters = self._recording(
             run_id, seen, ["not json", self._reply(self._clean_bullets())]
         )
-        execute_tailoring(self.app_engine, self.user_id, run_id, adapters=adapters)
+        execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters=adapters,
+            config_path=self.config_path,
+        )
         history = read_run(self.app_engine, self.user_id, run_id).progress["history"]
         self.assertEqual(
             history,
@@ -777,7 +807,11 @@ class TestTailoringLoop(unittest.TestCase):
         seen: list = []
         adapters = self._recording(run_id, seen, [self._reply(bad), "not json"])
         outcome = execute_tailoring(
-            self.app_engine, self.user_id, run_id, adapters=adapters
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters=adapters,
+            config_path=self.config_path,
         )
         self.assertEqual(outcome.attempts, 3)
         critic_seen = [p for who, p in seen if who == "critic"]
@@ -813,7 +847,11 @@ class TestTailoringLoop(unittest.TestCase):
         tailor = _Tailor([self._reply(self._clean_bullets())])
         with self.assertRaises(CriticUnavailableError) as ctx:
             run_tailoring(
-                self.app_engine, self.user_id, _JOB, adapters={"ollama": tailor}
+                self.app_engine,
+                self.user_id,
+                _JOB,
+                adapters={"ollama": tailor},
+                config_path=self.config_path,
             )
         self.assertIn("ANTHROPIC_API_KEY", str(ctx.exception))
         self.assertEqual(tailor.prompts, [])
@@ -826,7 +864,11 @@ class TestTailoringLoop(unittest.TestCase):
         run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
         tailor = _Tailor([self._reply(self._clean_bullets())])
         outcome = execute_tailoring(
-            self.app_engine, self.user_id, run_id, adapters={"ollama": tailor}
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={"ollama": tailor},
+            config_path=self.config_path,
         )
         self.assertEqual((outcome.status, outcome.attempts), ("failed", 0))
         self.assertEqual(tailor.prompts, [])
@@ -882,6 +924,7 @@ class TestTailoringLoop(unittest.TestCase):
                 "ollama": _Tailor([self._reply(self._clean_bullets())]),
                 "anthropic": _Critic(),
             },
+            config_path=self.config_path,
         )
         self.assertEqual(outcome.run_id, run_id)
         self.assertEqual(
@@ -902,6 +945,7 @@ class TestTailoringLoop(unittest.TestCase):
                 "ollama": _Tailor([self._reply(self._clean_bullets())]),
                 "anthropic": _Critic(),
             },
+            config_path=self.config_path,
         )
         run = read_run(self.app_engine, self.user_id, run_id)
         self.assertEqual(run.document.experience[0].company, "Acme Bank")

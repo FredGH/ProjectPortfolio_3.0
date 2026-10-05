@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 
-from tests.tailoring_fixtures import bullet_id, make_truth_base
+from tests.tailoring_fixtures import (
+    bullet_id,
+    make_truth_base,
+    write_pinned_task_config,
+)
 
 from core.llm.types import LLMResponse
 from core.tailoring.schema import JobContext, JobSkill, TailorOutputError
@@ -84,6 +89,9 @@ class TestRenderers(unittest.TestCase):
 
 class TestRunTailor(unittest.TestCase):
     def setUp(self) -> None:
+        config_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(config_dir.cleanup)
+        self.config_path = write_pinned_task_config(config_dir.name)
         self.truth_base = make_truth_base()
         ref = bullet_id(self.truth_base, 0, 0)
         self.reply = json.dumps(
@@ -103,7 +111,13 @@ class TestRunTailor(unittest.TestCase):
 
     def test_returns_the_parsed_output_and_the_versions_used(self) -> None:
         adapter = _ScriptedAdapter([self.reply])
-        result = run_tailor(self.truth_base, _job(), [], adapters={"ollama": adapter})
+        result = run_tailor(
+            self.truth_base,
+            _job(),
+            [],
+            adapters={"ollama": adapter},
+            config_path=self.config_path,
+        )
         self.assertEqual(result.output.skills, ["dbt"])
         self.assertEqual(result.prompt_version, "local.v1")
         self.assertEqual(result.model, "llama3.1:8b")
@@ -115,6 +129,7 @@ class TestRunTailor(unittest.TestCase):
             _job(),
             ["surface SQL"],
             adapters={"ollama": adapter},
+            config_path=self.config_path,
         )
         prompt = adapter.prompts[0]
         self.assertIn("Target job title: Lead Data Engineer", prompt)
@@ -126,12 +141,24 @@ class TestRunTailor(unittest.TestCase):
     def test_a_truncated_reply_raises(self) -> None:
         adapter = _ScriptedAdapter([self.reply], truncated=True)
         with self.assertRaises(TailorOutputError):
-            run_tailor(self.truth_base, _job(), [], adapters={"ollama": adapter})
+            run_tailor(
+                self.truth_base,
+                _job(),
+                [],
+                adapters={"ollama": adapter},
+                config_path=self.config_path,
+            )
 
     def test_an_unusable_reply_raises(self) -> None:
         adapter = _ScriptedAdapter(["I cannot help with that."])
         with self.assertRaises(TailorOutputError):
-            run_tailor(self.truth_base, _job(), [], adapters={"ollama": adapter})
+            run_tailor(
+                self.truth_base,
+                _job(),
+                [],
+                adapters={"ollama": adapter},
+                config_path=self.config_path,
+            )
 
     def test_the_claude_prompt_formats_with_the_tailor_keys(self) -> None:
         # The README's one-line switch to Claude must not break formatting.
@@ -154,6 +181,21 @@ class TestRunTailor(unittest.TestCase):
         from core.llm.task_config import load_task_config
 
         self.assertEqual(load_task_config(TASK).task, "cv_tailoring")
+
+    def test_the_live_config_routes_the_tailor_to_claude(self) -> None:
+        from core.llm.prompts import load_prompt
+        from core.llm.task_config import load_task_config
+
+        config = load_task_config(TASK)
+        self.assertEqual(config.provider, "anthropic")
+        self.assertEqual(config.model, "claude-sonnet-5")
+        # The configured prompt family's file exists and loads.
+        self.assertTrue(load_prompt(TASK, config.prompt_family, PROMPT_VERSION_NUMBER))
+
+    def test_the_critic_still_routes_to_anthropic(self) -> None:
+        from core.llm.task_config import load_task_config
+
+        self.assertEqual(load_task_config("fabrication_critic").provider, "anthropic")
 
 
 if __name__ == "__main__":

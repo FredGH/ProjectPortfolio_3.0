@@ -42,25 +42,29 @@ _JOB = "zzfixture-tlr-api-1"
 _NO_TITLE_JOB = "zzfixture-tlr-api-2"
 
 
-class _Tailor:
-    def __init__(self, reply: str) -> None:
-        self.reply = reply
+class _Claude:
+    """One fake `anthropic` adapter serving both the Tailor and the critic.
 
-    def complete(self, *, model: str, prompt: str, **_: object) -> LLMResponse:
-        return LLMResponse(
-            text=self.reply,
-            provider="ollama",
-            model=model,
-            input_tokens=1,
-            output_tokens=1,
-        )
+    The live config routes both tasks to Anthropic, so a single adapter
+    answers; the critic prompt contains the phrase "JSON list" and the Tailor
+    prompt does not.
+    """
 
-
-class _Critic:
-    def __init__(self, unsupported: frozenset[str] = frozenset()) -> None:
+    def __init__(
+        self, tailor_reply: str, unsupported: frozenset[str] = frozenset()
+    ) -> None:
+        self.tailor_reply = tailor_reply
         self.unsupported = unsupported
 
     def complete(self, *, model: str, prompt: str, **_: object) -> LLMResponse:
+        if "JSON list" not in prompt:
+            return LLMResponse(
+                text=self.tailor_reply,
+                provider="anthropic",
+                model=model,
+                input_tokens=1,
+                output_tokens=1,
+            )
         ids = re.findall(r'"id": "([^"]+)"', prompt)
         return LLMResponse(
             text=json.dumps(
@@ -190,7 +194,7 @@ class TestTailoringRouter(unittest.TestCase):
     def _set_replies(
         self, tailor_reply: str, unsupported: frozenset[str] = frozenset()
     ) -> None:
-        adapters = {"ollama": _Tailor(tailor_reply), "anthropic": _Critic(unsupported)}
+        adapters = {"anthropic": _Claude(tailor_reply, unsupported)}
         app.dependency_overrides[get_llm_adapters] = lambda: adapters
 
     def _store_cv(self) -> None:
@@ -266,7 +270,7 @@ class TestTailoringRouter(unittest.TestCase):
 
     def test_no_anthropic_key_is_503_and_creates_no_run(self) -> None:
         self._store_cv()
-        adapters = {"ollama": _Tailor(self._clean_reply())}
+        adapters: dict = {}
         app.dependency_overrides[get_llm_adapters] = lambda: adapters
         response = self._start()
         self.assertEqual(response.status_code, 503)
