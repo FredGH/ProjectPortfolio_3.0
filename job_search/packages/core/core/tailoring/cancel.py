@@ -9,13 +9,43 @@ stop generating) and moves on at once.
 from __future__ import annotations
 
 import logging
+import socket
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, wait
 from typing import TypeVar
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def abort_client(client: httpx.Client) -> None:
+    """Cut every in-flight request of `client` short, then close it.
+
+    `Client.close()` alone is not enough: it closes the socket's file
+    descriptor, but a thread blocked reading the reply keeps the kernel
+    connection open, so a local Ollama server carries on generating. Shutting
+    the socket down first makes the blocked read fail and the server see the
+    disconnect.
+
+    Args:
+        client: The (dedicated) client to abort.
+    """
+    try:
+        pool = client._transport._pool  # noqa: SLF001 — no public way to get sockets
+        for connection in list(pool._connections):  # noqa: SLF001
+            stream = getattr(
+                getattr(connection, "_connection", None), "_network_stream", None
+            )
+            sock = stream.get_extra_info("socket") if stream is not None else None
+            if sock is not None:
+                sock.shutdown(socket.SHUT_RDWR)
+    except Exception:  # noqa: BLE001 — best effort; falls back to close()
+        logger.warning("could not shut down the client's sockets", exc_info=True)
+    finally:
+        client.close()
 
 
 class RunCancelled(Exception):

@@ -27,7 +27,7 @@ from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
 from core.tailoring.assemble import assemble
 from core.tailoring.backends import Backend, default_backend_id, resolve_backends
-from core.tailoring.cancel import RunCancelled, run_cancellable
+from core.tailoring.cancel import RunCancelled, abort_client, run_cancellable
 from core.tailoring.checks import (
     STRUCTURAL_CODES,
     Problem,
@@ -565,7 +565,7 @@ def _execute(
             config_path=config_path,
             max_retries=max_retries,
             progress=progress,
-            abort=client.close if client is not None else None,
+            abort=((lambda: abort_client(client)) if client is not None else None),
         )
     finally:
         if client is not None:
