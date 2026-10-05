@@ -210,6 +210,21 @@ def _decide(orphan_id: str, body: dict) -> None:
     st.rerun()
 
 
+def _cancel(run_id: str) -> None:
+    """Cancel a running run, flash any failure, and rerun.
+
+    Args:
+        run_id: The run to cancel.
+    """
+    try:
+        cancelled = _post(f"/tailoring/runs/{run_id}/cancel", {})
+        if cancelled.status_code != 200:
+            st.session_state["tailoring_flash"] = _detail(cancelled)
+    except httpx.HTTPError as exc:
+        st.session_state["tailoring_flash"] = f"Could not cancel: {exc}"
+    st.rerun()
+
+
 def _label(candidate: dict) -> str:
     """Build a candidate's picker label.
 
@@ -289,8 +304,18 @@ st.markdown(f"**Status:** {_plain(status)} · attempts: {_plain(run['attempts'])
 
 if status == "generating":
     _show_progress(run)
+    st.caption(
+        "Cancel stops the run at once; a local model stops generating within "
+        "a few seconds."
+    )
+    if st.button("Cancel run", key="cancel-run"):
+        _cancel(run_id)
     time.sleep(_POLL_SECONDS)
     st.rerun()
+
+if status == "cancelled":
+    st.info("This run was cancelled.")
+    st.stop()
 
 if status == "failed":
     st.error(_plain(f"This run failed: {run['error_message']}"))

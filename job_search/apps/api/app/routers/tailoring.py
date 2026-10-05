@@ -36,6 +36,7 @@ from core.tailoring.store import (
     StaleDecisionError,
     StoredOrphan,
     StoredRun,
+    cancel_run,
     latest_run_id,
     read_orphan,
     read_run,
@@ -301,6 +302,36 @@ def get_run(
     Raises:
         HTTPException: 404 if the run does not exist for this user.
     """
+    run = read_run(engine, user_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="unknown run")
+    return _run_model(engine, user_id, run)
+
+
+@router.post("/tailoring/runs/{run_id}/cancel", response_model=RunModel)
+def post_cancel(
+    run_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    engine: Engine = Depends(get_app_db_engine),
+) -> RunModel:
+    """Cancel a run that is still generating.
+
+    Args:
+        run_id: The run.
+        user_id: Injected by `get_current_user_id`.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        The run, now `cancelled`.
+
+    Raises:
+        HTTPException: 404 if the run does not exist for this user; 409 if
+            it is not `generating` (finished, or already cancelled).
+    """
+    if read_run(engine, user_id, run_id) is None:
+        raise HTTPException(status_code=404, detail="unknown run")
+    if not cancel_run(engine, user_id, run_id):
+        raise HTTPException(status_code=409, detail="this run is not running")
     run = read_run(engine, user_id, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="unknown run")

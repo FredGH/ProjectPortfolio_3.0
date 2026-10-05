@@ -524,6 +524,70 @@ class TestTailoringRouter(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
+    # --- cancel ----------------------------------------------------------
+
+    def _generating_run(self, user_id: uuid.UUID | None = None) -> uuid.UUID:
+        owner_id = user_id or self.user_id
+        run_id = create_run(
+            self.app_engine,
+            owner_id,
+            job_group_id=_JOB,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        set_progress(self.app_engine, owner_id, run_id, {"phase": "tailoring"})
+        return run_id
+
+    def test_cancelling_a_generating_run_returns_it_cancelled(self) -> None:
+        self._store_cv()
+        run_id = self._generating_run()
+        response = self.client.post(f"/tailoring/runs/{run_id}/cancel")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "cancelled")
+        self.assertIsNone(body["progress"])
+        self.assertEqual(
+            self.client.get(f"/tailoring/runs/{run_id}").json()["status"],
+            "cancelled",
+        )
+
+    def test_cancelling_a_finished_run_is_a_409(self) -> None:
+        self._store_cv()
+        run_id = self._start().json()["run_id"]
+        response = self.client.post(f"/tailoring/runs/{run_id}/cancel")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"], "this run is not running")
+        self.assertEqual(
+            self.client.get(f"/tailoring/runs/{run_id}").json()["status"],
+            "approved",
+        )
+
+    def test_cancelling_an_unknown_run_is_a_404(self) -> None:
+        response = self.client.post(f"/tailoring/runs/{uuid.uuid4()}/cancel")
+        self.assertEqual(response.status_code, 404)
+
+    def test_cancelling_another_users_run_is_a_404_and_changes_nothing(self) -> None:
+        self._store_cv()
+        run_id = self._generating_run(self.other_user)
+        response = self.client.post(f"/tailoring/runs/{run_id}/cancel")
+        self.assertEqual(response.status_code, 404)
+        with self.owner.begin() as conn:
+            status = conn.execute(
+                text("SELECT status FROM tailoring.tailored_cv WHERE id = :r"),
+                {"r": run_id},
+            ).scalar_one()
+        self.assertEqual(status, "generating")
+
+    def test_cancelling_twice_is_a_409_the_second_time(self) -> None:
+        self._store_cv()
+        run_id = self._generating_run()
+        self.assertEqual(
+            self.client.post(f"/tailoring/runs/{run_id}/cancel").status_code, 200
+        )
+        self.assertEqual(
+            self.client.post(f"/tailoring/runs/{run_id}/cancel").status_code, 409
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -432,6 +432,82 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self._assert_no_live_markdown(app)
         self.assertIn(_HOSTILE, " ".join(t.value for t in app.text))
 
+    # --- cancelling a run ---------------------------------------------------
+
+    def test_cancel_button_only_while_generating(self) -> None:
+        app = self._render_generating(self._generating())
+        self.assertIn("cancel-run", [b.key for b in app.button])
+        self.assertIn(
+            "Cancel stops the run at once; a local model stops generating "
+            "within a few seconds.",
+            self._all_text(app),
+        )
+        for run in (_RUN, {**_RUN, "status": "failed", "document": None}):
+            with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)):
+                other = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            self.assertNotIn("cancel-run", [b.key for b in other.button])
+
+    def test_clicking_cancel_posts_to_the_cancel_endpoint(self) -> None:
+        cancelled = httpx.Response(
+            200,
+            json={**_RUN, "status": "cancelled"},
+            request=httpx.Request("POST", "http://x"),
+        )
+        with (
+            mock.patch(
+                "httpx.get", side_effect=_fake_get([_CANDIDATE], self._generating())
+            ),
+            mock.patch("httpx.post", return_value=cancelled) as post,
+            mock.patch("time.sleep", side_effect=lambda _s: st.stop()),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            next(b for b in app.button if b.key == "cancel-run").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertTrue(
+            post.call_args.args[0].endswith(f"/tailoring/runs/{_RUN_ID}/cancel")
+        )
+
+    def test_api_down_or_refusing_on_cancel_shows_an_error_not_a_crash(self) -> None:
+        refusal = httpx.Response(
+            409,
+            json={"detail": "this run is not running"},
+            request=httpx.Request("POST", "http://x"),
+        )
+        for post_kwargs in (
+            {"side_effect": httpx.ConnectError("down")},
+            {"return_value": refusal},
+        ):
+            with self.subTest(post=post_kwargs):
+                with (
+                    mock.patch(
+                        "httpx.get",
+                        side_effect=_fake_get([_CANDIDATE], self._generating()),
+                    ),
+                    mock.patch("httpx.post", **post_kwargs),
+                    mock.patch("time.sleep", side_effect=lambda _s: st.stop()),
+                ):
+                    app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+                    next(b for b in app.button if b.key == "cancel-run").click().run()
+                self.assertEqual(len(app.exception), 0)
+                self.assertTrue(app.error)
+                self._assert_no_live_markdown(app)
+
+    def test_a_cancelled_run_shows_an_info_and_the_tailor_button_only(self) -> None:
+        cancelled = {
+            **_RUN,
+            "status": "cancelled",
+            "document": None,
+            "orphans": [_RUN["orphans"][0]],
+        }
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], cancelled)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn("This run was cancelled.", " ".join(i.value for i in app.info))
+        keys = [b.key for b in app.button]
+        self.assertIn("tailor-start", keys)
+        self.assertFalse(any(k.startswith(("link-", "reject-")) for k in keys))
+        self.assertNotIn("cancel-run", keys)
+
     def _click_with_post(self, key: str, post_kwargs: dict) -> AppTest:
         with (
             mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)),
