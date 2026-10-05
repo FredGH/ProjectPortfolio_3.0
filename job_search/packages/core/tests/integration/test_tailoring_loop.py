@@ -466,16 +466,71 @@ class TestTailoringLoop(_LoopFixtures):
             {"text": "Led a team of 12", "evidence_refs": []}
         ]
         tailor = _Tailor([self._reply(bad)])
-        outcome = self._run(tailor, _Critic())
-        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 3))
-        self.assertEqual(len(tailor.prompts), 3)  # first try + two retries, no more
+        critic = _Critic()
+        outcome = self._run(tailor, critic)
+        # The retry repeated the same unsupported line: no improvement, so
+        # the run stops after two attempts instead of paying for a third.
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 2))
+        self.assertEqual(len(tailor.prompts), 2)
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
         self.assertEqual(
             [(o.kind, o.text, o.status) for o in run.orphans],
             [("orphan", "Led a team of 12", "pending")],
         )
+        self.assertEqual(critic.calls, 2)  # judged on the persisted attempt
         self.assertEqual(
             (run.orphans[0].experience_index, run.orphans[0].bullet_index), (0, 2)
+        )
+
+    def test_a_repeated_critic_rejection_stops_after_two_attempts(self) -> None:
+        self._store_cv()
+        tailor = _Tailor([self._reply(self._clean_bullets())])
+        critic = _Critic(unsupported={"e0b0"})
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 2))
+        self.assertEqual(len(tailor.prompts), 2)
+        self.assertEqual(critic.calls, 2)
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            [(o.kind, o.status) for o in run.orphans], [("unsupported", "pending")]
+        )
+        progress = run.progress
+        self.assertEqual(
+            (progress["attempt"], progress["max_attempts"], progress["phase"]),
+            (2, 2, "saving"),
+        )
+        self.assertEqual(
+            progress["history"][-1], "Attempt 2: no improvement — stopping"
+        )
+
+    def test_a_problem_that_changes_between_attempts_still_gets_a_third(self) -> None:
+        self._store_cv()
+        replies = [
+            self._reply([{"text": f"Invented {n}", "evidence_refs": ["nope"]}])
+            for n in ("one", "two", "three")
+        ]
+        tailor = _Tailor(replies)
+        critic = _Critic()
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 3))
+        self.assertEqual(len(tailor.prompts), 3)
+        self.assertEqual(critic.calls, 1)  # final attempt only
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual([o.text for o in run.orphans], ["Invented three"])
+
+    def test_a_repeated_evidenced_keyword_gap_stops_the_retries(self) -> None:
+        self._store_cv()
+        # SQL is evidenced (older role) but never surfaced, attempt after attempt.
+        reply = self._reply(self._clean_bullets(), skills=["dbt"], drop_older_role=True)
+        tailor = _Tailor([reply])
+        critic = _Critic()
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 2))
+        self.assertEqual(len(tailor.prompts), 2)
+        self.assertEqual(critic.calls, 2)
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(
+            run.progress["history"][-1], "Attempt 2: no improvement — stopping"
         )
 
     def test_a_critic_rejection_becomes_an_unsupported_orphan(self) -> None:
@@ -495,8 +550,10 @@ class TestTailoringLoop(_LoopFixtures):
         bad = self._clean_bullets() + [
             {"text": "Wrote SQL reports", "evidence_refs": [self.ref_old]}
         ]
-        outcome = self._run(_Tailor([self._reply(bad)]), _Critic())
-        self.assertEqual(outcome.status, "needs_review")
+        critic = _Critic()
+        outcome = self._run(_Tailor([self._reply(bad)]), critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 2))
+        self.assertEqual(critic.calls, 1)  # judged late: attempt 2 had a problem
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
         self.assertEqual([o.text for o in run.orphans], ["Wrote SQL reports"])
         self.assertIn("another role", run.orphans[0].issue)
@@ -677,8 +734,9 @@ class TestTailoringLoop(_LoopFixtures):
     def test_the_critic_runs_on_the_final_attempt_despite_code_problems(self) -> None:
         self._store_cv()
         # Every attempt: e0b1 has an unknown id (code problem); e0b0 is a
-        # reworded line the critic rejects. The critic must still be asked,
-        # once, on the final attempt only.
+        # reworded line the critic rejects. The retry repeats it, so the run
+        # stops after attempt 2; its critic was skipped (code problems), so
+        # the persisted attempt is judged once, late, before it is saved.
         bad = [
             {
                 "text": "Built dbt models powering risk reporting",
@@ -688,7 +746,7 @@ class TestTailoringLoop(_LoopFixtures):
         ]
         critic = _Critic(unsupported={"e0b0"})
         outcome = self._run(_Tailor([self._reply(bad)]), critic)
-        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 3))
+        self.assertEqual((outcome.status, outcome.attempts), ("needs_review", 2))
         self.assertEqual(critic.calls, 1)
         run = read_run(self.app_engine, self.user_id, outcome.run_id)
         self.assertEqual(
@@ -919,8 +977,7 @@ class TestTailoringLoop(_LoopFixtures):
             history,
             [
                 "Attempt 1: 1 point(s) to fix — trying again",
-                "Attempt 2: 1 point(s) to fix — trying again",
-                "Attempt 3: 1 line(s) still need your decision",
+                "Attempt 2: no improvement — stopping",
             ],
         )
 

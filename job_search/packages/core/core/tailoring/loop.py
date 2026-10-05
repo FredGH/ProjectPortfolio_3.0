@@ -1,5 +1,5 @@
 """The tailoring loop: tailor → assemble → check → critic, retried at most
-twice, then persisted (Step 17).
+twice (fewer when a retry fixes nothing), then persisted (Step 17).
 
 `start_tailoring` validates and creates the run synchronously so the API
 can answer immediately; `execute_tailoring` does the slow part (it is what
@@ -405,6 +405,36 @@ def _is_clean(attempt: _Attempt) -> bool:
     )
 
 
+def _signature(
+    document: TailoredDocument,
+    problems: list[Problem],
+    critic: CriticResult | None,
+    coverage: KeywordCoverage,
+) -> frozenset[tuple[str, str]]:
+    """Fingerprint what is still wrong with an attempt.
+
+    Two consecutive attempts with the same non-empty signature mean the
+    Tailor is not fixing anything, so another retry would only spend tokens.
+
+    Args:
+        document: The attempt's document.
+        problems: Its code-check problems.
+        critic: Its critic result, or None when the critic was skipped.
+        coverage: Its keyword coverage.
+
+    Returns:
+        `(kind, text)` of every unresolved line (as `_orphan_drafts` lists
+        them), plus `("problem", message)` per code problem and
+        `("keyword", label)` per evidenced-missing job skill.
+    """
+    signature = {
+        (draft.kind, draft.text) for draft in _orphan_drafts(document, problems, critic)
+    }
+    signature.update(("problem", problem.message) for problem in problems)
+    signature.update(("keyword", label) for label in coverage.missing_evidenced)
+    return frozenset(signature)
+
+
 def _stop_check(
     app_engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID
 ) -> Callable[[], bool]:
@@ -804,6 +834,7 @@ def _run_loop(
     best: _Attempt | None = None
     last: _Attempt | None = None
     parse_error: TailorOutputError | None = None
+    last_signature: frozenset[tuple[str, str]] | None = None
     attempts = 0
     max_attempts = max_retries + 1
     history: list[str] = []
@@ -852,8 +883,10 @@ def _run_loop(
                     output_tokens=tokens_out,
                 )
             parse_error = exc
-            # Nothing to patch: the next attempt regenerates from scratch.
+            # Nothing to patch: the next attempt regenerates from scratch,
+            # and there is no signature to compare it with.
             previous = None
+            last_signature = None
             history.append(
                 f"Attempt {attempts}: the Tailor's reply could not be used"
                 + ("" if final else " — trying again")
@@ -916,6 +949,17 @@ def _run_loop(
         if _is_clean(last):
             best = last
         feedback = _feedback(problems, document, critic, coverage)
+        signature = _signature(document, problems, critic, coverage)
+        stalled = bool(signature) and signature == last_signature
+        last_signature = signature
+        if stalled and not final:
+            # The retry left exactly the same problems: the model is not
+            # fixing anything. Stop spending tokens; the post-loop logic
+            # persists the chosen attempt (judging it first if the critic
+            # never saw it), so nothing unchecked is approved.
+            history.append(f"Attempt {attempts}: no improvement — stopping")
+            max_attempts = attempts
+            break
         history.append(
             _attempt_line(
                 attempts,
