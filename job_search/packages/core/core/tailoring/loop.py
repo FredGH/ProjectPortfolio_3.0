@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,7 +27,12 @@ from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
 from core.tailoring.assemble import assemble
-from core.tailoring.backends import Backend, default_backend_id, resolve_backends
+from core.tailoring.backends import (
+    Backend,
+    default_backend_id,
+    resolve_backends,
+    unload_model,
+)
 from core.tailoring.cancel import RunCancelled, abort_client, run_cancellable
 from core.tailoring.checks import (
     STRUCTURAL_CODES,
@@ -138,6 +144,28 @@ def _new_ollama_client() -> httpx.Client:
         A client with the long timeout CPU inference needs.
     """
     return httpx.Client(timeout=2000.0)
+
+
+def _unload_in_background(backend: Backend) -> None:
+    """Unload the local model without delaying the cancel.
+
+    Args:
+        backend: The Ollama backend whose model should stop computing.
+    """
+    threading.Thread(
+        target=unload_model, args=(backend,), name="ollama-unload", daemon=True
+    ).start()
+
+
+def _abort_local_call(client: httpx.Client, backend: Backend) -> None:
+    """Hard-stop a local Tailor call: drop the connection, then free the CPU.
+
+    Args:
+        client: The run's dedicated client, mid-request.
+        backend: The Ollama backend serving it.
+    """
+    abort_client(client)
+    _unload_in_background(backend)
 
 
 def start_tailoring(
@@ -565,7 +593,11 @@ def _execute(
             config_path=config_path,
             max_retries=max_retries,
             progress=progress,
-            abort=((lambda: abort_client(client)) if client is not None else None),
+            abort=(
+                (lambda: _abort_local_call(client, backend))
+                if client is not None
+                else None
+            ),
         )
     finally:
         if client is not None:

@@ -524,8 +524,10 @@ doesn't is shown to you for an explicit decision. Design:
   whether it is available right now), click Tailor, then Link or Reject each
   line under "Needs your decision". **Cancel run** stops a running run at
   once: a Claude call already in flight finishes in the background and its
-  result is discarded; for a local model the connection is closed, which
-  stops it generating within a few seconds. The fact checker always runs on
+  result is discarded; for a local model the connection is closed and the
+  model is unloaded from Ollama (the only way to stop it while it is still
+  reading the prompt), which frees the CPU within a few seconds — the model
+  reloads on the next call. The fact checker always runs on
   Claude, whatever the Tailor backend.
 - **CLI:** `docker compose run --rm pipeline tailor-cv --user-id <id>
   --job-group-id <id> [--backend claude|native|docker]` (on demand;

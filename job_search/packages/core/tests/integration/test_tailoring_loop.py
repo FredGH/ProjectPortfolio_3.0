@@ -64,6 +64,7 @@ def _injected_ollama(adapters: dict):
     real = loop_mod.OllamaAdapter
     with (
         mock.patch.object(loop_mod, "_new_ollama_client", lambda: httpx.Client()),
+        mock.patch.object(loop_mod, "_unload_in_background"),
         mock.patch.object(
             loop_mod,
             "OllamaAdapter",
@@ -1223,7 +1224,11 @@ class TestTailoringBackends(_LoopFixtures):
         return client
 
     def _execute(self, run_id, client: httpx.Client, critic=None):
-        with mock.patch.object(loop_mod, "_new_ollama_client", lambda: client):
+        self.unloads = mock.Mock()
+        with (
+            mock.patch.object(loop_mod, "_new_ollama_client", lambda: client),
+            mock.patch.object(loop_mod, "_unload_in_background", self.unloads),
+        ):
             return loop_mod.execute_tailoring(
                 self.app_engine,
                 self.user_id,
@@ -1304,6 +1309,7 @@ class TestTailoringBackends(_LoopFixtures):
         self.assertEqual(run.tailor_prompt_version, "local.v1")
         self.assertEqual(run.tailor_model, "llama3.1:8b")
         self.assertTrue(client.is_closed)
+        self.unloads.assert_not_called()
 
     def test_the_native_backend_calls_the_host_url(self) -> None:
         run_id = self._start("native")
@@ -1337,6 +1343,9 @@ class TestTailoringBackends(_LoopFixtures):
         self.assertLess(time.monotonic() - started, 10)
         self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
         self.assertTrue(client.is_closed)
+        # ... and the model is unloaded so the runner stops computing.
+        self.unloads.assert_called_once()
+        self.assertEqual(self.unloads.call_args.args[0].id, "docker")
         self.assertEqual(critic.calls, 0)
         run = read_run(self.app_engine, self.user_id, run_id)
         self.assertEqual(run.status, "cancelled")

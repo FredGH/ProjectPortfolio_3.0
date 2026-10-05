@@ -143,3 +143,42 @@ def check_availability(
     if backend.model not in names:
         return False, f"model {backend.model} is not pulled"
     return True, "reachable, model present"
+
+
+def unload_model(
+    backend: Backend, *, http_client: httpx.Client | None = None, timeout: float = 10.0
+) -> bool:
+    """Ask an Ollama server to unload the backend's model. Never raises.
+
+    Closing a request's connection stops Ollama generating tokens but not
+    while it is still reading the prompt (minutes on CPU); unloading the
+    model kills the runner process, so the CPU is freed at once. The model
+    reloads on the next call.
+
+    Args:
+        backend: An Ollama backend.
+        http_client: Client to use (tests); a short-lived one is made when
+            omitted.
+        timeout: Seconds to wait for the server.
+
+    Returns:
+        True iff the server acknowledged the unload.
+    """
+    if backend.base_url is None:
+        return False
+    own_client = http_client is None
+    client = http_client or httpx.Client()
+    try:
+        response = client.post(
+            f"{backend.base_url}/api/generate",
+            json={"model": backend.model, "keep_alive": 0},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        return True
+    except Exception:  # noqa: BLE001 — best effort
+        logger.warning("could not unload %s from %s", backend.model, backend.base_url)
+        return False
+    finally:
+        if own_client:
+            client.close()

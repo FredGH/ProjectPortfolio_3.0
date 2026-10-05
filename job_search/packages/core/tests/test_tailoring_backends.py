@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ from core.tailoring.backends import (
     check_availability,
     default_backend_id,
     resolve_backends,
+    unload_model,
 )
 
 _CLAUDE_CFG = """tasks:
@@ -122,6 +124,34 @@ class TestBackends(unittest.TestCase):
             )
             self.assertFalse(ok)
             self.assertEqual(detail, f"not reachable at {NATIVE_OLLAMA_URL}")
+
+    def test_unload_posts_keep_alive_zero_to_the_backends_server(self) -> None:
+        docker = resolve_backends(self._cfg(_CLAUDE_CFG))["docker"]
+        seen: list[tuple[str, dict]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append((str(request.url), json.loads(request.content)))
+            return httpx.Response(200, json={"done": True})
+
+        self.assertTrue(unload_model(docker, http_client=self._client(handler)))
+        self.assertEqual(
+            seen,
+            [
+                (
+                    f"{DOCKER_OLLAMA_URL}/api/generate",
+                    {"model": "llama-l", "keep_alive": 0},
+                )
+            ],
+        )
+
+    def test_unload_never_raises_and_ignores_claude(self) -> None:
+        b = resolve_backends(self._cfg(_CLAUDE_CFG))
+
+        def refuse(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused")
+
+        self.assertFalse(unload_model(b["docker"], http_client=self._client(refuse)))
+        self.assertFalse(unload_model(b["claude"]))
 
     def test_native_url_matches_the_api_constant(self) -> None:
         from app.dependencies import NATIVE_OLLAMA_BASE_URL
