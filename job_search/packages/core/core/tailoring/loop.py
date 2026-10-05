@@ -13,6 +13,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from core.cv.store import read_truth_base, read_truth_base_version
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
 from core.tailoring.assemble import assemble
+from core.tailoring.cancel import RunCancelled, run_cancellable
 from core.tailoring.checks import (
     STRUCTURAL_CODES,
     Problem,
@@ -46,6 +48,7 @@ from core.tailoring.store import (
     RunAlreadyFinishedError,
     create_run,
     finish_run,
+    is_cancelled,
     read_run,
     set_progress,
 )
@@ -108,7 +111,7 @@ class TailoringOutcome:
 
     Attributes:
         run_id: The run.
-        status: `approved`, `needs_review` or `failed`.
+        status: `approved`, `needs_review`, `failed` or `cancelled`.
         attempts: Tailor attempts made.
     """
 
@@ -337,6 +340,39 @@ def _is_clean(attempt: _Attempt) -> bool:
     )
 
 
+def _stop_check(
+    app_engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID
+) -> Callable[[], bool]:
+    """Build the "has this run been cancelled?" probe.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+
+    Returns:
+        A zero-argument callable returning True once the run is cancelled.
+    """
+    return lambda: is_cancelled(app_engine, user_id, run_id)
+
+
+def _raise_if_cancelled(
+    app_engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID
+) -> None:
+    """Stop the loop at once if the run was cancelled.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+
+    Raises:
+        RunCancelled: If the run's status is `cancelled`.
+    """
+    if is_cancelled(app_engine, user_id, run_id):
+        raise RunCancelled(f"run {run_id} was cancelled")
+
+
 def _report(
     app_engine: Engine,
     user_id: uuid.UUID,
@@ -490,7 +526,9 @@ def _execute(
     attempts = 0
     max_attempts = max_retries + 1
     history: list[str] = []
+    stop = _stop_check(app_engine, user_id, run_id)
     for attempts in range(1, max_attempts + 1):
+        _raise_if_cancelled(app_engine, user_id, run_id)
         progress[0] = attempts
         final = attempts == max_retries + 1
         _report(
@@ -505,8 +543,16 @@ def _execute(
             history=history,
         )
         try:
-            tailor_result = run_tailor(
-                truth_base, job, feedback, adapters=adapters, config_path=config_path
+            tailor_result = run_cancellable(
+                lambda: run_tailor(
+                    truth_base,
+                    job,
+                    feedback,
+                    adapters=adapters,
+                    config_path=config_path,
+                ),
+                should_stop=stop,
+                abort=None,
             )
         except TailorOutputError as exc:
             parse_error = exc
@@ -529,6 +575,7 @@ def _execute(
         coverage = compute_keyword_coverage(document, truth_base, job.skills)
         document = document.model_copy(update={"keyword_coverage": coverage})
         if not problems or final:
+            _raise_if_cancelled(app_engine, user_id, run_id)
             _report(
                 app_engine,
                 user_id,
@@ -540,8 +587,16 @@ def _execute(
                 history=history,
             )
         critic = (
-            run_critic(
-                document, truth_base, job, adapters=adapters, config_path=config_path
+            run_cancellable(
+                lambda: run_critic(
+                    document,
+                    truth_base,
+                    job,
+                    adapters=adapters,
+                    config_path=config_path,
+                ),
+                should_stop=stop,
+                abort=None,
             )
             if not problems or final
             else None
@@ -580,6 +635,7 @@ def _execute(
         # The critic was skipped on this attempt (it had code problems) and
         # no later attempt was usable: judge it now — an unjudged reworded
         # line must never be persisted as approved.
+        _raise_if_cancelled(app_engine, user_id, run_id)
         _report(
             app_engine,
             user_id,
@@ -592,8 +648,16 @@ def _execute(
             ),
             history=history,
         )
-        critic = run_critic(
-            chosen.document, truth_base, job, adapters=adapters, config_path=config_path
+        critic = run_cancellable(
+            lambda: run_critic(
+                chosen.document,
+                truth_base,
+                job,
+                adapters=adapters,
+                config_path=config_path,
+            ),
+            should_stop=stop,
+            abort=None,
         )
     document = chosen.document.model_copy(update={"stretch": critic.stretch})
     orphans = _orphan_drafts(document, chosen.problems, critic)
@@ -607,6 +671,7 @@ def _execute(
     )
     document = document.model_copy(update={"keyword_coverage": coverage})
     status = "needs_review" if orphans else "approved"
+    _raise_if_cancelled(app_engine, user_id, run_id)
     _report(
         app_engine,
         user_id,
@@ -653,8 +718,10 @@ def execute_tailoring(
         max_retries: Retries after the first attempt.
 
     Returns:
-        The outcome; `failed` (with the message stored on the run) when
-        anything went wrong, including a critic routed away from Anthropic.
+        The outcome; `cancelled` if the run was cancelled (nothing is
+        written, no further LLM call is made); `failed` (with the message
+        stored on the run) when anything else went wrong, including a
+        critic routed away from Anthropic.
         A run that is no longer `generating` (finished by another task) is
         never re-tailored or overwritten: its stored outcome is returned.
     """
@@ -669,9 +736,16 @@ def execute_tailoring(
             max_retries=max_retries,
             progress=progress,
         )
+    except RunCancelled:
+        return _cancelled_outcome(run_id, progress[0])
     except RunAlreadyFinishedError:
         return _finished_elsewhere(app_engine, user_id, run_id)
     except Exception as exc:  # noqa: BLE001 — a background run must record, not raise
+        if _cancelled_now(app_engine, user_id, run_id):
+            # The error is the cancelled call's own (e.g. its client was
+            # closed to stop it): the run stays cancelled, never `failed`.
+            logger.info("tailoring run %s cancelled (%s)", run_id, exc)
+            return _cancelled_outcome(run_id, progress[0])
         # The stored message is only "Type: text"; the traceback goes to the
         # API log so a failure can be traced to the line that raised it.
         logger.exception("tailoring run %s failed", run_id)
@@ -690,6 +764,38 @@ def execute_tailoring(
         except RunAlreadyFinishedError:
             return _finished_elsewhere(app_engine, user_id, run_id)
         return TailoringOutcome(run_id=run_id, status="failed", attempts=progress[0])
+
+
+def _cancelled_outcome(run_id: uuid.UUID, attempts: int) -> TailoringOutcome:
+    """Build the outcome of a cancelled run.
+
+    Args:
+        run_id: The run.
+        attempts: Tailor attempts started before the cancel.
+
+    Returns:
+        A `cancelled` outcome.
+    """
+    logger.info("tailoring run %s was cancelled", run_id)
+    return TailoringOutcome(run_id=run_id, status="cancelled", attempts=attempts)
+
+
+def _cancelled_now(app_engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> bool:
+    """Check for a cancel without ever raising.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+
+    Returns:
+        True iff the run is cancelled; False if it is not or the check fails.
+    """
+    try:
+        return is_cancelled(app_engine, user_id, run_id)
+    except Exception:  # noqa: BLE001 — fall back to the normal failure path
+        logger.warning("could not check cancel for run %s", run_id, exc_info=True)
+        return False
 
 
 def _finished_elsewhere(

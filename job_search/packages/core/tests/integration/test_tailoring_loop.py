@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import re
 import tempfile
+import threading
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -32,7 +34,7 @@ from core.tailoring.loop import (
     run_tailoring,
     start_tailoring,
 )
-from core.tailoring.store import finish_run, read_run
+from core.tailoring.store import cancel_run, finish_run, read_run
 
 _JOB = "zzfixture-tlr-loop-1"
 _NO_TITLE_JOB = "zzfixture-tlr-loop-2"
@@ -956,3 +958,118 @@ class TestTailoringLoop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _CancellingTailor(_Tailor):
+    """Cancels its own run from inside the call, then answers normally."""
+
+    def __init__(self, replies, cancel) -> None:
+        super().__init__(replies)
+        self._cancel = cancel
+
+    def complete(self, **kwargs: object) -> LLMResponse:
+        self._cancel()
+        return super().complete(**kwargs)
+
+
+class _BlockingTailor(_Tailor):
+    """Blocks for a long time, as a slow local model would."""
+
+    def complete(self, **kwargs: object) -> LLMResponse:
+        self.prompts.append(kwargs["prompt"])
+        threading.Event().wait(30)
+        return super().complete(**kwargs)
+
+
+class _CancellingCritic(_Critic):
+    """Cancels the run from inside the critic call."""
+
+    def __init__(self, cancel) -> None:
+        super().__init__()
+        self._cancel = cancel
+
+    def complete(self, **kwargs: object) -> LLMResponse:
+        self._cancel()
+        threading.Event().wait(30)
+        return super().complete(**kwargs)
+
+
+class TestTailoringCancel(TestTailoringLoop):
+    """Cancelling a run (inherits the fixtures, not the tests)."""
+
+    def _start(self) -> uuid.UUID:
+        self._store_cv()
+        return start_tailoring(self.app_engine, self.user_id, _JOB)
+
+    def _execute(self, run_id, tailor, critic):
+        return execute_tailoring(
+            self.app_engine,
+            self.user_id,
+            run_id,
+            adapters={"ollama": tailor, "anthropic": critic},
+            config_path=self.config_path,
+        )
+
+    def _assert_nothing_persisted(self, run_id) -> None:
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertEqual(run.status, "cancelled")
+        self.assertEqual(run.orphans, [])
+        self.assertIsNone(run.document)
+        self.assertIsNone(run.progress)
+
+    def test_cancel_during_the_tailor_call_stops_before_the_critic(self) -> None:
+        run_id = self._start()
+        tailor = _CancellingTailor(
+            [self._reply(self._clean_bullets())],
+            lambda: cancel_run(self.app_engine, self.user_id, run_id),
+        )
+        critic = _Critic()
+        outcome = self._execute(run_id, tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
+        self.assertEqual(critic.calls, 0)
+        self._assert_nothing_persisted(run_id)
+
+    def test_cancel_while_the_tailor_blocks_returns_quickly(self) -> None:
+        run_id = self._start()
+        threading.Timer(
+            1.0, cancel_run, (self.app_engine, self.user_id, run_id)
+        ).start()
+        critic = _Critic()
+        started = time.monotonic()
+        outcome = self._execute(
+            run_id, _BlockingTailor([self._reply(self._clean_bullets())]), critic
+        )
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual(outcome.status, "cancelled")
+        self.assertEqual(critic.calls, 0)
+        self._assert_nothing_persisted(run_id)
+
+    def test_cancel_before_the_run_executes_makes_no_tailor_call(self) -> None:
+        run_id = self._start()
+        cancel_run(self.app_engine, self.user_id, run_id)
+        tailor = _Tailor([self._reply(self._clean_bullets())])
+        critic = _Critic()
+        outcome = self._execute(run_id, tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 0))
+        self.assertEqual(tailor.prompts, [])
+        self.assertEqual(critic.calls, 0)
+        self._assert_nothing_persisted(run_id)
+
+    def test_cancel_during_the_critic_call_ends_cancelled(self) -> None:
+        run_id = self._start()
+        critic = _CancellingCritic(
+            lambda: cancel_run(self.app_engine, self.user_id, run_id)
+        )
+        started = time.monotonic()
+        outcome = self._execute(
+            run_id, _Tailor([self._reply(self._clean_bullets())]), critic
+        )
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual(outcome.status, "cancelled")
+        self._assert_nothing_persisted(run_id)
+
+
+# The subclass reuses the fixtures only: un-register the inherited tests so
+# they are not run a second time (unittest ignores non-callable attributes).
+for _name in [n for n in dir(TestTailoringLoop) if n.startswith("test_")]:
+    setattr(TestTailoringCancel, _name, None)
