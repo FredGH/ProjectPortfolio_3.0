@@ -253,6 +253,91 @@ class TestTailoringRouter(unittest.TestCase):
             response = self.client.get(f"/tailoring/candidates?limit={limit}")
             self.assertEqual(response.status_code, 422)
 
+    # --- backends --------------------------------------------------------
+
+    def _fake_availability(self, down: set[str] = frozenset()):
+        def fake(backend, *, anthropic_available, **_):
+            if backend.id in down:
+                return False, "down for the test"
+            return True, "up for the test"
+
+        return patch("app.routers.tailoring.check_availability", fake)
+
+    def _run_count(self) -> int:
+        with self.owner.begin() as conn:
+            return conn.execute(
+                text("SELECT count(*) FROM tailoring.tailored_cv WHERE user_id = :u"),
+                {"u": self.user_id},
+            ).scalar_one()
+
+    def test_backends_lists_all_three_with_the_default_flagged(self) -> None:
+        with self._fake_availability(down={"native"}):
+            response = self.client.get("/tailoring/backends")
+        self.assertEqual(response.status_code, 200)
+        rows = {r["id"]: r for r in response.json()}
+        self.assertEqual(list(rows), ["claude", "native", "docker"])
+        self.assertEqual(
+            set(rows["claude"]),
+            {"id", "label", "provider", "model", "available", "detail", "default"},
+        )
+        self.assertEqual([r["default"] for r in rows.values()], [True, False, False])
+        self.assertEqual([r["available"] for r in rows.values()], [True, False, True])
+        self.assertEqual(rows["native"]["detail"], "down for the test")
+        self.assertTrue(rows["docker"]["label"].startswith("Docker Ollama"))
+
+    def test_an_unavailable_backend_is_409_and_creates_no_run(self) -> None:
+        self._store_cv()
+        with self._fake_availability(down={"docker"}):
+            response = self.client.post(
+                "/tailoring/runs", json={"job_group_id": _JOB, "backend": "docker"}
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("is not available: down for the test", response.json()["detail"])
+        self.assertTrue(response.json()["detail"].startswith("Docker Ollama"))
+        self.assertEqual(self._run_count(), 0)
+
+    def test_a_run_with_the_claude_backend_stores_it_and_returns_the_label(
+        self,
+    ) -> None:
+        self._store_cv()
+        with self._fake_availability():
+            response = self.client.post(
+                "/tailoring/runs", json={"job_group_id": _JOB, "backend": "claude"}
+            )
+        self.assertEqual(response.status_code, 202)
+        body = self.client.get(f"/tailoring/runs/{response.json()['run_id']}").json()
+        self.assertEqual(body["tailor_backend"], "claude")
+        self.assertTrue(body["tailor_label"].startswith("Claude · "))
+        self.assertEqual(body["status"], "approved")
+
+    def test_a_run_without_a_backend_uses_the_default(self) -> None:
+        self._store_cv()
+        with self._fake_availability():
+            run_id = self._start().json()["run_id"]
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertEqual(body["tailor_backend"], "claude")
+
+    def test_a_legacy_run_shows_the_default_backends_label(self) -> None:
+        self._store_cv()
+        run_id = create_run(
+            self.app_engine,
+            self.user_id,
+            job_group_id=_JOB,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        body = self.client.get(f"/tailoring/runs/{run_id}").json()
+        self.assertIsNone(body["tailor_backend"])
+        self.assertTrue(body["tailor_label"].startswith("Claude · "))
+
+    def test_a_bad_backend_value_is_422(self) -> None:
+        self._store_cv()
+        response = self.client.post(
+            "/tailoring/runs", json={"job_group_id": _JOB, "backend": "bogus"}
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self._run_count(), 0)
+
     # --- starting runs ---------------------------------------------------
 
     def test_a_run_without_a_cv_is_409(self) -> None:

@@ -9,6 +9,7 @@ background task; poll `GET /tailoring/runs/{run_id}`.
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Literal
 
@@ -20,6 +21,11 @@ from sqlalchemy import Engine
 from core.cv.store import read_truth_base_version
 from core.db.session import get_current_user_id
 from core.llm.types import LLMAdapter
+from core.tailoring.backends import (
+    check_availability,
+    default_backend_id,
+    resolve_backends,
+)
 from core.tailoring.checks import line_location
 from core.tailoring.context import list_candidates, load_job_context
 from core.tailoring.decisions import DecisionError, apply_decision
@@ -27,6 +33,7 @@ from core.tailoring.loop import (
     CriticUnavailableError,
     NoCvError,
     NoTargetTitleError,
+    UnknownBackendError,
     UnknownJobError,
     ensure_critic_available,
     execute_tailoring,
@@ -61,6 +68,19 @@ class RunRequest(BaseModel):
     """Request body for starting a run."""
 
     job_group_id: str
+    backend: Literal["claude", "native", "docker"] | None = None
+
+
+class BackendModel(BaseModel):
+    """One place the Tailor can run, with whether it can be used now."""
+
+    id: str
+    label: str
+    provider: str
+    model: str
+    available: bool
+    detail: str
+    default: bool
 
 
 class RunAccepted(BaseModel):
@@ -119,6 +139,8 @@ class RunModel(BaseModel):
     progress: dict | None
     started_at: datetime
     updated_at: datetime
+    tailor_backend: str | None = None
+    tailor_label: str | None = None
 
 
 class DecisionRequest(BaseModel):
@@ -140,6 +162,43 @@ class DecisionRequest(BaseModel):
         if self.action == "link" and not self.evidence_ref:
             raise ValueError("a link needs an evidence_ref")
         return self
+
+
+def _backend_label(backend_id: str | None) -> str | None:
+    """Label a stored backend id for display.
+
+    Args:
+        backend_id: The run's `tailor_backend`; None for a legacy run.
+
+    Returns:
+        The backend's label (the default backend's for None), or None when
+        the id is no longer known.
+    """
+    backend = resolve_backends().get(backend_id or default_backend_id())
+    return backend.label if backend is not None else None
+
+
+def _availability(
+    adapters: dict[str, LLMAdapter],
+) -> dict[str, tuple[bool, str]]:
+    """Check every backend concurrently, so one dead endpoint costs one timeout.
+
+    Args:
+        adapters: The LLM adapters (an `anthropic` entry means a key is set).
+
+    Returns:
+        `(available, detail)` per backend id.
+    """
+    backends = resolve_backends()
+    anthropic = "anthropic" in adapters
+    with ThreadPoolExecutor(max_workers=len(backends)) as pool:
+        futures = {
+            backend_id: pool.submit(
+                check_availability, backend, anthropic_available=anthropic
+            )
+            for backend_id, backend in backends.items()
+        }
+        return {backend_id: f.result() for backend_id, f in futures.items()}
 
 
 def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
@@ -181,6 +240,8 @@ def _run_model(engine: Engine, user_id: uuid.UUID, run: StoredRun) -> RunModel:
         progress=run.progress if run.status == "generating" else None,
         started_at=run.created_at,
         updated_at=run.updated_at,
+        tailor_backend=run.tailor_backend,
+        tailor_label=_backend_label(run.tailor_backend),
     )
 
 
@@ -239,6 +300,34 @@ def get_candidates(
     ]
 
 
+@router.get("/tailoring/backends", response_model=list[BackendModel])
+def get_backends(
+    adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
+) -> list[BackendModel]:
+    """List the Tailor backends and whether each is usable right now.
+
+    Args:
+        adapters: Injected via `get_llm_adapters`.
+
+    Returns:
+        Every backend, with availability and the default flagged.
+    """
+    default = default_backend_id()
+    checked = _availability(adapters)
+    return [
+        BackendModel(
+            id=backend.id,
+            label=backend.label,
+            provider=backend.provider,
+            model=backend.model,
+            available=checked[backend.id][0],
+            detail=checked[backend.id][1],
+            default=backend.id == default,
+        )
+        for backend in resolve_backends().values()
+    ]
+
+
 @router.post("/tailoring/runs", response_model=RunAccepted, status_code=202)
 def post_run(
     body: RunRequest,
@@ -250,7 +339,7 @@ def post_run(
     """Start a tailoring run for one job.
 
     Args:
-        body: The job to tailor for.
+        body: The job to tailor for and, optionally, the backend.
         background_tasks: Runs the loop after the response is sent.
         user_id: Injected by `get_current_user_id`.
         engine: Injected via `get_app_db_engine`.
@@ -263,14 +352,24 @@ def post_run(
         HTTPException: 503 if there is no Anthropic API key for the critic
             (checked before any run is created), 409 if the user has no CV,
             404 if the job does not exist, 422 if the job has no title to
-            mirror.
+            mirror, 409 if the chosen backend is not available.
     """
     try:
         ensure_critic_available(adapters)
     except CriticUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    backend = resolve_backends()[body.backend or default_backend_id()]
+    available, detail = check_availability(
+        backend, anthropic_available="anthropic" in adapters
+    )
+    if not available:
+        raise HTTPException(
+            status_code=409, detail=f"{backend.label} is not available: {detail}"
+        )
     try:
-        run_id = start_tailoring(engine, user_id, body.job_group_id)
+        run_id = start_tailoring(engine, user_id, body.job_group_id, backend.id)
+    except UnknownBackendError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except NoCvError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except UnknownJobError as exc:
