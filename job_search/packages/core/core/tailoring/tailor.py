@@ -25,9 +25,10 @@ from core.tailoring.schema import (
 
 TASK = "cv_tailoring"
 PROMPT_VERSION_NUMBER = 1
-MAX_TOKENS = 4096
+MAX_TOKENS = 8192
 """Reply cap. A reply that hits it comes back truncated and is rejected —
-a model stuck repeating itself must not be half-parsed."""
+a model stuck repeating itself must not be half-parsed. On Claude it is also
+the budget adaptive thinking draws from, hence the headroom."""
 
 
 @dataclass(frozen=True)

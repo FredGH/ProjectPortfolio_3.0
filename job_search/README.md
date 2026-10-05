@@ -521,7 +521,7 @@ doesn't is shown to you for an explicit decision. Design:
   `POST /tailoring/orphans/{id}/decision`.
 
 **Requires an Anthropic API key** (`ANTHROPIC_API_KEY`): the critic always
-runs on Claude, so without a key tailoring refuses to start (HTTP 503 from
+runs on Claude (and so does the Tailor by default), so without a key tailoring refuses to start (HTTP 503 from
 the API, a clear message and exit 1 from the CLI) before any model is called.
 
 How it works: code assembles the CV from your truth base (companies, titles
@@ -543,10 +543,16 @@ never counts — and is recomputed after every Link/Reject. It reports skills
 your CV evidences but the tailored text lacks, and never invents skills
 your CV does not evidence.
 
-Cost: the critic makes at most one Claude call per attempt (a few cents at
-most). The Tailor is local (Ollama) by default; to use Claude instead, change the
-`cv_tailoring` entry in `config/llm_tasks.yml` (provider `anthropic`, prompt
-family `claude`).
+Cost: both the Tailor and the critic run on Claude (`claude-sonnet-5`) by
+default. Rough estimate, not a quote: about one cent for the critic and a
+couple of cents for the Tailor per attempt, up to 3 attempts, so roughly
+$0.03-0.10 per run.
+
+To run the Tailor locally instead, set the `cv_tailoring` entry in
+`config/llm_tasks.yml` to `provider: ollama`, `model: llama3.1:8b`,
+`prompt_family: local` (`prompts/cv_tailoring/local.v1.md` exists). A
+CPU-only Docker Ollama takes 20+ minutes per attempt; native Ollama is about
+3x faster.
 
 The `fabrication_critic` task **must** stay on `anthropic`: the critic
 refuses to run otherwise, and a test asserts it.
