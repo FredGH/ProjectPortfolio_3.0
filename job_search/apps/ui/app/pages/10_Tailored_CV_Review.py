@@ -198,22 +198,26 @@ def _detail(response: httpx.Response) -> str:
     return f"HTTP {response.status_code}"
 
 
-def _load_backends() -> list[dict] | None:
-    """Fetch the Tailor backends from the API.
+@st.cache_data(ttl=30, show_spinner=False)
+def _fetch_backends() -> list[dict]:
+    """Fetch the Tailor backends, cached for 30 s.
+
+    The status poll reruns the page every 3 s and each fetch makes the API
+    probe two Ollama servers. A failure raises, so it is never cached.
 
     Returns:
-        The backends (each with a string `id`, `label` and `detail` and a
-        boolean `available`), or None when the call fails or the answer is
-        empty or malformed, so the page falls back to the API's default.
+        The backends (each with a string `id`, `label` and `detail`, a
+        boolean `available`).
+
+    Raises:
+        httpx.HTTPError: If the call fails.
+        ValueError: If the answer is empty or malformed.
     """
-    try:
-        response = _get("/tailoring/backends")
-        response.raise_for_status()
-        rows = response.json()
-    except (httpx.HTTPError, ValueError):
-        return None
+    response = _get("/tailoring/backends")
+    response.raise_for_status()
+    rows = response.json()
     if not isinstance(rows, list) or not rows:
-        return None
+        raise ValueError("no backends")
     for row in rows:
         if not (
             isinstance(row, dict)
@@ -222,8 +226,45 @@ def _load_backends() -> list[dict] | None:
             and isinstance(row.get("detail"), str)
             and isinstance(row.get("available"), bool)
         ):
-            return None
+            raise ValueError("malformed backend")
     return rows
+
+
+def _load_backends() -> list[dict] | None:
+    """Fetch the Tailor backends from the API.
+
+    Returns:
+        The backends, or None when the call fails or the answer is empty or
+        malformed, so the page falls back to the API's default.
+    """
+    try:
+        return _fetch_backends()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
+def _runs_locally(run: dict, backends: list[dict] | None) -> bool:
+    """Tell whether a run's Tailor is a local model.
+
+    A legacy run has no stored backend; the API then labels it with the
+    default backend's label, which identifies the backend here.
+
+    Args:
+        run: The run from `GET /tailoring/runs/{id}`.
+        backends: The backends, or None when they could not be loaded.
+
+    Returns:
+        True for a local (Ollama) Tailor.
+    """
+    backend_id = run.get("tailor_backend")
+    if backend_id in ("native", "docker"):
+        return True
+    if backend_id is None and backends:
+        label = run.get("tailor_label")
+        for backend in backends:
+            if backend["label"] == label:
+                return backend.get("provider") == "ollama"
+    return False
 
 
 def _decide(orphan_id: str, body: dict) -> None:
@@ -366,10 +407,12 @@ if run.get("tailor_label"):
 
 if status == "generating":
     _show_progress(run)
-    if run.get("tailor_backend") in ("native", "docker"):
+    if _runs_locally(run, backends):
         st.caption(
             "Cancel stops the run at once and closes the connection to the "
-            "local model, which stops generating within a few seconds."
+            "local model, which stops generating within a few seconds. Cancel "
+            "unloads the model from that Ollama server; other local tasks "
+            "using the same model reload it (a few seconds)."
         )
     else:
         st.caption(

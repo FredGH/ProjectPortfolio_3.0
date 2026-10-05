@@ -527,7 +527,7 @@ doesn't is shown to you for an explicit decision. Design:
   result is discarded; for a local model the connection is closed and the
   model is unloaded from Ollama (the only way to stop it while it is still
   reading the prompt), which frees the CPU within a few seconds — the model
-  reloads on the next call. The fact checker always runs on
+  reloads on the next call. Cancel unloads the model from that Ollama server; other local tasks using the same model reload it (a few seconds). The fact checker always runs on
   Claude, whatever the Tailor backend.
 - **CLI:** `docker compose run --rm pipeline tailor-cv --user-id <id>
   --job-group-id <id> [--backend claude|native|docker]` (on demand;

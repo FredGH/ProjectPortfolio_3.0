@@ -186,6 +186,11 @@ def _fake_get(candidates, run, backends=None):
 
 
 class TestTailoredCvReviewPage(unittest.TestCase):
+    def setUp(self) -> None:
+        # The page caches the backends call; each test fakes its own API.
+        st.cache_data.clear()
+        self.addCleanup(st.cache_data.clear)
+
     def test_renders_with_no_candidates(self) -> None:
         with mock.patch("httpx.get", side_effect=_fake_get([], None)):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
@@ -582,7 +587,9 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         local = self._render({**base, "tailor_backend": "docker"})
         self.assertIn(
             "Cancel stops the run at once and closes the connection to the local "
-            "model, which stops generating within a few seconds.",
+            "model, which stops generating within a few seconds. Cancel unloads "
+            "the model from that Ollama server; other local tasks using the "
+            "same model reload it (a few seconds).",
             " ".join(c.value for c in local.caption),
         )
         claude = self._render({**base, "tailor_backend": "claude"})
@@ -591,6 +598,46 @@ class TestTailoredCvReviewPage(unittest.TestCase):
             "finishes in the background and its result is discarded.",
             " ".join(c.value for c in claude.caption),
         )
+
+    def test_a_legacy_run_follows_the_default_backend_for_the_cancel_caption(
+        self,
+    ) -> None:
+        patcher = mock.patch("time.sleep", side_effect=lambda _s: st.stop())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        base = {**_RUN, "status": "generating", "document": None, "orphans": []}
+        legacy = {**base, "tailor_backend": None}
+        local_default = [
+            {**_BACKENDS[0], "default": False},
+            {**_BACKENDS[2], "default": True},
+        ]
+        local = self._render(
+            {**legacy, "tailor_label": local_default[1]["label"]}, local_default
+        )
+        self.assertIn(
+            "closes the connection to the local model",
+            " ".join(c.value for c in local.caption),
+        )
+        claude = self._render(
+            {**legacy, "tailor_label": _BACKENDS[0]["label"]}, _BACKENDS
+        )
+        self.assertIn(
+            "a Claude call already in flight",
+            " ".join(c.value for c in claude.caption),
+        )
+
+    def test_the_backends_call_is_cached_across_reruns(self) -> None:
+        calls: list[str] = []
+        inner = _fake_get([_CANDIDATE], None, _BACKENDS)
+
+        def counting(url: str, **kwargs):
+            calls.append(url)
+            return inner(url, **kwargs)
+
+        with mock.patch("httpx.get", side_effect=counting):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            app.run()
+        self.assertEqual(sum(u.endswith("/tailoring/backends") for u in calls), 1)
 
     def test_hostile_backend_text_is_not_rendered_as_markdown(self) -> None:
         hostile = [{**_BACKENDS[0], "detail": _HOSTILE}]
