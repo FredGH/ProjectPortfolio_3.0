@@ -9,6 +9,7 @@ differs from the truth base" holds by construction.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 
@@ -22,6 +23,8 @@ from core.tailoring.schema import (
     TailorExperience,
     TailorOutput,
 )
+
+logger = logging.getLogger(__name__)
 
 # A leading decorative bullet glyph, or a "- " dash-then-space marker. A
 # bare leading minus ("-5% churn") is a number, not a marker, so a dash
@@ -206,7 +209,9 @@ def assemble(
                     # unknown id is dropped (nothing to fabricate); an id
                     # from another role is still placed, so the evidence
                     # check flags it like any cross-role citation.
-                    if item.keep in known and item.keep not in kept:
+                    if item.keep not in known:
+                        logger.debug("dropping unknown keep id %r", item.keep)
+                    elif item.keep not in kept:
                         kept.add(item.keep)
                         bullets.append(
                             TailoredBullet(

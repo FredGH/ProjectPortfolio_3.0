@@ -167,9 +167,9 @@ def run_tailor(
         config_path: Task-config override (tests).
         backend: Where to run; None uses the `cv_tailoring` config's own
             provider, model and prompt family.
-        previous: The previous attempt's output. When given, the shorter
-            retry prompt is used (the model returns only what must change)
-            and its reply is merged over `previous`.
+        previous: The previous attempt's output. When given, the patch-style
+            retry prompt is used (no job description; the model returns only
+            what must change) and its reply is merged over `previous`.
 
     Returns:
         The parsed result with the model and prompt version used.

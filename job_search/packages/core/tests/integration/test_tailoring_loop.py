@@ -731,7 +731,9 @@ class TestTailoringLoop(_LoopFixtures):
 
     # --- the critic always runs on the final attempt ----------------------
 
-    def test_the_critic_runs_on_the_final_attempt_despite_code_problems(self) -> None:
+    def test_a_stalled_attempt_with_code_problems_gets_the_late_critic_once(
+        self,
+    ) -> None:
         self._store_cv()
         # Every attempt: e0b1 has an unknown id (code problem); e0b0 is a
         # reworded line the critic rejects. The retry repeats it, so the run

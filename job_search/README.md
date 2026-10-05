@@ -560,20 +560,32 @@ never counts — and is recomputed after every Link/Reject. It reports skills
 your CV evidences but the tailored text lacks, and never invents skills
 your CV does not evidence.
 
-The Tailor prompt is v2 (`prompts/cv_tailoring/*.v2.md`): it adds an explicit
-summary rule (no years of experience, domains or numbers unless a cited bullet
-states them) after a real run invented such facts and repeated them on every
-retry. Stored runs keep the version they used.
+The Tailor prompt is v3 (`prompts/cv_tailoring/*.v3.md`; retries use
+`*.retry.v1.md`). v2 added an explicit summary rule (no years of experience,
+domains or numbers unless a cited bullet states them) after a real run
+invented such facts and repeated them on every retry. v3 adds keep-by-id: the
+Tailor outputs `{"keep": "<bullet id>"}` for a bullet it leaves unchanged and
+full text only for reworded or new ones. Retries are patches: the Tailor sees
+its previous output and the problems and returns only the parts that must
+change, which are merged over the previous output; everything still goes
+through the same assemble, check, critic path. A retry that leaves exactly
+the same problems as the one before stops the run early (the persisted attempt
+is still fact-checked), so a stuck Tailor costs 2 attempts, not 3. Stored runs
+keep the version they used.
 
 Cost: both the Tailor and the critic run on Claude (`claude-sonnet-5`) by
-default. Rough estimate, not a quote: about one cent for the critic and a
-couple of cents for the Tailor per attempt, up to 3 attempts, so roughly
-$0.03-0.10 per run.
+default. Rough estimate, not a quote, measured from the per-run token/cost
+logging: one Tailor attempt was about $0.047 (about 3.3k tokens in, about 4k
+out), and a 3-attempt run $0.15-0.20. Output dominates, and most of it is
+adaptive thinking (about 2.5k of the 4k), which keep-by-id cannot shrink; so
+keep-by-id saves roughly 25% on a first attempt, and the dependable saving is
+the early stop on a non-improving retry. Lowering the thinking effort is the
+next lever and is not built.
 
 To run the Tailor locally, pick **Ollama on this Mac** or **Docker Ollama**
 in the selector (or `--backend native|docker`); the local model and prompt
 come from the `cv_tailoring` entry's `local_model` / `local_prompt_family`
-in `config/llm_tasks.yml` (`prompts/cv_tailoring/local.v2.md`). A CPU-only
+in `config/llm_tasks.yml` (`prompts/cv_tailoring/local.v3.md`). A CPU-only
 Docker Ollama takes 20+ minutes per attempt; native Ollama is about 3x
 faster. The backend used is stored on the run.
 
