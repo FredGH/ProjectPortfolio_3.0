@@ -409,7 +409,10 @@ class TestTailoringLoop(unittest.TestCase):
         # Review Focus 4.
         self._store_cv()
         tailor = _Tailor(["this is not json"])
-        outcome = self._run(tailor, _Critic())
+        # A failed run logs its traceback so the failing line can be found.
+        with self.assertLogs("core.tailoring.loop", level="ERROR") as logged:
+            outcome = self._run(tailor, _Critic())
+        self.assertTrue(any("Traceback" in line for line in logged.output))
         self.assertEqual((outcome.status, outcome.attempts), ("failed", 3))
         self.assertEqual(
             read_run(self.app_engine, self.user_id, outcome.run_id).attempts, 3

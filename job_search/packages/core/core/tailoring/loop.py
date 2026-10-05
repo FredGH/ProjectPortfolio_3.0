@@ -672,6 +672,9 @@ def execute_tailoring(
     except RunAlreadyFinishedError:
         return _finished_elsewhere(app_engine, user_id, run_id)
     except Exception as exc:  # noqa: BLE001 — a background run must record, not raise
+        # The stored message is only "Type: text"; the traceback goes to the
+        # API log so a failure can be traced to the line that raised it.
+        logger.exception("tailoring run %s failed", run_id)
         message = f"{type(exc).__name__}: {exc}"[:500]
         try:
             finish_run(
