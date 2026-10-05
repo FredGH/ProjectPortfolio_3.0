@@ -28,9 +28,10 @@ then checks that every reworded bullet claims nothing its source bullets
 don't.
 
 Anything that can't be traced to your CV shows up under **Needs your
-decision**. For each line either **Link** it to the bullet in your CV that
-evidences it (the case where your CV states it obliquely), or **Reject**
-it. Nothing is written to your CV itself. The tailored CV is **approved**
+decision**. For each reworded bullet either **Link** it to the bullet in
+your CV that evidences it (the case where your CV states it obliquely), or
+**Reject** it. A summary cannot be linked (it condenses many bullets): reject
+it and your own summary is restored. Nothing is written to your CV itself. The tailored CV is **approved**
 once no line is waiting.
 
 Use **Run the Tailor on** to choose who rewrites the CV: Claude, Ollama
@@ -541,11 +542,20 @@ for orphan in pending:
         st.text(f"Claimed source: {_sources_of(orphan['claimed_refs'])}")
     if orphan["issue"]:
         st.text(orphan["issue"])
+    if orphan["section"] == "summary":
+        # A summary condenses many bullets; linking it to one cannot make
+        # the claim true, so the only choice is Reject (restores your own).
+        st.caption(
+            "A summary cannot be linked to a single bullet. Reject restores "
+            "your own summary from your CV."
+        )
+        if st.button("Reject", key=f"reject-{orphan['id']}"):
+            _decide(orphan["id"], {"action": "reject"})
+        continue
     options = [
         s["bullet_id"]
         for s in sources
-        if orphan["section"] == "summary"
-        or s["experience_index"] == orphan["experience_index"]
+        if s["experience_index"] == orphan["experience_index"]
     ]
     # No preselection: linking must be a deliberate choice, never one click.
     choice = st.selectbox(

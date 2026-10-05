@@ -829,5 +829,53 @@ class TestTailoredCvReviewPage(unittest.TestCase):
             self.assertFalse(link.disabled)
 
 
+_SUMMARY_ORPHAN_ID = "33333333-3333-3333-3333-333333333333"
+_SUMMARY_CAPTION = (
+    "A summary cannot be linked to a single bullet. Reject restores your own "
+    "summary from your CV."
+)
+
+
+class TestSummaryOrphanHasNoLink(unittest.TestCase):
+    def setUp(self) -> None:
+        st.cache_data.clear()
+        self.addCleanup(st.cache_data.clear)
+
+    def _run(self) -> AppTest:
+        summary = {
+            "id": _SUMMARY_ORPHAN_ID,
+            "kind": "orphan",
+            "section": "summary",
+            "experience_index": None,
+            "bullet_index": None,
+            "text": "Seasoned data leader.",
+            "claimed_refs": [],
+            "issue": "no evidence_ref in the CV",
+            "status": "pending",
+            "evidence_ref": None,
+        }
+        run = {**_RUN, "orphans": [_RUN["orphans"][0], summary]}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], run)):
+            return AppTest.from_file(str(_PAGE), default_timeout=10).run()
+
+    def test_a_summary_orphan_has_reject_but_no_link_or_picker(self) -> None:
+        app = self._run()
+        self.assertEqual(len(app.exception), 0)
+        keys = [b.key for b in app.button]
+        self.assertIn(f"reject-{_SUMMARY_ORPHAN_ID}", keys)
+        self.assertNotIn(f"link-{_SUMMARY_ORPHAN_ID}", keys)
+        self.assertNotIn(
+            f"link-select-{_SUMMARY_ORPHAN_ID}", [s.key for s in app.selectbox]
+        )
+        self.assertIn(_SUMMARY_CAPTION, [c.value for c in app.caption])
+
+    def test_an_experience_orphan_keeps_link_picker_and_reject(self) -> None:
+        app = self._run()
+        keys = [b.key for b in app.button]
+        self.assertIn(f"link-{_ORPHAN_ID}", keys)
+        self.assertIn(f"reject-{_ORPHAN_ID}", keys)
+        self.assertIn(f"link-select-{_ORPHAN_ID}", [s.key for s in app.selectbox])
+
+
 if __name__ == "__main__":
     unittest.main()
