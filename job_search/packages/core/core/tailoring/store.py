@@ -117,6 +117,8 @@ class StoredRun:
             "checking" | "critic" | "saving", "message": str,
             "phase_started_at": ISO-8601 UTC string, "history": [str, ...]}`.
         orphans: Every orphan row, in position order.
+        tailor_backend: `claude`, `native` or `docker`; None for a run made
+            before the backend selector existed.
     """
 
     id: uuid.UUID
@@ -136,6 +138,7 @@ class StoredRun:
     updated_at: datetime
     progress: dict | None
     orphans: list[StoredOrphan]
+    tailor_backend: str | None = None
 
 
 _ORPHAN_COLUMNS = (
@@ -175,6 +178,7 @@ def create_run(
     job_group_id: str,
     truth_base_version: int,
     target_title: str,
+    tailor_backend: str | None = None,
 ) -> uuid.UUID:
     """Insert a new run in `generating` status.
 
@@ -184,6 +188,7 @@ def create_run(
         job_group_id: The target job.
         truth_base_version: The CV version the run will use.
         target_title: The injected title.
+        tailor_backend: The backend id the Tailor will run on, if chosen.
 
     Returns:
         The new run's id.
@@ -192,10 +197,13 @@ def create_run(
         return conn.execute(
             text(
                 "INSERT INTO tailoring.tailored_cv "
-                "(user_id, job_group_id, truth_base_version, target_title) "
-                "VALUES (:user_id, :job_group_id, :version, :title) RETURNING id"
+                "(user_id, job_group_id, truth_base_version, target_title, "
+                "tailor_backend) "
+                "VALUES (:user_id, :job_group_id, :version, :title, :backend) "
+                "RETURNING id"
             ),
             {
+                "backend": tailor_backend,
                 "user_id": user_id,
                 "job_group_id": job_group_id,
                 "version": truth_base_version,
@@ -272,6 +280,7 @@ def cancel_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> bool:
         result = conn.execute(
             text(
                 "UPDATE tailoring.tailored_cv SET status = 'cancelled', "
+                "attempts = COALESCE((progress->>'attempt')::int, attempts), "
                 "progress = NULL, updated_at = now() "
                 "WHERE id = :run_id AND user_id = :user_id "
                 "AND status = 'generating'"
@@ -406,7 +415,7 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
                 "SELECT id, user_id, job_group_id, truth_base_version, target_title, "
                 "status, attempts, error_message, content, tailor_model, "
                 "tailor_prompt_version, critic_model, critic_prompt_version, "
-                "created_at, updated_at, progress "
+                "created_at, updated_at, progress, tailor_backend "
                 "FROM tailoring.tailored_cv WHERE id = :run_id"
             ),
             {"run_id": run_id},
@@ -443,6 +452,7 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
         updated_at=row.updated_at,
         progress=row.progress,
         orphans=[_orphan_from_row(r) for r in orphan_rows],
+        tailor_backend=row.tailor_backend,
     )
 
 

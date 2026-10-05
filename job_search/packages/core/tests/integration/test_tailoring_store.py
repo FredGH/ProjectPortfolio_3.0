@@ -422,6 +422,33 @@ class TestTailoringStore(unittest.TestCase):
         self.assertIsNone(run.progress)
         self.assertTrue(is_cancelled(self.app_engine, self.user_a, run_id))
 
+    def test_cancel_run_keeps_the_attempt_number(self) -> None:
+        run_id = self._new_run()
+        set_progress(self.app_engine, self.user_a, run_id, self._PROGRESS)
+        cancel_run(self.app_engine, self.user_a, run_id)
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(run.attempts, 1)
+
+    def test_cancel_run_without_progress_keeps_zero_attempts(self) -> None:
+        run_id = self._new_run()
+        cancel_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual(read_run(self.app_engine, self.user_a, run_id).attempts, 0)
+
+    def test_create_run_stores_the_backend_and_legacy_is_null(self) -> None:
+        run_id = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id="zzfixture-job",
+            truth_base_version=1,
+            target_title="Zz",
+            tailor_backend="docker",
+        )
+        self.assertEqual(
+            read_run(self.app_engine, self.user_a, run_id).tailor_backend, "docker"
+        )
+        legacy = self._new_run()
+        self.assertIsNone(read_run(self.app_engine, self.user_a, legacy).tailor_backend)
+
     def test_cancel_run_is_idempotent_and_leaves_finished_runs_alone(self) -> None:
         run_id = self._new_run()
         self.assertTrue(cancel_run(self.app_engine, self.user_a, run_id))

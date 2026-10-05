@@ -129,6 +129,45 @@ class TestTailoringSchema(unittest.TestCase):
             ).scalar_one()
         self.assertEqual(value, {"attempt": 1})
 
+    def test_tailor_backend_is_nullable_and_checked(self) -> None:
+        run_id = self._insert_run(self.user_a)
+        with self.owner.connect() as conn:
+            col = conn.execute(
+                text(
+                    "SELECT data_type, is_nullable FROM information_schema.columns "
+                    "WHERE table_schema = 'tailoring' AND table_name = 'tailored_cv' "
+                    "AND column_name = 'tailor_backend'"
+                )
+            ).one()
+            self.assertEqual((col.data_type, col.is_nullable), ("text", "YES"))
+            self.assertIsNone(
+                conn.execute(
+                    text(
+                        "SELECT tailor_backend FROM tailoring.tailored_cv "
+                        "WHERE id = :id"
+                    ),
+                    {"id": run_id},
+                ).scalar_one()
+            )
+        for value in ("claude", "native", "docker"):
+            with self.owner.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE tailoring.tailored_cv SET tailor_backend = :v "
+                        "WHERE id = :id"
+                    ),
+                    {"v": value, "id": run_id},
+                )
+        with self.assertRaises(IntegrityError):
+            with self.owner.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE tailoring.tailored_cv SET tailor_backend = 'bogus' "
+                        "WHERE id = :id"
+                    ),
+                    {"id": run_id},
+                )
+
     def test_invalid_run_status_is_rejected(self) -> None:
         with self.assertRaises(IntegrityError):
             with self.owner.begin() as conn:

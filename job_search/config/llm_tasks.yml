@@ -52,3 +52,8 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+    # The local variants the Tailor backend selector offers (Ollama on this
+    # Mac or the Docker service); see core/tailoring/backends.py.
+    local_provider: ollama
+    local_model: llama3.1:8b
+    local_prompt_family: local
