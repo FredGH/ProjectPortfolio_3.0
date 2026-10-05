@@ -22,6 +22,7 @@ from core.tailoring.loop import (  # noqa: E402
     CriticUnavailableError,
     NoCvError,
     TailoringOutcome,
+    UnknownBackendError,
 )
 
 
@@ -73,10 +74,17 @@ class TestTailorCvSubcommand(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn(message, out.getvalue())
 
-    def _stored(self, status: str, error: str | None, orphan_statuses: list[str]):
+    def _stored(
+        self,
+        status: str,
+        error: str | None,
+        orphan_statuses: list[str],
+        tailor_backend: str | None = None,
+    ):
         return SimpleNamespace(
             status=status,
             error_message=error,
+            tailor_backend=tailor_backend,
             orphans=[SimpleNamespace(status=s) for s in orphan_statuses],
         )
 
@@ -143,6 +151,83 @@ class TestTailorCvSubcommand(unittest.TestCase):
             self.assertEqual(exit_code, expected, status)
             self.assertIn(status, out.getvalue())
             self.assertIn(str(run_id), out.getvalue())
+
+    def test_backend_is_passed_through_and_labelled_in_the_completion_line(
+        self,
+    ) -> None:
+        outcome = TailoringOutcome(run_id=uuid.uuid4(), status="approved", attempts=1)
+        out = io.StringIO()
+        with (
+            mock.patch("app.cli.run_tailoring", return_value=outcome) as run,
+            mock.patch(
+                "app.cli.read_run",
+                return_value=self._stored("approved", None, [], "docker"),
+            ),
+            mock.patch("app.cli.build_engine"),
+            mock.patch("app.cli._build_llm_adapters"),
+            contextlib.redirect_stdout(out),
+        ):
+            exit_code = main(
+                [
+                    "tailor-cv",
+                    "--user-id",
+                    str(uuid.uuid4()),
+                    "--job-group-id",
+                    "j1",
+                    "--backend",
+                    "docker",
+                ]
+            )
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(run.call_args.kwargs["backend"], "docker")
+        self.assertIn("backend=Docker Ollama (CPU only, slow)", out.getvalue())
+
+    def test_no_backend_flag_passes_none(self) -> None:
+        outcome = TailoringOutcome(run_id=uuid.uuid4(), status="approved", attempts=1)
+        with (
+            mock.patch("app.cli.run_tailoring", return_value=outcome) as run,
+            mock.patch(
+                "app.cli.read_run", return_value=self._stored("approved", None, [])
+            ),
+            mock.patch("app.cli.build_engine"),
+            mock.patch("app.cli._build_llm_adapters"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            main(["tailor-cv", "--user-id", str(uuid.uuid4()), "--job-group-id", "j1"])
+        self.assertIsNone(run.call_args.kwargs["backend"])
+
+    def test_an_invalid_backend_value_is_rejected_by_the_parser(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                main(
+                    [
+                        "tailor-cv",
+                        "--user-id",
+                        str(uuid.uuid4()),
+                        "--job-group-id",
+                        "j1",
+                        "--backend",
+                        "bogus",
+                    ]
+                )
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_an_unknown_backend_error_prints_and_exits_one(self) -> None:
+        out = io.StringIO()
+        with (
+            mock.patch(
+                "app.cli.run_tailoring",
+                side_effect=UnknownBackendError("unknown Tailor backend 'x'"),
+            ),
+            mock.patch("app.cli.build_engine"),
+            mock.patch("app.cli._build_llm_adapters"),
+            contextlib.redirect_stdout(out),
+        ):
+            exit_code = main(
+                ["tailor-cv", "--user-id", str(uuid.uuid4()), "--job-group-id", "j1"]
+            )
+        self.assertEqual(exit_code, 1)
+        self.assertIn("unknown Tailor backend", out.getvalue())
 
 
 if __name__ == "__main__":

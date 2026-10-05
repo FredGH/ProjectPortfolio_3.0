@@ -78,6 +78,7 @@ from core.skills.write_job_skills import (
     count_pending_jobs,
     write_job_skills,
 )
+from core.tailoring.backends import resolve_backends
 from core.tailoring.loop import TailoringError, run_tailoring
 from core.tailoring.store import read_run
 
@@ -1255,7 +1256,10 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
     pipeline dashboard (core.pipeline.registry).
 
     Args:
-        args: Parsed CLI arguments — `user_id`, `job_group_id`.
+        args: Parsed CLI arguments — `user_id`, `job_group_id` and the
+            optional `backend` (`claude`, `native` or `docker`). An
+            unavailable backend is not pre-checked: a failing Ollama call
+            just fails the run.
 
     Prints the run's error message when it failed, and the number of lines
     awaiting a decision when it needs review.
@@ -1270,18 +1274,25 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
     try:
         adapters = _build_llm_adapters(http_client)
         outcome = run_tailoring(
-            app_engine, args.user_id, args.job_group_id, adapters=adapters
+            app_engine,
+            args.user_id,
+            args.job_group_id,
+            adapters=adapters,
+            backend=args.backend,
         )
     except TailoringError as exc:
         print(f"tailor-cv: {exc}")
         return 1
     finally:
         http_client.close()
+    run = read_run(app_engine, args.user_id, outcome.run_id)
+    backends = resolve_backends()
+    backend = backends.get(getattr(run, "tailor_backend", None) or args.backend or "")
     print(
         f"tailor-cv complete: run_id={outcome.run_id} status={outcome.status} "
         f"attempts={outcome.attempts}"
+        + (f" backend={backend.label}" if backend is not None else "")
     )
-    run = read_run(app_engine, args.user_id, outcome.run_id)
     if run is not None and outcome.status == "failed" and run.error_message:
         print(f"tailor-cv error: {run.error_message}")
     if run is not None and outcome.status == "needs_review":
@@ -1649,6 +1660,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     tailor_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
     tailor_cv_parser.add_argument("--job-group-id", required=True)
+    tailor_cv_parser.add_argument(
+        "--backend",
+        choices=["claude", "native", "docker"],
+        default=None,
+        help="Where the Tailor runs: claude, native (Ollama on this Mac) or "
+        "docker (the compose Ollama service); default follows config/llm_tasks.yml",
+    )
 
     args = parser.parse_args(argv)
 
