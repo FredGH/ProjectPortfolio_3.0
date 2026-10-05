@@ -280,7 +280,8 @@ def cancel_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> bool:
         result = conn.execute(
             text(
                 "UPDATE tailoring.tailored_cv SET status = 'cancelled', "
-                "attempts = COALESCE((progress->>'attempt')::int, attempts), "
+                "attempts = CASE WHEN jsonb_typeof(progress->'attempt') = 'number' "
+                "THEN (progress->>'attempt')::int ELSE attempts END, "
                 "progress = NULL, updated_at = now() "
                 "WHERE id = :run_id AND user_id = :user_id "
                 "AND status = 'generating'"

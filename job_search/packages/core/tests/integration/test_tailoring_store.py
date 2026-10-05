@@ -429,6 +429,18 @@ class TestTailoringStore(unittest.TestCase):
         run = read_run(self.app_engine, self.user_a, run_id)
         self.assertEqual(run.attempts, 1)
 
+    def test_cancel_run_tolerates_a_non_numeric_progress_attempt(self) -> None:
+        run_id = self._new_run()
+        set_progress(
+            self.app_engine,
+            self.user_a,
+            run_id,
+            {**self._PROGRESS, "attempt": "two"},
+        )
+        self.assertTrue(cancel_run(self.app_engine, self.user_a, run_id))
+        run = read_run(self.app_engine, self.user_a, run_id)
+        self.assertEqual((run.status, run.attempts), ("cancelled", 0))
+
     def test_cancel_run_without_progress_keeps_zero_attempts(self) -> None:
         run_id = self._new_run()
         cancel_run(self.app_engine, self.user_a, run_id)

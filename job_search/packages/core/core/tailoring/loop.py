@@ -137,8 +137,9 @@ class TailoringOutcome:
 def _new_ollama_client() -> httpx.Client:
     """Build the dedicated HTTP client for one run's local-model calls.
 
-    A run owns its client so cancelling can close it (which makes the
-    Ollama server stop generating) without disturbing any other request.
+    A run owns its client so cancelling can shut its socket down (see
+    `core.tailoring.cancel.abort_client`) without disturbing any other
+    request.
 
     Returns:
         A client with the long timeout CPU inference needs.
@@ -630,8 +631,10 @@ def _run_loop(
         config_path: Task-config override (tests).
         max_retries: Retries after the first attempt.
         progress: One-element list updated with the Tailor attempts started.
-        abort: Cuts a Tailor call short on cancel (closes the local
-            model's connection); None for Claude.
+        abort: Cuts a Tailor call short on cancel: shuts the local
+            model's socket down, then unloads the model (Ollama keeps
+            computing through a long prompt after a disconnect); None for
+            Claude.
 
     Returns:
         The outcome. Raises on any failure.

@@ -1225,9 +1225,11 @@ class TestTailoringBackends(_LoopFixtures):
 
     def _execute(self, run_id, client: httpx.Client, critic=None):
         self.unloads = mock.Mock()
+        self.abort_spy = mock.Mock(wraps=loop_mod.abort_client)
         with (
             mock.patch.object(loop_mod, "_new_ollama_client", lambda: client),
             mock.patch.object(loop_mod, "_unload_in_background", self.unloads),
+            mock.patch.object(loop_mod, "abort_client", self.abort_spy),
         ):
             return loop_mod.execute_tailoring(
                 self.app_engine,
@@ -1324,6 +1326,31 @@ class TestTailoringBackends(_LoopFixtures):
         self._execute(run_id, self._mock_client(handler))
         self.assertEqual(urls, ["http://host.docker.internal:11434/api/generate"])
 
+    def test_cancelling_a_claude_run_never_aborts_a_client(self) -> None:
+        run_id = self._start("claude")
+        spy = mock.Mock(wraps=loop_mod.abort_client)
+        timer = threading.Timer(
+            1.0, cancel_run, (self.app_engine, self.user_id, run_id)
+        )
+        self.addCleanup(timer.cancel)
+        timer.start()
+        with (
+            mock.patch.object(loop_mod, "abort_client", spy),
+            mock.patch.object(loop_mod, "_unload_in_background") as unload,
+        ):
+            outcome = loop_mod.execute_tailoring(
+                self.app_engine,
+                self.user_id,
+                run_id,
+                adapters={
+                    "anthropic": _BlockingTailor([self._reply(self._clean_bullets())])
+                },
+                config_path=self.config_path,
+            )
+        self.assertEqual(outcome.status, "cancelled")
+        spy.assert_not_called()
+        unload.assert_not_called()
+
     def test_cancel_closes_the_local_connection_and_returns_quickly(self) -> None:
         run_id = self._start("docker")
 
@@ -1344,6 +1371,7 @@ class TestTailoringBackends(_LoopFixtures):
         self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
         self.assertTrue(client.is_closed)
         # ... and the model is unloaded so the runner stops computing.
+        self.abort_spy.assert_called_once_with(client)
         self.unloads.assert_called_once()
         self.assertEqual(self.unloads.call_args.args[0].id, "docker")
         self.assertEqual(critic.calls, 0)

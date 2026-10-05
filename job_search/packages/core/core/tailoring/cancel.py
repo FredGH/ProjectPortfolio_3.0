@@ -2,8 +2,10 @@
 
 A slow model call cannot be interrupted from Python, so it runs in a worker
 thread while the caller polls: on cancel the caller abandons the thread,
-optionally closes the underlying client (which makes a local Ollama server
-stop generating) and moves on at once.
+runs an optional `abort` callback and moves on at once. For a local Ollama
+call the callback shuts the request's socket down (`abort_client`); the
+caller then also unloads the model, because Ollama keeps computing through a
+long prompt after a disconnect.
 """
 
 from __future__ import annotations
@@ -34,14 +36,27 @@ def abort_client(client: httpx.Client) -> None:
         client: The (dedicated) client to abort.
     """
     try:
-        pool = client._transport._pool  # noqa: SLF001 — no public way to get sockets
+        pool = getattr(client._transport, "_pool", None)  # noqa: SLF001
+        if pool is None:
+            return  # e.g. a mock transport: nothing to shut down
+        shut = 0
         for connection in list(pool._connections):  # noqa: SLF001
             stream = getattr(
                 getattr(connection, "_connection", None), "_network_stream", None
             )
             sock = stream.get_extra_info("socket") if stream is not None else None
-            if sock is not None:
+            if sock is None:
+                continue
+            try:
                 sock.shutdown(socket.SHUT_RDWR)
+                shut += 1
+            except OSError:
+                pass  # a stale idle connection must not skip the active one
+        if shut == 0:
+            logger.warning(
+                "abort_client found no socket to shut down (httpcore changed, "
+                "or the client uses a proxy)"
+            )
     except Exception:  # noqa: BLE001 — best effort; falls back to close()
         logger.warning("could not shut down the client's sockets", exc_info=True)
     finally:
