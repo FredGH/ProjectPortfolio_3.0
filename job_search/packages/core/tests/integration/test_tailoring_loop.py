@@ -1279,6 +1279,22 @@ class TestTailoringUsage(_LoopFixtures):
         )
         self.assertEqual((usage["input_tokens"], usage["output_tokens"]), (25, 46))
 
+    def test_the_late_fallback_critic_is_recorded_exactly_once(self) -> None:
+        self._store_cv()
+        # Attempt 1 has a code problem (critic skipped); the later replies
+        # are unparseable, so attempt 1 is judged late, once, before saving.
+        bad = [{"text": "Invented", "evidence_refs": ["nope"]}]
+        critic = _Critic(tokens=(5, 6))
+        outcome = self._run(_Tailor([self._reply(bad), "not json"], (10, 20)), critic)
+        self.assertEqual(outcome.attempts, 3)
+        self.assertEqual(critic.calls, 1)
+        usage = self._usage(outcome.run_id)
+        self.assertEqual(
+            [c["task"] for c in usage["calls"]],
+            ["cv_tailoring"] * 3 + ["fabrication_critic"],
+        )
+        self.assertEqual((usage["input_tokens"], usage["output_tokens"]), (35, 66))
+
     def test_an_unusable_tailor_reply_still_counts_its_tokens(self) -> None:
         self._store_cv()
         outcome = self._run(_Tailor(["not json"], (7, 9)), _Critic())

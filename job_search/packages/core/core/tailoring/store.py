@@ -467,7 +467,8 @@ def read_run(engine: Engine, user_id: uuid.UUID, run_id: uuid.UUID) -> StoredRun
             text(
                 f"SELECT {_ORPHAN_COLUMNS} FROM tailoring.orphan_bullet "
                 "WHERE tailored_cv_id = :run_id "
-                "ORDER BY section DESC, experience_index, bullet_index"
+                "ORDER BY section DESC, experience_index, bullet_index, "
+                "(decided_at IS NOT NULL), decided_at, id"
             ),
             {"run_id": run_id},
         ).all()

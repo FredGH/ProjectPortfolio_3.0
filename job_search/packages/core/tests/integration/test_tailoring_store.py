@@ -448,8 +448,10 @@ class TestTailoringStore(unittest.TestCase):
         final = read_run(self.app_engine, self.user_a, run_id)
         self.assertEqual(final.status, "needs_review")
         self.assertEqual(len(final.document.experience[0].bullets), 2)
+        # The rejected row and the first pending one share bullet_index 0
+        # after the re-index; the tie is broken pending-first, always.
         self.assertEqual(
-            [o.status for o in final.orphans], ["rejected", "pending", "pending"]
+            [o.status for o in final.orphans], ["pending", "rejected", "pending"]
         )
 
     def test_a_decision_by_another_user_is_refused_and_changes_nothing(self) -> None:
