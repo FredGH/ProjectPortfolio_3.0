@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 import unittest
@@ -154,9 +155,19 @@ class TestBackends(unittest.TestCase):
         self.assertFalse(unload_model(b["claude"]))
 
     def test_native_url_matches_the_api_constant(self) -> None:
-        from app.dependencies import NATIVE_OLLAMA_BASE_URL
-
-        self.assertEqual(NATIVE_OLLAMA_URL, NATIVE_OLLAMA_BASE_URL)
+        # Loaded by path: `app` may already name another app package (the
+        # pipeline CLI's) when the whole suite runs in one process.
+        path = (
+            Path(__file__).resolve().parents[3]
+            / "apps"
+            / "api"
+            / "app"
+            / "dependencies.py"
+        )
+        spec = importlib.util.spec_from_file_location("api_dependencies", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(NATIVE_OLLAMA_URL, module.NATIVE_OLLAMA_BASE_URL)
 
 
 if __name__ == "__main__":
