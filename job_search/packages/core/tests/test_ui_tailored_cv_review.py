@@ -155,6 +155,15 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertIn("No scored jobs", " ".join(c.value for c in app.info))
 
+    def test_no_developer_text_leaks_onto_the_page(self) -> None:
+        # A bare string literal in the page script is rendered by Streamlit
+        # "magic"; the stale-threshold note once leaked this way.
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], None)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        shown = " ".join(m.value for m in app.markdown)
+        self.assertNotIn("Minutes without activity", shown)
+        self.assertNotIn("client timeout", shown)
+
     def test_shows_candidates_and_a_tailor_button(self) -> None:
         with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], None)):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
