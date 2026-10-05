@@ -51,6 +51,7 @@ from core.tailoring.schema import (
     JobContext,
     KeywordCoverage,
     TailoredDocument,
+    TailorOutput,
     TailorOutputError,
 )
 from core.tailoring.store import (
@@ -799,6 +800,7 @@ def _run_loop(
         raise RuntimeError(f"job {run.job_group_id!r} no longer exists")
 
     feedback: list[str] = []
+    previous: TailorOutput | None = None
     best: _Attempt | None = None
     last: _Attempt | None = None
     parse_error: TailorOutputError | None = None
@@ -830,6 +832,7 @@ def _run_loop(
                     adapters=adapters,
                     config_path=config_path,
                     backend=backend,
+                    previous=previous,
                 ),
                 should_stop=stop,
                 abort=abort,
@@ -849,6 +852,8 @@ def _run_loop(
                     output_tokens=tokens_out,
                 )
             parse_error = exc
+            # Nothing to patch: the next attempt regenerates from scratch.
+            previous = None
             history.append(
                 f"Attempt {attempts}: the Tailor's reply could not be used"
                 + ("" if final else " — trying again")
@@ -868,6 +873,7 @@ def _run_loop(
             input_tokens=tailor_result.input_tokens,
             output_tokens=tailor_result.output_tokens,
         )
+        previous = tailor_result.output
         document = assemble(
             truth_base, tailor_result.output, target_title=run.target_title
         )

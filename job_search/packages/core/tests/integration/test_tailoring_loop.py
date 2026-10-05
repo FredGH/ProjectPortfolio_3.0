@@ -377,6 +377,62 @@ class TestTailoringLoop(_LoopFixtures):
         self.assertIn("Fix these problems", tailor.prompts[1])
         self.assertIn("Led a team of 12", tailor.prompts[1])
 
+    def test_the_retry_patches_only_the_bad_role_and_is_approved(self) -> None:
+        self._store_cv()
+        bad = self._clean_bullets() + [
+            {"text": "Led a team of 12", "evidence_refs": ["nope"]}
+        ]
+        first = self._reply(bad)
+        patch = json.dumps(
+            {"experience": [{"truth_index": 0, "bullets": self._clean_bullets()}]}
+        )
+        tailor = _Tailor([first, patch])
+        critic = _Critic()
+        outcome = self._run(tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 2))
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(run.tailor_prompt_version, "local.retry.v1")
+        document = run.document
+        self.assertEqual(document.summary.text, "Data engineer.")
+        self.assertEqual(
+            [b.text for b in document.experience[0].bullets],
+            [b["text"] for b in self._clean_bullets()],
+        )
+        self.assertEqual(
+            [b.text for b in document.experience[1].bullets],
+            ["Wrote SQL reports for the finance team"],
+        )
+        self.assertEqual([s.name for s in document.skills], ["dbt", "Airflow", "SQL"])
+        self.assertEqual(run.orphans, [])
+        self.assertIn("Led a team of 12", tailor.prompts[1])  # previous output
+        self.assertIn("Fix these problems", tailor.prompts[1])
+        self.assertNotIn("Own the data platform.", tailor.prompts[1])
+        self.assertEqual(critic.calls, 1)
+
+    def test_a_retry_after_an_unparseable_reply_uses_the_full_prompt(self) -> None:
+        self._store_cv()
+        tailor = _Tailor(["not json at all", self._reply(self._clean_bullets())])
+        outcome = self._run(tailor, _Critic())
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 2))
+        self.assertIn("Own the data platform.", tailor.prompts[1])
+        run = read_run(self.app_engine, self.user_id, outcome.run_id)
+        self.assertEqual(run.tailor_prompt_version, "local.v3")
+
+    def test_a_retry_after_a_good_then_unparseable_reply_goes_back_to_full(
+        self,
+    ) -> None:
+        self._store_cv()
+        bad = self._clean_bullets() + [
+            {"text": "Led a team of 12", "evidence_refs": []}
+        ]
+        tailor = _Tailor(
+            [self._reply(bad), "not json", self._reply(self._clean_bullets())]
+        )
+        outcome = self._run(tailor, _Critic())
+        self.assertEqual((outcome.status, outcome.attempts), ("approved", 3))
+        self.assertNotIn("Own the data platform.", tailor.prompts[1])
+        self.assertIn("Own the data platform.", tailor.prompts[2])
+
     def test_an_evidenced_missing_keyword_is_fed_back(self) -> None:
         self._store_cv()
         first = self._reply(self._clean_bullets(), skills=["dbt"], drop_older_role=True)

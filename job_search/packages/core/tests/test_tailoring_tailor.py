@@ -13,10 +13,19 @@ from tests.tailoring_fixtures import (
 )
 
 from core.llm.types import LLMResponse
-from core.tailoring.schema import JobContext, JobSkill, TailorOutputError
+from core.tailoring.schema import (
+    JobContext,
+    JobSkill,
+    TailorBullet,
+    TailorExperience,
+    TailorOutput,
+    TailorOutputError,
+    TailorSummary,
+)
 from core.tailoring.tailor import (
     PROMPT_VERSION_NUMBER,
     TASK,
+    merge_outputs,
     render_feedback,
     render_job_skills,
     render_truth_base,
@@ -85,6 +94,54 @@ class TestRenderers(unittest.TestCase):
         self.assertIn("Fix these problems from your previous attempt", rendered)
         self.assertIn("- bullet e0b1 has no evidence", rendered)
         self.assertIn("- surface SQL", rendered)
+
+
+def _role(index: int, *texts: str) -> TailorExperience:
+    return TailorExperience(
+        truth_index=index, bullets=[TailorBullet(text=t) for t in texts]
+    )
+
+
+class TestMergeOutputs(unittest.TestCase):
+    def setUp(self) -> None:
+        self.previous = TailorOutput(
+            summary=TailorSummary(text="Old summary.", evidence_refs=["a"]),
+            experience=[_role(0, "old 0"), _role(1, "old 1")],
+            skills=["dbt", "SQL"],
+        )
+
+    def test_a_summary_only_patch_keeps_everything_else(self) -> None:
+        patch = TailorOutput(summary=TailorSummary(text="New summary."))
+        merged = merge_outputs(self.previous, patch)
+        self.assertEqual(merged.summary.text, "New summary.")
+        self.assertEqual(merged.experience, self.previous.experience)
+        self.assertEqual(merged.skills, ["dbt", "SQL"])
+
+    def test_a_role_patch_replaces_only_that_roles_whole_bullet_list(self) -> None:
+        patch = TailorOutput(experience=[_role(1, "new 1a", "new 1b")])
+        merged = merge_outputs(self.previous, patch)
+        self.assertEqual(merged.summary, self.previous.summary)
+        self.assertEqual(merged.experience[0], _role(0, "old 0"))
+        self.assertEqual(merged.experience[1], _role(1, "new 1a", "new 1b"))
+        self.assertEqual(len(merged.experience), 2)
+
+    def test_a_skills_only_patch_replaces_the_skills(self) -> None:
+        merged = merge_outputs(self.previous, TailorOutput(skills=["Airflow"]))
+        self.assertEqual(merged.skills, ["Airflow"])
+        self.assertEqual(merged.experience, self.previous.experience)
+
+    def test_an_empty_patch_is_the_previous_output(self) -> None:
+        self.assertEqual(merge_outputs(self.previous, TailorOutput()), self.previous)
+
+    def test_a_role_the_previous_output_lacked_is_appended(self) -> None:
+        previous = TailorOutput(experience=[_role(0, "old 0")])
+        merged = merge_outputs(previous, TailorOutput(experience=[_role(1, "new")]))
+        self.assertEqual([e.truth_index for e in merged.experience], [0, 1])
+
+    def test_merging_does_not_mutate_its_inputs(self) -> None:
+        before = self.previous.model_copy(deep=True)
+        merge_outputs(self.previous, TailorOutput(experience=[_role(0, "x")]))
+        self.assertEqual(self.previous, before)
 
 
 class TestRunTailor(unittest.TestCase):
@@ -163,6 +220,73 @@ class TestRunTailor(unittest.TestCase):
         self.assertIn(bullet_id(self.truth_base, 0, 1), prompt)
         self.assertIn("- surface SQL", prompt)
         self.assertNotIn("{cv_text}", prompt)
+
+    def test_a_retry_uses_the_short_prompt_and_merges_the_patch(self) -> None:
+        job = JobContext(
+            job_group_id="zzfixture-job",
+            title_for_display="Lead Data Engineer",
+            company="Gamma",
+            description="Own the data platform. " * 150,
+            skills=_job().skills,
+        )
+        previous = TailorOutput(
+            summary=TailorSummary(text="Prev summary.", evidence_refs=[]),
+            experience=[_role(0, "prev bullet"), _role(1, "prev older")],
+            skills=["dbt"],
+        )
+        first = _ScriptedAdapter([self.reply])
+        run_tailor(
+            self.truth_base,
+            job,
+            [],
+            adapters={"ollama": first},
+            config_path=self.config_path,
+        )
+        patch = json.dumps(
+            {"experience": [{"truth_index": 1, "bullets": [{"text": "fixed"}]}]}
+        )
+        retry = _ScriptedAdapter([patch])
+        result = run_tailor(
+            self.truth_base,
+            job,
+            ["bullet e1b0 cites nothing"],
+            adapters={"ollama": retry},
+            config_path=self.config_path,
+            previous=previous,
+        )
+        prompt = retry.prompts[0]
+        self.assertIn("Prev summary.", prompt)
+        self.assertIn("prev bullet", prompt)
+        self.assertIn("- bullet e1b0 cites nothing", prompt)
+        self.assertNotIn("Own the data platform", prompt)
+        self.assertNotIn("null", prompt)
+        self.assertLess(len(prompt), len(first.prompts[0]))
+        self.assertEqual(result.prompt_version, "local.retry.v1")
+        self.assertEqual(result.output.summary.text, "Prev summary.")
+        self.assertEqual(result.output.experience[0], _role(0, "prev bullet"))
+        self.assertEqual(result.output.experience[1], _role(1, "fixed"))
+        self.assertEqual(result.output.skills, ["dbt"])
+
+    def test_the_retry_prompts_format_with_their_keys(self) -> None:
+        import re
+
+        from core.llm.prompts import load_prompt
+
+        for family in ("claude", "local"):
+            with self.subTest(family=family):
+                template = load_prompt(TASK, f"{family}.retry", 1)
+                prompt = template.format(
+                    cv_text="CV",
+                    job_title="Lead Data Engineer",
+                    job_skills="- SQL (must_have)",
+                    previous_output="{}",
+                    feedback="FB",
+                )
+                self.assertIsNone(re.search(r"\{[A-Za-z_]+\}", prompt))
+                self.assertIn("removing the unsupported claim".lower(), prompt.lower())
+        self.assertEqual(
+            load_prompt(TASK, "claude.retry", 1), load_prompt(TASK, "local.retry", 1)
+        )
 
     def test_a_truncated_reply_raises(self) -> None:
         adapter = _ScriptedAdapter([self.reply], truncated=True)
