@@ -11,6 +11,7 @@ followed by a finished run.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import unittest
@@ -32,6 +33,7 @@ from app.main import app  # noqa: E402
 from core.cv.store import write_truth_base  # noqa: E402
 from core.db.session import get_current_user_id  # noqa: E402
 from core.llm.types import LLMResponse  # noqa: E402
+from core.settings import get_settings  # noqa: E402
 from core.tailoring.store import (  # noqa: E402
     StaleDecisionError,
     create_run,
@@ -284,6 +286,19 @@ class TestTailoringRouter(unittest.TestCase):
         self.assertEqual([r["available"] for r in rows.values()], [True, False, True])
         self.assertEqual(rows["native"]["detail"], "down for the test")
         self.assertTrue(rows["docker"]["label"].startswith("Docker Ollama"))
+
+    def test_backends_needs_the_same_identity_as_the_other_routes(self) -> None:
+        app.dependency_overrides.pop(get_current_user_id, None)
+        # ENV=gcp hard-disables the local DEV_USER_ID override.
+        get_settings.cache_clear()
+        self.addCleanup(get_settings.cache_clear)
+        with patch.dict(os.environ, {"ENV": "gcp"}):
+            get_settings.cache_clear()
+            candidates = self.client.get("/tailoring/candidates")
+            backends = self.client.get("/tailoring/backends")
+        self.assertEqual(candidates.status_code, 501)
+        self.assertEqual(backends.status_code, 501)
+        self.assertEqual(backends.json(), candidates.json())
 
     def test_an_unavailable_backend_is_409_and_creates_no_run(self) -> None:
         self._store_cv()

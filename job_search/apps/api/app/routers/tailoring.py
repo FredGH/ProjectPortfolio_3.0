@@ -302,11 +302,14 @@ def get_candidates(
 
 @router.get("/tailoring/backends", response_model=list[BackendModel])
 def get_backends(
+    _user_id: uuid.UUID = Depends(get_current_user_id),
     adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
 ) -> list[BackendModel]:
     """List the Tailor backends and whether each is usable right now.
 
     Args:
+        _user_id: Injected by `get_current_user_id`; only enforces the same
+            access rule as every other tailoring route.
         adapters: Injected via `get_llm_adapters`.
 
     Returns:
