@@ -42,6 +42,12 @@ h4, h5, h6 {{ font-weight: 600; }}
 [data-testid="stMarkdownContainer"] p,
 [data-testid="stMarkdownContainer"] li {{ color: {BODY}; line-height: 1.55; }}
 [data-testid="stCaptionContainer"] {{ color: {MUTED}; }}
+/* st.text keeps its line breaks but must wrap, or a long line (a CV
+   summary, a bullet) runs off the right edge of the page. */
+[data-testid="stText"] {{
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}}
 a {{ color: {YELLOW}; text-decoration: underline; }}
 
 /* Stat numbers: large, yellow, bold. */
