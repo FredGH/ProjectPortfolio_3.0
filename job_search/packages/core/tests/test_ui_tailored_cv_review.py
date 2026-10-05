@@ -132,9 +132,46 @@ def _choose_link_target(app: AppTest) -> None:
     picker.select("b1").run()
 
 
-def _fake_get(candidates, run):
+_BACKENDS = [
+    {
+        "id": "claude",
+        "label": "Claude · claude-sonnet-5",
+        "provider": "anthropic",
+        "model": "claude-sonnet-5",
+        "available": True,
+        "detail": "API key configured",
+        "default": True,
+    },
+    {
+        "id": "native",
+        "label": "Ollama on this Mac · llama3.1:8b",
+        "provider": "ollama",
+        "model": "llama3.1:8b",
+        "available": False,
+        "detail": "not reachable at http://host.docker.internal:11434",
+        "default": False,
+    },
+    {
+        "id": "docker",
+        "label": "Docker Ollama (CPU only, slow) · llama3.1:8b",
+        "provider": "ollama",
+        "model": "llama3.1:8b",
+        "available": True,
+        "detail": "reachable, model present",
+        "default": False,
+    },
+]
+
+
+def _fake_get(candidates, run, backends=None):
     def _fake(url: str, **_kwargs) -> httpx.Response:
         request = httpx.Request("GET", url)
+        if url.endswith("/tailoring/backends"):
+            if backends is None:
+                return httpx.Response(200, json=[], request=request)
+            if isinstance(backends, Exception):
+                raise backends
+            return httpx.Response(200, json=backends, request=request)
         if url.endswith("/tailoring/candidates") or "/tailoring/candidates?" in url:
             return httpx.Response(200, json=candidates, request=request)
         if "/tailoring/runs/" in url:
@@ -434,12 +471,140 @@ class TestTailoredCvReviewPage(unittest.TestCase):
 
     # --- cancelling a run ---------------------------------------------------
 
+    # --- backend selector ------------------------------------------------
+
+    def _render(self, run=None, backends=_BACKENDS):
+        patcher = mock.patch(
+            "httpx.get", side_effect=_fake_get([_CANDIDATE], run, backends)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return AppTest.from_file(str(_PAGE), default_timeout=10).run()
+
+    def _backend_box(self, app: AppTest):
+        return next(s for s in app.selectbox if s.key == "tailoring_backend")
+
+    def test_the_selector_lists_every_backend_with_a_badge_and_the_default(
+        self,
+    ) -> None:
+        app = self._render()
+        box = self._backend_box(app)
+        self.assertEqual(
+            list(box.options),
+            [
+                "✓ Claude · claude-sonnet-5",
+                "✗ Ollama on this Mac · llama3.1:8b",
+                "✓ Docker Ollama (CPU only, slow) · llama3.1:8b",
+            ],
+        )
+        self.assertEqual(box.value, "claude")
+        self.assertIn("API key configured", " ".join(c.value for c in app.caption))
+        tailor = next(b for b in app.button if b.key == "tailor-start")
+        self.assertFalse(tailor.disabled)
+
+    def test_an_unavailable_backend_disables_tailor_and_says_why(self) -> None:
+        app = self._render()
+        self._backend_box(app).select("native").run()
+        tailor = next(b for b in app.button if b.key == "tailor-start")
+        self.assertTrue(tailor.disabled)
+        warnings = " ".join(w.value for w in app.warning)
+        self.assertIn("is not available", warnings)
+        self.assertIn("not reachable at", warnings)
+
+    def test_the_click_posts_the_chosen_backend(self) -> None:
+        post_response = httpx.Response(
+            202, json={"run_id": _RUN_ID}, request=httpx.Request("POST", "http://x")
+        )
+        with (
+            mock.patch(
+                "httpx.get", side_effect=_fake_get([_CANDIDATE], None, _BACKENDS)
+            ),
+            mock.patch("httpx.post", return_value=post_response) as post,
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            self._backend_box(app).select("docker").run()
+            next(b for b in app.button if b.key == "tailor-start").click().run()
+        self.assertEqual(
+            post.call_args.kwargs["json"],
+            {"job_group_id": "zzfixture-job", "backend": "docker"},
+        )
+
+    def test_a_409_detail_is_shown(self) -> None:
+        refused = httpx.Response(
+            409,
+            json={"detail": "Docker Ollama is not available: down"},
+            request=httpx.Request("POST", "http://x"),
+        )
+        with (
+            mock.patch(
+                "httpx.get", side_effect=_fake_get([_CANDIDATE], None, _BACKENDS)
+            ),
+            mock.patch("httpx.post", return_value=refused),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            next(b for b in app.button if b.key == "tailor-start").click().run()
+        shown = " ".join(e.value for e in app.error)
+        self.assertIn("Could not start", shown)
+        self.assertIn("is not available", shown)
+
+    def test_a_failing_backends_call_falls_back_to_the_old_behaviour(self) -> None:
+        post_response = httpx.Response(
+            202, json={"run_id": _RUN_ID}, request=httpx.Request("POST", "http://x")
+        )
+        with (
+            mock.patch(
+                "httpx.get",
+                side_effect=_fake_get(
+                    [_CANDIDATE], None, httpx.ConnectError("backends down")
+                ),
+            ),
+            mock.patch("httpx.post", return_value=post_response) as post,
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            self.assertEqual(len(app.exception), 0)
+            self.assertNotIn("tailoring_backend", [s.key for s in app.selectbox])
+            self.assertIn("Tailor backends", " ".join(i.value for i in app.info))
+            next(b for b in app.button if b.key == "tailor-start").click().run()
+        self.assertEqual(
+            post.call_args.kwargs["json"], {"job_group_id": "zzfixture-job"}
+        )
+
+    def test_the_run_shows_its_tailor_label(self) -> None:
+        run = {**_RUN, "tailor_backend": "docker", "tailor_label": "Docker Ollama · m"}
+        app = self._render(run)
+        self.assertIn("Tailor: Docker Ollama · m", " ".join(t.value for t in app.text))
+
+    def test_the_cancel_caption_depends_on_the_backend(self) -> None:
+        patcher = mock.patch("time.sleep", side_effect=lambda _s: st.stop())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        base = {**_RUN, "status": "generating", "document": None, "orphans": []}
+        local = self._render({**base, "tailor_backend": "docker"})
+        self.assertIn(
+            "Cancel stops the run at once and closes the connection to the local "
+            "model, which stops generating within a few seconds.",
+            " ".join(c.value for c in local.caption),
+        )
+        claude = self._render({**base, "tailor_backend": "claude"})
+        self.assertIn(
+            "Cancel stops the run at once; a Claude call already in flight "
+            "finishes in the background and its result is discarded.",
+            " ".join(c.value for c in claude.caption),
+        )
+
+    def test_hostile_backend_text_is_not_rendered_as_markdown(self) -> None:
+        hostile = [{**_BACKENDS[0], "detail": _HOSTILE}]
+        app = self._render(backends=hostile)
+        shown = " ".join(c.value for c in app.caption)
+        self.assertNotIn("](http", shown.replace("\\]\\(http", ""))
+        self.assertIn("\\[x\\]", shown)
+
     def test_cancel_button_only_while_generating(self) -> None:
         app = self._render_generating(self._generating())
         self.assertIn("cancel-run", [b.key for b in app.button])
         self.assertIn(
-            "Cancel stops the run at once; a local model stops generating "
-            "within a few seconds.",
+            "Cancel stops the run at once; a Claude call already in flight "
+            "finishes in the background and its result is discarded.",
             self._all_text(app),
         )
         for run in (_RUN, {**_RUN, "status": "failed", "document": None}):

@@ -33,6 +33,10 @@ evidences it (the case where your CV states it obliquely), or **Reject**
 it. Nothing is written to your CV itself. The tailored CV is **approved**
 once no line is waiting.
 
+Use **Run the Tailor on** to choose who rewrites the CV: Claude, Ollama
+on this Mac, or the Docker Ollama service (CPU only, slow). The fact
+checker always runs on Claude. **Cancel run** stops a run at once.
+
 A **stretch** warning means the job's title implies more seniority or
 scope than your CV shows. That is advice, not an error.
 """
@@ -194,6 +198,34 @@ def _detail(response: httpx.Response) -> str:
     return f"HTTP {response.status_code}"
 
 
+def _load_backends() -> list[dict] | None:
+    """Fetch the Tailor backends from the API.
+
+    Returns:
+        The backends (each with a string `id`, `label` and `detail` and a
+        boolean `available`), or None when the call fails or the answer is
+        empty or malformed, so the page falls back to the API's default.
+    """
+    try:
+        response = _get("/tailoring/backends")
+        response.raise_for_status()
+        rows = response.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+    if not isinstance(rows, list) or not rows:
+        return None
+    for row in rows:
+        if not (
+            isinstance(row, dict)
+            and isinstance(row.get("id"), str)
+            and isinstance(row.get("label"), str)
+            and isinstance(row.get("detail"), str)
+            and isinstance(row.get("available"), bool)
+        ):
+            return None
+    return rows
+
+
 def _decide(orphan_id: str, body: dict) -> None:
     """Post an orphan decision, flash any failure, and rerun.
 
@@ -266,9 +298,37 @@ selected = st.selectbox(
 )
 chosen = next(c for c in candidates if c["job_group_id"] == selected)
 
-if st.button("Tailor my CV to this job", key="tailor-start", type="primary"):
+backends = _load_backends()
+backend: dict | None = None
+if backends is None:
+    st.info("Could not load the Tailor backends; the default one will be used.")
+else:
+    by_id = {b["id"]: b for b in backends}
+    default_index = next((i for i, b in enumerate(backends) if b.get("default")), 0)
+    backend_id = st.selectbox(
+        "Run the Tailor on",
+        options=list(by_id),
+        index=default_index,
+        format_func=lambda bid: f"{'✓' if by_id[bid]['available'] else '✗'} "
+        f"{by_id[bid]['label']}",
+        key="tailoring_backend",
+    )
+    backend = by_id[backend_id]
+    st.caption(_plain(backend["detail"]))
+    if not backend["available"]:
+        st.warning(_plain(f"{backend['label']} is not available: {backend['detail']}"))
+
+if st.button(
+    "Tailor my CV to this job",
+    key="tailor-start",
+    type="primary",
+    disabled=backend is not None and not backend["available"],
+):
     try:
-        started = _post("/tailoring/runs", {"job_group_id": selected})
+        body = {"job_group_id": selected}
+        if backend is not None:
+            body["backend"] = backend["id"]
+        started = _post("/tailoring/runs", body)
         if started.status_code == 202:
             st.session_state["tailoring_run_id"] = started.json()["run_id"]
         else:
@@ -301,13 +361,21 @@ if run["job_group_id"] != selected:
 
 status = run["status"]
 st.markdown(f"**Status:** {_plain(status)} · attempts: {_plain(run['attempts'])}")
+if run.get("tailor_label"):
+    st.text(f"Tailor: {run['tailor_label']}")
 
 if status == "generating":
     _show_progress(run)
-    st.caption(
-        "Cancel stops the run at once; a local model stops generating within "
-        "a few seconds."
-    )
+    if run.get("tailor_backend") in ("native", "docker"):
+        st.caption(
+            "Cancel stops the run at once and closes the connection to the "
+            "local model, which stops generating within a few seconds."
+        )
+    else:
+        st.caption(
+            "Cancel stops the run at once; a Claude call already in flight "
+            "finishes in the background and its result is discarded."
+        )
     if st.button("Cancel run", key="cancel-run"):
         _cancel(run_id)
     time.sleep(_POLL_SECONDS)
