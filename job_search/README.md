@@ -560,6 +560,11 @@ never counts — and is recomputed after every Link/Reject. It reports skills
 your CV evidences but the tailored text lacks, and never invents skills
 your CV does not evidence.
 
+The Tailor prompt is v2 (`prompts/cv_tailoring/*.v2.md`): it adds an explicit
+summary rule (no years of experience, domains or numbers unless a cited bullet
+states them) after a real run invented such facts and repeated them on every
+retry. Stored runs keep the version they used.
+
 Cost: both the Tailor and the critic run on Claude (`claude-sonnet-5`) by
 default. Rough estimate, not a quote: about one cent for the critic and a
 couple of cents for the Tailor per attempt, up to 3 attempts, so roughly
@@ -568,7 +573,7 @@ $0.03-0.10 per run.
 To run the Tailor locally, pick **Ollama on this Mac** or **Docker Ollama**
 in the selector (or `--backend native|docker`); the local model and prompt
 come from the `cv_tailoring` entry's `local_model` / `local_prompt_family`
-in `config/llm_tasks.yml` (`prompts/cv_tailoring/local.v1.md`). A CPU-only
+in `config/llm_tasks.yml` (`prompts/cv_tailoring/local.v2.md`). A CPU-only
 Docker Ollama takes 20+ minutes per attempt; native Ollama is about 3x
 faster. The backend used is stored on the run.
 

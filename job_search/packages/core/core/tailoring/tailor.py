@@ -25,7 +25,7 @@ from core.tailoring.schema import (
 )
 
 TASK = "cv_tailoring"
-PROMPT_VERSION_NUMBER = 1
+PROMPT_VERSION_NUMBER = 2
 MAX_TOKENS = 8192
 """Reply cap. A reply that hits it comes back truncated and is rejected —
 a model stuck repeating itself must not be half-parsed. On Claude it is also
@@ -39,7 +39,7 @@ class TailorResult:
     Attributes:
         output: The parsed instructions.
         model: The model that produced them.
-        prompt_version: The prompt file version used, e.g. `local.v1`.
+        prompt_version: The prompt file version used, e.g. `local.v2`.
     """
 
     output: TailorOutput

@@ -245,7 +245,7 @@ class TestExaggerationIsCaughtOffline(_Base):
         # Tailor into a real model: the run used the pinned route.
         _, run = self._run(_ExaggeratingTailor(self.truth_base), _RuleApplyingCritic())
         self.assertEqual(run.tailor_model, "zzfixture-fake-tailor")
-        self.assertEqual(run.tailor_prompt_version, "local.v1")
+        self.assertEqual(run.tailor_prompt_version, "local.v2")
         self.assertEqual(run.critic_prompt_version, "claude.v1")
 
     def test_an_exaggerated_bullet_is_surfaced_and_never_approved(self) -> None:

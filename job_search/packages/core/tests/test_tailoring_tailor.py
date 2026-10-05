@@ -119,7 +119,7 @@ class TestRunTailor(unittest.TestCase):
             config_path=self.config_path,
         )
         self.assertEqual(result.output.skills, ["dbt"])
-        self.assertEqual(result.prompt_version, "local.v1")
+        self.assertEqual(result.prompt_version, "local.v2")
         self.assertEqual(result.model, "llama3.1:8b")
 
     def test_a_backend_overrides_provider_model_and_prompt_family(self) -> None:
@@ -145,7 +145,7 @@ class TestRunTailor(unittest.TestCase):
             backend=backend,
         )
         self.assertEqual(seen, ["claude-test"])
-        self.assertEqual(result.prompt_version, "claude.v1")
+        self.assertEqual(result.prompt_version, "claude.v2")
         self.assertEqual(result.model, "claude-test")
 
     def test_the_prompt_carries_the_cv_the_job_and_the_feedback(self) -> None:
@@ -186,22 +186,49 @@ class TestRunTailor(unittest.TestCase):
                 config_path=self.config_path,
             )
 
-    def test_the_claude_prompt_formats_with_the_tailor_keys(self) -> None:
+    def test_every_tailor_prompt_formats_with_the_tailor_keys(self) -> None:
         # The README's one-line switch to Claude must not break formatting.
         import re
 
         from core.llm.prompts import load_prompt
 
-        template = load_prompt(TASK, "claude", PROMPT_VERSION_NUMBER)
-        prompt = template.format(
-            cv_text="CV",
-            job_title="Lead Data Engineer",
-            job_description="Own it.",
-            job_skills="- SQL (must_have)",
-            feedback="",
+        for family in ("claude", "local"):
+            for version in (1, 2):
+                with self.subTest(family=family, version=version):
+                    template = load_prompt(TASK, family, version)
+                    prompt = template.format(
+                        cv_text="CV",
+                        job_title="Lead Data Engineer",
+                        job_description="Own it.",
+                        job_skills="- SQL (must_have)",
+                        feedback="",
+                    )
+                    self.assertIsNone(re.search(r"\{[A-Za-z_]+\}", prompt))
+                    self.assertIn("Lead Data Engineer", prompt)
+
+    def test_v2_prompts_carry_the_summary_rule_and_v1_does_not(self) -> None:
+        from core.llm.prompts import load_prompt
+
+        for family in ("claude", "local"):
+            with self.subTest(family=family):
+                v2 = load_prompt(TASK, family, 2)
+                self.assertIn("do NOT write years of experience", v2)
+                self.assertIn("removing the unsupported claim", v2)
+                self.assertNotIn(
+                    "do NOT write years of experience",
+                    load_prompt(TASK, family, 1),
+                )
+
+    def test_the_live_config_records_claude_v2(self) -> None:
+        adapter = _ScriptedAdapter([self.reply])
+        result = run_tailor(
+            self.truth_base,
+            _job(),
+            [],
+            adapters={"anthropic": adapter},
         )
-        self.assertIsNone(re.search(r"\{[A-Za-z_]+\}", prompt))
-        self.assertIn("Lead Data Engineer", prompt)
+        self.assertEqual(PROMPT_VERSION_NUMBER, 2)
+        self.assertEqual(result.prompt_version, "claude.v2")
 
     def test_the_task_is_registered_in_the_task_config(self) -> None:
         from core.llm.task_config import load_task_config
