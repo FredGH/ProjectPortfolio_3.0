@@ -221,7 +221,9 @@ class TestRunTailor(unittest.TestCase):
         self.assertIn("- surface SQL", prompt)
         self.assertNotIn("{cv_text}", prompt)
 
-    def test_a_retry_uses_the_short_prompt_and_merges_the_patch(self) -> None:
+    def test_a_retry_uses_the_patch_style_prompt_without_the_job_description(
+        self,
+    ) -> None:
         job = JobContext(
             job_group_id="zzfixture-job",
             title_for_display="Lead Data Engineer",
@@ -284,6 +286,13 @@ class TestRunTailor(unittest.TestCase):
                 )
                 self.assertIsNone(re.search(r"\{[A-Za-z_]+\}", prompt))
                 self.assertIn("removing the unsupported claim".lower(), prompt.lower())
+                self.assertIn(
+                    "do NOT write years of experience".lower(), prompt.lower()
+                )
+                self.assertIn("Cite the bullets it rests on", prompt)
+                self.assertIn("keep the previous summary", prompt)
+                self.assertIn("candidate's OWN summary text unchanged", prompt)
+                self.assertIn('empty "evidence_refs" list', prompt)
         self.assertEqual(
             load_prompt(TASK, "claude.retry", 1), load_prompt(TASK, "local.retry", 1)
         )
