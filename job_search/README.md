@@ -44,14 +44,21 @@ ollama pull nomic-embed-text        # whatever EMBEDDING_MODEL names
 ollama ps                           # confirm PROCESSOR shows 100% GPU
 ```
 
-A command run **outside** Docker points at it directly
-(`OLLAMA_BASE_URL=http://localhost:11434`); a command run **inside** a
-container points at it via `OLLAMA_BASE_URL=http://host.docker.internal:11434`
-(`docker compose run -e OLLAMA_BASE_URL=http://host.docker.internal:11434 …`) —
-the plain hostname `ollama` that `.env` normally resolves only exists inside
-the compose network. Stop the Docker `ollama` service first
-(`docker compose stop ollama`) — both would otherwise fight over port 11434 on
-the host.
+A native Ollama owns host port **11434**; the Docker `ollama` service is
+published on host port **11435** (`"11435:11434"` in `docker-compose.yml`), so
+both can run side by side. Inside the compose network the Docker service is
+still `http://ollama:11434`, and that is the stack default
+(`OLLAMA_BASE_URL=http://ollama:11434` in `.env`) — there is no need to
+`docker compose stop ollama` any more.
+
+| Where the command runs | Docker Ollama | Native Ollama |
+|---|---|---|
+| Outside Docker (host) | `OLLAMA_BASE_URL=http://localhost:11435` | `OLLAMA_BASE_URL=http://localhost:11434` |
+| Inside a container | `OLLAMA_BASE_URL=http://ollama:11434` | `OLLAMA_BASE_URL=http://host.docker.internal:11434` (`docker compose run -e OLLAMA_BASE_URL=… …`) |
+
+After changing `OLLAMA_BASE_URL` in `.env`, recreate the containers
+(`docker compose up -d --force-recreate ollama api`): `docker compose restart`
+does not re-read `env_file`.
 
 ### Two Homebrews, one silent trap
 
@@ -512,11 +519,19 @@ every generated line must trace to a bullet in your CV, and anything that
 doesn't is shown to you for an explicit decision. Design:
 [docs/superpowers/specs/2026-10-01-step17-tailoring-design.md](docs/superpowers/specs/2026-10-01-step17-tailoring-design.md).
 
-- **UI:** the *Tailored CV Review* page — pick a job, click Tailor, then
-  Link or Reject each line under "Needs your decision".
+- **UI:** the *Tailored CV Review* page — pick a job, choose **Run the Tailor
+  on** (Claude, Ollama on this Mac, or the Docker Ollama service; each shows
+  whether it is available right now), click Tailor, then Link or Reject each
+  line under "Needs your decision". **Cancel run** stops a running run at
+  once: a Claude call already in flight finishes in the background and its
+  result is discarded; for a local model the connection is closed, which
+  stops it generating within a few seconds. The fact checker always runs on
+  Claude, whatever the Tailor backend.
 - **CLI:** `docker compose run --rm pipeline tailor-cv --user-id <id>
-  --job-group-id <id>` (on demand; deliberately not a dashboard stage).
-- **API:** `GET /tailoring/candidates`, `POST /tailoring/runs`,
+  --job-group-id <id> [--backend claude|native|docker]` (on demand;
+  deliberately not a dashboard stage).
+- **API:** `GET /tailoring/candidates`, `GET /tailoring/backends`,
+  `POST /tailoring/runs` (optional `backend`), `POST /tailoring/runs/{id}/cancel`,
   `GET /tailoring/runs/{id}`, `GET /tailoring/jobs/{job_group_id}/latest-run`,
   `POST /tailoring/orphans/{id}/decision`.
 
@@ -548,11 +563,12 @@ default. Rough estimate, not a quote: about one cent for the critic and a
 couple of cents for the Tailor per attempt, up to 3 attempts, so roughly
 $0.03-0.10 per run.
 
-To run the Tailor locally instead, set the `cv_tailoring` entry in
-`config/llm_tasks.yml` to `provider: ollama`, `model: llama3.1:8b`,
-`prompt_family: local` (`prompts/cv_tailoring/local.v1.md` exists). A
-CPU-only Docker Ollama takes 20+ minutes per attempt; native Ollama is about
-3x faster.
+To run the Tailor locally, pick **Ollama on this Mac** or **Docker Ollama**
+in the selector (or `--backend native|docker`); the local model and prompt
+come from the `cv_tailoring` entry's `local_model` / `local_prompt_family`
+in `config/llm_tasks.yml` (`prompts/cv_tailoring/local.v1.md`). A CPU-only
+Docker Ollama takes 20+ minutes per attempt; native Ollama is about 3x
+faster. The backend used is stored on the run.
 
 The `fabrication_critic` task **must** stay on `anthropic`: the critic
 refuses to run otherwise, and a test asserts it.

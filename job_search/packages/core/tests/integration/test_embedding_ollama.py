@@ -6,7 +6,9 @@ import httpx
 
 from core.embedding.ollama import embed_text
 
-_OLLAMA_BASE_URL = "http://localhost:11434"
+# The Docker ollama service is published on host port 11435 (a native
+# Ollama owns 11434).
+_OLLAMA_BASE_URL = "http://localhost:11435"
 _MODEL = "nomic-embed-text"
 
 

@@ -112,10 +112,11 @@ environment first. Commands below assume `dbt` is on your `PATH`.
   Category and seniority classification runs after survivorship. Run
   from the host (not inside the `pipeline` container), `OLLAMA_BASE_URL`
   needs the `localhost` override — `.env`'s `http://ollama:11434` is the
-  Docker-internal hostname and won't resolve here:
+  Docker-internal hostname and won't resolve here (the Docker Ollama service
+  is published on host port 11435; a native Ollama is on 11434):
 
   ```bash
-  OLLAMA_BASE_URL=http://localhost:11434 \
+  OLLAMA_BASE_URL=http://localhost:11435 \
     python3.11 -m apps.pipeline.app.cli classify-jobs
   dbt build --select dim_job
   ```

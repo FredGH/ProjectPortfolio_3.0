@@ -15,7 +15,9 @@ from core.llm.types import LLMResponse
 from core.settings import get_settings
 
 _OWNER_DSN = "postgresql+psycopg://job_search_owner:change-me@localhost:5432/job_search"
-_OLLAMA_BASE_URL = "http://localhost:11434"
+# The Docker ollama service is published on host port 11435 (a native
+# Ollama owns 11434).
+_OLLAMA_BASE_URL = "http://localhost:11435"
 _EMBEDDING_MODEL = "nomic-embed-text"
 _settings = get_settings()
 
