@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import tempfile
@@ -13,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import httpx
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
 from tests.tailoring_fixtures import (
@@ -23,21 +25,62 @@ from tests.tailoring_fixtures import (
 
 from core.cv.store import write_truth_base
 from core.llm.types import LLMResponse
+from core.tailoring import loop as loop_mod
 from core.tailoring.checks import Problem
 from core.tailoring.loop import (
     CriticUnavailableError,
     NoCvError,
     NoTargetTitleError,
+    UnknownBackendError,
     UnknownJobError,
     _orphan_drafts,
-    execute_tailoring,
-    run_tailoring,
     start_tailoring,
 )
-from core.tailoring.store import cancel_run, finish_run, read_run
+from core.tailoring.store import cancel_run, create_run, finish_run, read_run
 
 _JOB = "zzfixture-tlr-loop-1"
 _NO_TITLE_JOB = "zzfixture-tlr-loop-2"
+
+_RELEASE = threading.Event()
+"""Set in `addCleanup` so a deliberately blocked fake call ends with its test."""
+
+
+@contextlib.contextmanager
+def _injected_ollama(adapters: dict):
+    """Make the loop's per-run Ollama adapter be the test's fake one.
+
+    A local backend builds its own adapter around a dedicated client; tests
+    that inject a fake `ollama` adapter swap that construction out. (The
+    backend tests in `TestTailoringBackends` do not use this: they run the
+    real adapter over a mock transport.)
+
+    Args:
+        adapters: The adapters the test passes to the loop.
+
+    Yields:
+        None, while the patches are active.
+    """
+    fake = adapters.get("ollama")
+    real = loop_mod.OllamaAdapter
+    with (
+        mock.patch.object(loop_mod, "_new_ollama_client", lambda: httpx.Client()),
+        mock.patch.object(
+            loop_mod,
+            "OllamaAdapter",
+            lambda **kw: fake if fake is not None else real(**kw),
+        ),
+    ):
+        yield
+
+
+def execute_tailoring(*args, adapters, **kwargs):
+    with _injected_ollama(adapters):
+        return loop_mod.execute_tailoring(*args, adapters=adapters, **kwargs)
+
+
+def run_tailoring(*args, adapters, **kwargs):
+    with _injected_ollama(adapters):
+        return loop_mod.run_tailoring(*args, adapters=adapters, **kwargs)
 
 
 class _Tailor:
@@ -93,13 +136,17 @@ class _Critic:
         )
 
 
-class TestTailoringLoop(unittest.TestCase):
+class _LoopFixtures(unittest.TestCase):
+    """Shared fixtures: a user, a CV, a job and fake LLM plumbing."""
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.owner = live_owner_engine()
         cls.app_engine = live_app_engine()
 
     def setUp(self) -> None:
+        _RELEASE.clear()
+        self.addCleanup(_RELEASE.set)
         config_dir = tempfile.TemporaryDirectory()
         self.addCleanup(config_dir.cleanup)
         self.config_path = write_pinned_task_config(config_dir.name)
@@ -235,6 +282,8 @@ class TestTailoringLoop(unittest.TestCase):
             **{"config_path": self.config_path, **kwargs},
         )
 
+
+class TestTailoringLoop(_LoopFixtures):
     # --- happy path ------------------------------------------------------
 
     def test_a_clean_first_attempt_is_approved(self) -> None:
@@ -583,7 +632,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_a_failure_before_any_tailor_call_records_zero_attempts(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         with self.owner.begin() as conn:
             conn.execute(
                 text(
@@ -635,7 +686,9 @@ class TestTailoringLoop(unittest.TestCase):
         # late finish is refused, nothing is overwritten or duplicated, and
         # the background task does not crash.
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         bad = self._clean_bullets() + [
             {"text": "Led a team of 12", "evidence_refs": []}
         ]
@@ -697,7 +750,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_progress_is_visible_during_each_tailor_and_critic_call(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         bad = self._clean_bullets() + [
             {"text": "Led a team of 12", "evidence_refs": []}
         ]
@@ -733,7 +788,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_the_last_progress_before_finishing_is_saving(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         seen: list = []
         adapters = self._recording(run_id, seen, [self._reply(self._clean_bullets())])
         execute_tailoring(
@@ -750,7 +807,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_a_surfaced_orphan_is_recorded_in_the_history(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         bad = self._clean_bullets() + [
             {"text": "Led a team of 12", "evidence_refs": []}
         ]
@@ -776,7 +835,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_an_unusable_reply_is_recorded_in_the_history(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         seen: list = []
         adapters = self._recording(
             run_id, seen, ["not json", self._reply(self._clean_bullets())]
@@ -799,7 +860,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_the_late_critic_names_the_attempt_it_is_judging(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         # Attempt 1 has a code problem (critic skipped); attempts 2 and 3
         # are unusable, so attempt 1 is judged after the loop.
         bad = [
@@ -866,7 +929,9 @@ class TestTailoringLoop(unittest.TestCase):
         self,
     ) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         tailor = _Tailor([self._reply(self._clean_bullets())])
         outcome = execute_tailoring(
             self.app_engine,
@@ -889,18 +954,30 @@ class TestTailoringLoop(unittest.TestCase):
     def test_a_user_with_no_cv_cannot_start(self) -> None:
         # Review Focus 4.
         with self.assertRaises(NoCvError):
-            start_tailoring(self.app_engine, self.user_id, _JOB)
+            start_tailoring(
+                self.app_engine, self.user_id, _JOB, config_path=self.config_path
+            )
 
     def test_an_unknown_job_cannot_start(self) -> None:
         self._store_cv()
         with self.assertRaises(UnknownJobError):
-            start_tailoring(self.app_engine, self.user_id, "zzfixture-tlr-loop-nope")
+            start_tailoring(
+                self.app_engine,
+                self.user_id,
+                "zzfixture-tlr-loop-nope",
+                config_path=self.config_path,
+            )
 
     def test_a_job_with_no_title_cannot_start(self) -> None:
         # Review Focus 3.
         self._store_cv()
         with self.assertRaises(NoTargetTitleError):
-            start_tailoring(self.app_engine, self.user_id, _NO_TITLE_JOB)
+            start_tailoring(
+                self.app_engine,
+                self.user_id,
+                _NO_TITLE_JOB,
+                config_path=self.config_path,
+            )
 
     def test_a_blank_title_cannot_start(self) -> None:
         self._store_cv()
@@ -913,11 +990,15 @@ class TestTailoringLoop(unittest.TestCase):
                 {"j": _JOB},
             )
         with self.assertRaises(NoTargetTitleError):
-            start_tailoring(self.app_engine, self.user_id, _JOB)
+            start_tailoring(
+                self.app_engine, self.user_id, _JOB, config_path=self.config_path
+            )
 
     def test_start_creates_a_generating_run_and_execute_finishes_it(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         self.assertEqual(
             read_run(self.app_engine, self.user_id, run_id).status, "generating"
         )
@@ -938,7 +1019,9 @@ class TestTailoringLoop(unittest.TestCase):
 
     def test_the_run_uses_the_truth_base_version_it_started_with(self) -> None:
         self._store_cv()
-        run_id = start_tailoring(self.app_engine, self.user_id, _JOB)
+        run_id = start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
         edited = make_truth_base()
         edited.experience[0].company = "Changed After Start"
         write_truth_base(self.app_engine, self.user_id, "zzfixture markdown", edited)
@@ -956,50 +1039,55 @@ class TestTailoringLoop(unittest.TestCase):
         self.assertEqual(run.document.experience[0].company, "Acme Bank")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class _CancellingTailor(_Tailor):
-    """Cancels its own run from inside the call, then answers normally."""
+    """Cancels its own run from inside its `cancel_on`-th call."""
 
-    def __init__(self, replies, cancel) -> None:
+    def __init__(self, replies, cancel, cancel_on: int = 1) -> None:
         super().__init__(replies)
         self._cancel = cancel
+        self._cancel_on = cancel_on
 
     def complete(self, **kwargs: object) -> LLMResponse:
-        self._cancel()
+        if len(self.prompts) + 1 == self._cancel_on:
+            self._cancel()
         return super().complete(**kwargs)
 
 
 class _BlockingTailor(_Tailor):
-    """Blocks for a long time, as a slow local model would."""
+    """Blocks until the test ends, as a slow local model would."""
 
     def complete(self, **kwargs: object) -> LLMResponse:
         self.prompts.append(kwargs["prompt"])
-        threading.Event().wait(30)
+        _RELEASE.wait(30)
         return super().complete(**kwargs)
 
 
 class _CancellingCritic(_Critic):
-    """Cancels the run from inside the critic call."""
+    """Cancels the run from inside the critic call, then blocks or answers."""
 
-    def __init__(self, cancel) -> None:
+    def __init__(self, cancel, *, block: bool = True) -> None:
         super().__init__()
         self._cancel = cancel
+        self._block = block
 
     def complete(self, **kwargs: object) -> LLMResponse:
         self._cancel()
-        threading.Event().wait(30)
+        if self._block:
+            _RELEASE.wait(30)
         return super().complete(**kwargs)
 
 
-class TestTailoringCancel(TestTailoringLoop):
-    """Cancelling a run (inherits the fixtures, not the tests)."""
+class TestTailoringCancel(_LoopFixtures):
+    """Cancelling a run."""
 
     def _start(self) -> uuid.UUID:
         self._store_cv()
-        return start_tailoring(self.app_engine, self.user_id, _JOB)
+        return start_tailoring(
+            self.app_engine, self.user_id, _JOB, config_path=self.config_path
+        )
+
+    def _cancel(self, run_id) -> None:
+        cancel_run(self.app_engine, self.user_id, run_id)
 
     def _execute(self, run_id, tailor, critic):
         return execute_tailoring(
@@ -1016,12 +1104,17 @@ class TestTailoringCancel(TestTailoringLoop):
         self.assertEqual(run.orphans, [])
         self.assertIsNone(run.document)
         self.assertIsNone(run.progress)
+        with self.owner.connect() as conn:
+            message = conn.execute(
+                text("SELECT error_message FROM tailoring.tailored_cv WHERE id = :r"),
+                {"r": run_id},
+            ).scalar_one()
+        self.assertIsNone(message)
 
     def test_cancel_during_the_tailor_call_stops_before_the_critic(self) -> None:
         run_id = self._start()
         tailor = _CancellingTailor(
-            [self._reply(self._clean_bullets())],
-            lambda: cancel_run(self.app_engine, self.user_id, run_id),
+            [self._reply(self._clean_bullets())], lambda: self._cancel(run_id)
         )
         critic = _Critic()
         outcome = self._execute(run_id, tailor, critic)
@@ -1031,22 +1124,22 @@ class TestTailoringCancel(TestTailoringLoop):
 
     def test_cancel_while_the_tailor_blocks_returns_quickly(self) -> None:
         run_id = self._start()
-        threading.Timer(
-            1.0, cancel_run, (self.app_engine, self.user_id, run_id)
-        ).start()
+        timer = threading.Timer(1.0, self._cancel, (run_id,))
+        self.addCleanup(timer.cancel)
+        timer.start()
         critic = _Critic()
         started = time.monotonic()
         outcome = self._execute(
             run_id, _BlockingTailor([self._reply(self._clean_bullets())]), critic
         )
         self.assertLess(time.monotonic() - started, 10)
-        self.assertEqual(outcome.status, "cancelled")
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
         self.assertEqual(critic.calls, 0)
         self._assert_nothing_persisted(run_id)
 
     def test_cancel_before_the_run_executes_makes_no_tailor_call(self) -> None:
         run_id = self._start()
-        cancel_run(self.app_engine, self.user_id, run_id)
+        self._cancel(run_id)
         tailor = _Tailor([self._reply(self._clean_bullets())])
         critic = _Critic()
         outcome = self._execute(run_id, tailor, critic)
@@ -1057,19 +1150,199 @@ class TestTailoringCancel(TestTailoringLoop):
 
     def test_cancel_during_the_critic_call_ends_cancelled(self) -> None:
         run_id = self._start()
-        critic = _CancellingCritic(
-            lambda: cancel_run(self.app_engine, self.user_id, run_id)
-        )
+        critic = _CancellingCritic(lambda: self._cancel(run_id))
         started = time.monotonic()
         outcome = self._execute(
             run_id, _Tailor([self._reply(self._clean_bullets())]), critic
         )
         self.assertLess(time.monotonic() - started, 10)
-        self.assertEqual(outcome.status, "cancelled")
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
+        self._assert_nothing_persisted(run_id)
+
+    def test_cancel_on_a_non_final_attempt_with_problems_stops_after_one_prompt(
+        self,
+    ) -> None:
+        run_id = self._start()
+        bad = [{"text": "Invented", "evidence_refs": ["nope"]}]
+        tailor = _CancellingTailor(
+            [self._reply(bad), self._reply(self._clean_bullets())],
+            lambda: self._cancel(run_id),
+        )
+        critic = _Critic()
+        outcome = self._execute(run_id, tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
+        self.assertEqual(len(tailor.prompts), 1)
+        self.assertEqual(critic.calls, 0)
+        self._assert_nothing_persisted(run_id)
+
+    def test_cancel_before_the_late_fallback_critic_makes_no_critic_call(
+        self,
+    ) -> None:
+        run_id = self._start()
+        bad = [{"text": "Invented", "evidence_refs": ["nope"]}]
+        # Attempt 1 has a code problem (critic skipped); attempts 2 and 3 are
+        # unusable, so the loop falls back to judging attempt 1 late. The
+        # cancel lands in the third Tailor call, just before that judgement.
+        tailor = _CancellingTailor(
+            [self._reply(bad), "not json"], lambda: self._cancel(run_id), cancel_on=3
+        )
+        critic = _Critic()
+        outcome = self._execute(run_id, tailor, critic)
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 3))
+        self.assertEqual(len(tailor.prompts), 3)
+        self.assertEqual(critic.calls, 0)
+        self._assert_nothing_persisted(run_id)
+
+    def test_cancel_before_saving_persists_nothing(self) -> None:
+        run_id = self._start()
+        critic = _CancellingCritic(lambda: self._cancel(run_id), block=False)
+        outcome = self._execute(
+            run_id, _Tailor([self._reply(self._clean_bullets())]), critic
+        )
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
+        self.assertEqual(critic.calls, 1)
         self._assert_nothing_persisted(run_id)
 
 
-# The subclass reuses the fixtures only: un-register the inherited tests so
-# they are not run a second time (unittest ignores non-callable attributes).
-for _name in [n for n in dir(TestTailoringLoop) if n.startswith("test_")]:
-    setattr(TestTailoringCancel, _name, None)
+class TestTailoringBackends(_LoopFixtures):
+    """The Tailor backend selector, through a mock Ollama transport."""
+
+    def _start(self, backend: str | None = None) -> uuid.UUID:
+        self._store_cv()
+        return start_tailoring(
+            self.app_engine,
+            self.user_id,
+            _JOB,
+            backend=backend,
+            config_path=self.config_path,
+        )
+
+    def _mock_client(self, handler) -> httpx.Client:
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        self.addCleanup(client.close)
+        return client
+
+    def _execute(self, run_id, client: httpx.Client, critic=None):
+        with mock.patch.object(loop_mod, "_new_ollama_client", lambda: client):
+            return loop_mod.execute_tailoring(
+                self.app_engine,
+                self.user_id,
+                run_id,
+                adapters={"anthropic": critic or _Critic()},
+                config_path=self.config_path,
+            )
+
+    def _run_count(self) -> int:
+        with self.owner.connect() as conn:
+            return conn.execute(
+                text("SELECT count(*) FROM tailoring.tailored_cv WHERE user_id = :u"),
+                {"u": self.user_id},
+            ).scalar_one()
+
+    def test_the_chosen_backend_is_stored_and_the_default_is_resolved(self) -> None:
+        run_id = self._start("native")
+        self.assertEqual(
+            read_run(self.app_engine, self.user_id, run_id).tailor_backend, "native"
+        )
+        # The pinned config routes the Tailor to ollama, so the default is
+        # the Docker service.
+        default_run = self._start()
+        self.assertEqual(
+            read_run(self.app_engine, self.user_id, default_run).tailor_backend,
+            "docker",
+        )
+
+    def test_an_unknown_backend_is_refused_before_any_run_or_call(self) -> None:
+        self._store_cv()
+        with self.assertRaises(UnknownBackendError):
+            start_tailoring(
+                self.app_engine,
+                self.user_id,
+                _JOB,
+                backend="bogus",
+                config_path=self.config_path,
+            )
+        self.assertEqual(self._run_count(), 0)
+
+    def test_a_legacy_run_without_a_backend_still_runs(self) -> None:
+        self._store_cv()
+        run_id = create_run(
+            self.app_engine,
+            self.user_id,
+            job_group_id=_JOB,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        client = self._mock_client(
+            lambda request: httpx.Response(
+                200, json={"response": self._reply(self._clean_bullets())}
+            )
+        )
+        outcome = self._execute(run_id, client)
+        self.assertEqual(outcome.status, "approved")
+        self.assertIsNone(
+            read_run(self.app_engine, self.user_id, run_id).tailor_backend
+        )
+
+    def test_a_local_backend_run_uses_the_local_prompt_model_and_url(self) -> None:
+        run_id = self._start("docker")
+        seen: list[tuple[str, dict]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append((str(request.url), json.loads(request.content)))
+            return httpx.Response(
+                200, json={"response": self._reply(self._clean_bullets())}
+            )
+
+        client = self._mock_client(handler)
+        outcome = self._execute(run_id, client)
+        self.assertEqual(outcome.status, "approved")
+        url, body = seen[0]
+        self.assertEqual(url, "http://ollama:11434/api/generate")
+        self.assertEqual(body["model"], "llama3.1:8b")
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertEqual(run.tailor_prompt_version, "local.v1")
+        self.assertEqual(run.tailor_model, "llama3.1:8b")
+        self.assertTrue(client.is_closed)
+
+    def test_the_native_backend_calls_the_host_url(self) -> None:
+        run_id = self._start("native")
+        urls: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            urls.append(str(request.url))
+            return httpx.Response(
+                200, json={"response": self._reply(self._clean_bullets())}
+            )
+
+        self._execute(run_id, self._mock_client(handler))
+        self.assertEqual(urls, ["http://host.docker.internal:11434/api/generate"])
+
+    def test_cancel_closes_the_local_connection_and_returns_quickly(self) -> None:
+        run_id = self._start("docker")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            _RELEASE.wait(30)
+            return httpx.Response(200, json={"response": "{}"})
+
+        client = self._mock_client(handler)
+        timer = threading.Timer(
+            1.0, cancel_run, (self.app_engine, self.user_id, run_id)
+        )
+        self.addCleanup(timer.cancel)
+        timer.start()
+        critic = _Critic()
+        started = time.monotonic()
+        outcome = self._execute(run_id, client, critic)
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertEqual((outcome.status, outcome.attempts), ("cancelled", 1))
+        self.assertTrue(client.is_closed)
+        self.assertEqual(critic.calls, 0)
+        run = read_run(self.app_engine, self.user_id, run_id)
+        self.assertEqual(run.status, "cancelled")
+        self.assertIsNone(run.document)
+        self.assertEqual(run.attempts, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

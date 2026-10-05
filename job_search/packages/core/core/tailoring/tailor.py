@@ -15,6 +15,7 @@ from core.llm import gateway
 from core.llm.prompts import load_prompt
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
+from core.tailoring.backends import Backend
 from core.tailoring.schema import (
     JobContext,
     JobSkill,
@@ -110,6 +111,7 @@ def run_tailor(
     *,
     adapters: dict[str, LLMAdapter],
     config_path: Path | None = None,
+    backend: Backend | None = None,
 ) -> TailorResult:
     """Ask the Tailor for per-bullet instructions.
 
@@ -119,6 +121,8 @@ def run_tailor(
         feedback: Problems from the previous attempt, if any.
         adapters: LLM adapters keyed by provider.
         config_path: Task-config override (tests).
+        backend: Where to run; None uses the `cv_tailoring` config's own
+            provider, model and prompt family.
 
     Returns:
         The parsed result with the model and prompt version used.
@@ -126,9 +130,14 @@ def run_tailor(
     Raises:
         TailorOutputError: If the reply was truncated or unusable.
     """
-    config = load_task_config(TASK, config_path)
-    template = load_prompt(TASK, config.prompt_family, PROMPT_VERSION_NUMBER)
-    prompt_version = f"{config.prompt_family}.v{PROMPT_VERSION_NUMBER}"
+    if backend is None:
+        family = load_task_config(TASK, config_path).prompt_family
+        overrides: dict[str, str] = {}
+    else:
+        family = backend.prompt_family
+        overrides = {"provider": backend.provider, "model": backend.model}
+    template = load_prompt(TASK, family, PROMPT_VERSION_NUMBER)
+    prompt_version = f"{family}.v{PROMPT_VERSION_NUMBER}"
     prompt = template.format(
         cv_text=render_truth_base(truth_base),
         job_title=job.title_for_display or "",
@@ -143,6 +152,7 @@ def run_tailor(
         adapters=adapters,
         config_path=config_path,
         max_tokens=MAX_TOKENS,
+        **overrides,
     )
     if response.truncated:
         raise TailorOutputError("the Tailor's reply hit the output cap (truncated)")

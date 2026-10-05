@@ -122,6 +122,32 @@ class TestRunTailor(unittest.TestCase):
         self.assertEqual(result.prompt_version, "local.v1")
         self.assertEqual(result.model, "llama3.1:8b")
 
+    def test_a_backend_overrides_provider_model_and_prompt_family(self) -> None:
+        from core.tailoring.backends import Backend
+
+        # The pinned config says ollama/local; the backend says Claude.
+        backend = Backend(
+            "claude", "Claude", "anthropic", "claude-test", "claude", None
+        )
+        seen: list[str] = []
+
+        class _Claude(_ScriptedAdapter):
+            def complete(self, *, model: str, prompt: str, **kw: object):
+                seen.append(model)
+                return super().complete(model=model, prompt=prompt, **kw)
+
+        result = run_tailor(
+            self.truth_base,
+            _job(),
+            [],
+            adapters={"anthropic": _Claude([self.reply])},
+            config_path=self.config_path,
+            backend=backend,
+        )
+        self.assertEqual(seen, ["claude-test"])
+        self.assertEqual(result.prompt_version, "claude.v1")
+        self.assertEqual(result.model, "claude-test")
+
     def test_the_prompt_carries_the_cv_the_job_and_the_feedback(self) -> None:
         adapter = _ScriptedAdapter([self.reply])
         run_tailor(

@@ -17,13 +17,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 from sqlalchemy import Engine
 
 from core.cv.schema import CVTruthBase
 from core.cv.store import read_truth_base, read_truth_base_version
+from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.task_config import load_task_config
 from core.llm.types import LLMAdapter
 from core.tailoring.assemble import assemble
+from core.tailoring.backends import Backend, default_backend_id, resolve_backends
 from core.tailoring.cancel import RunCancelled, run_cancellable
 from core.tailoring.checks import (
     STRUCTURAL_CODES,
@@ -46,6 +49,7 @@ from core.tailoring.schema import (
 from core.tailoring.store import (
     OrphanDraft,
     RunAlreadyFinishedError,
+    StoredRun,
     create_run,
     finish_run,
     is_cancelled,
@@ -76,6 +80,10 @@ class UnknownJobError(TailoringError):
 
 class NoTargetTitleError(TailoringError):
     """The job has no `title_for_display`, so there is nothing to mirror."""
+
+
+class UnknownBackendError(TailoringError):
+    """The requested Tailor backend does not exist."""
 
 
 class CriticUnavailableError(TailoringError):
@@ -120,8 +128,24 @@ class TailoringOutcome:
     attempts: int
 
 
+def _new_ollama_client() -> httpx.Client:
+    """Build the dedicated HTTP client for one run's local-model calls.
+
+    A run owns its client so cancelling can close it (which makes the
+    Ollama server stop generating) without disturbing any other request.
+
+    Returns:
+        A client with the long timeout CPU inference needs.
+    """
+    return httpx.Client(timeout=2000.0)
+
+
 def start_tailoring(
-    app_engine: Engine, user_id: uuid.UUID, job_group_id: str
+    app_engine: Engine,
+    user_id: uuid.UUID,
+    job_group_id: str,
+    backend: str | None = None,
+    config_path: Path | None = None,
 ) -> uuid.UUID:
     """Validate preconditions and create a `generating` run.
 
@@ -129,15 +153,22 @@ def start_tailoring(
         app_engine: The app-role engine.
         user_id: Whose CV to tailor.
         job_group_id: The target job.
+        backend: The Tailor backend id (`claude`, `native`, `docker`);
+            None picks the default for the live config.
+        config_path: Task-config override (tests).
 
     Returns:
         The new run's id.
 
     Raises:
+        UnknownBackendError: If `backend` is not a known backend id.
         NoCvError: If the user has no CV truth base.
         UnknownJobError: If the job does not exist.
         NoTargetTitleError: If the job's `title_for_display` is NULL/blank.
     """
+    backend_id = backend or default_backend_id(config_path)
+    if backend_id not in resolve_backends(config_path):
+        raise UnknownBackendError(f"unknown Tailor backend {backend_id!r}")
     stored = read_truth_base(app_engine, user_id)
     if stored is None:
         raise NoCvError("this user has no CV truth base yet")
@@ -155,6 +186,7 @@ def start_tailoring(
         job_group_id=job_group_id,
         truth_base_version=stored.version,
         target_title=job.title_for_display.strip(),
+        tailor_backend=backend_id,
     )
 
 
@@ -511,6 +543,67 @@ def _execute(
     if run.status != "generating":
         # Already finished (a duplicate or late task): never re-tailor.
         return TailoringOutcome(run_id=run_id, status=run.status, attempts=run.attempts)
+    backends = resolve_backends(config_path)
+    backend = backends.get(run.tailor_backend or default_backend_id(config_path))
+    if backend is None:
+        raise RuntimeError(f"unknown Tailor backend {run.tailor_backend!r}")
+    client: httpx.Client | None = None
+    try:
+        if backend.provider == "ollama":
+            client = _new_ollama_client()
+            adapters = {
+                **adapters,
+                "ollama": OllamaAdapter(base_url=backend.base_url, client=client),
+            }
+        return _run_loop(
+            app_engine,
+            user_id,
+            run_id,
+            run,
+            backend=backend,
+            adapters=adapters,
+            config_path=config_path,
+            max_retries=max_retries,
+            progress=progress,
+            abort=client.close if client is not None else None,
+        )
+    finally:
+        if client is not None:
+            client.close()
+
+
+def _run_loop(
+    app_engine: Engine,
+    user_id: uuid.UUID,
+    run_id: uuid.UUID,
+    run: StoredRun,
+    *,
+    backend: Backend,
+    adapters: dict[str, LLMAdapter],
+    config_path: Path | None,
+    max_retries: int,
+    progress: list[int],
+    abort: Callable[[], None] | None,
+) -> TailoringOutcome:
+    """Tailor, check and judge until the run can be saved.
+
+    Args:
+        app_engine: The app-role engine.
+        user_id: The run's owner.
+        run_id: The run.
+        run: The run, still `generating`.
+        backend: Where the Tailor runs.
+        adapters: LLM adapters keyed by provider (with this run's dedicated
+            Ollama adapter when the backend is local).
+        config_path: Task-config override (tests).
+        max_retries: Retries after the first attempt.
+        progress: One-element list updated with the Tailor attempts started.
+        abort: Cuts a Tailor call short on cancel (closes the local
+            model's connection); None for Claude.
+
+    Returns:
+        The outcome. Raises on any failure.
+    """
     stored = read_truth_base_version(app_engine, user_id, run.truth_base_version)
     if stored is None:
         raise RuntimeError(f"CV version {run.truth_base_version} no longer exists")
@@ -550,9 +643,10 @@ def _execute(
                     feedback,
                     adapters=adapters,
                     config_path=config_path,
+                    backend=backend,
                 ),
                 should_stop=stop,
-                abort=None,
+                abort=abort,
             )
         except TailorOutputError as exc:
             parse_error = exc
@@ -827,6 +921,7 @@ def run_tailoring(
     adapters: dict[str, LLMAdapter],
     config_path: Path | None = None,
     max_retries: int = MAX_RETRIES,
+    backend: str | None = None,
 ) -> TailoringOutcome:
     """Start and execute a tailoring run in one call (CLI, tests).
 
@@ -837,6 +932,7 @@ def run_tailoring(
         adapters: LLM adapters keyed by provider.
         config_path: Task-config override (tests).
         max_retries: Retries after the first attempt.
+        backend: The Tailor backend id; None picks the default.
 
     Returns:
         The outcome.
@@ -847,7 +943,7 @@ def run_tailoring(
             (raised before any run is created or any LLM is called).
     """
     ensure_critic_available(adapters, config_path)
-    run_id = start_tailoring(app_engine, user_id, job_group_id)
+    run_id = start_tailoring(app_engine, user_id, job_group_id, backend, config_path)
     return execute_tailoring(
         app_engine,
         user_id,
