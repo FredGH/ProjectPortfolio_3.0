@@ -84,8 +84,16 @@ class AnthropicAdapter:
             messages=[{"role": "user", "content": prompt}],
             **kwargs,
         )
+        # A reply can open with a thinking block (no text) before the text
+        # block, so join the blocks that carry text rather than reading
+        # `content[0]`, which is `None` for a thinking block.
+        text = "".join(
+            block.text
+            for block in message.content
+            if getattr(block, "text", None) is not None
+        )
         return LLMResponse(
-            text=message.content[0].text,
+            text=text,
             provider="anthropic",
             model=model,
             input_tokens=message.usage.input_tokens,

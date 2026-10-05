@@ -169,6 +169,32 @@ class TestAnthropicAdapter(unittest.TestCase):
         )
         self.assertFalse(result.truncated)
 
+    def test_a_leading_thinking_block_does_not_hide_the_text(self) -> None:
+        """Claude can return an empty thinking block before the text block;
+        the reply text must come from the text block, not content[0]."""
+        message = self._message()
+        message.content = [
+            mock.Mock(type="thinking", text=None),
+            mock.Mock(type="text", text="the answer"),
+        ]
+        client = mock.Mock()
+        client.messages.create.return_value = message
+        result = AnthropicAdapter(api_key="k", client=client).complete(
+            model="claude-sonnet-5", prompt="hi"
+        )
+        self.assertEqual(result.text, "the answer")
+
+    def test_a_reply_with_no_text_block_is_an_empty_string_not_none(self) -> None:
+        """Downstream code calls .strip() on the reply; None would crash it."""
+        message = self._message()
+        message.content = [mock.Mock(type="thinking", text=None)]
+        client = mock.Mock()
+        client.messages.create.return_value = message
+        result = AnthropicAdapter(api_key="k", client=client).complete(
+            model="claude-sonnet-5", prompt="hi"
+        )
+        self.assertEqual(result.text, "")
+
     def test_complete_parses_anthropic_response_shape(self) -> None:
         """Verify Anthropic adapter parses response shape correctly."""
         fake_message = mock.Mock()
