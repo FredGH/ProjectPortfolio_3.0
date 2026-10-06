@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 import uuid
+from unittest import mock
 
 import anthropic
 import httpx
@@ -15,9 +17,27 @@ from core.llm.types import LLMResponse
 from core.settings import get_settings
 
 _OWNER_DSN = "postgresql+psycopg://job_search_owner:change-me@localhost:5432/job_search"
-_OLLAMA_BASE_URL = "http://localhost:11434"
+# The Docker ollama service is published on host port 11435 (a native
+# Ollama owns 11434).
+_OLLAMA_BASE_URL = "http://localhost:11435"
 _EMBEDDING_MODEL = "nomic-embed-text"
 _settings = get_settings()
+
+
+def _use_probed_ollama(case: unittest.TestCase) -> None:
+    """Point the code under test at the Ollama URL this module probes.
+
+    `write_job_category` reads `settings.ollama_base_url` (`.env` says the
+    container hostname, unreachable from the host).
+
+    Args:
+        case: The running test; restores the settings on cleanup.
+    """
+    patcher = mock.patch.dict(os.environ, {"OLLAMA_BASE_URL": _OLLAMA_BASE_URL})
+    patcher.start()
+    get_settings.cache_clear()
+    case.addCleanup(get_settings.cache_clear)
+    case.addCleanup(patcher.stop)
 
 
 def _ollama_available() -> bool:
@@ -29,6 +49,10 @@ def _ollama_available() -> bool:
 
 @unittest.skipUnless(_ollama_available(), "Ollama server not reachable")
 @unittest.skipUnless(_settings.anthropic_api_key, "ANTHROPIC_API_KEY not configured")
+@unittest.skipUnless(
+    os.environ.get("RUN_PAID_TESTS") == "1",
+    "builds a real Anthropic adapter (billed calls): set RUN_PAID_TESTS=1",
+)
 class TestWriteJobCategory(unittest.TestCase):
     """Integration test against a real Postgres instance.
 
@@ -40,6 +64,7 @@ class TestWriteJobCategory(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        _use_probed_ollama(self)
         self.engine = build_engine(_OWNER_DSN)
         self.http_client = httpx.Client(timeout=30.0)
         self.suffix = uuid.uuid4().hex
@@ -303,6 +328,7 @@ class TestWriteJobCategoryLlmStagePersistence(unittest.TestCase):
         Returns:
             None.
         """
+        _use_probed_ollama(self)
         self.engine = build_engine(_OWNER_DSN)
         self.http_client = httpx.Client(timeout=30.0)
         self.suffix = uuid.uuid4().hex

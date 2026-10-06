@@ -83,7 +83,9 @@ services:
   ollama:
     image: ollama/ollama
     ports:
-      - "11434:11434"
+      # Host port 11435, so a native Ollama can own 11434; containers still
+      # reach this service as ollama:11434.
+      - "11435:11434"
     volumes:
       - ollama_data:/root/.ollama
 

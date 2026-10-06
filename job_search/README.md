@@ -44,14 +44,21 @@ ollama pull nomic-embed-text        # whatever EMBEDDING_MODEL names
 ollama ps                           # confirm PROCESSOR shows 100% GPU
 ```
 
-A command run **outside** Docker points at it directly
-(`OLLAMA_BASE_URL=http://localhost:11434`); a command run **inside** a
-container points at it via `OLLAMA_BASE_URL=http://host.docker.internal:11434`
-(`docker compose run -e OLLAMA_BASE_URL=http://host.docker.internal:11434 …`) —
-the plain hostname `ollama` that `.env` normally resolves only exists inside
-the compose network. Stop the Docker `ollama` service first
-(`docker compose stop ollama`) — both would otherwise fight over port 11434 on
-the host.
+A native Ollama owns host port **11434**; the Docker `ollama` service is
+published on host port **11435** (`"11435:11434"` in `docker-compose.yml`), so
+both can run side by side. Inside the compose network the Docker service is
+still `http://ollama:11434`, and that is the stack default
+(`OLLAMA_BASE_URL=http://ollama:11434` in `.env`) — there is no need to
+`docker compose stop ollama` any more.
+
+| Where the command runs | Docker Ollama | Native Ollama |
+|---|---|---|
+| Outside Docker (host) | `OLLAMA_BASE_URL=http://localhost:11435` | `OLLAMA_BASE_URL=http://localhost:11434` |
+| Inside a container | `OLLAMA_BASE_URL=http://ollama:11434` | `OLLAMA_BASE_URL=http://host.docker.internal:11434` (`docker compose run -e OLLAMA_BASE_URL=… …`) |
+
+After changing `OLLAMA_BASE_URL` in `.env`, recreate the containers
+(`docker compose up -d --force-recreate ollama api`): `docker compose restart`
+does not re-read `env_file`.
 
 ### Two Homebrews, one silent trap
 
@@ -504,3 +511,89 @@ The config file is baked into the UI image and also bind-mounted in
 `docker compose restart ui` is needed, not a rebuild. Inter and
 JetBrains Mono load from Google Fonts and fall back to system fonts
 offline.
+
+## Tailored CV (Step 17)
+
+Tailors your CV to one of your top-scored jobs with a fabrication guard:
+every generated line must trace to a bullet in your CV, and anything that
+doesn't is shown to you for an explicit decision. Design:
+[docs/superpowers/specs/2026-10-01-step17-tailoring-design.md](docs/superpowers/specs/2026-10-01-step17-tailoring-design.md).
+
+- **UI:** the *Tailored CV Review* page — pick a job, choose **Run the Tailor
+  on** (Claude, Ollama on this Mac, or the Docker Ollama service; each shows
+  whether it is available right now), click Tailor, then Link or Reject each
+  line under "Needs your decision". **Cancel run** stops a running run at
+  once: a Claude call already in flight finishes in the background and its
+  result is discarded; for a local model the connection is closed and the
+  model is unloaded from Ollama (the only way to stop it while it is still
+  reading the prompt), which frees the CPU within a few seconds — the model
+  reloads on the next call. Cancel unloads the model from that Ollama server; other local tasks using the same model reload it (a few seconds). The fact checker always runs on
+  Claude, whatever the Tailor backend.
+- **CLI:** `docker compose run --rm pipeline tailor-cv --user-id <id>
+  --job-group-id <id> [--backend claude|native|docker]` (on demand;
+  deliberately not a dashboard stage).
+- **API:** `GET /tailoring/candidates`, `GET /tailoring/backends`,
+  `POST /tailoring/runs` (optional `backend`), `POST /tailoring/runs/{id}/cancel`,
+  `GET /tailoring/runs/{id}`, `GET /tailoring/jobs/{job_group_id}/latest-run`,
+  `POST /tailoring/orphans/{id}/decision`.
+
+**Requires an Anthropic API key** (`ANTHROPIC_API_KEY`): the critic always
+runs on Claude (and so does the Tailor by default), so without a key tailoring refuses to start (HTTP 503 from
+the API, a clear message and exit 1 from the CLI) before any model is called.
+
+How it works: code assembles the CV from your truth base (companies, titles
+and dates are copied, never generated; the headline is the job's
+`title_for_display`); the `cv_tailoring` model only returns per-bullet
+wording and the bullet ids it draws on; code checks and the
+`fabrication_critic` (always Claude) verify it; the loop retries at most
+twice and keeps the best usable attempt (a clean attempt is never replaced
+by a worse retry, and an unusable final reply does not discard an earlier
+document). Accepting an orphan means linking it to an existing CV bullet — your
+CV is never modified.
+
+Safety details: the critic fails closed (an unanswered, malformed or
+contradictory verdict is treated as unsupported). An orphan decision is
+refused with HTTP 409 if the tailored CV changed since you opened it.
+Keyword coverage counts a job skill as covered only when a traced line (or
+a skill shown from your CV) mentions it — a line awaiting your decision
+never counts — and is recomputed after every Link/Reject. It reports skills
+your CV evidences but the tailored text lacks, and never invents skills
+your CV does not evidence.
+
+The Tailor prompt is v3 (`prompts/cv_tailoring/*.v3.md`; retries use
+`*.retry.v1.md`). v2 added an explicit summary rule (no years of experience,
+domains or numbers unless a cited bullet states them) after a real run
+invented such facts and repeated them on every retry. v3 adds keep-by-id: the
+Tailor outputs `{"keep": "<bullet id>"}` for a bullet it leaves unchanged and
+full text only for reworded or new ones. Retries are patches: the Tailor sees
+its previous output and the problems and returns only the parts that must
+change, which are merged over the previous output; everything still goes
+through the same assemble, check, critic path. A retry that leaves exactly
+the same problems as the one before stops the run early (the persisted attempt
+is still fact-checked), so a stuck Tailor costs 2 attempts, not 3. Stored runs
+keep the version they used.
+
+Cost: both the Tailor and the critic run on Claude (`claude-sonnet-5`) by
+default. Rough estimate, not a quote, measured from the per-run token/cost
+logging: one Tailor attempt was about $0.047 (about 3.3k tokens in, about 4k
+out), and a 3-attempt run $0.15-0.20. Output dominates, and most of it is
+adaptive thinking (about 2.5k of the 4k), which keep-by-id cannot shrink; so
+keep-by-id saves roughly 25% on a first attempt, and the dependable saving is
+the early stop on a non-improving retry. Lowering the thinking effort is the
+next lever and is not built.
+
+To run the Tailor locally, pick **Ollama on this Mac** or **Docker Ollama**
+in the selector (or `--backend native|docker`); the local model and prompt
+come from the `cv_tailoring` entry's `local_model` / `local_prompt_family`
+in `config/llm_tasks.yml` (`prompts/cv_tailoring/local.v3.md`). A CPU-only
+Docker Ollama takes 20+ minutes per attempt; native Ollama is about 3x
+faster. The backend used is stored on the run.
+
+The `fabrication_critic` task **must** stay on `anthropic`: the critic
+refuses to run otherwise, and a test asserts it.
+
+The paid adversarial test (a deliberately exaggerating Tailor against the
+real critic) runs with `RUN_PAID_TESTS=1`.
+
+This step produces approved *content* only. The ATS `.docx` and the designed
+PDF are Steps 18a and 18b.

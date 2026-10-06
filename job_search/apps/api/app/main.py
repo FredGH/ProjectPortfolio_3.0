@@ -13,6 +13,7 @@ from app.routers import (
     pipeline,
     scoring,
     skills,
+    tailoring,
 )
 from fastapi import Depends, FastAPI
 
@@ -27,6 +28,7 @@ app.include_router(skills.router)
 app.include_router(extraction_runs.router)
 app.include_router(scoring.router)
 app.include_router(pipeline.router)
+app.include_router(tailoring.router)
 
 
 @app.get("/health")

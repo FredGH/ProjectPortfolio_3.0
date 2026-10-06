@@ -17,7 +17,9 @@ _CLI_PATH = (
 # Stages deliberately excluded from STAGES' Run-button surface but not
 # from the dependency graph or this completeness check — see this
 # plan's Global Constraints for why each is excluded.
-_EXCLUDED_FROM_RUN_BUTTON = {"ingest", "run-evals"}
+# tailor-cv is on demand per (user, job) and is driven from the Tailored CV
+# Review page, not the dashboard.
+_EXCLUDED_FROM_RUN_BUTTON = {"ingest", "run-evals", "tailor-cv"}
 
 
 def _cli_subcommand_names() -> set[str]:

@@ -134,8 +134,14 @@ in its output. It cannot add content without it showing up as an `orphan`
    Only the first group is ever fed back to the Tailor ("surface these");
    the second is reported and never requested, so the loop cannot push the
    model toward claiming skills the user lacks.
-5. Content-level ATS rules only (no emoji or decorative bullet characters,
-   plain text). Layout rules belong to the template in 18a.
+5. Content-level ATS hygiene is enforced **mechanically at assembly**
+   (`assemble.clean_text`: leading bullet glyphs, markdown emphasis
+   markers, decorative symbols and emoji — including their invisible
+   joiners/variation selectors — are stripped from generated text, while
+   meaningful symbols such as °, ©, ® and ™ are kept), not checked after
+   the fact —
+   there is nothing to retry because the fix is deterministic. Layout rules
+   belong to the template in 18a.
 
 ## The critic (`critic.py`)
 
@@ -230,6 +236,7 @@ the UI shows the latest per job.
 Rendering to `.docx` or PDF (18a, 18b); cover letters (Step 19); promoting
 accepted bullets into the truth base (rejected as a design option, see
 *Decisions*); batch auto-tailoring.
+Layout-level ATS rules (single column, no tables, headings, date format) — Step 18a.
 
 ## Risks and open points
 

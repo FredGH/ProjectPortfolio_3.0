@@ -18,7 +18,9 @@ anything derived from it. The release files are never committed here
 - **Outside Docker**, `.env`'s hostnames are the compose service names. A
   command run from a bare checkout must override them to `localhost` —
   `DATABASE_URL`, `APP_DATABASE_URL` (both `@postgres` → `@localhost`) and
-  `OLLAMA_BASE_URL` (`http://ollama:11434` → `http://localhost:11434`).
+  `OLLAMA_BASE_URL` (`http://ollama:11434` → `http://localhost:11435` for the Docker service,
+  which is published on host port 11435, or `http://localhost:11434` for a
+  native Ollama).
 - `map-cv-skills` reads and writes the per-user CV truth base through the
   RLS-subject app role, so it needs **`APP_DATABASE_URL`** set as well as
   `DATABASE_URL`.

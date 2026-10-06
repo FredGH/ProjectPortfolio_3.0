@@ -78,6 +78,9 @@ from core.skills.write_job_skills import (
     count_pending_jobs,
     write_job_skills,
 )
+from core.tailoring.backends import resolve_backends
+from core.tailoring.loop import TailoringError, run_tailoring
+from core.tailoring.store import read_run
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -1246,6 +1249,82 @@ def _cmd_score_blend(args: argparse.Namespace) -> int:
     return 0
 
 
+def _usage_suffix(usage: object) -> str:
+    """Describe a run's token use for the `tailor-cv` completion line.
+
+    Args:
+        usage: The run's `usage` (see `StoredRun.usage`); anything else
+            (None, a malformed value) yields no text.
+
+    Returns:
+        ` tokens_in=… tokens_out=…` plus ` est_cost_usd=…` when every call
+        was priced, or an empty string when there is nothing usable.
+    """
+    if not isinstance(usage, dict):
+        return ""
+    tokens_in, tokens_out = usage.get("input_tokens"), usage.get("output_tokens")
+    if not isinstance(tokens_in, int) or not isinstance(tokens_out, int):
+        return ""
+    text = f" tokens_in={tokens_in} tokens_out={tokens_out}"
+    cost = usage.get("cost_usd")
+    if isinstance(cost, int | float) and not isinstance(cost, bool):
+        text += f" est_cost_usd={cost:.4f}"
+    return text
+
+
+def _cmd_tailor_cv(args: argparse.Namespace) -> int:
+    """Run the `tailor-cv` subcommand: tailor one user's CV to one job.
+
+    On demand, not a batch stage, so it is deliberately absent from the
+    pipeline dashboard (core.pipeline.registry).
+
+    Args:
+        args: Parsed CLI arguments — `user_id`, `job_group_id` and the
+            optional `backend` (`claude`, `native` or `docker`). An
+            unavailable backend is not pre-checked: a failing Ollama call
+            just fails the run.
+
+    Prints the run's error message when it failed, and the number of lines
+    awaiting a decision when it needs review.
+
+    Returns:
+        0 when the run ends `approved` or `needs_review`; 1 when it ends
+        `failed` or cannot start.
+    """
+    settings = get_settings()
+    app_engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=2000.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        outcome = run_tailoring(
+            app_engine,
+            args.user_id,
+            args.job_group_id,
+            adapters=adapters,
+            backend=args.backend,
+        )
+    except TailoringError as exc:
+        print(f"tailor-cv: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    run = read_run(app_engine, args.user_id, outcome.run_id)
+    backends = resolve_backends()
+    backend = backends.get(getattr(run, "tailor_backend", None) or args.backend or "")
+    print(
+        f"tailor-cv complete: run_id={outcome.run_id} status={outcome.status} "
+        f"attempts={outcome.attempts}"
+        + (f" backend={backend.label}" if backend is not None else "")
+        + _usage_suffix(getattr(run, "usage", None))
+    )
+    if run is not None and outcome.status == "failed" and run.error_message:
+        print(f"tailor-cv error: {run.error_message}")
+    if run is not None and outcome.status == "needs_review":
+        pending = sum(1 for orphan in run.orphans if orphan.status == "pending")
+        print(f"tailor-cv needs_review: pending_orphans={pending}")
+    return 1 if outcome.status == "failed" else 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1598,6 +1677,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     score_blend_parser.add_argument("--user-id", required=True, type=uuid.UUID)
 
+    tailor_cv_parser = subparsers.add_parser(
+        "tailor-cv",
+        help="Tailor one user's CV to one job, with the fabrication guard "
+        "(PLAN.md Step 17); on demand, not a pipeline stage",
+    )
+    tailor_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    tailor_cv_parser.add_argument("--job-group-id", required=True)
+    tailor_cv_parser.add_argument(
+        "--backend",
+        choices=["claude", "native", "docker"],
+        default=None,
+        help="Where the Tailor runs: claude, native (Ollama on this Mac) or "
+        "docker (the compose Ollama service); default follows config/llm_tasks.yml",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1642,6 +1736,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_llm_rerank(args)
     if args.command == "score-blend":
         return _cmd_score_blend(args)
+    if args.command == "tailor-cv":
+        return _cmd_tailor_cv(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

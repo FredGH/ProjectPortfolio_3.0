@@ -18,7 +18,9 @@
 # off.
 #
 # Assumes a native Ollama on the host (README.md's "Running Ollama natively"
-# section) and is run from the job_search directory outside Docker, the
+# section; default http://localhost:11434). To use the Docker Ollama service
+# instead, set OLLAMA_BASE_URL_OVERRIDE=http://localhost:11435 (its host
+# port). Run from the job_search directory outside Docker, the
 # proven-working path as of this writing (apps/pipeline's Docker image needs
 # a rebuild to pick up #35's httpx pin before `docker compose run pipeline`
 # works again for LLM-backed commands).

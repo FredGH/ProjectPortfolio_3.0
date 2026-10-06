@@ -36,7 +36,8 @@ def embed_text(
     Args:
         text: The text to embed.
         base_url: Base URL of the Ollama server, e.g.
-            "http://localhost:11434".
+            "http://localhost:11434" (native) or "http://localhost:11435" (the
+            Docker service from the host).
         model: The Ollama embedding model tag, e.g. "nomic-embed-text"
             (Settings.embedding_model's default).
         client: The HTTP client to issue the request with.
