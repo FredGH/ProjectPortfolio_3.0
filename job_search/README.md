@@ -592,8 +592,30 @@ faster. The backend used is stored on the run.
 The `fabrication_critic` task **must** stay on `anthropic`: the critic
 refuses to run otherwise, and a test asserts it.
 
-The paid adversarial test (a deliberately exaggerating Tailor against the
-real critic) runs with `RUN_PAID_TESTS=1`.
-
 This step produces approved *content* only. The ATS `.docx` and the designed
 PDF are Steps 18a and 18b.
+
+### Further work: the paid adversarial test
+
+`packages/core/tests/integration/test_tailoring_adversarial.py` has a paid
+test that is **parked for now**. It is skipped unless `RUN_PAID_TESTS=1` and
+has not been run as part of the Step 17 sign-off.
+
+**What it does.** `TestExaggerationIsCaughtByRealClaude` runs a Tailor that
+exaggerates on purpose against the real Claude critic, and checks two things:
+the exaggerated bullet is caught and surfaced for review instead of being
+emitted, and an honest rewording of a real bullet is *not* flagged. The same
+scenarios always run in CI against a deterministic stand-in critic.
+
+**Why it is worth running.** The fabrication guard is the one part of the
+tailoring pipeline that must never fail quietly. The unit tests use a
+scripted critic, so they prove the plumbing: a rejected bullet is retried,
+dropped or surfaced. They cannot show that the real critic, with its real
+prompt and model, actually *catches* a plausible lie. This test measures
+that, and it is the only check that would notice a critic prompt or model
+change that silently makes the guard permissive. A single missed
+fabrication on a CV sent to a recruiter costs far more than the few cents
+the run bills.
+
+**To pick it up:** run it with `RUN_PAID_TESTS=1`, then record the catch rate
+and the cost here.
