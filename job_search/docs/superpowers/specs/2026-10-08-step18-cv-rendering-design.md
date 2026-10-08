@@ -1,6 +1,6 @@
 # Step 18 — CV rendering (18a ATS .docx, 18b designed PDF): design
 
-Status: draft for review. Branch `feat/step18-ats-docx`.
+Status: approved by the user 2026-10-08 (open questions resolved below). Branch `feat/step18-ats-docx`.
 
 ## Purpose
 
@@ -76,9 +76,8 @@ bold and `Company – Dates` italic, bullets with bold key phrases, sans-serif
 (Calibri-like) body at ~9.5 pt. The reference is used as a visual guide
 only; no personal text is copied into code.
 
-**Open for 18b:** Step 17's assembler strips markdown emphasis from bullets,
-but the reference shows bold key phrases. Keep stripping (flat PDF) or carry
-emphasis through to 18b only (the ATS file stays plain either way)?
+**Decided:** the PDF stays flat. Step 17 strips bullet emphasis and 18b does
+not reintroduce bold key phrases; the reference's bold is not reproduced.
 
 ## Out of scope
 
@@ -86,8 +85,9 @@ Cover letter and pitch (Step 19), editing wording at render time, uploading
 files anywhere, UI/API wiring (a `render-cv` CLI command is the only
 entry point in 18a).
 
-## Open questions
+## Resolved questions
 
-1. Is `company` taken from the job (`dim_company`) — assumed yes?
-2. Dependencies to add: `python-docx` (18a); a PDF engine for 18b to be
-   chosen then (not decided here).
+1. `company` in the filename comes from the job's company record
+   (`dim_company`).
+2. Dependencies: `python-docx` for 18a; the PDF engine for 18b is chosen in
+   its own plan.
