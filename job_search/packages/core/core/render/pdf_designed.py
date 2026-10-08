@@ -28,8 +28,9 @@ logger = logging.getLogger(__name__)
 
 _BLUE = HexColor("#2F5597")
 _BLUE_HEX = "#2F5597"
-_MARGIN_X = 50
-_MARGIN_Y = 40
+_MARGIN_X = 45  # reportlab adds 6 pt of frame padding: ~51 pt in the template
+_MARGIN_TOP = 36
+_MARGIN_BOTTOM = 40
 
 _JOB_SEARCH_DIR = Path(__file__).resolve().parents[4]
 PRIVATE_FONT_DIR = _JOB_SEARCH_DIR / "private" / "fonts"
@@ -146,14 +147,14 @@ def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
         "heading": style(
             "heading",
             fonts.bold,
-            10.5,
+            11.5,
             textColor=_BLUE,
-            spaceBefore=8,
-            spaceAfter=3,
+            spaceBefore=11,
+            spaceAfter=4,
             keepWithNext=1,
         ),
         "role_title": style(
-            "role_title", fonts.bold, 10, spaceBefore=5, spaceAfter=0, keepWithNext=1
+            "role_title", fonts.bold, 10, spaceBefore=7, spaceAfter=0, keepWithNext=1
         ),
         "role_meta": style(
             "role_meta", fonts.italic, 9.5, spaceAfter=2, keepWithNext=1
@@ -248,8 +249,8 @@ def write_pdf(doc: RenderDoc, path: Path, fonts: Fonts | None = None) -> None:
         pagesize=A4,
         leftMargin=_MARGIN_X,
         rightMargin=_MARGIN_X,
-        topMargin=_MARGIN_Y,
-        bottomMargin=_MARGIN_Y,
+        topMargin=_MARGIN_TOP,
+        bottomMargin=_MARGIN_BOTTOM,
         title=doc.title[:255],
         author="",
     )
