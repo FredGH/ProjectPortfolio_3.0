@@ -1,6 +1,6 @@
 # Step 18b — designed PDF: design
 
-Status: draft for review. Builds on the Step 18 spec
+Status: approved by the user 2026-10-08. Builds on the Step 18 spec
 ([2026-10-08-step18-cv-rendering-design.md](2026-10-08-step18-cv-rendering-design.md))
 and the merged-or-open 18a work (PR #54): the same `RenderDoc` feeds the PDF.
 
@@ -99,9 +99,8 @@ Helvetica fallback so they pass anywhere.
 Editing wording at render time, bold key phrases, clickable links beyond the
 LinkedIn URL, uploading or emailing the PDF, any web UI.
 
-## Open questions
+## Resolved questions
 
-1. OK that `render-cv` writes the PDF by default (with `--ats-only` to skip)?
-2. The colours and sizes above are read off a rendering of the template, not
-   from its source. OK to tune them by comparing the first generated PDF
-   against your template side by side?
+1. `render-cv` writes the PDF by default; `--ats-only` skips it (user, 2026-10-08).
+2. Colours and sizes are tuned by comparing the first generated PDF with the
+   user's template side by side (user, 2026-10-08).
