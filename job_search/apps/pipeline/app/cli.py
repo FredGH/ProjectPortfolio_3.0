@@ -44,6 +44,7 @@ from core.ingestion.sources_config import load_sources_config
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
+from core.render.service import RenderError, render_cv_files
 from core.scoring.blend import compute_final_scores
 from core.scoring.cv_chunking import chunk_and_embed_cv
 from core.scoring.hard_filters import run_hard_filters
@@ -79,8 +80,9 @@ from core.skills.write_job_skills import (
     write_job_skills,
 )
 from core.tailoring.backends import resolve_backends
+from core.tailoring.context import load_job_context
 from core.tailoring.loop import TailoringError, run_tailoring
-from core.tailoring.store import read_run
+from core.tailoring.store import latest_run_id, read_run
 
 
 def _build_llm_adapters(http_client: httpx.Client) -> dict[str, LLMAdapter]:
@@ -1325,6 +1327,45 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
     return 1 if outcome.status == "failed" else 0
 
 
+def _cmd_render_cv(args: argparse.Namespace) -> int:
+    """Run the `render-cv` subcommand: write the ATS .docx and .txt for one
+    approved tailored CV (Step 18a).
+
+    On demand, not a batch stage, so it is deliberately absent from the
+    pipeline dashboard (core.pipeline.registry).
+
+    Args:
+        args: Parsed CLI arguments — `user_id`, `job_group_id`, `out_dir`.
+
+    Returns:
+        0 when both files were written and verified; 1 when there is no
+        approved run for the job or the .docx failed verification.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    run_id = latest_run_id(engine, args.user_id, args.job_group_id)
+    run = read_run(engine, args.user_id, run_id) if run_id is not None else None
+    if run is None:
+        print("render-cv: no tailored CV for this job; run tailor-cv first")
+        return 1
+    if run.status != "approved" or run.document is None:
+        print(
+            f"render-cv: the latest run is {run.status}; "
+            "only an approved run can be rendered"
+        )
+        return 1
+    job = load_job_context(engine, args.job_group_id)
+    try:
+        files = render_cv_files(
+            run.document, job.company if job else None, Path(args.out_dir)
+        )
+    except RenderError as exc:
+        print(f"render-cv: {exc}")
+        return 1
+    print(f"render-cv complete: docx={files.docx_path} txt={files.txt_path}")
+    return 0
+
+
 # Tasks with an eval configured — extend as future steps (15-17,
 # 19, 20) add their own eval_metric entry to config/llm_tasks.yml.
 _EVAL_TASKS = ["job_categorisation", "cv_extraction", "skill_extraction"]
@@ -1692,6 +1733,19 @@ def main(argv: list[str] | None = None) -> int:
         "docker (the compose Ollama service); default follows config/llm_tasks.yml",
     )
 
+    render_cv_parser = subparsers.add_parser(
+        "render-cv",
+        help="Write the ATS-safe .docx and .txt for one approved tailored CV "
+        "(PLAN.md Step 18a); on demand, not a pipeline stage",
+    )
+    render_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    render_cv_parser.add_argument("--job-group-id", required=True)
+    render_cv_parser.add_argument(
+        "--out-dir",
+        default="output",
+        help="Where to write the files (default: ./output, git-ignored)",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1738,6 +1792,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_blend(args)
     if args.command == "tailor-cv":
         return _cmd_tailor_cv(args)
+    if args.command == "render-cv":
+        return _cmd_render_cv(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 
