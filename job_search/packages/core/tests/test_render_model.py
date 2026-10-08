@@ -6,7 +6,7 @@ import unittest
 
 from tests.render_fixtures import make_tailored_document
 
-from core.cv.schema import Education, Skill
+from core.cv.schema import Education, Project, Publication, Skill
 from core.render.model import build_render_doc
 from core.tailoring.schema import TailoredBullet, TailoredExperience, TailoredSummary
 
@@ -163,6 +163,31 @@ class TestBuildRenderDoc(unittest.TestCase):
         )
         self.assertEqual(doc.title, "Lead Data Engineer")
         self.assertEqual(doc.blocks[1].text, doc.title)
+
+    def test_projects_and_publications_follow_experience_before_education(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                projects=[Project(name="Fixture Pipeline", description="Open ETL")],
+                publications=[Publication(citation="Fixture, Z. (2020). A paper.")],
+            )
+        )
+        self.assertEqual(
+            doc.headings(),
+            [
+                "Summary",
+                "Skills",
+                "Experience",
+                "Projects",
+                "Publications",
+                "Education",
+                "Certifications",
+            ],
+        )
+        paragraphs = _texts(doc, "paragraph")
+        self.assertIn("Fixture Pipeline: Open ETL", paragraphs)
+        self.assertIn("Fixture, Z. (2020). A paper.", paragraphs)
 
 
 if __name__ == "__main__":

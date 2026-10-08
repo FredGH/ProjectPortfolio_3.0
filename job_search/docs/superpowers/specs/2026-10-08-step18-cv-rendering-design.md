@@ -41,8 +41,9 @@ New package `core/render/`:
 ## 18a details
 
 - **Order and headings:** name, headline (`target_title`), contact line, then
-  `Summary`, `Skills`, `Experience`, `Education`, then `Projects`,
-  `Publications`, `Certifications`, `Activities` when non-empty. Standard
+  `Summary`, `Skills`, `Experience`, `Projects`, `Publications`,
+  `Education`, `Certifications`, `Activities` when non-empty (the order of
+  the user's own CV template). Standard
   names, not the PDF's decorative ones.
 - **Title:** `target_title` is a template field set once at the top. Never
   passed through any text transform.

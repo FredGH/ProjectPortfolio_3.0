@@ -153,6 +153,14 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             )
             for bullet in role.bullets:
                 add("bullet", bullet.text)
+    if doc.projects:
+        add("heading", "Projects")
+        for project in doc.projects:
+            add("paragraph", join(project.name, project.description, sep=": "))
+    if doc.publications:
+        add("heading", "Publications")
+        for publication in doc.publications:
+            add("paragraph", publication.citation)
     if doc.education:
         add("heading", "Education")
         for edu in doc.education:
@@ -165,14 +173,6 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                     edu.grade,
                 ),
             )
-    if doc.projects:
-        add("heading", "Projects")
-        for project in doc.projects:
-            add("paragraph", join(project.name, project.description, sep=": "))
-    if doc.publications:
-        add("heading", "Publications")
-        for publication in doc.publications:
-            add("paragraph", publication.citation)
     if doc.qualifications:
         add("heading", "Certifications")
         for cert in doc.qualifications:
