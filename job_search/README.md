@@ -604,9 +604,11 @@ This step produces approved *content* only. Rendering is Step 18.
 Files land in `./output/` (git-ignored; override with `--out-dir`) as
 `<surname>_<title_for_display>_<company>.docx` and `.txt`. The writer only
 ever adds plain paragraphs, so there are no tables, text boxes,
-headers/footers or images. Headings are `Summary`, `Skills`, `Experience`,
-`Projects`, `Publications`, `Education`, `Certifications`, `Activities`
-(each only when present, in the order of the CV template), dates read `MM/YYYY – MM/YYYY`, and a short list
+headers/footers or images. Headings use the wording and order of your own
+CV template (`PROFESSIONAL SUMMARY`, `CORE TECHNICAL SKILLS`, `WORK EXPERIENCE`,
+`PERSONAL PROJECTS`, `PUBLICATIONS`, `EDUCATION`, `PROFESSIONAL QUALIFICATIONS &
+CONTINUOUS PERSONAL DEVELOPMENT`, `ACTIVITIES & INTERESTS`), each only when
+present; dates read `MM/YYYY – MM/YYYY`, and a short list
 of acronyms (ELT, ETL, GCP, AWS, CI/CD, API, NLP, ML) is expanded on first
 use. After writing, the command re-reads the `.docx` in XML order and fails,
 deleting both files, if its text differs from the `.txt` twin or lacks the

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - The repo is **public**: tests use invented fixtures only (`Zz Fixture`); never commit a CV, template or output. `private/` and `output/` are git-ignored.
-- Section headings are exactly: `Summary`, `Skills`, `Experience`, `Education`, `Projects`, `Publications`, `Certifications`, `Activities`, in that order, each only when non-empty.
+- Section headings use the user's own template wording and order (see `HEADINGS` in `core/render/model.py`), each only when non-empty.
 - Dates render as `MM/YYYY – MM/YYYY` (en dash); open end is `Present`.
 - Acronym plus expansion on first use only, from a curated dictionary; never applied to the name, headline (target title), contact line, role titles or role meta lines.
 - Filename: `<surname>_<title_for_display>_<company>.docx`; company comes from `core.tailoring.context.load_job_context(...).company`.

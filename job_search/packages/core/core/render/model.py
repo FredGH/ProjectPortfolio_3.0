@@ -22,6 +22,18 @@ BlockKind = Literal[
     "bullet",
 ]
 
+HEADINGS = {
+    "SUMMARY": "PROFESSIONAL SUMMARY",
+    "SKILLS": "CORE TECHNICAL SKILLS",
+    "EXPERIENCE": "WORK EXPERIENCE",
+    "PROJECTS": "PERSONAL PROJECTS",
+    "PUBLICATIONS": "PUBLICATIONS",
+    "EDUCATION": "EDUCATION",
+    "QUALIFICATIONS": "PROFESSIONAL QUALIFICATIONS & CONTINUOUS PERSONAL DEVELOPMENT",
+    "ACTIVITIES": "ACTIVITIES & INTERESTS",
+}
+"""Section headings, word for word as in the user's own CV template."""
+
 _EXPANDED_KINDS = frozenset({"paragraph", "bullet"})
 
 
@@ -138,14 +150,14 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         ),
     )
     if doc.summary and doc.summary.text.strip():
-        add("heading", "Summary")
+        add("heading", HEADINGS["SUMMARY"])
         add("paragraph", doc.summary.text)
     if doc.skills:
-        add("heading", "Skills")
+        add("heading", HEADINGS["SKILLS"])
         # Not expanded: expansions contain commas and would corrupt the list.
         add("paragraph", join(*(skill.name for skill in doc.skills)), expand=False)
     if doc.experience:
-        add("heading", "Experience")
+        add("heading", HEADINGS["EXPERIENCE"])
         for role in doc.experience:
             add("role_title", role.title)
             add(
@@ -154,15 +166,15 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             for bullet in role.bullets:
                 add("bullet", bullet.text)
     if doc.projects:
-        add("heading", "Projects")
+        add("heading", HEADINGS["PROJECTS"])
         for project in doc.projects:
             add("paragraph", join(project.name, project.description, sep=": "))
     if doc.publications:
-        add("heading", "Publications")
+        add("heading", HEADINGS["PUBLICATIONS"])
         for publication in doc.publications:
             add("paragraph", publication.citation)
     if doc.education:
-        add("heading", "Education")
+        add("heading", HEADINGS["EDUCATION"])
         for edu in doc.education:
             add(
                 "paragraph",
@@ -174,11 +186,11 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                 ),
             )
     if doc.qualifications:
-        add("heading", "Certifications")
+        add("heading", HEADINGS["QUALIFICATIONS"])
         for cert in doc.qualifications:
             add("paragraph", f"{cert.name} ({cert.year})" if cert.year else cert.name)
     if doc.activities:
-        add("heading", "Activities")
+        add("heading", HEADINGS["ACTIVITIES"])
         for activity in doc.activities:
             add(
                 "paragraph",

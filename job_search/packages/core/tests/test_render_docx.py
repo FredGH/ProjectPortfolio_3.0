@@ -37,7 +37,13 @@ class TestAtsDocx(unittest.TestCase):
         lines = extract_docx_text(self.path).splitlines()
         positions = [
             lines.index(h)
-            for h in ("Summary", "Skills", "Experience", "Education", "Certifications")
+            for h in (
+                "PROFESSIONAL SUMMARY",
+                "CORE TECHNICAL SKILLS",
+                "WORK EXPERIENCE",
+                "EDUCATION",
+                "PROFESSIONAL QUALIFICATIONS & CONTINUOUS PERSONAL DEVELOPMENT",
+            )
         ]
         self.assertEqual(positions, sorted(positions))
 

@@ -33,7 +33,13 @@ class TestBuildRenderDoc(unittest.TestCase):
         doc = build_render_doc(make_tailored_document())
         self.assertEqual(
             doc.headings(),
-            ["Summary", "Skills", "Experience", "Education", "Certifications"],
+            [
+                "PROFESSIONAL SUMMARY",
+                "CORE TECHNICAL SKILLS",
+                "WORK EXPERIENCE",
+                "EDUCATION",
+                "PROFESSIONAL QUALIFICATIONS & CONTINUOUS PERSONAL DEVELOPMENT",
+            ],
         )
 
     def test_roles_render_title_then_company_and_dates(self) -> None:
@@ -75,7 +81,7 @@ class TestBuildRenderDoc(unittest.TestCase):
                 summary=None, education=[], qualifications=[], skills=[]
             )
         )
-        self.assertEqual(doc.headings(), ["Experience"])
+        self.assertEqual(doc.headings(), ["WORK EXPERIENCE"])
 
     def test_blank_target_title_is_refused(self) -> None:
         with self.assertRaises(ValueError):
@@ -176,13 +182,13 @@ class TestBuildRenderDoc(unittest.TestCase):
         self.assertEqual(
             doc.headings(),
             [
-                "Summary",
-                "Skills",
-                "Experience",
-                "Projects",
-                "Publications",
-                "Education",
-                "Certifications",
+                "PROFESSIONAL SUMMARY",
+                "CORE TECHNICAL SKILLS",
+                "WORK EXPERIENCE",
+                "PERSONAL PROJECTS",
+                "PUBLICATIONS",
+                "EDUCATION",
+                "PROFESSIONAL QUALIFICATIONS & CONTINUOUS PERSONAL DEVELOPMENT",
             ],
         )
         paragraphs = _texts(doc, "paragraph")
