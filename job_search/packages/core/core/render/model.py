@@ -4,6 +4,7 @@ the ATS .docx (18a) and the designed PDF (18b) cannot drift apart."""
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
@@ -58,6 +59,22 @@ class RenderDoc:
         return [block.text for block in self.blocks if block.kind == "heading"]
 
 
+def _clean(text: str) -> str:
+    """Drop control characters and collapse whitespace.
+
+    Args:
+        text: Raw text, possibly pasted from a PDF or produced by an LLM.
+
+    Returns:
+        The text with control characters removed (Word cannot store them)
+        and every whitespace run reduced to one space.
+    """
+    kept = "".join(
+        ch for ch in text if ch.isspace() or unicodedata.category(ch) != "Cc"
+    )
+    return " ".join(kept.split())
+
+
 def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     """Lay a tailored document out as ordered blocks.
 
@@ -70,24 +87,27 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         role lines are copied untouched.
 
     Raises:
-        ValueError: If the target title is blank.
+        ValueError: If the target title is blank once cleaned.
     """
-    if not doc.target_title.strip():
+    title = _clean(doc.target_title)
+    if not title:
         raise ValueError("a rendered CV needs a non-blank target title")
     expander = AcronymExpander()
     blocks: list[Block] = []
 
-    def add(kind: BlockKind, text: str) -> None:
-        """Append one block, collapsing whitespace and expanding acronyms.
+    def add(kind: BlockKind, text: str, expand: bool = True) -> None:
+        """Append one block, cleaning the text and expanding acronyms.
 
         Args:
             kind: The block kind.
             text: Raw text; empty text adds nothing.
+            expand: Whether first-use acronyms may be expanded in this
+                block (still limited to paragraph and bullet kinds).
         """
-        text = " ".join(text.split())
+        text = _clean(text)
         if not text:
             return
-        if kind in _EXPANDED_KINDS:
+        if expand and kind in _EXPANDED_KINDS:
             text = expander.expand(text)
         blocks.append(Block(kind, text))
 
@@ -104,7 +124,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         return sep.join(part for part in parts if part)
 
     add("name", doc.identity)
-    add("headline", doc.target_title)
+    add("headline", title)
     add(
         "contact",
         join(
@@ -122,7 +142,8 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         add("paragraph", doc.summary.text)
     if doc.skills:
         add("heading", "Skills")
-        add("paragraph", join(*(skill.name for skill in doc.skills)))
+        # Not expanded: expansions contain commas and would corrupt the list.
+        add("paragraph", join(*(skill.name for skill in doc.skills)), expand=False)
     if doc.experience:
         add("heading", "Experience")
         for role in doc.experience:
@@ -140,7 +161,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                 join(
                     edu.qualification,
                     edu.institution,
-                    format_date_range(edu.start, edu.end),
+                    format_date_range(edu.start, edu.end, open_ended=False),
                     edu.grade,
                 ),
             )
@@ -164,7 +185,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                 join(
                     activity.name,
                     activity.organisation,
-                    format_date_range(activity.start, activity.end),
+                    format_date_range(activity.start, activity.end, open_ended=False),
                 ),
             )
-    return RenderDoc(title=doc.target_title, blocks=tuple(blocks))
+    return RenderDoc(title=title, blocks=tuple(blocks))

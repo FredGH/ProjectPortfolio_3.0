@@ -1339,7 +1339,8 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
 
     Returns:
         0 when both files were written and verified; 1 when there is no
-        approved run for the job or the .docx failed verification.
+        approved run for the job, the title is blank, or the .docx failed
+        verification.
     """
     settings = get_settings()
     engine = build_engine(settings.app_database_url)
@@ -1359,7 +1360,7 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
         files = render_cv_files(
             run.document, job.company if job else None, Path(args.out_dir)
         )
-    except RenderError as exc:
+    except (RenderError, ValueError) as exc:
         print(f"render-cv: {exc}")
         return 1
     print(f"render-cv complete: docx={files.docx_path} txt={files.txt_path}")

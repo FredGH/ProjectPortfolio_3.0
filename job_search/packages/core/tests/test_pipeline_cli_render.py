@@ -70,6 +70,15 @@ class TestRenderCvSubcommand(unittest.TestCase):
         )
         self.assertIn("render-cv complete", text)
 
+    def test_a_blank_title_prints_the_reason_instead_of_a_traceback(self) -> None:
+        run = SimpleNamespace(
+            status="approved", document=make_tailored_document(target_title=" ")
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = _run(["render-cv", *_ARGS, "--out-dir", tmp], run)
+        self.assertEqual(code, 1)
+        self.assertIn("render-cv:", text)
+
 
 if __name__ == "__main__":
     unittest.main()

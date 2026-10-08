@@ -39,6 +39,18 @@ class TestFormatDateRange(unittest.TestCase):
         self.assertEqual(format_date_range(None, "2018-12"), "12/2018")
 
 
+class TestNotOpenEndedRange(unittest.TestCase):
+    def test_a_missing_end_is_not_present_when_the_range_is_not_open_ended(
+        self,
+    ) -> None:
+        self.assertEqual(format_date_range("2011", None, open_ended=False), "2011")
+
+    def test_a_closed_range_is_unchanged_when_not_open_ended(self) -> None:
+        self.assertEqual(
+            format_date_range("2011", "2014", open_ended=False), "2011 – 2014"
+        )
+
+
 class TestAcronymExpander(unittest.TestCase):
     def test_expands_the_first_use_only(self) -> None:
         expander = AcronymExpander()
@@ -113,6 +125,19 @@ class TestBuildFilename(unittest.TestCase):
             build_filename("Zz Fixture", "Lead Data Engineer", None, "docx"),
             "Fixture_Lead_Data_Engineer.docx",
         )
+
+    def test_a_name_with_no_latin_letters_falls_back_to_cv(self) -> None:
+        self.assertEqual(
+            build_filename("山田 太郎", "データ", "会社", "docx"), "CV.docx"
+        )
+
+    def test_a_very_long_title_gives_a_filename_within_filesystem_limits(
+        self,
+    ) -> None:
+        name = build_filename("Zz Fixture", "Engineer " * 60, "Acme", "docx")
+        self.assertLessEqual(len(name.encode()), 200)
+        self.assertTrue(name.endswith(".docx"))
+        self.assertTrue(name.startswith("Fixture_Engineer"))
 
 
 if __name__ == "__main__":

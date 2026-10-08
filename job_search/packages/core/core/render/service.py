@@ -60,7 +60,7 @@ def render_cv_files(
     txt_path.write_text(expected, encoding="utf-8")
     extracted = extract_docx_text(docx_path)
     problems = diff_texts(expected, extracted)
-    if tailored.target_title not in extracted.splitlines():
+    if render_doc.title not in extracted.splitlines():
         problems.append("the exact target title is missing from the .docx text")
     if problems:
         docx_path.unlink(missing_ok=True)

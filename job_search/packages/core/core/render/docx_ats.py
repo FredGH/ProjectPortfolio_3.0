@@ -81,6 +81,6 @@ def write_docx(doc: RenderDoc, path: Path) -> None:
     _style_document(document)
     for block in doc.blocks:
         _add_block(document, block)
-    document.core_properties.title = doc.title
+    document.core_properties.title = doc.title[:255]
     document.core_properties.author = ""
     document.save(str(path))

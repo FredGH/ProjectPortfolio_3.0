@@ -47,6 +47,31 @@ class TestRenderCvFiles(unittest.TestCase):
             render_cv_files(make_tailored_document(target_title=" "), "Acme", self.out)
         self.assertFalse(self.out.exists())
 
+    def test_a_title_with_extra_whitespace_still_renders(self) -> None:
+        title = "Lead  Data Engineer"
+        files = render_cv_files(
+            make_tailored_document(target_title=title, headline=title), "Acme", self.out
+        )
+        self.assertIn(
+            "Lead Data Engineer", extract_docx_text(files.docx_path).splitlines()
+        )
+
+    def test_a_control_character_in_the_text_still_renders(self) -> None:
+        document = make_tailored_document()
+        document.experience[0].bullets[0].text = "Built\x00 dbt\x01 models"
+        files = render_cv_files(document, "Acme", self.out)
+        self.assertIn(
+            "Built dbt models", extract_docx_text(files.docx_path).splitlines()
+        )
+
+    def test_a_very_long_title_still_renders_with_a_safe_filename(self) -> None:
+        title = "Lead Data Engineer " * 30
+        files = render_cv_files(
+            make_tailored_document(target_title=title, headline=title), "Acme", self.out
+        )
+        self.assertLessEqual(len(files.docx_path.name.encode()), 255)
+        self.assertTrue(files.docx_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

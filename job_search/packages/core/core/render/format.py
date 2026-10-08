@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _YEAR_MONTH_RE = re.compile(r"^(\d{4})-(\d{2})$")
 _YEAR_RE = re.compile(r"^\d{4}$")
 _MONTH_YEAR_RE = re.compile(r"^([A-Za-z]{3,9})\.?\s+(\d{4})$")
+_MAX_NAME_CHARS = 150
 _OPEN_END = frozenset({"present", "current", "now", "ongoing", "to date"})
 _MONTHS = {
     name: number
@@ -75,22 +76,33 @@ def _format_date(value: str) -> str:
     return text
 
 
-def format_date_range(start: str | None, end: str | None) -> str:
+def format_date_range(
+    start: str | None, end: str | None, *, open_ended: bool = True
+) -> str:
     """Render a role's dates as `MM/YYYY – MM/YYYY`.
 
     Args:
         start: The raw start date, if any.
-        end: The raw end date; None means the role is current.
+        end: The raw end date.
+        open_ended: Whether a missing end means "still ongoing". True for a
+            role; False for a degree or activity, where a missing end only
+            means the end is not stated.
 
     Returns:
-        The range with an en dash, `Present` for an open end, only the end
-        when there is no start, and an empty string when there are no dates.
+        The range with an en dash; `Present` for a missing end when
+        `open_ended`; only the start (or only the end) when the other is
+        absent; an empty string when there are no dates.
     """
     if not start and not end:
         return ""
-    right = _format_date(end) if end else "Present"
+    if end:
+        right = _format_date(end)
+    else:
+        right = "Present" if open_ended else ""
     if not start:
         return right
+    if not right:
+        return _format_date(start)
     return f"{_format_date(start)} – {right}"
 
 
@@ -168,8 +180,11 @@ def build_filename(
         extension: File extension without the dot.
 
     Returns:
-        A filename safe on any filesystem; empty parts are dropped.
+        A filename safe on any filesystem: empty parts are dropped, the
+        name is cut to a safe length, and `CV` stands in when nothing
+        Latin is left (so the file is never a hidden `.docx`).
     """
     surname = identity.split()[-1] if identity.split() else ""
     parts = [_slug(part) for part in (surname, title, company or "")]
-    return "_".join(part for part in parts if part) + f".{extension}"
+    base = "_".join(part for part in parts if part)[:_MAX_NAME_CHARS].rstrip("_")
+    return f"{base or 'CV'}.{extension}"

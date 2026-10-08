@@ -6,6 +6,7 @@ import unittest
 
 from tests.render_fixtures import make_tailored_document
 
+from core.cv.schema import Education, Skill
 from core.render.model import build_render_doc
 from core.tailoring.schema import TailoredBullet, TailoredExperience, TailoredSummary
 
@@ -111,6 +112,57 @@ class TestBuildRenderDoc(unittest.TestCase):
         self.assertEqual(doc.blocks[1].text, "ELT Engineer & Co")
         self.assertEqual(_texts(doc, "role_title"), ["GCP Engineer"])
         self.assertEqual(_texts(doc, "role_meta"), ["GCP Ltd"])
+
+    def test_skills_are_not_acronym_expanded_so_the_list_stays_parseable(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(skills=[Skill(name="ELT"), Skill(name="GCP")])
+        )
+        self.assertIn("ELT, GCP", _texts(doc, "paragraph"))
+        self.assertTrue(
+            _texts(doc, "paragraph")[0].startswith(
+                "Engineer building ELT (Extract, Load, Transform)"
+            )
+        )
+
+    def test_a_degree_with_no_end_date_does_not_claim_present(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                education=[
+                    Education(
+                        institution="Zz University", qualification="BSc", start="2011"
+                    )
+                ]
+            )
+        )
+        self.assertIn("BSc, Zz University, 2011", _texts(doc, "paragraph"))
+
+    def test_control_characters_are_removed(self) -> None:
+        experience = [
+            TailoredExperience(
+                truth_index=0,
+                company="Acme",
+                title="Engineer",
+                bullets=[TailoredBullet(text="a\x00b\x01c", origin="original")],
+            )
+        ]
+        doc = build_render_doc(
+            make_tailored_document(
+                experience=experience,
+                target_title="Lead\x01 Engineer",
+                headline="Lead\x01 Engineer",
+            )
+        )
+        self.assertEqual(_texts(doc, "bullet"), ["abc"])
+        self.assertEqual(doc.title, "Lead Engineer")
+
+    def test_a_title_with_extra_whitespace_is_normalised_in_one_place(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(target_title=" Lead  Data\tEngineer ", headline="x")
+        )
+        self.assertEqual(doc.title, "Lead Data Engineer")
+        self.assertEqual(doc.blocks[1].text, doc.title)
 
 
 if __name__ == "__main__":
