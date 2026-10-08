@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 from lxml import etree
+from pypdf import PdfReader
 
 from core.render.model import RenderDoc
 
@@ -64,3 +65,16 @@ def diff_texts(expected: str, actual: str) -> list[str]:
             lineterm="",
         )
     )
+
+
+def extract_pdf_text(path: Path) -> str:
+    """Read a PDF's text, page by page.
+
+    Args:
+        path: The PDF file.
+
+    Returns:
+        The text of every page, joined by newlines.
+    """
+    reader = PdfReader(str(path))
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
