@@ -117,6 +117,57 @@ class TestRenderCvFiles(unittest.TestCase):
         )
         self.assertTrue(files.pdf_path.exists())
 
+    def test_a_pdf_stage_error_removes_every_file_and_is_a_render_error(self) -> None:
+        with mock.patch(
+            "core.render.service.write_pdf", side_effect=RuntimeError("boom")
+        ):
+            with self.assertRaises(RenderError) as ctx:
+                render_cv_files(
+                    make_tailored_document(), "Acme", self.out, fonts=HELVETICA
+                )
+        self.assertIn("boom", str(ctx.exception))
+        self.assertEqual(list(self.out.glob("*")), [])
+
+    def test_characters_the_font_cannot_draw_are_a_warning_not_a_failure(self) -> None:
+        document = make_tailored_document()
+        document.experience[0].bullets[0].text = "Built 日本語 dashboards"
+        files = render_cv_files(document, "Acme", self.out, fonts=HELVETICA)
+        self.assertTrue(files.pdf_path.exists())
+        self.assertTrue(any("日" in w for w in files.warnings))
+
+    def test_a_title_the_font_cannot_draw_still_renders(self) -> None:
+        title = "İstanbul Data Lead"
+        files = render_cv_files(
+            make_tailored_document(target_title=title, headline=title),
+            "Acme",
+            self.out,
+            fonts=HELVETICA,
+        )
+        self.assertTrue(files.docx_path.exists())
+        self.assertTrue(files.pdf_path.exists())
+        self.assertTrue(any("İ" in w for w in files.warnings))
+
+    def test_zero_width_characters_in_the_title_are_removed(self) -> None:
+        title = "Lead\u200bEngineer"
+        files = render_cv_files(
+            make_tailored_document(target_title=title, headline=title),
+            "Acme",
+            self.out,
+            fonts=HELVETICA,
+        )
+        self.assertIn("LeadEngineer", extract_docx_text(files.docx_path).splitlines())
+        self.assertEqual(files.warnings, ())
+
+    def test_ats_only_warns_that_an_older_pdf_was_left_untouched(self) -> None:
+        first = render_cv_files(
+            make_tailored_document(), "Acme", self.out, fonts=HELVETICA
+        )
+        second = render_cv_files(
+            make_tailored_document(), "Acme", self.out, with_pdf=False
+        )
+        self.assertTrue(first.pdf_path.exists())
+        self.assertTrue(any(str(first.pdf_path) in w for w in second.warnings))
+
 
 if __name__ == "__main__":
     unittest.main()

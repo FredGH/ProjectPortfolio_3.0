@@ -86,6 +86,15 @@ class TestRenderCvSubcommand(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("render-cv:", text)
 
+    def test_warnings_from_the_render_are_printed(self) -> None:
+        document = make_tailored_document()
+        document.experience[0].bullets[0].text = "Built 日本語 dashboards"
+        run = SimpleNamespace(status="approved", document=document)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = _run(["render-cv", *_ARGS, "--out-dir", tmp], run)
+        self.assertEqual(code, 0)
+        self.assertIn("render-cv warning:", text)
+
 
 if __name__ == "__main__":
     unittest.main()

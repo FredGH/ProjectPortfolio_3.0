@@ -1371,6 +1371,8 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
         f"render-cv complete: docx={files.docx_path} txt={files.txt_path}"
         + (f" pdf={files.pdf_path}" if files.pdf_path else "")
     )
+    for warning in files.warnings:
+        print(f"render-cv warning: {warning}")
     return 0
 
 

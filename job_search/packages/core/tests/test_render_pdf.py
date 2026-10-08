@@ -14,7 +14,13 @@ from tests.render_fixtures import make_tailored_document
 
 from core.cv.schema import Certification, Project
 from core.render.model import build_render_doc
-from core.render.pdf_designed import HELVETICA, Fonts, find_fonts, write_pdf
+from core.render.pdf_designed import (
+    HELVETICA,
+    Fonts,
+    find_fonts,
+    undrawable_chars,
+    write_pdf,
+)
 from core.render.text import extract_pdf_text
 from core.tailoring.schema import TailoredBullet, TailoredExperience
 
@@ -82,6 +88,17 @@ class TestFindFonts(unittest.TestCase):
         directory.mkdir()
         for name in ("Calibri.ttf", "Calibrib.ttf", "Calibrii.ttf"):
             (directory / name).write_bytes(b"not a font")
+        with self.assertLogs("core.render.pdf_designed", level="WARNING"):
+            fonts = find_fonts([directory])
+        self.assertEqual(fonts, HELVETICA)
+
+    def test_an_unreadable_font_directory_falls_back_instead_of_crashing(
+        self,
+    ) -> None:
+        directory = self.root / "locked"
+        directory.mkdir()
+        directory.chmod(0)
+        self.addCleanup(directory.chmod, 0o755)
         with self.assertLogs("core.render.pdf_designed", level="WARNING"):
             fonts = find_fonts([directory])
         self.assertEqual(fonts, HELVETICA)
@@ -201,6 +218,29 @@ class TestWritePdf(unittest.TestCase):
         self.assertIsInstance(fonts, Fonts)
         write_pdf(build_render_doc(make_tailored_document()), self.path, fonts)
         self.assertIn("ZzFixture", _squash(extract_pdf_text(self.path)))
+
+    def test_undrawable_characters_are_listed_for_the_helvetica_fallback(
+        self,
+    ) -> None:
+        doc = build_render_doc(make_tailored_document(identity="Zoë Łukasz 日本"))
+        self.assertEqual(undrawable_chars(doc, HELVETICA), ["Ł", "日", "本"])
+
+    def test_plain_latin_text_has_no_undrawable_characters(self) -> None:
+        doc = build_render_doc(make_tailored_document())
+        self.assertEqual(undrawable_chars(doc, HELVETICA), [])
+
+    def test_undrawable_characters_are_checked_against_a_ttf_font_too(self) -> None:
+        directory = Path(self._tmp.name) / "fonts"
+        directory.mkdir()
+        for target, source in (
+            ("Calibri.ttf", "Vera.ttf"),
+            ("Calibrib.ttf", "VeraBd.ttf"),
+            ("Calibrii.ttf", "VeraIt.ttf"),
+        ):
+            shutil.copy(_VERA_DIR / source, directory / target)
+        fonts = find_fonts([directory])
+        doc = build_render_doc(make_tailored_document(identity="Zz 日本"))
+        self.assertEqual(undrawable_chars(doc, fonts), ["日", "本"])
 
 
 if __name__ == "__main__":

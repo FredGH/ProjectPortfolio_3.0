@@ -34,6 +34,9 @@ HEADINGS = {
 }
 """Section headings, word for word as in the user's own CV template."""
 
+_INVISIBLE = frozenset("\u200b\ufeff\u2060\u00ad")
+"""Zero-width and soft-hyphen characters: invisible, and no font draws them."""
+
 _EXPANDED_KINDS = frozenset({"paragraph", "bullet"})
 
 
@@ -78,11 +81,14 @@ def _clean(text: str) -> str:
         text: Raw text, possibly pasted from a PDF or produced by an LLM.
 
     Returns:
-        The text with control characters removed (Word cannot store them)
-        and every whitespace run reduced to one space.
+        The text with control characters and invisible zero-width characters
+        removed (Word cannot store the first, no font draws the second) and
+        every whitespace run reduced to one space.
     """
     kept = "".join(
-        ch for ch in text if ch.isspace() or unicodedata.category(ch) != "Cc"
+        ch
+        for ch in text
+        if ch not in _INVISIBLE and (ch.isspace() or unicodedata.category(ch) != "Cc")
     )
     return " ".join(kept.split())
 

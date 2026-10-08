@@ -90,9 +90,10 @@ def find_fonts(search_dirs: Sequence[Path] | None = None) -> Fonts:
         template's typeface.
     """
     for directory in DEFAULT_FONT_DIRS if search_dirs is None else search_dirs:
-        if not directory.is_dir():
+        try:
+            found = {entry.name.lower(): entry for entry in directory.iterdir()}
+        except OSError:  # not a directory, missing, or not readable
             continue
-        found = {entry.name.lower(): entry for entry in directory.iterdir()}
         if not all(name in found for name in _FONT_FILES):
             continue
         try:
@@ -106,6 +107,45 @@ def find_fonts(search_dirs: Sequence[Path] | None = None) -> Fonts:
         "template's typeface (put Calibri*.ttf in private/fonts/)"
     )
     return HELVETICA
+
+
+def _can_draw(font_name: str, char: str) -> bool:
+    """Say whether a font has a glyph for one character.
+
+    Args:
+        font_name: A reportlab font name (built-in or registered TrueType).
+        char: One character.
+
+    Returns:
+        True when the character can be drawn; reportlab's built-in fonts use
+        the WinAnsi (cp1252) character set.
+    """
+    font = pdfmetrics.getFont(font_name)
+    if isinstance(font, TTFont):
+        return ord(char) in font.face.charToGlyph
+    try:
+        char.encode("cp1252")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def undrawable_chars(doc: RenderDoc, fonts: Fonts) -> list[str]:
+    """List the characters in the document that the fonts cannot draw.
+
+    Such characters come out of the PDF as blanks or boxes.
+
+    Args:
+        doc: The render model.
+        fonts: The fonts the PDF will use.
+
+    Returns:
+        The distinct characters missing from any of the three faces, sorted;
+        empty when everything can be drawn.
+    """
+    faces = (fonts.regular, fonts.bold, fonts.italic)
+    wanted = {ch for block in doc.blocks for ch in block.text if not ch.isspace()}
+    return sorted(ch for ch in wanted if not all(_can_draw(face, ch) for face in faces))
 
 
 def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
