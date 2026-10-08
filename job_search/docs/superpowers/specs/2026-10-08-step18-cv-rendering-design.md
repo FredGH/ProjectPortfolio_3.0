@@ -8,7 +8,7 @@ Turn an approved Step 17 `TailoredDocument` into two files for one job:
 
 - **18a** an ATS-safe `.docx` plus a `.txt` twin. Machine-readable first.
 - **18b** a designed PDF that reproduces the look of the user's own CV
-  (`private/Frederic_Marechal_2026_v4.pdf`). Human-readable first.
+  (`private/FirstName_LastName_2026_v4_template.pdf` (placeholder-name template; `.pages` source alongside)). Human-readable first.
 
 Success: text extracted from the generated `.docx` reads in the intended
 section order (automated test), the exact `title_for_display` is in the
