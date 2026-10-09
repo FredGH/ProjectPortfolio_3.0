@@ -31,6 +31,7 @@ services:
       - ./prompts:/app/prompts
       - ./data/landing:/data/landing
       - ./data/esco:/data/esco:ro
+      - ./output:/app/output
     depends_on:
       postgres:
         condition: service_healthy

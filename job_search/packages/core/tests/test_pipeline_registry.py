@@ -9,17 +9,14 @@ from pathlib import Path
 
 from core.pipeline.registry import REVIEW_STAGES, STAGES
 
-_CLI_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "apps" / "pipeline" / "app" / "cli.py"
-)
+_CLI_PATH = Path(__file__).resolve().parents[3] / "apps" / "pipeline" / "app" / "cli.py"
 
 # Stages deliberately excluded from STAGES' Run-button surface but not
 # from the dependency graph or this completeness check — see this
 # plan's Global Constraints for why each is excluded.
-# tailor-cv is on demand per (user, job) and is driven from the Tailored CV
-# Review page, not the dashboard.
-_EXCLUDED_FROM_RUN_BUTTON = {"ingest", "run-evals", "tailor-cv"}
+# tailor-cv and render-cv are on demand per (user, job) and are driven from
+# the Tailored CV Review page / CLI, not the dashboard.
+_EXCLUDED_FROM_RUN_BUTTON = {"ingest", "run-evals", "tailor-cv", "render-cv"}
 
 
 def _cli_subcommand_names() -> set[str]:
@@ -46,7 +43,8 @@ class TestStageCatalogCompleteness(unittest.TestCase):
         self.assertTrue(cli_names, "no subcommands found — parser broke")
         missing = cli_names - set(STAGES) - _EXCLUDED_FROM_RUN_BUTTON
         self.assertEqual(
-            missing, set(),
+            missing,
+            set(),
             f"CLI subcommand(s) {missing} have no STAGES entry and are not "
             "on the documented exclusion list — add one or the other",
         )
@@ -66,15 +64,14 @@ class TestDependencyGraphConsistency(unittest.TestCase):
     def test_every_automated_dependency_resolves_to_a_real_stage(self) -> None:
         for name, spec in STAGES.items():
             for dep in spec.depends_on:
-                self.assertIn(
-                    dep, STAGES, f"{name} depends on undefined stage {dep!r}"
-                )
+                self.assertIn(dep, STAGES, f"{name} depends on undefined stage {dep!r}")
 
     def test_every_review_dependency_resolves_to_a_real_automated_stage(self) -> None:
         for name, spec in REVIEW_STAGES.items():
             for dep in spec.depends_on:
                 self.assertIn(
-                    dep, STAGES,
+                    dep,
+                    STAGES,
                     f"review stage {name} depends on undefined automated stage {dep!r}",
                 )
 
@@ -99,8 +96,12 @@ class TestDependencyGraphConsistency(unittest.TestCase):
 class TestPerUserFlagging(unittest.TestCase):
     def test_scoring_funnel_stages_are_flagged_per_user(self) -> None:
         for name in (
-            "score-filter-jobs", "chunk-embed-cv", "score-similarity",
-            "score-skill-coverage", "score-llm-rerank", "score-blend",
+            "score-filter-jobs",
+            "chunk-embed-cv",
+            "score-similarity",
+            "score-skill-coverage",
+            "score-llm-rerank",
+            "score-blend",
             "map-cv-skills",
         ):
             self.assertTrue(STAGES[name].per_user, f"{name} should be per_user=True")

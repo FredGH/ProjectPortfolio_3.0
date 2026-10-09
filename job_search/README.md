@@ -592,8 +592,52 @@ faster. The backend used is stored on the run.
 The `fabrication_critic` task **must** stay on `anthropic`: the critic
 refuses to run otherwise, and a test asserts it.
 
-The paid adversarial test (a deliberately exaggerating Tailor against the
-real critic) runs with `RUN_PAID_TESTS=1`.
+This step produces approved *content* only. Rendering is Step 18.
 
-This step produces approved *content* only. The ATS `.docx` and the designed
-PDF are Steps 18a and 18b.
+## Rendered CV (Step 18a: ATS .docx)
+
+`render-cv` writes an ATS-safe `.docx` and a plain-text twin for the latest
+**approved** tailored CV of a job:
+
+    docker compose run --rm pipeline render-cv --user-id <id> --job-group-id <job_group_id>
+
+Files land in `./output/` (git-ignored; override with `--out-dir`) as
+`<surname>_<title_for_display>_<company>.docx` and `.txt`. The writer only
+ever adds plain paragraphs, so there are no tables, text boxes,
+headers/footers or images. Headings use the wording and order of your own
+CV template (`PROFESSIONAL SUMMARY`, `CORE TECHNICAL SKILLS`, `WORK EXPERIENCE`,
+`PERSONAL PROJECTS`, `PUBLICATIONS`, `EDUCATION`, `PROFESSIONAL QUALIFICATIONS &
+CONTINUOUS PERSONAL DEVELOPMENT`, `ACTIVITIES & INTERESTS`), each only when
+present; dates read `MM/YYYY – MM/YYYY`, and a short list
+of acronyms (ELT, ETL, GCP, AWS, CI/CD, API, NLP, ML) is expanded on first
+use. After writing, the command re-reads the `.docx` in XML order and fails,
+deleting both files, if its text differs from the `.txt` twin or lacks the
+exact job title. The designed PDF is Step 18b.
+
+Your CV and its renderings are personal data and this repo is public: never
+commit anything from `output/` or `private/`.
+
+### Further work: the paid adversarial test
+
+`packages/core/tests/integration/test_tailoring_adversarial.py` has a paid
+test that is **parked for now**. It is skipped unless `RUN_PAID_TESTS=1` and
+has not been run as part of the Step 17 sign-off.
+
+**What it does.** `TestExaggerationIsCaughtByRealClaude` runs a Tailor that
+exaggerates on purpose against the real Claude critic, and checks two things:
+the exaggerated bullet is caught and surfaced for review instead of being
+emitted, and an honest rewording of a real bullet is *not* flagged. The same
+scenarios always run in CI against a deterministic stand-in critic.
+
+**Why it is worth running.** The fabrication guard is the one part of the
+tailoring pipeline that must never fail quietly. The unit tests use a
+scripted critic, so they prove the plumbing: a rejected bullet is retried,
+dropped or surfaced. They cannot show that the real critic, with its real
+prompt and model, actually *catches* a plausible lie. This test measures
+that, and it is the only check that would notice a critic prompt or model
+change that silently makes the guard permissive. A single missed
+fabrication on a CV sent to a recruiter costs far more than the few cents
+the run bills.
+
+**To pick it up:** run it with `RUN_PAID_TESTS=1`, then record the catch rate
+and the cost here.
