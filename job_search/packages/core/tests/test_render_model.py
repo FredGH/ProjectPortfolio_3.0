@@ -199,7 +199,8 @@ class TestBuildRenderDoc(unittest.TestCase):
             ],
         )
         paragraphs = _texts(doc, "paragraph")
-        self.assertIn("Fixture Pipeline: Open ETL", paragraphs)
+        self.assertIn("Fixture Pipeline", _texts(doc, "project_title"))
+        self.assertIn("Open ETL", _texts(doc, "bullet"))
         self.assertIn("Fixture, Z. (2020). A paper.", paragraphs)
 
     def test_the_contact_line_leaves_out_the_location(self) -> None:
@@ -359,6 +360,53 @@ class TestBuildRenderDoc(unittest.TestCase):
             paragraphs[start : start + 5],
             ["Only Authors", "Fixture Z.", "Only Venue", "A Venue", "Neither"],
         )
+
+    def test_a_project_is_a_title_line_with_its_link_then_one_bullet_per_line(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                projects=[
+                    Project(
+                        name="AI Projects Portfolio",
+                        url="huggingface.co/spaces/Fixture/ai-projects-v1",
+                        description="First item — does a thing.\nSecond item — more.",
+                    )
+                ]
+            )
+        )
+        titles = [b for b in doc.blocks if b.kind == "project_title"]
+        self.assertEqual(
+            [b.text for b in titles],
+            ["AI Projects Portfolio: huggingface.co/spaces/Fixture/ai-projects-v1"],
+        )
+        self.assertEqual(titles[0].link, "huggingface.co/spaces/Fixture/ai-projects-v1")
+        index = doc.blocks.index(titles[0])
+        self.assertEqual(
+            [(b.kind, b.text) for b in doc.blocks[index + 1 : index + 3]],
+            [
+                ("bullet", "First item — does a thing."),
+                ("bullet", "Second item — more."),
+            ],
+        )
+
+    def test_a_project_without_a_link_or_a_description_has_no_empty_parts(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                projects=[
+                    Project(name="No Link", description="Only item."),
+                    Project(name="No Description", url="example.com/x"),
+                ]
+            )
+        )
+        titles = [b for b in doc.blocks if b.kind == "project_title"]
+        self.assertEqual(
+            [b.text for b in titles], ["No Link", "No Description: example.com/x"]
+        )
+        self.assertEqual(titles[0].link, "")
+        self.assertEqual(_texts(doc, "bullet").count("Only item."), 1)
 
 
 if __name__ == "__main__":

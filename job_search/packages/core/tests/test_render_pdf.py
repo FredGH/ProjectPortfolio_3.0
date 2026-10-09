@@ -292,6 +292,15 @@ class TestWritePdf(unittest.TestCase):
         style = _styles(HELVETICA)["bullet"]
         self.assertEqual((style.bulletIndent, style.leftIndent), (6, 19))
 
+    def test_a_projects_link_is_coloured_blue(self) -> None:
+        block = Block(
+            "project_title", "AI Projects: example.com/x", link="example.com/x"
+        )
+        self.assertEqual(
+            _markup(block),
+            'AI Projects: <font color="#315B94">example.com/x</font>',
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -197,6 +197,14 @@ def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
         "role_title": style(
             "role_title", fonts.bold, 10, spaceBefore=7, spaceAfter=0, keepWithNext=1
         ),
+        "project_title": style(
+            "project_title",
+            fonts.bold,
+            9.5,
+            spaceBefore=4,
+            spaceAfter=1,
+            keepWithNext=1,
+        ),
         "role_meta": style(
             "role_meta", fonts.italic, 9.5, spaceAfter=2, keepWithNext=1
         ),
@@ -222,12 +230,16 @@ def _markup(block: Block) -> str:
 
     Returns:
         The text with `&`, `<`, `>` escaped; a block's muted tail (a role's
-        dates) is coloured grey, and in the contact line the LinkedIn URL is
+        dates) is coloured grey, a block's link (a project's URL) blue, and in
+        the contact line the LinkedIn URL is
         coloured blue and underlined.
     """
     if block.muted and block.text.endswith(block.muted):
         head = escape(block.text[: -len(block.muted)])
         return f'{head}<font color="{_MUTED_HEX}">{escape(block.muted)}</font>'
+    if block.link and block.text.endswith(block.link):
+        head = escape(block.text[: -len(block.link)])
+        return f'{head}<font color="{_BLUE_HEX}">{escape(block.link)}</font>'
     if block.kind != "contact":
         return escape(block.text)
     parts = [escape(part) for part in block.text.split(" | ")]

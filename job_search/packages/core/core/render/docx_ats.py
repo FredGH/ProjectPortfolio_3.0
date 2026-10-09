@@ -61,7 +61,7 @@ def _add_block(document: DocumentType, block: Block) -> None:
     elif block.kind == "headline":
         run.bold = True
         run.font.size = Pt(12)
-    elif block.kind == "role_title":
+    elif block.kind in ("role_title", "project_title"):
         run.bold = True
         paragraph.paragraph_format.space_before = Pt(6)
         paragraph.paragraph_format.keep_with_next = True

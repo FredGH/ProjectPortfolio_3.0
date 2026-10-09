@@ -20,6 +20,7 @@ BlockKind = Literal[
     "heading",
     "role_title",
     "role_meta",
+    "project_title",
     "paragraph",
     "bullet",
 ]
@@ -54,11 +55,14 @@ class Block:
         text: The line's text, whitespace-collapsed.
         muted: The tail of `text` a designed renderer may show in a muted
             colour (a role's dates); plain-text renderers ignore it.
+        link: The tail of `text` that is a link (a project's URL), which a
+            designed renderer may colour; plain-text renderers ignore it.
     """
 
     kind: BlockKind
     text: str
     muted: str = ""
+    link: str = ""
 
 
 @dataclass(frozen=True)
@@ -187,7 +191,13 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     expander = AcronymExpander()
     blocks: list[Block] = []
 
-    def add(kind: BlockKind, text: str, expand: bool = True, muted: str = "") -> None:
+    def add(
+        kind: BlockKind,
+        text: str,
+        expand: bool = True,
+        muted: str = "",
+        link: str = "",
+    ) -> None:
         """Append one block, cleaning the text and expanding acronyms.
 
         Args:
@@ -196,6 +206,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             expand: Whether first-use acronyms may be expanded in this
                 block (still limited to paragraph and bullet kinds).
             muted: The tail of `text` to show muted (a role's dates).
+            link: The tail of `text` that is a link (a project's URL).
         """
         text = _clean(text)
         if not text:
@@ -204,8 +215,15 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             text = _tidy(text)
         if expand and kind in _EXPANDED_KINDS:
             text = expander.expand(text)
-        muted = _clean(muted)
-        blocks.append(Block(kind, text, muted if text.endswith(muted) else ""))
+        muted, link = _clean(muted), _clean(link)
+        blocks.append(
+            Block(
+                kind,
+                text,
+                muted if text.endswith(muted) else "",
+                link if text.endswith(link) else "",
+            )
+        )
 
     def join(*parts: str | None, sep: str = ", ") -> str:
         """Join the non-empty parts.
@@ -250,7 +268,13 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     if doc.projects:
         add("heading", HEADINGS["PROJECTS"])
         for project in doc.projects:
-            add("paragraph", join(project.name, project.description, sep=": "))
+            add(
+                "project_title",
+                join(project.name, project.url, sep=": "),
+                link=project.url or "",
+            )
+            for line in project.description.splitlines():
+                add("bullet", line)
     if doc.publications:
         add("heading", HEADINGS["PUBLICATIONS"])
         for publication in doc.publications:
