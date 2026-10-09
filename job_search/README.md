@@ -620,10 +620,18 @@ headings. Calibri is a Microsoft font and this repo is public, so the font is
 never committed: the PDF uses `private/fonts/` (drop `Calibri.ttf`,
 `Calibrib.ttf`, `Calibrii.ttf` there; git-ignored), then the copies that ship
 with Microsoft Word on macOS, and otherwise falls back to Helvetica with a
-warning. Inside Docker only the fallback is available unless you mount your
-fonts. The command re-reads the PDF and fails, deleting every file, if the
+warning. `docker-compose.yml` mounts `private/fonts/` (read-only) into the
+`ui` and `pipeline` containers, so putting the three files there is enough for
+the PDF to use Calibri inside Docker too. The command re-reads the PDF and fails, deleting every file, if the
 exact job title is missing or the section headings are missing or out of
 order. Pass `--ats-only` to skip the PDF.
+
+**From the UI:** on the *Tailored CV Review* page, once a run is **approved**,
+a *Rendered CV* section appears. **Generate PDF and Word files** builds the
+PDF, the ATS `.docx` and the `.txt` in memory and offers a download button for
+each; nothing is written to the repo. Warnings (for example characters the PDF
+font cannot draw) are shown above the buttons. The `ui` image needs the render
+dependencies, so rebuild it after pulling (`docker compose build ui`).
 
 Your CV and its renderings are personal data and this repo is public: never
 commit anything from `output/` or `private/`.

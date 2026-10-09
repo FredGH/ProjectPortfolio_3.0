@@ -31,7 +31,6 @@ services:
       - ./prompts:/app/prompts
       - ./data/landing:/data/landing
       - ./data/esco:/data/esco:ro
-      - ./output:/app/output
     depends_on:
       postgres:
         condition: service_healthy
@@ -47,6 +46,7 @@ services:
       - ./apps/ui/app:/app/apps/ui/app
       - ./apps/ui/.streamlit:/app/.streamlit
       - ./packages/core:/app/packages/core
+      - ./private/fonts:/app/private/fonts:ro
     depends_on:
       - api
 
@@ -63,6 +63,8 @@ services:
       - ./prompts:/app/prompts
       - ./data/landing:/data/landing
       - ./data/esco:/data/esco:ro
+      - ./output:/app/output
+      - ./private/fonts:/app/private/fonts:ro
     depends_on:
       postgres:
         condition: service_healthy
