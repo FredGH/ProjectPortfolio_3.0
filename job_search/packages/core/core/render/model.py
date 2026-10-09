@@ -255,6 +255,8 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         add("heading", HEADINGS["PUBLICATIONS"])
         for publication in doc.publications:
             add("paragraph", publication.citation)
+            venue = join(publication.conference, str(publication.year or "") or None)
+            add("paragraph", join(join(*publication.authors), venue, sep=" — "))
     if doc.education:
         add("heading", HEADINGS["EDUCATION"])
         add("paragraph", join(*(_education_entry(edu) for edu in doc.education)))

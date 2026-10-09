@@ -308,6 +308,58 @@ class TestBuildRenderDoc(unittest.TestCase):
             _texts(doc, "paragraph"),
         )
 
+    def test_each_publication_is_a_title_line_then_an_authors_and_venue_line(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                publications=[
+                    Publication(
+                        citation="A Title",
+                        authors=["Olaniyan R.", "Stamate D.", "… & Fixture Z."],
+                        conference="10th Int. Conf. on Fixtures, Springer.",
+                    ),
+                    Publication(
+                        citation="Second Title",
+                        authors=["Fixture Z. et al."],
+                        conference="Journal of Fixtures",
+                        year=2021,
+                    ),
+                ]
+            )
+        )
+        paragraphs = _texts(doc, "paragraph")
+        start = paragraphs.index("A Title")
+        self.assertEqual(
+            paragraphs[start : start + 4],
+            [
+                "A Title",
+                "Olaniyan R., Stamate D., … & Fixture Z. — "
+                "10th Int. Conf. on Fixtures, Springer.",
+                "Second Title",
+                "Fixture Z. et al. — Journal of Fixtures, 2021",
+            ],
+        )
+
+    def test_a_publication_with_only_authors_or_only_a_venue_has_no_dangling_dash(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                publications=[
+                    Publication(citation="Only Authors", authors=["Fixture Z."]),
+                    Publication(citation="Only Venue", conference="A Venue"),
+                    Publication(citation="Neither"),
+                ]
+            )
+        )
+        paragraphs = _texts(doc, "paragraph")
+        start = paragraphs.index("Only Authors")
+        self.assertEqual(
+            paragraphs[start : start + 5],
+            ["Only Authors", "Fixture Z.", "Only Venue", "A Venue", "Neither"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
