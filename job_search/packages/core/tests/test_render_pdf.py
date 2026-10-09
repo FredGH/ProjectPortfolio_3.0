@@ -13,10 +13,12 @@ from pypdf import PdfReader
 from tests.render_fixtures import make_tailored_document
 
 from core.cv.schema import Certification, Project
-from core.render.model import build_render_doc
+from core.render.model import Block, build_render_doc
 from core.render.pdf_designed import (
     HELVETICA,
     Fonts,
+    _markup,
+    _styles,
     find_fonts,
     undrawable_chars,
     write_pdf,
@@ -241,6 +243,54 @@ class TestWritePdf(unittest.TestCase):
         fonts = find_fonts([directory])
         doc = build_render_doc(make_tailored_document(identity="Zz 日本"))
         self.assertEqual(undrawable_chars(doc, fonts), ["日", "本"])
+
+    def test_no_text_is_drawn_in_helvetica_when_calibri_like_fonts_are_used(
+        self,
+    ) -> None:
+        directory = Path(self._tmp.name) / "fonts"
+        directory.mkdir()
+        for target, source in (
+            ("Calibri.ttf", "Vera.ttf"),
+            ("Calibrib.ttf", "VeraBd.ttf"),
+            ("Calibrii.ttf", "VeraIt.ttf"),
+        ):
+            shutil.copy(_VERA_DIR / source, directory / target)
+        write_pdf(
+            build_render_doc(make_tailored_document()),
+            self.path,
+            find_fonts([directory]),
+        )
+        drawn = set()
+        for page in PdfReader(str(self.path)).pages:
+            names = {
+                key: str(font.get_object().get("/BaseFont"))
+                for key, font in page["/Resources"]["/Font"].items()
+            }
+            current = ""
+            content = page.get_contents().get_data().decode("latin-1")
+            for match in re.finditer(r"(/\S+) [\d.]+ Tf|\) Tj|\] TJ", content):
+                if match.group(1):
+                    current = names[match.group(1)]
+                else:
+                    drawn.add(current)
+        self.assertTrue(drawn)
+        self.assertFalse([name for name in drawn if "Helvetica" in name], drawn)
+
+    def test_role_dates_are_coloured_grey_and_the_rest_is_not(self) -> None:
+        block = Block(
+            "role_meta", "Acme Bank, 01/2019 – Present", muted="01/2019 – Present"
+        )
+        markup = _markup(block)
+        self.assertTrue(markup.startswith("Acme Bank, "))
+        self.assertIn('<font color="#7F7F7F">01/2019 – Present</font>', markup)
+
+    def test_muted_text_that_is_not_at_the_end_is_ignored(self) -> None:
+        block = Block("role_meta", "Acme Bank", muted="01/2019")
+        self.assertEqual(_markup(block), "Acme Bank")
+
+    def test_bullets_are_indented_like_the_template(self) -> None:
+        style = _styles(HELVETICA)["bullet"]
+        self.assertEqual((style.bulletIndent, style.leftIndent), (6, 19))
 
 
 if __name__ == "__main__":

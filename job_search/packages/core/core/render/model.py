@@ -4,6 +4,7 @@ the ATS .docx (18a) and the designed PDF (18b) cannot drift apart."""
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from typing import Literal
@@ -38,6 +39,9 @@ _INVISIBLE = frozenset("\u200b\ufeff\u2060\u00ad")
 """Zero-width and soft-hyphen characters: invisible, and no font draws them."""
 
 _EXPANDED_KINDS = frozenset({"paragraph", "bullet"})
+_TIDIED_KINDS = frozenset({"paragraph", "bullet", "role_meta"})
+_SPACE_BEFORE_PUNCTUATION = re.compile(r"\s+([,.;:!?)])")
+_SPACE_AFTER_BRACKET = re.compile(r"\(\s+")
 
 
 @dataclass(frozen=True)
@@ -47,10 +51,13 @@ class Block:
     Attributes:
         kind: What the line is, so a renderer can style it.
         text: The line's text, whitespace-collapsed.
+        muted: The tail of `text` a designed renderer may show in a muted
+            colour (a role's dates); plain-text renderers ignore it.
     """
 
     kind: BlockKind
     text: str
+    muted: str = ""
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,19 @@ def _clean(text: str) -> str:
     return " ".join(kept.split())
 
 
+def _tidy(text: str) -> str:
+    """Remove spaces before closing punctuation and after an opening bracket.
+
+    Args:
+        text: Body text, already whitespace-collapsed.
+
+    Returns:
+        The text with `word ,` shown as `word,` and `( word )` as `(word)`.
+    """
+    text = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", text)
+    return _SPACE_AFTER_BRACKET.sub("(", text)
+
+
 def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     """Lay a tailored document out as ordered blocks.
 
@@ -113,7 +133,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     expander = AcronymExpander()
     blocks: list[Block] = []
 
-    def add(kind: BlockKind, text: str, expand: bool = True) -> None:
+    def add(kind: BlockKind, text: str, expand: bool = True, muted: str = "") -> None:
         """Append one block, cleaning the text and expanding acronyms.
 
         Args:
@@ -121,13 +141,17 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             text: Raw text; empty text adds nothing.
             expand: Whether first-use acronyms may be expanded in this
                 block (still limited to paragraph and bullet kinds).
+            muted: The tail of `text` to show muted (a role's dates).
         """
         text = _clean(text)
         if not text:
             return
+        if kind in _TIDIED_KINDS:
+            text = _tidy(text)
         if expand and kind in _EXPANDED_KINDS:
             text = expander.expand(text)
-        blocks.append(Block(kind, text))
+        muted = _clean(muted)
+        blocks.append(Block(kind, text, muted if text.endswith(muted) else ""))
 
     def join(*parts: str | None, sep: str = ", ") -> str:
         """Join the non-empty parts.
@@ -149,7 +173,6 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             doc.email,
             doc.phone,
             doc.linkedin_url,
-            join(*doc.locations),
             doc.nationality,
             doc.work_auth,
             sep=" | ",
@@ -166,9 +189,8 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         add("heading", HEADINGS["EXPERIENCE"])
         for role in doc.experience:
             add("role_title", role.title)
-            add(
-                "role_meta", join(role.company, format_date_range(role.start, role.end))
-            )
+            dates = format_date_range(role.start, role.end)
+            add("role_meta", join(role.company, dates), muted=dates)
             for bullet in role.bullets:
                 add("bullet", bullet.text)
     if doc.projects:

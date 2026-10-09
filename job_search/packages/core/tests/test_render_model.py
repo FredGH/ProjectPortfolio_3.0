@@ -195,6 +195,42 @@ class TestBuildRenderDoc(unittest.TestCase):
         self.assertIn("Fixture Pipeline: Open ETL", paragraphs)
         self.assertIn("Fixture, Z. (2020). A paper.", paragraphs)
 
+    def test_the_contact_line_leaves_out_the_location(self) -> None:
+        doc = build_render_doc(make_tailored_document(locations=["London, UK"]))
+        self.assertNotIn("London", doc.blocks[2].text)
+        self.assertIn("Fixtureland", doc.blocks[2].text)
+
+    def test_spacing_before_punctuation_is_tidied_in_body_text(self) -> None:
+        experience = [
+            TailoredExperience(
+                truth_index=0,
+                company="Acme",
+                title="Engineer",
+                bullets=[
+                    TailoredBullet(
+                        text="Used ( ClaudeAI ) tooling , quickly .", origin="original"
+                    )
+                ],
+            )
+        ]
+        doc = build_render_doc(make_tailored_document(experience=experience))
+        self.assertEqual(_texts(doc, "bullet"), ["Used (ClaudeAI) tooling, quickly."])
+
+    def test_the_title_keeps_its_own_spacing(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                target_title="Lead ( Data ) Engineer", headline="Lead ( Data ) Engineer"
+            )
+        )
+        self.assertEqual(doc.blocks[1].text, "Lead ( Data ) Engineer")
+
+    def test_a_role_line_marks_its_dates_as_muted(self) -> None:
+        doc = build_render_doc(make_tailored_document())
+        meta = [b for b in doc.blocks if b.kind == "role_meta"]
+        self.assertEqual(meta[0].muted, "01/2019 – Present")
+        self.assertTrue(meta[0].text.endswith(meta[0].muted))
+        self.assertEqual(meta[1].muted, "06/2015 – 12/2018")
+
 
 if __name__ == "__main__":
     unittest.main()

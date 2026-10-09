@@ -26,8 +26,9 @@ from core.render.model import Block, BlockKind, RenderDoc
 
 logger = logging.getLogger(__name__)
 
-_BLUE = HexColor("#2F5597")
-_BLUE_HEX = "#2F5597"
+_BLUE_HEX = "#315B94"
+_BLUE = HexColor(_BLUE_HEX)
+_MUTED_HEX = "#7F7F7F"
 _MARGIN_X = 45  # reportlab adds 6 pt of frame padding: ~51 pt in the template
 _MARGIN_TOP = 36
 _MARGIN_BOTTOM = 40
@@ -201,7 +202,14 @@ def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
         ),
         "paragraph": style("paragraph", fonts.regular, 9.5),
         "bullet": style(
-            "bullet", fonts.regular, 9.5, leftIndent=14, bulletIndent=3, spaceAfter=1
+            "bullet",
+            fonts.regular,
+            9.5,
+            leftIndent=19,
+            bulletIndent=6,
+            bulletFontName=fonts.regular,
+            bulletFontSize=10,
+            spaceAfter=1,
         ),
     }
 
@@ -213,9 +221,13 @@ def _markup(block: Block) -> str:
         block: The block.
 
     Returns:
-        The text with `&`, `<`, `>` escaped; in the contact line the
-        LinkedIn URL is also coloured blue and underlined.
+        The text with `&`, `<`, `>` escaped; a block's muted tail (a role's
+        dates) is coloured grey, and in the contact line the LinkedIn URL is
+        coloured blue and underlined.
     """
+    if block.muted and block.text.endswith(block.muted):
+        head = escape(block.text[: -len(block.muted)])
+        return f'{head}<font color="{_MUTED_HEX}">{escape(block.muted)}</font>'
     if block.kind != "contact":
         return escape(block.text)
     parts = [escape(part) for part in block.text.split(" | ")]
