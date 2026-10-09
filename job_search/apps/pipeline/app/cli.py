@@ -1335,7 +1335,8 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
     pipeline dashboard (core.pipeline.registry).
 
     Args:
-        args: Parsed CLI arguments — `user_id`, `job_group_id`, `out_dir`.
+        args: Parsed CLI arguments — `user_id`, `job_group_id`, `out_dir` and
+            `ats_only` (skip the designed PDF).
 
     Returns:
         0 when both files were written and verified; 1 when there is no
@@ -1358,12 +1359,20 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
     job = load_job_context(engine, args.job_group_id)
     try:
         files = render_cv_files(
-            run.document, job.company if job else None, Path(args.out_dir)
+            run.document,
+            job.company if job else None,
+            Path(args.out_dir),
+            with_pdf=not args.ats_only,
         )
     except (RenderError, ValueError) as exc:
         print(f"render-cv: {exc}")
         return 1
-    print(f"render-cv complete: docx={files.docx_path} txt={files.txt_path}")
+    print(
+        f"render-cv complete: docx={files.docx_path} txt={files.txt_path}"
+        + (f" pdf={files.pdf_path}" if files.pdf_path else "")
+    )
+    for warning in files.warnings:
+        print(f"render-cv warning: {warning}")
     return 0
 
 
@@ -1736,8 +1745,8 @@ def main(argv: list[str] | None = None) -> int:
 
     render_cv_parser = subparsers.add_parser(
         "render-cv",
-        help="Write the ATS-safe .docx and .txt for one approved tailored CV "
-        "(PLAN.md Step 18a); on demand, not a pipeline stage",
+        help="Write the ATS-safe .docx and .txt and the designed PDF for one "
+        "approved tailored CV (PLAN.md Step 18); on demand, not a pipeline stage",
     )
     render_cv_parser.add_argument("--user-id", required=True, type=uuid.UUID)
     render_cv_parser.add_argument("--job-group-id", required=True)
@@ -1745,6 +1754,11 @@ def main(argv: list[str] | None = None) -> int:
         "--out-dir",
         default="output",
         help="Where to write the files (default: ./output, git-ignored)",
+    )
+    render_cv_parser.add_argument(
+        "--ats-only",
+        action="store_true",
+        help="Write only the ATS .docx and .txt, not the designed PDF",
     )
 
     args = parser.parse_args(argv)

@@ -55,20 +55,27 @@ class TestRenderCvSubcommand(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("needs_review", text)
 
-    def test_an_approved_run_writes_both_files(self) -> None:
+    def test_an_approved_run_writes_docx_txt_and_pdf_by_default(self) -> None:
         run = SimpleNamespace(status="approved", document=make_tailored_document())
         with tempfile.TemporaryDirectory() as tmp:
             code, text = _run(["render-cv", *_ARGS, "--out-dir", tmp], run)
             names = sorted(p.name for p in Path(tmp).iterdir())
         self.assertEqual(code, 0)
-        self.assertEqual(
-            names,
-            [
-                "Fixture_Lead_Data_Engineer_Acme_Bank.docx",
-                "Fixture_Lead_Data_Engineer_Acme_Bank.txt",
-            ],
-        )
+        base = "Fixture_Lead_Data_Engineer_Acme_Bank"
+        self.assertEqual(names, [f"{base}.docx", f"{base}.pdf", f"{base}.txt"])
         self.assertIn("render-cv complete", text)
+        self.assertIn(".pdf", text)
+
+    def test_ats_only_skips_the_pdf(self) -> None:
+        run = SimpleNamespace(status="approved", document=make_tailored_document())
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = _run(
+                ["render-cv", *_ARGS, "--out-dir", tmp, "--ats-only"], run
+            )
+            names = sorted(p.suffix for p in Path(tmp).iterdir())
+        self.assertEqual(code, 0)
+        self.assertEqual(names, [".docx", ".txt"])
+        self.assertNotIn(".pdf", text)
 
     def test_a_blank_title_prints_the_reason_instead_of_a_traceback(self) -> None:
         run = SimpleNamespace(
@@ -78,6 +85,15 @@ class TestRenderCvSubcommand(unittest.TestCase):
             code, text = _run(["render-cv", *_ARGS, "--out-dir", tmp], run)
         self.assertEqual(code, 1)
         self.assertIn("render-cv:", text)
+
+    def test_warnings_from_the_render_are_printed(self) -> None:
+        document = make_tailored_document()
+        document.experience[0].bullets[0].text = "Built 日本語 dashboards"
+        run = SimpleNamespace(status="approved", document=document)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = _run(["render-cv", *_ARGS, "--out-dir", tmp], run)
+        self.assertEqual(code, 0)
+        self.assertIn("render-cv warning:", text)
 
 
 if __name__ == "__main__":

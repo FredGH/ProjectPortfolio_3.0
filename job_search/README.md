@@ -594,7 +594,7 @@ refuses to run otherwise, and a test asserts it.
 
 This step produces approved *content* only. Rendering is Step 18.
 
-## Rendered CV (Step 18a: ATS .docx)
+## Rendered CV (Step 18: ATS .docx and designed PDF)
 
 `render-cv` writes an ATS-safe `.docx` and a plain-text twin for the latest
 **approved** tailored CV of a job:
@@ -612,7 +612,18 @@ present; dates read `MM/YYYY – MM/YYYY`, and a short list
 of acronyms (ELT, ETL, GCP, AWS, CI/CD, API, NLP, ML) is expanded on first
 use. After writing, the command re-reads the `.docx` in XML order and fails,
 deleting both files, if its text differs from the `.txt` twin or lacks the
-exact job title. The designed PDF is Step 18b.
+exact job title.
+
+By default it also writes a **designed PDF** (`.pdf`, same name) that looks
+like your own CV template: A4, one column, Calibri, blue name and section
+headings. Calibri is a Microsoft font and this repo is public, so the font is
+never committed: the PDF uses `private/fonts/` (drop `Calibri.ttf`,
+`Calibrib.ttf`, `Calibrii.ttf` there; git-ignored), then the copies that ship
+with Microsoft Word on macOS, and otherwise falls back to Helvetica with a
+warning. Inside Docker only the fallback is available unless you mount your
+fonts. The command re-reads the PDF and fails, deleting every file, if the
+exact job title is missing or the section headings are missing or out of
+order. Pass `--ats-only` to skip the PDF.
 
 Your CV and its renderings are personal data and this repo is public: never
 commit anything from `output/` or `private/`.
