@@ -626,6 +626,41 @@ class TestTailoringStore(unittest.TestCase):
         self.assertEqual(latest_run_id(self.app_engine, self.user_a, job), ids[1])
         self.assertIsNone(latest_run_id(self.app_engine, self.user_b, job))
 
+    def test_latest_run_id_can_be_limited_to_a_status(self) -> None:
+        job = "zzfixture-tlr-store-status"
+        approved = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id=job,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        finish_run(
+            self.app_engine,
+            self.user_a,
+            approved,
+            status="approved",
+            document=None,
+            orphans=[],
+            attempts=1,
+        )
+        cancelled = create_run(
+            self.app_engine,
+            self.user_a,
+            job_group_id=job,
+            truth_base_version=1,
+            target_title="Lead Data Engineer",
+        )
+        cancel_run(self.app_engine, self.user_a, cancelled)
+        self.assertEqual(latest_run_id(self.app_engine, self.user_a, job), cancelled)
+        self.assertEqual(
+            latest_run_id(self.app_engine, self.user_a, job, status="approved"),
+            approved,
+        )
+        self.assertIsNone(
+            latest_run_id(self.app_engine, self.user_a, job, status="needs_review")
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

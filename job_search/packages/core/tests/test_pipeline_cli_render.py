@@ -95,6 +95,38 @@ class TestRenderCvSubcommand(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("render-cv warning:", text)
 
+    def test_the_latest_approved_run_is_rendered_when_a_newer_one_was_cancelled(
+        self,
+    ) -> None:
+        approved_id, cancelled_id = uuid.uuid4(), uuid.uuid4()
+        runs = {
+            approved_id: SimpleNamespace(
+                status="approved", document=make_tailored_document()
+            ),
+            cancelled_id: SimpleNamespace(status="cancelled", document=None),
+        }
+
+        def lookup(engine, user_id, job_group_id, status=None):  # type: ignore[no-untyped-def]
+            """Return the newest run id, or the newest approved one if asked."""
+            return approved_id if status == "approved" else cancelled_id
+
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            with (
+                mock.patch("app.cli.build_engine"),
+                mock.patch("app.cli.latest_run_id", side_effect=lookup),
+                mock.patch("app.cli.read_run", side_effect=lambda e, u, rid: runs[rid]),
+                mock.patch(
+                    "app.cli.load_job_context",
+                    return_value=SimpleNamespace(company="Acme Bank"),
+                ),
+                contextlib.redirect_stdout(out),
+            ):
+                code = main(["render-cv", *_ARGS, "--out-dir", tmp, "--ats-only"])
+            names = sorted(p.suffix for p in Path(tmp).iterdir())
+        self.assertEqual(code, 0)
+        self.assertEqual(names, [".docx", ".txt"])
+
 
 if __name__ == "__main__":
     unittest.main()

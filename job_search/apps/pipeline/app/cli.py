@@ -1328,8 +1328,11 @@ def _cmd_tailor_cv(args: argparse.Namespace) -> int:
 
 
 def _cmd_render_cv(args: argparse.Namespace) -> int:
-    """Run the `render-cv` subcommand: write the ATS .docx and .txt for one
-    approved tailored CV (Step 18a).
+    """Run the `render-cv` subcommand: write the ATS .docx, .txt and designed
+    PDF for one approved tailored CV (Step 18).
+
+    Renders the newest *approved* run for the job, so a newer cancelled or
+    failed run does not hide an approved one.
 
     On demand, not a batch stage, so it is deliberately absent from the
     pipeline dashboard (core.pipeline.registry).
@@ -1345,7 +1348,9 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
     """
     settings = get_settings()
     engine = build_engine(settings.app_database_url)
-    run_id = latest_run_id(engine, args.user_id, args.job_group_id)
+    run_id = latest_run_id(
+        engine, args.user_id, args.job_group_id, status="approved"
+    ) or latest_run_id(engine, args.user_id, args.job_group_id)
     run = read_run(engine, args.user_id, run_id) if run_id is not None else None
     if run is None:
         print("render-cv: no tailored CV for this job; run tailor-cv first")

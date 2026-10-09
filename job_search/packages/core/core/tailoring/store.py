@@ -221,7 +221,10 @@ def create_run(
 
 
 def latest_run_id(
-    engine: Engine, user_id: uuid.UUID, job_group_id: str
+    engine: Engine,
+    user_id: uuid.UUID,
+    job_group_id: str,
+    status: str | None = None,
 ) -> uuid.UUID | None:
     """Find the user's most recent run for a job.
 
@@ -229,18 +232,21 @@ def latest_run_id(
         engine: The app-role engine.
         user_id: The owner.
         job_group_id: The target job.
+        status: Only consider runs with this status (for example
+            `approved`); None considers every run.
 
     Returns:
-        The newest run's id, or None if the user has no run for the job.
+        The newest matching run's id, or None if there is none.
     """
     with session_scope(engine, user_id=user_id) as conn:
         return conn.execute(
             text(
                 "SELECT id FROM tailoring.tailored_cv "
                 "WHERE job_group_id = :job_group_id "
+                "AND (CAST(:status AS text) IS NULL OR status = :status) "
                 "ORDER BY created_at DESC, id DESC LIMIT 1"
             ),
-            {"job_group_id": job_group_id},
+            {"job_group_id": job_group_id, "status": status},
         ).scalar_one_or_none()
 
 
