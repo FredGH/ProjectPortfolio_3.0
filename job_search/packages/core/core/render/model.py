@@ -9,6 +9,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Literal
 
+from core.cv.schema import Activity, Education
 from core.render.format import AcronymExpander, format_date_range
 from core.tailoring.schema import TailoredDocument
 
@@ -113,6 +114,59 @@ def _tidy(text: str) -> str:
     return _SPACE_AFTER_BRACKET.sub("(", text)
 
 
+def _years(start: str | None, end: str | None) -> str:
+    """Render a year range the way the CV template shows it in brackets.
+
+    Args:
+        start: The raw start date, if any.
+        end: The raw end date, if any (`Present` means ongoing).
+
+    Returns:
+        `2016–2017`, `2020–present`, `2018`, or an empty string.
+    """
+    return (
+        format_date_range(start, end, open_ended=False)
+        .replace(" – ", "–")
+        .replace("Present", "present")
+    )
+
+
+def _education_entry(edu: Education) -> str:
+    """Format one education entry as `Qualification - Institution (years)`.
+
+    Args:
+        edu: The education entry.
+
+    Returns:
+        The entry; a grade the qualification does not already name is added
+        to the qualification in brackets.
+    """
+    qualification = edu.qualification or ""
+    if edu.grade and edu.grade.lower() not in qualification.lower():
+        qualification = f"{qualification} ({edu.grade})".strip()
+    head = " - ".join(part for part in (qualification, edu.institution) if part)
+    years = _years(edu.start, edu.end)
+    return f"{head} ({years})" if years else head
+
+
+def _activity_entry(activity: Activity) -> str:
+    """Format one activity as `Name at Organisation (years)`.
+
+    Args:
+        activity: The activity entry.
+
+    Returns:
+        The entry; the organisation and years are left out when missing.
+    """
+    head = (
+        f"{activity.name} at {activity.organisation}"
+        if activity.organisation
+        else activity.name
+    )
+    years = _years(activity.start, activity.end)
+    return f"{head} ({years})" if years else head
+
+
 def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     """Lay a tailored document out as ordered blocks.
 
@@ -203,29 +257,19 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             add("paragraph", publication.citation)
     if doc.education:
         add("heading", HEADINGS["EDUCATION"])
-        for edu in doc.education:
-            add(
-                "paragraph",
-                join(
-                    edu.qualification,
-                    edu.institution,
-                    format_date_range(edu.start, edu.end, open_ended=False),
-                    edu.grade,
-                ),
-            )
+        add("paragraph", join(*(_education_entry(edu) for edu in doc.education)))
     if doc.qualifications:
         add("heading", HEADINGS["QUALIFICATIONS"])
-        for cert in doc.qualifications:
-            add("paragraph", f"{cert.name} ({cert.year})" if cert.year else cert.name)
+        add(
+            "paragraph",
+            join(
+                *(
+                    f"{cert.name} ({cert.year})" if cert.year else cert.name
+                    for cert in doc.qualifications
+                )
+            ),
+        )
     if doc.activities:
         add("heading", HEADINGS["ACTIVITIES"])
-        for activity in doc.activities:
-            add(
-                "paragraph",
-                join(
-                    activity.name,
-                    activity.organisation,
-                    format_date_range(activity.start, activity.end, open_ended=False),
-                ),
-            )
+        add("paragraph", join(*(_activity_entry(act) for act in doc.activities)))
     return RenderDoc(title=title, blocks=tuple(blocks))

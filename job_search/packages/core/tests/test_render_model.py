@@ -6,7 +6,14 @@ import unittest
 
 from tests.render_fixtures import make_tailored_document
 
-from core.cv.schema import Education, Project, Publication, Skill
+from core.cv.schema import (
+    Activity,
+    Certification,
+    Education,
+    Project,
+    Publication,
+    Skill,
+)
 from core.render.model import build_render_doc
 from core.tailoring.schema import TailoredBullet, TailoredExperience, TailoredSummary
 
@@ -59,7 +66,7 @@ class TestBuildRenderDoc(unittest.TestCase):
     def test_education_and_certification_lines(self) -> None:
         doc = build_render_doc(make_tailored_document())
         paragraphs = _texts(doc, "paragraph")
-        self.assertIn("BSc, Zz University, 2011 – 2014", paragraphs)
+        self.assertIn("BSc - Zz University (2011–2014)", paragraphs)
         self.assertIn("Fixture Cert (2020)", paragraphs)
 
     def test_acronyms_expand_on_first_use_only_across_sections(self) -> None:
@@ -142,7 +149,7 @@ class TestBuildRenderDoc(unittest.TestCase):
                 ]
             )
         )
-        self.assertIn("BSc, Zz University, 2011", _texts(doc, "paragraph"))
+        self.assertIn("BSc - Zz University (2011)", _texts(doc, "paragraph"))
 
     def test_control_characters_are_removed(self) -> None:
         experience = [
@@ -230,6 +237,76 @@ class TestBuildRenderDoc(unittest.TestCase):
         self.assertEqual(meta[0].muted, "01/2019 – Present")
         self.assertTrue(meta[0].text.endswith(meta[0].muted))
         self.assertEqual(meta[1].muted, "06/2015 – 12/2018")
+
+    def test_qualifications_are_one_comma_separated_line(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                qualifications=[
+                    Certification(name="Fixture Cert", year=2020),
+                    Certification(name="Other Cert", year=2021),
+                    Certification(name="No Year Cert"),
+                ]
+            )
+        )
+        self.assertIn(
+            "Fixture Cert (2020), Other Cert (2021), No Year Cert",
+            _texts(doc, "paragraph"),
+        )
+
+    def test_activities_are_one_comma_separated_line_with_bracketed_years(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                activities=[
+                    Activity(
+                        name="Board Advisor",
+                        organisation="ValueTechFactor",
+                        start="2023",
+                        end="2024",
+                    ),
+                    Activity(
+                        name="Mentor",
+                        organisation="MyJobGlasses",
+                        start="2020",
+                        end="Present",
+                    ),
+                    Activity(name="Speaker", start="2018"),
+                ]
+            )
+        )
+        self.assertIn(
+            "Board Advisor at ValueTechFactor (2023–2024), "
+            "Mentor at MyJobGlasses (2020–present), Speaker (2018)",
+            _texts(doc, "paragraph"),
+        )
+
+    def test_education_is_one_comma_separated_line_like_the_template(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                education=[
+                    Education(
+                        institution="University of London",
+                        qualification="MSc in Data Science (Distinction)",
+                        start="2016",
+                        end="2017",
+                        grade="Distinction",
+                    ),
+                    Education(
+                        institution="The Open University",
+                        qualification="MSc in Software Development",
+                        start="2002",
+                        end="2008",
+                        grade="First",
+                    ),
+                ]
+            )
+        )
+        self.assertIn(
+            "MSc in Data Science (Distinction) - University of London (2016–2017), "
+            "MSc in Software Development (First) - The Open University (2002–2008)",
+            _texts(doc, "paragraph"),
+        )
 
 
 if __name__ == "__main__":
