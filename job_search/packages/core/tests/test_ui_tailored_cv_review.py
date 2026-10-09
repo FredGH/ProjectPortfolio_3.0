@@ -828,6 +828,44 @@ class TestTailoredCvReviewPage(unittest.TestCase):
             link = next(b for b in app.button if b.key == f"link-{_ORPHAN_ID}")
             self.assertFalse(link.disabled)
 
+    def test_an_approved_run_offers_to_generate_the_rendered_files(self) -> None:
+        approved = {**_RUN, "status": "approved", "orphans": []}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], approved)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn("render-cv", [b.key for b in app.button])
+        self.assertEqual(len(app.get("download_button")), 0)
+
+    def test_a_run_awaiting_decisions_does_not_offer_rendering(self) -> None:
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+        self.assertNotIn("render-cv", [b.key for b in app.button])
+
+    def test_generating_shows_a_download_button_per_file(self) -> None:
+        approved = {**_RUN, "status": "approved", "orphans": []}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], approved)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=20).run()
+            next(b for b in app.button if b.key == "render-cv").click().run()
+        self.assertEqual(len(app.exception), 0)
+        labels = [d.proto.label for d in app.get("download_button")]
+        self.assertEqual(len(labels), 3)
+        self.assertTrue(any("PDF" in label for label in labels))
+        self.assertTrue(any("Word" in label for label in labels))
+
+    def test_a_render_failure_is_shown_as_an_error_not_a_crash(self) -> None:
+        blank = {
+            **_RUN,
+            "status": "approved",
+            "orphans": [],
+            "document": {**_DOCUMENT, "target_title": " ", "headline": " "},
+        }
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], blank)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=20).run()
+            next(b for b in app.button if b.key == "render-cv").click().run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertIn("title", " ".join(e.value for e in app.error).lower())
+        self.assertEqual(len(app.get("download_button")), 0)
+
 
 _SUMMARY_ORPHAN_ID = "33333333-3333-3333-3333-333333333333"
 _SUMMARY_CAPTION = (

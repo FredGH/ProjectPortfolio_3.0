@@ -11,7 +11,9 @@ from datetime import UTC, datetime
 import httpx
 import streamlit as st
 
+from core.render.service import RenderError
 from core.settings import get_settings
+from core.ui.cv_render import render_for_download
 from core.ui.theme import apply_theme
 
 st.set_page_config(page_title="Tailored CV Review", layout="wide")
@@ -32,7 +34,9 @@ decision**. For each reworded bullet either **Link** it to the bullet in
 your CV that evidences it (the case where your CV states it obliquely), or
 **Reject** it. A summary cannot be linked (it condenses many bullets): reject
 it and your own summary is restored. Nothing is written to your CV itself.
-The tailored CV is **approved** once no line is waiting.
+The tailored CV is **approved** once no line is waiting. An approved CV can
+then be turned into a designed **PDF**, an ATS-safe **Word** file and a plain
+**text** copy with **Generate PDF and Word files**.
 
 Use **Run the Tailor on** to choose who rewrites the CV: Claude, Ollama
 on this Mac, or the Docker Ollama service (CPU only, slow). The fact
@@ -563,6 +567,31 @@ st.text("Skills: " + ", ".join(skill["name"] for skill in document["skills"]))
 pending = [o for o in run["orphans"] if o["status"] == "pending"]
 if status == "approved":
     st.success("Approved — every line traces to your CV.")
+    st.subheader("Rendered CV")
+    if st.button("Generate PDF and Word files", key="render-cv"):
+        try:
+            st.session_state["tailoring_render"] = {
+                "run_id": run_id,
+                "bundle": render_for_download(document, chosen["company"]),
+            }
+        except (RenderError, ValueError) as exc:
+            st.session_state.pop("tailoring_render", None)
+            st.error(_plain(f"Could not render this CV: {exc}"))
+    rendered = st.session_state.get("tailoring_render")
+    if rendered and rendered["run_id"] == run_id:
+        for warning in rendered["bundle"].warnings:
+            st.warning(_plain(warning))
+        for index, file in enumerate(rendered["bundle"].files):
+            label = {"pdf": "PDF", "docx": "Word", "txt": "Text"}[
+                file.name.rsplit(".", 1)[-1]
+            ]
+            st.download_button(
+                f"Download {label} ({file.name})",
+                data=file.data,
+                file_name=file.name,
+                mime=file.mime,
+                key=f"download-{index}",
+            )
 if pending:
     st.subheader("Needs your decision")
 _labels = {s["bullet_id"]: f"{s['role']}: {s['text']}" for s in sources}
