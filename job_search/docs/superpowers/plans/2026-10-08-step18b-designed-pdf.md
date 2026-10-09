@@ -559,7 +559,7 @@ Expected: PASS (13 tests). If `test_a_very_long_unbroken_token…` raises `Layou
 - [ ] **Step 5: Format, lint, commit**
 
 ```bash
-cd packages/core && ../../../.superpowers/fmt.sh core/render tests/test_render_pdf.py && cd /Users/fredericmarechal/Documents/GitHub/courses/data-eng-courses/ai-engineering-courses/ai-agentic-eng-course/projects/agents/projects/ProjectPortfolio_3.0 && git add -A job_search && git commit -m "feat(job_search): designed PDF writer with Calibri discovery and Helvetica fallback
+cd packages/core && ../../../.superpowers/fmt.sh core/render tests/test_render_pdf.py && cd "$(git rev-parse --show-toplevel)" && git add -A job_search && git commit -m "feat(job_search): designed PDF writer with Calibri discovery and Helvetica fallback
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -753,7 +753,7 @@ Expected: PASS. Note the older service tests (`test_writes_a_docx_and_matching_t
 - [ ] **Step 5: Format, lint, commit**
 
 ```bash
-cd packages/core && ../../../.superpowers/fmt.sh core/render tests/test_render_service.py && cd /Users/fredericmarechal/Documents/GitHub/courses/data-eng-courses/ai-engineering-courses/ai-agentic-eng-course/projects/agents/projects/ProjectPortfolio_3.0 && git add -A job_search && git commit -m "feat(job_search): render service writes and verifies the designed PDF
+cd packages/core && ../../../.superpowers/fmt.sh core/render tests/test_render_service.py && cd "$(git rev-parse --show-toplevel)" && git add -A job_search && git commit -m "feat(job_search): render service writes and verifies the designed PDF
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
@@ -884,7 +884,7 @@ Open both PNGs (Read tool) and compare name size and colour, heading colour and 
 - [ ] **Step 7: Format, lint, full affected suite, commit**
 
 ```bash
-cd packages/core && ../../../.superpowers/fmt.sh core/render tests/test_pipeline_cli_render.py ../../apps/pipeline/app/cli.py && bash -c 'set -a; . ../../.env; set +a; arch -arm64 ../../venv/bin/python -m unittest tests.test_pipeline_cli_render tests.test_pipeline_registry tests.test_pipeline_cli_tailor tests.test_render_format tests.test_render_model tests.test_render_docx tests.test_render_pdf tests.test_render_service 2>&1 | tail -4' && cd /Users/fredericmarechal/Documents/GitHub/courses/data-eng-courses/ai-engineering-courses/ai-agentic-eng-course/projects/agents/projects/ProjectPortfolio_3.0 && git add -A job_search && git commit -m "feat(job_search): render-cv writes the designed PDF by default (--ats-only to skip)
+cd packages/core && ../../../.superpowers/fmt.sh core/render tests/test_pipeline_cli_render.py ../../apps/pipeline/app/cli.py && bash -c 'set -a; . ../../.env; set +a; arch -arm64 ../../venv/bin/python -m unittest tests.test_pipeline_cli_render tests.test_pipeline_registry tests.test_pipeline_cli_tailor tests.test_render_format tests.test_render_model tests.test_render_docx tests.test_render_pdf tests.test_render_service 2>&1 | tail -4' && cd "$(git rev-parse --show-toplevel)" && git add -A job_search && git commit -m "feat(job_search): render-cv writes the designed PDF by default (--ats-only to skip)
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>"
 ```
