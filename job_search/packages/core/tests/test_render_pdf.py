@@ -292,6 +292,10 @@ class TestWritePdf(unittest.TestCase):
         style = _styles(HELVETICA)["bullet"]
         self.assertEqual((style.bulletIndent, style.leftIndent), (6, 19))
 
+    def test_highlighted_skills_are_bold_and_the_rest_is_not(self) -> None:
+        block = Block("paragraph", "dbt, Airflow, SQL", bold_spans=((0, 3), (14, 17)))
+        self.assertEqual(_markup(block), "<b>dbt</b>, Airflow, <b>SQL</b>")
+
     def test_a_projects_link_is_coloured_blue(self) -> None:
         block = Block(
             "project_title", "AI Projects: example.com/x", link="example.com/x"

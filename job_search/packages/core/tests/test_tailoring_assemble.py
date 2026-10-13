@@ -8,6 +8,8 @@ from tests.tailoring_fixtures import bullet_id, make_truth_base
 
 from core.tailoring.assemble import assemble, bullet_index, classify_origin, clean_text
 from core.tailoring.schema import (
+    MAX_SUMMARY_HIGHLIGHTS,
+    JobSkill,
     TailorBullet,
     TailorExperience,
     TailorOutput,
@@ -232,11 +234,58 @@ class TestAssemble(unittest.TestCase):
             [],
         )
 
-    def test_skills_keep_the_models_order_and_drop_unknown_names(self) -> None:
+    def test_summary_highlights_are_real_phrases_in_text_order(
+        self,
+    ) -> None:
+        text = "Builds dbt pipelines on Snowflake, leads teams and ships dashboards fast."
+        output = TailorOutput(
+            summary=TailorSummary(
+                text=text,
+                highlights=[
+                    "Snowflake",
+                    "NOT IN THE TEXT",
+                    "DBT pipelines",
+                    "dbt pipelines on",
+                    "leads teams",
+                    "dashboards",
+                    "ships",
+                    "fast",
+                ],
+            )
+        )
+        summary = assemble(self.truth_base, output, target_title=TITLE).summary
+        self.assertEqual(
+            summary.highlights,
+            ["dbt pipelines", "Snowflake", "leads teams", "ships", "dashboards", "fast"],
+        )
+
+    def test_summary_highlights_are_capped_at_the_maximum(self) -> None:
+        words = [f"word{i}" for i in range(MAX_SUMMARY_HIGHLIGHTS + 3)]
+        output = TailorOutput(
+            summary=TailorSummary(text=" ".join(words), highlights=words)
+        )
+        summary = assemble(self.truth_base, output, target_title=TITLE).summary
+        self.assertEqual(summary.highlights, words[:MAX_SUMMARY_HIGHLIGHTS])
+        self.assertEqual(MAX_SUMMARY_HIGHLIGHTS, 10)
+
+    def test_every_truth_base_skill_is_shown_and_the_models_picks_are_highlighted(
+        self,
+    ) -> None:
         output = TailorOutput(skills=["airflow", "Kubernetes", "dbt", "AIRFLOW"])
-        skills = assemble(self.truth_base, output, target_title=TITLE).skills
-        self.assertEqual([s.name for s in skills], ["Airflow", "dbt"])
-        self.assertEqual(skills[0].canonical_id, "zzfixture-skill-airflow")
+        document = assemble(self.truth_base, output, target_title=TITLE)
+        self.assertEqual([s.name for s in document.skills], ["dbt", "Airflow", "SQL"])
+        self.assertEqual(document.highlighted_skills, ["dbt", "Airflow"])
+        self.assertEqual(document.skills[1].canonical_id, "zzfixture-skill-airflow")
+
+    def test_skills_the_job_asks_for_are_highlighted_too(self) -> None:
+        job_skills = [
+            JobSkill("zzfixture-skill-airflow", "Apache Airflow", "must_have"),
+            JobSkill("x", "sql", None),
+        ]
+        document = assemble(
+            self.truth_base, TailorOutput(), target_title=TITLE, job_skills=job_skills
+        )
+        self.assertEqual(document.highlighted_skills, ["Airflow", "SQL"])
 
     def test_empty_skills_fall_back_to_all_truth_base_skills(self) -> None:
         document = assemble(self.truth_base, TailorOutput(), target_title=TITLE)

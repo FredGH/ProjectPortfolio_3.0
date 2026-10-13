@@ -158,6 +158,14 @@ def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
     Returns:
         One style per block kind, tuned against the user's template.
     """
+    # So `<b>` inside a paragraph (highlighted skills) picks the bold face.
+    pdfmetrics.registerFontFamily(
+        fonts.regular,
+        normal=fonts.regular,
+        bold=fonts.bold,
+        italic=fonts.italic,
+        boldItalic=fonts.bold,
+    )
 
     def style(name: str, font: str, size: float, **kwargs: object) -> ParagraphStyle:
         """Build one paragraph style.
@@ -232,7 +240,8 @@ def _markup(block: Block) -> str:
         The text with `&`, `<`, `>` escaped; a block's muted tail (a role's
         dates) is coloured grey, a block's link (a project's URL) blue, and in
         the contact line the LinkedIn URL is
-        coloured blue and underlined.
+        coloured blue and underlined; bold spans (highlighted skills) are
+        wrapped in `<b>`.
     """
     if block.muted and block.text.endswith(block.muted):
         head = escape(block.text[: -len(block.muted)])
@@ -240,6 +249,15 @@ def _markup(block: Block) -> str:
     if block.link and block.text.endswith(block.link):
         head = escape(block.text[: -len(block.link)])
         return f'{head}<font color="{_BLUE_HEX}">{escape(block.link)}</font>'
+    if block.bold_spans:
+        pieces: list[str] = []
+        cursor = 0
+        for start, end in block.bold_spans:
+            pieces.append(escape(block.text[cursor:start]))
+            pieces.append(f"<b>{escape(block.text[start:end])}</b>")
+            cursor = end
+        pieces.append(escape(block.text[cursor:]))
+        return "".join(pieces)
     if block.kind != "contact":
         return escape(block.text)
     parts = [escape(part) for part in block.text.split(" | ")]

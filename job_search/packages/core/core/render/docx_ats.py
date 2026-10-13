@@ -54,6 +54,16 @@ def _add_block(document: DocumentType, block: Block) -> None:
         document.add_paragraph(block.text, style="List Bullet")
         return
     paragraph = document.add_paragraph()
+    if block.bold_spans:
+        cursor = 0
+        for start, end in block.bold_spans:
+            if start > cursor:
+                paragraph.add_run(block.text[cursor:start])
+            paragraph.add_run(block.text[start:end]).bold = True
+            cursor = end
+        if cursor < len(block.text):
+            paragraph.add_run(block.text[cursor:])
+        return
     run = paragraph.add_run(block.text)
     if block.kind == "name":
         run.bold = True

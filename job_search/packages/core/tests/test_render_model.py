@@ -63,6 +63,31 @@ class TestBuildRenderDoc(unittest.TestCase):
         doc = build_render_doc(make_tailored_document())
         self.assertIn("dbt, Airflow, SQL", _texts(doc, "paragraph"))
 
+    def test_summary_highlights_get_bold_spans(self) -> None:
+        base = make_tailored_document()
+        summary = base.summary.model_copy(update={"highlights": ["pipelines"]})
+        doc = build_render_doc(make_tailored_document(summary=summary))
+        block = next(b for b in doc.blocks if b.kind == "paragraph" and "pipelines" in b.text)
+        start, end = block.bold_spans[0]
+        self.assertEqual(block.text[start:end], "pipelines")
+
+    def test_a_bold_phrase_survives_an_acronym_expansion_inside_it(self) -> None:
+        summary = make_tailored_document().summary.model_copy(
+            update={
+                "text": "Built the ETL pipelines and the dbt models.",
+                "highlights": ["ETL pipelines", "dbt models"],
+            }
+        )
+        doc = build_render_doc(make_tailored_document(summary=summary))
+        block = next(b for b in doc.blocks if "dbt models" in b.text)
+        bold = [block.text[s:e] for s, e in block.bold_spans]
+        self.assertEqual(bold, ["ETL (Extract, Transform, Load) pipelines", "dbt models"])
+
+    def test_highlighted_skills_get_bold_spans(self) -> None:
+        doc = build_render_doc(make_tailored_document(highlighted_skills=["SQL", "dbt"]))
+        block = next(b for b in doc.blocks if b.text == "dbt, Airflow, SQL")
+        self.assertEqual(block.bold_spans, ((0, 3), (14, 17)))
+
     def test_education_and_certification_lines(self) -> None:
         doc = build_render_doc(make_tailored_document())
         paragraphs = _texts(doc, "paragraph")

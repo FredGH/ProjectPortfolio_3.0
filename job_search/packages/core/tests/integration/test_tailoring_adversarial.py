@@ -272,7 +272,7 @@ class TestExaggerationIsCaughtOffline(_Base):
         self.assertEqual(run.critic_model, load_task_config("fabrication_critic").model)
         # The exaggeration survives the retry unchanged, so the run stops at
         # attempt 2, the persisted one, which was a patch-style retry.
-        self.assertEqual(run.tailor_prompt_version, "claude.retry.v1")
+        self.assertEqual(run.tailor_prompt_version, "claude.retry.v2")
         self.assertEqual(run.critic_prompt_version, "claude.v1")
 
     def test_an_exaggerated_bullet_is_surfaced_and_never_approved(self) -> None:

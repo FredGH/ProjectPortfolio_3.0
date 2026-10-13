@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -57,12 +58,15 @@ class Block:
             colour (a role's dates); plain-text renderers ignore it.
         link: The tail of `text` that is a link (a project's URL), which a
             designed renderer may colour; plain-text renderers ignore it.
+        bold_spans: `(start, end)` character ranges of `text` to show in bold
+            (the highlighted skills); plain-text renderers ignore them.
     """
 
     kind: BlockKind
     text: str
     muted: str = ""
     link: str = ""
+    bold_spans: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -197,6 +201,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
         expand: bool = True,
         muted: str = "",
         link: str = "",
+        bold: Sequence[str] = (),
     ) -> None:
         """Append one block, cleaning the text and expanding acronyms.
 
@@ -207,14 +212,25 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                 block (still limited to paragraph and bullet kinds).
             muted: The tail of `text` to show muted (a role's dates).
             link: The tail of `text` that is a link (a project's URL).
+            bold: Phrases of `text`, in order, to show in bold.
         """
         text = _clean(text)
         if not text:
             return
         if kind in _TIDIED_KINDS:
             text = _tidy(text)
+        # Locate the bold phrases before acronyms are expanded, so an
+        # expansion inserted inside a phrase cannot stop it matching.
+        found: list[tuple[int, int]] = []
+        cursor = 0
+        for phrase in bold:
+            start = text.find(phrase, cursor)
+            if start >= 0:
+                cursor = start + len(phrase)
+                found.append((start, cursor))
+        spans = tuple(found)
         if expand and kind in _EXPANDED_KINDS:
-            text = expander.expand(text)
+            text, spans = expander.expand_spans(text, spans)
         muted, link = _clean(muted), _clean(link)
         blocks.append(
             Block(
@@ -222,6 +238,7 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                 text,
                 muted if text.endswith(muted) else "",
                 link if text.endswith(link) else "",
+                spans,
             )
         )
 
@@ -252,11 +269,18 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     )
     if doc.summary and doc.summary.text.strip():
         add("heading", HEADINGS["SUMMARY"])
-        add("paragraph", doc.summary.text)
+        add("paragraph", doc.summary.text, bold=doc.summary.highlights)
     if doc.skills:
         add("heading", HEADINGS["SKILLS"])
         # Not expanded: expansions contain commas and would corrupt the list.
-        add("paragraph", join(*(skill.name for skill in doc.skills)), expand=False)
+        names = [_clean(skill.name) for skill in doc.skills]
+        highlighted = {_clean(name).casefold() for name in doc.highlighted_skills}
+        add(
+            "paragraph",
+            join(*names),
+            expand=False,
+            bold=[name for name in names if name.casefold() in highlighted],
+        )
     if doc.experience:
         add("heading", HEADINGS["EXPERIENCE"])
         for role in doc.experience:
