@@ -139,6 +139,22 @@ def _years(start: str | None, end: str | None) -> str:
     )
 
 
+def _education_qualification(edu: Education) -> str:
+    """Name the degree of one education entry, with its grade.
+
+    Args:
+        edu: The education entry.
+
+    Returns:
+        The qualification; a grade it does not already name is added in
+        brackets.
+    """
+    qualification = edu.qualification or ""
+    if edu.grade and edu.grade.lower() not in qualification.lower():
+        qualification = f"{qualification} ({edu.grade})".strip()
+    return qualification
+
+
 def _education_entry(edu: Education) -> str:
     """Format one education entry as `Qualification - Institution (years)`.
 
@@ -146,12 +162,9 @@ def _education_entry(edu: Education) -> str:
         edu: The education entry.
 
     Returns:
-        The entry; a grade the qualification does not already name is added
-        to the qualification in brackets.
+        The entry; see `_education_qualification` for the qualification.
     """
-    qualification = edu.qualification or ""
-    if edu.grade and edu.grade.lower() not in qualification.lower():
-        qualification = f"{qualification} ({edu.grade})".strip()
+    qualification = _education_qualification(edu)
     head = " - ".join(part for part in (qualification, edu.institution) if part)
     years = _years(edu.start, edu.end)
     return f"{head} ({years})" if years else head
@@ -302,12 +315,20 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     if doc.publications:
         add("heading", HEADINGS["PUBLICATIONS"])
         for publication in doc.publications:
-            add("paragraph", publication.citation)
+            add("paragraph", publication.citation, bold=[publication.citation])
             venue = join(publication.conference, str(publication.year or "") or None)
             add("paragraph", join(join(*publication.authors), venue, sep=" — "))
     if doc.education:
         add("heading", HEADINGS["EDUCATION"])
-        add("paragraph", join(*(_education_entry(edu) for edu in doc.education)))
+        add(
+            "paragraph",
+            join(*(_education_entry(edu) for edu in doc.education)),
+            bold=[
+                _education_qualification(edu).strip()
+                for edu in doc.education
+                if _education_qualification(edu).strip()
+            ],
+        )
     if doc.qualifications:
         add("heading", HEADINGS["QUALIFICATIONS"])
         add(
@@ -318,8 +339,17 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
                     for cert in doc.qualifications
                 )
             ),
+            bold=[
+                cert.name.strip()
+                for cert in doc.qualifications
+                if cert.name.lstrip().casefold().startswith("certified")
+            ],
         )
     if doc.activities:
         add("heading", HEADINGS["ACTIVITIES"])
-        add("paragraph", join(*(_activity_entry(act) for act in doc.activities)))
+        add(
+            "paragraph",
+            join(*(_activity_entry(act) for act in doc.activities)),
+            bold=[act.name.strip() for act in doc.activities if act.name.strip()],
+        )
     return RenderDoc(title=title, blocks=tuple(blocks))

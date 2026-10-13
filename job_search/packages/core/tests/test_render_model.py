@@ -104,6 +104,62 @@ class TestBuildRenderDoc(unittest.TestCase):
         self.assertNotIn(roles[-1].text, [b.text for b in roles[:-1]])
         self.assertNotIn("", [b.text for b in doc.blocks])
 
+    def test_closing_sections_bold_titles_degrees_certifications_and_roles(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                publications=[
+                    Publication(
+                        citation="On Sentiment and Index Trends",
+                        authors=["Marechal F."],
+                        conference="10th Int. Conf.",
+                        year=2019,
+                    )
+                ],
+                education=[
+                    Education(
+                        institution="University of London",
+                        qualification="MSc in Data Science",
+                        grade="Distinction",
+                        start="2016",
+                        end="2017",
+                    ),
+                    Education(
+                        institution="Nantes University",
+                        qualification="French Bachelor in Banking",
+                        start="1994",
+                        end="1997",
+                    ),
+                ],
+                qualifications=[
+                    Certification(name="Certified Scrum Master", year=2011),
+                    Certification(name="Gen-AI Mastermind", year=2026),
+                    Certification(name="Certified Kanban Expert", year=2020),
+                ],
+                activities=[
+                    Activity(name="Board Advisor", organisation="Acme", start="2023"),
+                    Activity(name="Mentor", organisation="MyJobGlasses", start="2020"),
+                ],
+            )
+        )
+
+        def bold(prefix: str) -> list[str]:
+            block = next(b for b in doc.blocks if b.text.startswith(prefix))
+            return [block.text[s:e] for s, e in block.bold_spans]
+
+        self.assertEqual(bold("On Sentiment"), ["On Sentiment and Index Trends"])
+        self.assertEqual(bold("Marechal F."), [])
+        self.assertEqual(
+            bold("MSc in Data Science"),
+            ["MSc in Data Science (Distinction)", "French Bachelor in Banking"],
+        )
+        self.assertEqual(
+            bold("Certified Scrum"),
+            ["Certified Scrum Master", "Certified Kanban Expert"],
+        )
+        self.assertEqual(bold("Board Advisor"), ["Board Advisor", "Mentor"])
+
     def test_highlighted_skills_get_bold_spans(self) -> None:
         doc = build_render_doc(make_tailored_document(highlighted_skills=["SQL", "dbt"]))
         block = next(b for b in doc.blocks if b.text == "dbt, Airflow, SQL")
