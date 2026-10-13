@@ -140,11 +140,13 @@ def critic_items(
 
     items: list[CriticItem] = []
     if document.summary is not None and document.summary.origin == "reworded":
+        # The candidate's own summary is a valid source for its adaptation.
+        own = [truth_base.summary] if truth_base.summary else []
         items.append(
             CriticItem(
                 "summary",
                 document.summary.text,
-                sources(document.summary.evidence_refs),
+                [*own, *sources(document.summary.evidence_refs)],
             )
         )
     for role in document.experience:

@@ -312,7 +312,21 @@ class TestAssemble(unittest.TestCase):
             "reworded",
         )
 
-    def test_a_new_summary_with_no_ref_is_an_orphan(self) -> None:
+    def test_a_summary_with_no_ref_is_judged_against_the_candidates_own_summary(
+        self,
+    ) -> None:
+        output = TailorOutput(
+            summary=TailorSummary(text="World-class leader.", evidence_refs=[])
+        )
+        self.assertEqual(
+            assemble(self.truth_base, output, target_title=TITLE).summary.origin,
+            "reworded",
+        )
+
+    def test_a_summary_with_no_ref_is_an_orphan_when_the_cv_has_no_summary(
+        self,
+    ) -> None:
+        self.truth_base.summary = None
         output = TailorOutput(
             summary=TailorSummary(text="World-class leader.", evidence_refs=[])
         )

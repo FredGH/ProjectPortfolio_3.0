@@ -127,6 +127,9 @@ class TestCriticItems(unittest.TestCase):
         items = critic_items(document, self.truth_base)
         self.assertEqual([i.item_id for i in items], ["summary", "e0b1"])
         self.assertEqual(items[1].sources, ["Built dbt models for risk reporting"])
+        # The candidate's own summary is a source for the adapted summary.
+        self.assertEqual(items[0].sources[0], self.truth_base.summary)
+        self.assertIn("Built dbt models for risk reporting", items[0].sources)
 
 
 class TestRunCritic(unittest.TestCase):

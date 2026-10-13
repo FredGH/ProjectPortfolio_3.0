@@ -182,7 +182,9 @@ def _assemble_summary(
                 truth_base.summary
             ):
                 origin: BulletOrigin = "original"
-            elif any(ref in known for ref in refs):
+            elif truth_base.summary or any(ref in known for ref in refs):
+                # An adaptation of the candidate's own summary needs no
+                # bullet citation; the critic judges it against that summary.
                 origin = "reworded"
             else:
                 origin = "orphan"
