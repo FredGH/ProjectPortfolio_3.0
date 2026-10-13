@@ -20,7 +20,13 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Flowable, KeepTogether, Paragraph, SimpleDocTemplate
+from reportlab.platypus import (
+    Flowable,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+)
 
 from core.render.model import Block, BlockKind, RenderDoc
 
@@ -287,32 +293,60 @@ def _paragraph(block: Block, styles: dict[BlockKind, ParagraphStyle]) -> Paragra
     return Paragraph(_markup(block), styles[block.kind])
 
 
+_ENTRY_STARTS = frozenset({"role_title", "project_title"})
+"""Block kinds that open an entry (a role, a project)."""
+
+_ENTRY_PARTS = frozenset({"bullet"})
+"""Block kinds that belong to the entry opened just before them, after its
+optional dates line (`role_meta`, which only joins right after the title: a
+`role_meta` further on opens the next, title-less, role)."""
+
+
 def _flowables(
     blocks: Sequence[Block], styles: dict[BlockKind, ParagraphStyle]
 ) -> list[Flowable]:
-    """Lay the blocks out, keeping each role heading with its first bullet.
+    """Lay the blocks out so an entry is never split across two pages.
+
+    An entry is a title block (a role or a project) with the dates and
+    bullets that follow it. Each entry is kept together: if it does not fit
+    in the space left on the page it moves whole to the next page, so each
+    page starts cleanly. An entry taller than a whole page still splits,
+    because it cannot fit anywhere.
 
     Args:
         blocks: The document's blocks in reading order.
         styles: The style table from `_styles`.
 
     Returns:
-        The flowables to build, so a page never ends on a lone role title.
+        The flowables to build.
     """
     flowables: list[Flowable] = []
+    # A role with no title opens with its dates line: give it the gap a
+    # title would have, so it does not sit hard against the previous role.
+    # An explicit spacer, not `spaceBefore`: the line is keepWithNext, and
+    # reportlab drops the space-before of a flowable it wraps with the next.
+    gap = Spacer(1, styles["role_title"].spaceBefore)
     index = 0
     while index < len(blocks):
         block = blocks[index]
-        if block.kind != "role_title":
+        if block.kind == "role_meta" and (
+            index == 0 or blocks[index - 1].kind != "role_title"
+        ):
+            flowables.extend([gap, _paragraph(block, styles)])
+            index += 1
+            continue
+        if block.kind not in _ENTRY_STARTS:
             flowables.append(_paragraph(block, styles))
             index += 1
             continue
         group = [_paragraph(block, styles)]
         index += 1
-        for kind in ("role_meta", "bullet"):
-            if index < len(blocks) and blocks[index].kind == kind:
-                group.append(_paragraph(blocks[index], styles))
-                index += 1
+        if index < len(blocks) and blocks[index].kind == "role_meta":
+            group.append(_paragraph(blocks[index], styles))
+            index += 1
+        while index < len(blocks) and blocks[index].kind in _ENTRY_PARTS:
+            group.append(_paragraph(blocks[index], styles))
+            index += 1
         flowables.append(KeepTogether(group))
     return flowables
 
