@@ -298,6 +298,25 @@ class JobSkill:
 
 
 @dataclass(frozen=True)
+class JobSource:
+    """Where a job posting came from.
+
+    Attributes:
+        apply_url: The posting's main URL, if known.
+        source_urls: Every URL the posting was seen at, without repeats.
+        source_names: The job boards those URLs belong to.
+        location: Where the job is, if known.
+        posted_at: When it was posted, if known (ISO date).
+    """
+
+    apply_url: str | None = None
+    source_urls: tuple[str, ...] = ()
+    source_names: tuple[str, ...] = ()
+    location: str | None = None
+    posted_at: str | None = None
+
+
+@dataclass(frozen=True)
 class JobContext:
     """What the Tailor and critic need to know about the target job.
 

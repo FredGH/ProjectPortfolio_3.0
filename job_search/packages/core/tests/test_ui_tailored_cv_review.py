@@ -225,6 +225,23 @@ class TestTailoredCvReviewPage(unittest.TestCase):
         self.assertIn("SQL", shown)
         self.assertIn("Kubernetes", shown)
 
+    def test_a_job_link_opens_the_page_on_that_job(self) -> None:
+        other = {**_CANDIDATE, "job_group_id": "zzfixture-other", "company": "Delta"}
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE, other], None)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10)
+            app.query_params["job"] = "zzfixture-other"
+            app.run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.selectbox[0].value, "zzfixture-other")
+
+    def test_an_unknown_job_link_is_ignored(self) -> None:
+        with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], None)):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10)
+            app.query_params["job"] = "no-such-job"
+            app.run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.selectbox[0].value, "zzfixture-job")
+
     def test_shows_each_pending_orphan_with_link_and_reject(self) -> None:
         with mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _RUN)):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()

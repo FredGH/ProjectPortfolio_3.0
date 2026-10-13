@@ -370,6 +370,11 @@ if not candidates:
     st.stop()
 
 labels = {c["job_group_id"]: _label(c) for c in candidates}
+# A link from a saved job spec (`?job=<job_group_id>`) opens on that job.
+_linked_job = st.query_params.get("job")
+if _linked_job in labels and "tailoring_linked_job" not in st.session_state:
+    st.session_state["tailoring_linked_job"] = _linked_job
+    st.session_state["tailoring_selected_job"] = _linked_job
 selected = st.selectbox(
     "Job",
     options=list(labels),
