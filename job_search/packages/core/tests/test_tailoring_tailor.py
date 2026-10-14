@@ -176,7 +176,7 @@ class TestRunTailor(unittest.TestCase):
             config_path=self.config_path,
         )
         self.assertEqual(result.output.skills, ["dbt"])
-        self.assertEqual(result.prompt_version, "local.v3")
+        self.assertEqual(result.prompt_version, "local.v4")
         self.assertEqual(result.model, "llama3.1:8b")
 
     def test_a_backend_overrides_provider_model_and_prompt_family(self) -> None:
@@ -202,7 +202,7 @@ class TestRunTailor(unittest.TestCase):
             backend=backend,
         )
         self.assertEqual(seen, ["claude-test"])
-        self.assertEqual(result.prompt_version, "claude.v3")
+        self.assertEqual(result.prompt_version, "claude.v4")
         self.assertEqual(result.model, "claude-test")
 
     def test_the_prompt_carries_the_cv_the_job_and_the_feedback(self) -> None:
@@ -263,7 +263,7 @@ class TestRunTailor(unittest.TestCase):
         self.assertNotIn("Own the data platform", prompt)
         self.assertNotIn("null", prompt)
         self.assertLess(len(prompt), len(first.prompts[0]))
-        self.assertEqual(result.prompt_version, "local.retry.v1")
+        self.assertEqual(result.prompt_version, "local.retry.v2")
         self.assertEqual(result.output.summary.text, "Prev summary.")
         self.assertEqual(result.output.experience[0], _role(0, "prev bullet"))
         self.assertEqual(result.output.experience[1], _role(1, "fixed"))
@@ -360,8 +360,8 @@ class TestRunTailor(unittest.TestCase):
             [],
             adapters={"anthropic": adapter},
         )
-        self.assertEqual(PROMPT_VERSION_NUMBER, 3)
-        self.assertEqual(result.prompt_version, "claude.v3")
+        self.assertEqual(PROMPT_VERSION_NUMBER, 4)
+        self.assertEqual(result.prompt_version, "claude.v4")
 
     def test_the_task_is_registered_in_the_task_config(self) -> None:
         from core.llm.task_config import load_task_config

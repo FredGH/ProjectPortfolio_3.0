@@ -161,14 +161,15 @@ class TestKeywordCoverage(unittest.TestCase):
         coverage = compute_keyword_coverage(document, self.truth_base, self.job_skills)
         self.assertIn("dbt", coverage.covered)
 
-    def test_a_skill_the_cv_has_but_the_document_omits_is_missing_evidenced(
+    def test_a_skill_the_cv_lists_is_covered_because_every_skill_is_shown(
         self,
     ) -> None:
-        # Both roles are emptied: an omitted role keeps its original bullets,
-        # and role 1's original bullet mentions SQL, which would cover it.
+        # Both roles are emptied and the Tailor highlights only dbt, but the
+        # document still lists every truth-base skill, SQL included.
         document = _document(self.truth_base, {0: [], 1: []}, skills=["dbt"])
         coverage = compute_keyword_coverage(document, self.truth_base, self.job_skills)
-        self.assertEqual(coverage.missing_evidenced, ["SQL"])
+        self.assertIn("SQL", coverage.covered)
+        self.assertEqual(coverage.missing_evidenced, [])
 
     def test_a_skill_the_cv_never_evidences_is_missing_unevidenced(self) -> None:
         document = _document(self.truth_base, {}, skills=["dbt", "SQL"])

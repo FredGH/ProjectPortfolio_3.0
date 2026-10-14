@@ -15,7 +15,9 @@ import unicodedata
 
 from core.cv.schema import CVTruthBase
 from core.tailoring.schema import (
+    MAX_SUMMARY_HIGHLIGHTS,
     BulletOrigin,
+    JobSkill,
     TailoredBullet,
     TailoredDocument,
     TailoredExperience,
@@ -131,6 +133,31 @@ def classify_origin(
     return "reworded"
 
 
+def _summary_highlights(text: str, phrases: list[str]) -> list[str]:
+    """Keep the highlight phrases that really occur in the summary.
+
+    Args:
+        text: The final summary text.
+        phrases: The phrases the Tailor proposed.
+
+    Returns:
+        At most `MAX_SUMMARY_HIGHLIGHTS` phrases, each copied from `text`
+        (matched ignoring case), in text order, without overlaps.
+    """
+    lowered = text.casefold()
+    found: list[tuple[int, int]] = []
+    for phrase in phrases:
+        needle = " ".join(phrase.split()).casefold()
+        start = lowered.find(needle) if needle else -1
+        if start >= 0:
+            found.append((start, start + len(needle)))
+    chosen: list[tuple[int, int]] = []
+    for start, end in sorted(set(found)):
+        if not chosen or start >= chosen[-1][1]:
+            chosen.append((start, end))
+    return [text[start:end] for start, end in chosen[:MAX_SUMMARY_HIGHLIGHTS]]
+
+
 def _assemble_summary(
     truth_base: CVTruthBase,
     output: TailorOutput,
@@ -155,11 +182,18 @@ def _assemble_summary(
                 truth_base.summary
             ):
                 origin: BulletOrigin = "original"
-            elif any(ref in known for ref in refs):
+            elif truth_base.summary or any(ref in known for ref in refs):
+                # An adaptation of the candidate's own summary needs no
+                # bullet citation; the critic judges it against that summary.
                 origin = "reworded"
             else:
                 origin = "orphan"
-            return TailoredSummary(text=text, evidence_refs=refs, origin=origin)
+            return TailoredSummary(
+                text=text,
+                evidence_refs=refs,
+                origin=origin,
+                highlights=_summary_highlights(text, output.summary.highlights),
+            )
     if truth_base.summary:
         return TailoredSummary(
             text=truth_base.summary, evidence_refs=[], origin="original"
@@ -167,8 +201,44 @@ def _assemble_summary(
     return None
 
 
+def _highlighted_skills(
+    truth_base: CVTruthBase,
+    output: TailorOutput,
+    job_skills: list[JobSkill],
+) -> list[str]:
+    """Pick the truth-base skills to emphasise.
+
+    Args:
+        truth_base: The truth base.
+        output: The Tailor's output; its `skills` are the ones it judged
+            relevant.
+        job_skills: The skills the job asks for.
+
+    Returns:
+        Names of truth-base skills that the Tailor chose or that match a job
+        skill (same canonical id, or same name), in truth-base order.
+    """
+    chosen = {name.strip().casefold() for name in output.skills}
+    job_ids = {js.skill_id for js in job_skills}
+    job_labels = {js.label.strip().casefold() for js in job_skills}
+    names: list[str] = []
+    for skill in truth_base.skills:
+        name = skill.name.strip()
+        if (
+            name.casefold() in chosen
+            or name.casefold() in job_labels
+            or (skill.canonical_id and skill.canonical_id in job_ids)
+        ) and name not in names:
+            names.append(name)
+    return names
+
+
 def assemble(
-    truth_base: CVTruthBase, output: TailorOutput, *, target_title: str
+    truth_base: CVTruthBase,
+    output: TailorOutput,
+    *,
+    target_title: str,
+    job_skills: list[JobSkill] | None = None,
 ) -> TailoredDocument:
     """Build the tailored document.
 
@@ -176,9 +246,12 @@ def assemble(
         truth_base: The user's CV truth base.
         output: The Tailor's parsed output.
         target_title: `title_for_display`, injected as the headline.
+        job_skills: The skills the job asks for, used to pick which skills
+            to highlight.
 
     Returns:
-        A `TailoredDocument`. Roles are always the truth base's, in order.
+        A `TailoredDocument` listing every truth-base skill, with the
+        relevant ones named in `highlighted_skills`. Roles are always the truth base's, in order.
         A `keep` item becomes the truth-base bullet's original text. A
         role the model omitted keeps its original bullets; a role index
         outside the truth base is ignored; for a repeated role index the
@@ -244,14 +317,7 @@ def assemble(
             )
         )
 
-    by_name = {skill.name.casefold(): skill for skill in truth_base.skills}
-    chosen_skills = []
-    seen: set[str] = set()
-    for name in output.skills:
-        skill = by_name.get(name.strip().casefold())
-        if skill is not None and skill.name.casefold() not in seen:
-            chosen_skills.append(skill)
-            seen.add(skill.name.casefold())
+    highlighted = _highlighted_skills(truth_base, output, job_skills or [])
 
     return TailoredDocument(
         target_title=target_title,
@@ -265,7 +331,8 @@ def assemble(
         locations=list(truth_base.locations),
         summary=_assemble_summary(truth_base, output, known),
         experience=experience,
-        skills=chosen_skills or list(truth_base.skills),
+        skills=list(truth_base.skills),
+        highlighted_skills=highlighted,
         projects=list(truth_base.projects),
         publications=list(truth_base.publications),
         education=list(truth_base.education),

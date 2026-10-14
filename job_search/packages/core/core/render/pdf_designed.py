@@ -20,14 +20,21 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Flowable, KeepTogether, Paragraph, SimpleDocTemplate
+from reportlab.platypus import (
+    Flowable,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+)
 
 from core.render.model import Block, BlockKind, RenderDoc
 
 logger = logging.getLogger(__name__)
 
-_BLUE = HexColor("#2F5597")
-_BLUE_HEX = "#2F5597"
+_BLUE_HEX = "#315B94"
+_BLUE = HexColor(_BLUE_HEX)
+_MUTED_HEX = "#7F7F7F"
 _MARGIN_X = 45  # reportlab adds 6 pt of frame padding: ~51 pt in the template
 _MARGIN_TOP = 36
 _MARGIN_BOTTOM = 40
@@ -157,6 +164,14 @@ def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
     Returns:
         One style per block kind, tuned against the user's template.
     """
+    # So `<b>` inside a paragraph (highlighted skills) picks the bold face.
+    pdfmetrics.registerFontFamily(
+        fonts.regular,
+        normal=fonts.regular,
+        bold=fonts.bold,
+        italic=fonts.italic,
+        boldItalic=fonts.bold,
+    )
 
     def style(name: str, font: str, size: float, **kwargs: object) -> ParagraphStyle:
         """Build one paragraph style.
@@ -196,12 +211,27 @@ def _styles(fonts: Fonts) -> dict[BlockKind, ParagraphStyle]:
         "role_title": style(
             "role_title", fonts.bold, 10, spaceBefore=7, spaceAfter=0, keepWithNext=1
         ),
+        "project_title": style(
+            "project_title",
+            fonts.bold,
+            9.5,
+            spaceBefore=4,
+            spaceAfter=1,
+            keepWithNext=1,
+        ),
         "role_meta": style(
             "role_meta", fonts.italic, 9.5, spaceAfter=2, keepWithNext=1
         ),
         "paragraph": style("paragraph", fonts.regular, 9.5),
         "bullet": style(
-            "bullet", fonts.regular, 9.5, leftIndent=14, bulletIndent=3, spaceAfter=1
+            "bullet",
+            fonts.regular,
+            9.5,
+            leftIndent=19,
+            bulletIndent=6,
+            bulletFontName=fonts.regular,
+            bulletFontSize=10,
+            spaceAfter=1,
         ),
     }
 
@@ -213,9 +243,27 @@ def _markup(block: Block) -> str:
         block: The block.
 
     Returns:
-        The text with `&`, `<`, `>` escaped; in the contact line the
-        LinkedIn URL is also coloured blue and underlined.
+        The text with `&`, `<`, `>` escaped; a block's muted tail (a role's
+        dates) is coloured grey, a block's link (a project's URL) blue, and in
+        the contact line the LinkedIn URL is
+        coloured blue and underlined; bold spans (highlighted skills) are
+        wrapped in `<b>`.
     """
+    if block.muted and block.text.endswith(block.muted):
+        head = escape(block.text[: -len(block.muted)])
+        return f'{head}<font color="{_MUTED_HEX}">{escape(block.muted)}</font>'
+    if block.link and block.text.endswith(block.link):
+        head = escape(block.text[: -len(block.link)])
+        return f'{head}<font color="{_BLUE_HEX}">{escape(block.link)}</font>'
+    if block.bold_spans:
+        pieces: list[str] = []
+        cursor = 0
+        for start, end in block.bold_spans:
+            pieces.append(escape(block.text[cursor:start]))
+            pieces.append(f"<b>{escape(block.text[start:end])}</b>")
+            cursor = end
+        pieces.append(escape(block.text[cursor:]))
+        return "".join(pieces)
     if block.kind != "contact":
         return escape(block.text)
     parts = [escape(part) for part in block.text.split(" | ")]
@@ -245,32 +293,60 @@ def _paragraph(block: Block, styles: dict[BlockKind, ParagraphStyle]) -> Paragra
     return Paragraph(_markup(block), styles[block.kind])
 
 
+_ENTRY_STARTS = frozenset({"role_title", "project_title"})
+"""Block kinds that open an entry (a role, a project)."""
+
+_ENTRY_PARTS = frozenset({"bullet"})
+"""Block kinds that belong to the entry opened just before them, after its
+optional dates line (`role_meta`, which only joins right after the title: a
+`role_meta` further on opens the next, title-less, role)."""
+
+
 def _flowables(
     blocks: Sequence[Block], styles: dict[BlockKind, ParagraphStyle]
 ) -> list[Flowable]:
-    """Lay the blocks out, keeping each role heading with its first bullet.
+    """Lay the blocks out so an entry is never split across two pages.
+
+    An entry is a title block (a role or a project) with the dates and
+    bullets that follow it. Each entry is kept together: if it does not fit
+    in the space left on the page it moves whole to the next page, so each
+    page starts cleanly. An entry taller than a whole page still splits,
+    because it cannot fit anywhere.
 
     Args:
         blocks: The document's blocks in reading order.
         styles: The style table from `_styles`.
 
     Returns:
-        The flowables to build, so a page never ends on a lone role title.
+        The flowables to build.
     """
     flowables: list[Flowable] = []
+    # A role with no title opens with its dates line: give it the gap a
+    # title would have, so it does not sit hard against the previous role.
+    # An explicit spacer, not `spaceBefore`: the line is keepWithNext, and
+    # reportlab drops the space-before of a flowable it wraps with the next.
+    gap = Spacer(1, styles["role_title"].spaceBefore)
     index = 0
     while index < len(blocks):
         block = blocks[index]
-        if block.kind != "role_title":
+        if block.kind == "role_meta" and (
+            index == 0 or blocks[index - 1].kind != "role_title"
+        ):
+            flowables.extend([gap, _paragraph(block, styles)])
+            index += 1
+            continue
+        if block.kind not in _ENTRY_STARTS:
             flowables.append(_paragraph(block, styles))
             index += 1
             continue
         group = [_paragraph(block, styles)]
         index += 1
-        for kind in ("role_meta", "bullet"):
-            if index < len(blocks) and blocks[index].kind == kind:
-                group.append(_paragraph(blocks[index], styles))
-                index += 1
+        if index < len(blocks) and blocks[index].kind == "role_meta":
+            group.append(_paragraph(blocks[index], styles))
+            index += 1
+        while index < len(blocks) and blocks[index].kind in _ENTRY_PARTS:
+            group.append(_paragraph(blocks[index], styles))
+            index += 1
         flowables.append(KeepTogether(group))
     return flowables
 

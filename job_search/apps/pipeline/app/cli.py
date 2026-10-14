@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import os
 import sys
 import uuid
 from collections.abc import Callable
@@ -44,6 +45,12 @@ from core.ingestion.sources_config import load_sources_config
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
+from core.render.layout import (
+    JOB_SPEC_FILENAME,
+    cv_directory,
+    job_ui_link,
+    render_job_spec,
+)
 from core.render.service import RenderError, render_cv_files
 from core.scoring.blend import compute_final_scores
 from core.scoring.cv_chunking import chunk_and_embed_cv
@@ -80,7 +87,7 @@ from core.skills.write_job_skills import (
     write_job_skills,
 )
 from core.tailoring.backends import resolve_backends
-from core.tailoring.context import load_job_context
+from core.tailoring.context import load_job_context, load_job_source
 from core.tailoring.loop import TailoringError, run_tailoring
 from core.tailoring.store import latest_run_id, read_run
 
@@ -1362,19 +1369,37 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
         )
         return 1
     job = load_job_context(engine, args.job_group_id)
+    company = job.company if job else None
+    out_dir = cv_directory(
+        Path(args.out_dir),
+        run.document.identity,
+        run.created_at,
+        run.document.target_title,
+        company,
+    )
     try:
         files = render_cv_files(
-            run.document,
-            job.company if job else None,
-            Path(args.out_dir),
-            with_pdf=not args.ats_only,
+            run.document, company, out_dir, with_pdf=not args.ats_only
         )
     except (RenderError, ValueError) as exc:
         print(f"render-cv: {exc}")
         return 1
+    spec_path = None
+    if job is not None:
+        ui_base = os.environ.get("UI_BASE_URL", "http://localhost:8501")
+        spec_path = out_dir / JOB_SPEC_FILENAME
+        spec_path.write_text(
+            render_job_spec(
+                job,
+                load_job_source(engine, args.job_group_id),
+                job_ui_link(ui_base, args.job_group_id),
+            ),
+            encoding="utf-8",
+        )
     print(
         f"render-cv complete: docx={files.docx_path} txt={files.txt_path}"
         + (f" pdf={files.pdf_path}" if files.pdf_path else "")
+        + (f" job_spec={spec_path}" if spec_path else "")
     )
     for warning in files.warnings:
         print(f"render-cv warning: {warning}")
@@ -1758,7 +1783,9 @@ def main(argv: list[str] | None = None) -> int:
     render_cv_parser.add_argument(
         "--out-dir",
         default="output",
-        help="Where to write the files (default: ./output, git-ignored)",
+        help="Root folder; each CV goes to "
+        "<root>/<first_last>/<YYYY-MM>/<job_title>/<company>/ "
+        "(default: ./output, git-ignored)",
     )
     render_cv_parser.add_argument(
         "--ats-only",

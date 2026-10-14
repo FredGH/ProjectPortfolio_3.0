@@ -37,6 +37,10 @@ existing truth-base bullet.
 """
 
 
+MAX_SUMMARY_HIGHLIGHTS = 10
+"""How many summary phrases are shown in bold."""
+
+
 class TailoredBullet(BaseModel):
     """One bullet in the tailored document.
 
@@ -58,11 +62,14 @@ class TailoredSummary(BaseModel):
         text: The summary text.
         evidence_refs: `bullet_id`s that support it.
         origin: How it relates to the truth base.
+        highlights: Phrases of `text` to show in bold, in text order, at most
+            `MAX_SUMMARY_HIGHLIGHTS`, none overlapping.
     """
 
     text: str
     evidence_refs: list[str] = Field(default_factory=list)
     origin: BulletOrigin
+    highlights: list[str] = Field(default_factory=list)
 
 
 class TailoredExperience(BaseModel):
@@ -131,7 +138,9 @@ class TailoredDocument(BaseModel):
         locations: Locations, from the truth base.
         summary: The tailored summary, if any.
         experience: Every role, in truth-base order.
-        skills: The skills to show, chosen from the truth base.
+        skills: Every skill in the truth base, in truth-base order.
+        highlighted_skills: Names of the skills to emphasise (the job asks
+            for them, or the Tailor judged them relevant).
         projects: Copied verbatim from the truth base.
         publications: Copied verbatim from the truth base.
         education: Copied verbatim from the truth base.
@@ -153,6 +162,7 @@ class TailoredDocument(BaseModel):
     summary: TailoredSummary | None = None
     experience: list[TailoredExperience] = Field(default_factory=list)
     skills: list[Skill] = Field(default_factory=list)
+    highlighted_skills: list[str] = Field(default_factory=list)
     projects: list[Project] = Field(default_factory=list)
     publications: list[Publication] = Field(default_factory=list)
     education: list[Education] = Field(default_factory=list)
@@ -205,10 +215,13 @@ class TailorSummary(BaseModel):
     Attributes:
         text: The summary text.
         evidence_refs: `bullet_id`s that support it.
+        highlights: Up to ten phrases of `text`, copied exactly, that are
+            most pertinent to the job (shown in bold).
     """
 
     text: str
     evidence_refs: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)
 
 
 class TailorExperience(BaseModel):
@@ -282,6 +295,25 @@ class JobSkill:
     skill_id: str
     label: str
     requirement_level: str | None
+
+
+@dataclass(frozen=True)
+class JobSource:
+    """Where a job posting came from.
+
+    Attributes:
+        apply_url: The posting's main URL, if known.
+        source_urls: Every URL the posting was seen at, without repeats.
+        source_names: The job boards those URLs belong to.
+        location: Where the job is, if known.
+        posted_at: When it was posted, if known (ISO date).
+    """
+
+    apply_url: str | None = None
+    source_urls: tuple[str, ...] = ()
+    source_names: tuple[str, ...] = ()
+    location: str | None = None
+    posted_at: str | None = None
 
 
 @dataclass(frozen=True)

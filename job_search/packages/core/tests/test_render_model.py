@@ -6,7 +6,14 @@ import unittest
 
 from tests.render_fixtures import make_tailored_document
 
-from core.cv.schema import Education, Project, Publication, Skill
+from core.cv.schema import (
+    Activity,
+    Certification,
+    Education,
+    Project,
+    Publication,
+    Skill,
+)
 from core.render.model import build_render_doc
 from core.tailoring.schema import TailoredBullet, TailoredExperience, TailoredSummary
 
@@ -56,10 +63,112 @@ class TestBuildRenderDoc(unittest.TestCase):
         doc = build_render_doc(make_tailored_document())
         self.assertIn("dbt, Airflow, SQL", _texts(doc, "paragraph"))
 
+    def test_summary_highlights_get_bold_spans(self) -> None:
+        base = make_tailored_document()
+        summary = base.summary.model_copy(update={"highlights": ["pipelines"]})
+        doc = build_render_doc(make_tailored_document(summary=summary))
+        block = next(b for b in doc.blocks if b.kind == "paragraph" and "pipelines" in b.text)
+        start, end = block.bold_spans[0]
+        self.assertEqual(block.text[start:end], "pipelines")
+
+    def test_a_bold_phrase_survives_an_acronym_expansion_inside_it(self) -> None:
+        summary = make_tailored_document().summary.model_copy(
+            update={
+                "text": "Built the ETL pipelines and the dbt models.",
+                "highlights": ["ETL pipelines", "dbt models"],
+            }
+        )
+        doc = build_render_doc(make_tailored_document(summary=summary))
+        block = next(b for b in doc.blocks if "dbt models" in b.text)
+        bold = [block.text[s:e] for s, e in block.bold_spans]
+        self.assertEqual(bold, ["ETL (Extract, Transform, Load) pipelines", "dbt models"])
+
+    def test_a_role_with_no_title_and_no_bullets_is_one_line(self) -> None:
+        prior = TailoredExperience(
+            truth_index=2,
+            company="Prior experience available on request",
+            title="",
+            start="June 1988",
+            end="November 2000",
+        )
+        empty = TailoredExperience(truth_index=3, company="", title="")
+        base = make_tailored_document()
+        doc = build_render_doc(
+            make_tailored_document(experience=[*base.experience, prior, empty])
+        )
+        roles = [b for b in doc.blocks if b.kind in ("role_title", "role_meta")]
+        self.assertEqual(roles[-1].kind, "role_meta")
+        self.assertEqual(
+            roles[-1].text, "Prior experience available on request, 06/1988 – 11/2000"
+        )
+        self.assertNotIn(roles[-1].text, [b.text for b in roles[:-1]])
+        self.assertNotIn("", [b.text for b in doc.blocks])
+
+    def test_closing_sections_bold_titles_degrees_certifications_and_roles(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                publications=[
+                    Publication(
+                        citation="On Sentiment and Index Trends",
+                        authors=["Marechal F."],
+                        conference="10th Int. Conf.",
+                        year=2019,
+                    )
+                ],
+                education=[
+                    Education(
+                        institution="University of London",
+                        qualification="MSc in Data Science",
+                        grade="Distinction",
+                        start="2016",
+                        end="2017",
+                    ),
+                    Education(
+                        institution="Nantes University",
+                        qualification="French Bachelor in Banking",
+                        start="1994",
+                        end="1997",
+                    ),
+                ],
+                qualifications=[
+                    Certification(name="Certified Scrum Master", year=2011),
+                    Certification(name="Gen-AI Mastermind", year=2026),
+                    Certification(name="Certified Kanban Expert", year=2020),
+                ],
+                activities=[
+                    Activity(name="Board Advisor", organisation="Acme", start="2023"),
+                    Activity(name="Mentor", organisation="MyJobGlasses", start="2020"),
+                ],
+            )
+        )
+
+        def bold(prefix: str) -> list[str]:
+            block = next(b for b in doc.blocks if b.text.startswith(prefix))
+            return [block.text[s:e] for s, e in block.bold_spans]
+
+        self.assertEqual(bold("On Sentiment"), ["On Sentiment and Index Trends"])
+        self.assertEqual(bold("Marechal F."), [])
+        self.assertEqual(
+            bold("MSc in Data Science"),
+            ["MSc in Data Science (Distinction)", "French Bachelor in Banking"],
+        )
+        self.assertEqual(
+            bold("Certified Scrum"),
+            ["Certified Scrum Master", "Certified Kanban Expert"],
+        )
+        self.assertEqual(bold("Board Advisor"), ["Board Advisor", "Mentor"])
+
+    def test_highlighted_skills_get_bold_spans(self) -> None:
+        doc = build_render_doc(make_tailored_document(highlighted_skills=["SQL", "dbt"]))
+        block = next(b for b in doc.blocks if b.text == "dbt, Airflow, SQL")
+        self.assertEqual(block.bold_spans, ((0, 3), (14, 17)))
+
     def test_education_and_certification_lines(self) -> None:
         doc = build_render_doc(make_tailored_document())
         paragraphs = _texts(doc, "paragraph")
-        self.assertIn("BSc, Zz University, 2011 – 2014", paragraphs)
+        self.assertIn("BSc - Zz University (2011–2014)", paragraphs)
         self.assertIn("Fixture Cert (2020)", paragraphs)
 
     def test_acronyms_expand_on_first_use_only_across_sections(self) -> None:
@@ -142,7 +251,7 @@ class TestBuildRenderDoc(unittest.TestCase):
                 ]
             )
         )
-        self.assertIn("BSc, Zz University, 2011", _texts(doc, "paragraph"))
+        self.assertIn("BSc - Zz University (2011)", _texts(doc, "paragraph"))
 
     def test_control_characters_are_removed(self) -> None:
         experience = [
@@ -192,8 +301,214 @@ class TestBuildRenderDoc(unittest.TestCase):
             ],
         )
         paragraphs = _texts(doc, "paragraph")
-        self.assertIn("Fixture Pipeline: Open ETL", paragraphs)
+        self.assertIn("Fixture Pipeline", _texts(doc, "project_title"))
+        self.assertIn("Open ETL", _texts(doc, "bullet"))
         self.assertIn("Fixture, Z. (2020). A paper.", paragraphs)
+
+    def test_the_contact_line_leaves_out_the_location(self) -> None:
+        doc = build_render_doc(make_tailored_document(locations=["London, UK"]))
+        self.assertNotIn("London", doc.blocks[2].text)
+        self.assertIn("Fixtureland", doc.blocks[2].text)
+
+    def test_spacing_before_punctuation_is_tidied_in_body_text(self) -> None:
+        experience = [
+            TailoredExperience(
+                truth_index=0,
+                company="Acme",
+                title="Engineer",
+                bullets=[
+                    TailoredBullet(
+                        text="Used ( ClaudeAI ) tooling , quickly .", origin="original"
+                    )
+                ],
+            )
+        ]
+        doc = build_render_doc(make_tailored_document(experience=experience))
+        self.assertEqual(_texts(doc, "bullet"), ["Used (ClaudeAI) tooling, quickly."])
+
+    def test_the_title_keeps_its_own_spacing(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                target_title="Lead ( Data ) Engineer", headline="Lead ( Data ) Engineer"
+            )
+        )
+        self.assertEqual(doc.blocks[1].text, "Lead ( Data ) Engineer")
+
+    def test_a_role_line_marks_its_dates_as_muted(self) -> None:
+        doc = build_render_doc(make_tailored_document())
+        meta = [b for b in doc.blocks if b.kind == "role_meta"]
+        self.assertEqual(meta[0].muted, "01/2019 – Present")
+        self.assertTrue(meta[0].text.endswith(meta[0].muted))
+        self.assertEqual(meta[1].muted, "06/2015 – 12/2018")
+
+    def test_qualifications_are_one_comma_separated_line(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                qualifications=[
+                    Certification(name="Fixture Cert", year=2020),
+                    Certification(name="Other Cert", year=2021),
+                    Certification(name="No Year Cert"),
+                ]
+            )
+        )
+        self.assertIn(
+            "Fixture Cert (2020), Other Cert (2021), No Year Cert",
+            _texts(doc, "paragraph"),
+        )
+
+    def test_activities_are_one_comma_separated_line_with_bracketed_years(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                activities=[
+                    Activity(
+                        name="Board Advisor",
+                        organisation="ValueTechFactor",
+                        start="2023",
+                        end="2024",
+                    ),
+                    Activity(
+                        name="Mentor",
+                        organisation="MyJobGlasses",
+                        start="2020",
+                        end="Present",
+                    ),
+                    Activity(name="Speaker", start="2018"),
+                ]
+            )
+        )
+        self.assertIn(
+            "Board Advisor at ValueTechFactor (2023–2024), "
+            "Mentor at MyJobGlasses (2020–present), Speaker (2018)",
+            _texts(doc, "paragraph"),
+        )
+
+    def test_education_is_one_comma_separated_line_like_the_template(self) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                education=[
+                    Education(
+                        institution="University of London",
+                        qualification="MSc in Data Science (Distinction)",
+                        start="2016",
+                        end="2017",
+                        grade="Distinction",
+                    ),
+                    Education(
+                        institution="The Open University",
+                        qualification="MSc in Software Development",
+                        start="2002",
+                        end="2008",
+                        grade="First",
+                    ),
+                ]
+            )
+        )
+        self.assertIn(
+            "MSc in Data Science (Distinction) - University of London (2016–2017), "
+            "MSc in Software Development (First) - The Open University (2002–2008)",
+            _texts(doc, "paragraph"),
+        )
+
+    def test_each_publication_is_a_title_line_then_an_authors_and_venue_line(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                publications=[
+                    Publication(
+                        citation="A Title",
+                        authors=["Olaniyan R.", "Stamate D.", "… & Fixture Z."],
+                        conference="10th Int. Conf. on Fixtures, Springer.",
+                    ),
+                    Publication(
+                        citation="Second Title",
+                        authors=["Fixture Z. et al."],
+                        conference="Journal of Fixtures",
+                        year=2021,
+                    ),
+                ]
+            )
+        )
+        paragraphs = _texts(doc, "paragraph")
+        start = paragraphs.index("A Title")
+        self.assertEqual(
+            paragraphs[start : start + 4],
+            [
+                "A Title",
+                "Olaniyan R., Stamate D., … & Fixture Z. — "
+                "10th Int. Conf. on Fixtures, Springer.",
+                "Second Title",
+                "Fixture Z. et al. — Journal of Fixtures, 2021",
+            ],
+        )
+
+    def test_a_publication_with_only_authors_or_only_a_venue_has_no_dangling_dash(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                publications=[
+                    Publication(citation="Only Authors", authors=["Fixture Z."]),
+                    Publication(citation="Only Venue", conference="A Venue"),
+                    Publication(citation="Neither"),
+                ]
+            )
+        )
+        paragraphs = _texts(doc, "paragraph")
+        start = paragraphs.index("Only Authors")
+        self.assertEqual(
+            paragraphs[start : start + 5],
+            ["Only Authors", "Fixture Z.", "Only Venue", "A Venue", "Neither"],
+        )
+
+    def test_a_project_is_a_title_line_with_its_link_then_one_bullet_per_line(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                projects=[
+                    Project(
+                        name="AI Projects Portfolio",
+                        url="huggingface.co/spaces/Fixture/ai-projects-v1",
+                        description="First item — does a thing.\nSecond item — more.",
+                    )
+                ]
+            )
+        )
+        titles = [b for b in doc.blocks if b.kind == "project_title"]
+        self.assertEqual(
+            [b.text for b in titles],
+            ["AI Projects Portfolio: huggingface.co/spaces/Fixture/ai-projects-v1"],
+        )
+        self.assertEqual(titles[0].link, "huggingface.co/spaces/Fixture/ai-projects-v1")
+        index = doc.blocks.index(titles[0])
+        self.assertEqual(
+            [(b.kind, b.text) for b in doc.blocks[index + 1 : index + 3]],
+            [
+                ("bullet", "First item — does a thing."),
+                ("bullet", "Second item — more."),
+            ],
+        )
+
+    def test_a_project_without_a_link_or_a_description_has_no_empty_parts(
+        self,
+    ) -> None:
+        doc = build_render_doc(
+            make_tailored_document(
+                projects=[
+                    Project(name="No Link", description="Only item."),
+                    Project(name="No Description", url="example.com/x"),
+                ]
+            )
+        )
+        titles = [b for b in doc.blocks if b.kind == "project_title"]
+        self.assertEqual(
+            [b.text for b in titles], ["No Link", "No Description: example.com/x"]
+        )
+        self.assertEqual(titles[0].link, "")
+        self.assertEqual(_texts(doc, "bullet").count("Only item."), 1)
 
 
 if __name__ == "__main__":

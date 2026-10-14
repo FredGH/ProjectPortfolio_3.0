@@ -4,10 +4,13 @@ the ATS .docx (18a) and the designed PDF (18b) cannot drift apart."""
 
 from __future__ import annotations
 
+import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from core.cv.schema import Activity, Education
 from core.render.format import AcronymExpander, format_date_range
 from core.tailoring.schema import TailoredDocument
 
@@ -18,6 +21,7 @@ BlockKind = Literal[
     "heading",
     "role_title",
     "role_meta",
+    "project_title",
     "paragraph",
     "bullet",
 ]
@@ -38,6 +42,9 @@ _INVISIBLE = frozenset("\u200b\ufeff\u2060\u00ad")
 """Zero-width and soft-hyphen characters: invisible, and no font draws them."""
 
 _EXPANDED_KINDS = frozenset({"paragraph", "bullet"})
+_TIDIED_KINDS = frozenset({"paragraph", "bullet", "role_meta"})
+_SPACE_BEFORE_PUNCTUATION = re.compile(r"\s+([,.;:!?)])")
+_SPACE_AFTER_BRACKET = re.compile(r"\(\s+")
 
 
 @dataclass(frozen=True)
@@ -47,10 +54,19 @@ class Block:
     Attributes:
         kind: What the line is, so a renderer can style it.
         text: The line's text, whitespace-collapsed.
+        muted: The tail of `text` a designed renderer may show in a muted
+            colour (a role's dates); plain-text renderers ignore it.
+        link: The tail of `text` that is a link (a project's URL), which a
+            designed renderer may colour; plain-text renderers ignore it.
+        bold_spans: `(start, end)` character ranges of `text` to show in bold
+            (the highlighted skills); plain-text renderers ignore them.
     """
 
     kind: BlockKind
     text: str
+    muted: str = ""
+    link: str = ""
+    bold_spans: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -93,6 +109,85 @@ def _clean(text: str) -> str:
     return " ".join(kept.split())
 
 
+def _tidy(text: str) -> str:
+    """Remove spaces before closing punctuation and after an opening bracket.
+
+    Args:
+        text: Body text, already whitespace-collapsed.
+
+    Returns:
+        The text with `word ,` shown as `word,` and `( word )` as `(word)`.
+    """
+    text = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", text)
+    return _SPACE_AFTER_BRACKET.sub("(", text)
+
+
+def _years(start: str | None, end: str | None) -> str:
+    """Render a year range the way the CV template shows it in brackets.
+
+    Args:
+        start: The raw start date, if any.
+        end: The raw end date, if any (`Present` means ongoing).
+
+    Returns:
+        `2016–2017`, `2020–present`, `2018`, or an empty string.
+    """
+    return (
+        format_date_range(start, end, open_ended=False)
+        .replace(" – ", "–")
+        .replace("Present", "present")
+    )
+
+
+def _education_qualification(edu: Education) -> str:
+    """Name the degree of one education entry, with its grade.
+
+    Args:
+        edu: The education entry.
+
+    Returns:
+        The qualification; a grade it does not already name is added in
+        brackets.
+    """
+    qualification = edu.qualification or ""
+    if edu.grade and edu.grade.lower() not in qualification.lower():
+        qualification = f"{qualification} ({edu.grade})".strip()
+    return qualification
+
+
+def _education_entry(edu: Education) -> str:
+    """Format one education entry as `Qualification - Institution (years)`.
+
+    Args:
+        edu: The education entry.
+
+    Returns:
+        The entry; see `_education_qualification` for the qualification.
+    """
+    qualification = _education_qualification(edu)
+    head = " - ".join(part for part in (qualification, edu.institution) if part)
+    years = _years(edu.start, edu.end)
+    return f"{head} ({years})" if years else head
+
+
+def _activity_entry(activity: Activity) -> str:
+    """Format one activity as `Name at Organisation (years)`.
+
+    Args:
+        activity: The activity entry.
+
+    Returns:
+        The entry; the organisation and years are left out when missing.
+    """
+    head = (
+        f"{activity.name} at {activity.organisation}"
+        if activity.organisation
+        else activity.name
+    )
+    years = _years(activity.start, activity.end)
+    return f"{head} ({years})" if years else head
+
+
 def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     """Lay a tailored document out as ordered blocks.
 
@@ -113,7 +208,14 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     expander = AcronymExpander()
     blocks: list[Block] = []
 
-    def add(kind: BlockKind, text: str, expand: bool = True) -> None:
+    def add(
+        kind: BlockKind,
+        text: str,
+        expand: bool = True,
+        muted: str = "",
+        link: str = "",
+        bold: Sequence[str] = (),
+    ) -> None:
         """Append one block, cleaning the text and expanding acronyms.
 
         Args:
@@ -121,13 +223,37 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             text: Raw text; empty text adds nothing.
             expand: Whether first-use acronyms may be expanded in this
                 block (still limited to paragraph and bullet kinds).
+            muted: The tail of `text` to show muted (a role's dates).
+            link: The tail of `text` that is a link (a project's URL).
+            bold: Phrases of `text`, in order, to show in bold.
         """
         text = _clean(text)
         if not text:
             return
+        if kind in _TIDIED_KINDS:
+            text = _tidy(text)
+        # Locate the bold phrases before acronyms are expanded, so an
+        # expansion inserted inside a phrase cannot stop it matching.
+        found: list[tuple[int, int]] = []
+        cursor = 0
+        for phrase in bold:
+            start = text.find(phrase, cursor)
+            if start >= 0:
+                cursor = start + len(phrase)
+                found.append((start, cursor))
+        spans = tuple(found)
         if expand and kind in _EXPANDED_KINDS:
-            text = expander.expand(text)
-        blocks.append(Block(kind, text))
+            text, spans = expander.expand_spans(text, spans)
+        muted, link = _clean(muted), _clean(link)
+        blocks.append(
+            Block(
+                kind,
+                text,
+                muted if text.endswith(muted) else "",
+                link if text.endswith(link) else "",
+                spans,
+            )
+        )
 
     def join(*parts: str | None, sep: str = ", ") -> str:
         """Join the non-empty parts.
@@ -149,7 +275,6 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
             doc.email,
             doc.phone,
             doc.linkedin_url,
-            join(*doc.locations),
             doc.nationality,
             doc.work_auth,
             sep=" | ",
@@ -157,53 +282,74 @@ def build_render_doc(doc: TailoredDocument) -> RenderDoc:
     )
     if doc.summary and doc.summary.text.strip():
         add("heading", HEADINGS["SUMMARY"])
-        add("paragraph", doc.summary.text)
+        add("paragraph", doc.summary.text, bold=doc.summary.highlights)
     if doc.skills:
         add("heading", HEADINGS["SKILLS"])
         # Not expanded: expansions contain commas and would corrupt the list.
-        add("paragraph", join(*(skill.name for skill in doc.skills)), expand=False)
+        names = [_clean(skill.name) for skill in doc.skills]
+        highlighted = {_clean(name).casefold() for name in doc.highlighted_skills}
+        add(
+            "paragraph",
+            join(*names),
+            expand=False,
+            bold=[name for name in names if name.casefold() in highlighted],
+        )
     if doc.experience:
         add("heading", HEADINGS["EXPERIENCE"])
         for role in doc.experience:
             add("role_title", role.title)
-            add(
-                "role_meta", join(role.company, format_date_range(role.start, role.end))
-            )
+            dates = format_date_range(role.start, role.end)
+            add("role_meta", join(role.company, dates), muted=dates)
             for bullet in role.bullets:
                 add("bullet", bullet.text)
     if doc.projects:
         add("heading", HEADINGS["PROJECTS"])
         for project in doc.projects:
-            add("paragraph", join(project.name, project.description, sep=": "))
+            add(
+                "project_title",
+                join(project.name, project.url, sep=": "),
+                link=project.url or "",
+            )
+            for line in project.description.splitlines():
+                add("bullet", line)
     if doc.publications:
         add("heading", HEADINGS["PUBLICATIONS"])
         for publication in doc.publications:
-            add("paragraph", publication.citation)
+            add("paragraph", publication.citation, bold=[publication.citation])
+            venue = join(publication.conference, str(publication.year or "") or None)
+            add("paragraph", join(join(*publication.authors), venue, sep=" — "))
     if doc.education:
         add("heading", HEADINGS["EDUCATION"])
-        for edu in doc.education:
-            add(
-                "paragraph",
-                join(
-                    edu.qualification,
-                    edu.institution,
-                    format_date_range(edu.start, edu.end, open_ended=False),
-                    edu.grade,
-                ),
-            )
+        add(
+            "paragraph",
+            join(*(_education_entry(edu) for edu in doc.education)),
+            bold=[
+                _education_qualification(edu).strip()
+                for edu in doc.education
+                if _education_qualification(edu).strip()
+            ],
+        )
     if doc.qualifications:
         add("heading", HEADINGS["QUALIFICATIONS"])
-        for cert in doc.qualifications:
-            add("paragraph", f"{cert.name} ({cert.year})" if cert.year else cert.name)
+        add(
+            "paragraph",
+            join(
+                *(
+                    f"{cert.name} ({cert.year})" if cert.year else cert.name
+                    for cert in doc.qualifications
+                )
+            ),
+            bold=[
+                cert.name.strip()
+                for cert in doc.qualifications
+                if cert.name.lstrip().casefold().startswith("certified")
+            ],
+        )
     if doc.activities:
         add("heading", HEADINGS["ACTIVITIES"])
-        for activity in doc.activities:
-            add(
-                "paragraph",
-                join(
-                    activity.name,
-                    activity.organisation,
-                    format_date_range(activity.start, activity.end, open_ended=False),
-                ),
-            )
+        add(
+            "paragraph",
+            join(*(_activity_entry(act) for act in doc.activities)),
+            bold=[act.name.strip() for act in doc.activities if act.name.strip()],
+        )
     return RenderDoc(title=title, blocks=tuple(blocks))

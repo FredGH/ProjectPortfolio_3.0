@@ -908,7 +908,10 @@ def _run_loop(
         )
         previous = tailor_result.output
         document = assemble(
-            truth_base, tailor_result.output, target_title=run.target_title
+            truth_base,
+            tailor_result.output,
+            target_title=run.target_title,
+            job_skills=job.skills,
         )
         problems = (
             check_evidence_refs(document, truth_base)

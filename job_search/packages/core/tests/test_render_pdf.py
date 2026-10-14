@@ -13,10 +13,13 @@ from pypdf import PdfReader
 from tests.render_fixtures import make_tailored_document
 
 from core.cv.schema import Certification, Project
-from core.render.model import build_render_doc
+from core.render.model import Block, RenderDoc, build_render_doc
 from core.render.pdf_designed import (
     HELVETICA,
     Fonts,
+    _flowables,
+    _markup,
+    _styles,
     find_fonts,
     undrawable_chars,
     write_pdf,
@@ -202,6 +205,34 @@ class TestWritePdf(unittest.TestCase):
         self.assertIn("numbereditem000here", text)
         self.assertIn("numbereditem119here", text)
 
+    def test_a_role_that_fits_on_a_page_is_never_split_across_two(self) -> None:
+        roles = [
+            TailoredExperience(
+                truth_index=n,
+                company=f"Company{n:02d}",
+                title=f"Title{n:02d}",
+                bullets=[
+                    TailoredBullet(
+                        text=f"Role {n:02d} bullet {b} " + "filler words " * 12,
+                        origin="original",
+                    )
+                    for b in range(3 + n % 5)
+                ],
+            )
+            for n in range(14)
+        ]
+        self._write(experience=roles)
+        pages = [page.extract_text() for page in PdfReader(str(self.path)).pages]
+        self.assertGreater(len(pages), 2)
+        for n in range(14):
+            holders = {
+                i
+                for i, page in enumerate(pages)
+                for marker in [f"Title{n:02d}", *(f"Role {n:02d} bullet {b}" for b in range(3 + n % 5))]
+                if marker in page
+            }
+            self.assertEqual(len(holders), 1, f"role {n} spans pages {holders}")
+
     def test_the_linkedin_url_is_still_in_the_text(self) -> None:
         self.assertIn("linkedin.com/in/zzfixture", self._write())
 
@@ -241,6 +272,132 @@ class TestWritePdf(unittest.TestCase):
         fonts = find_fonts([directory])
         doc = build_render_doc(make_tailored_document(identity="Zz 日本"))
         self.assertEqual(undrawable_chars(doc, fonts), ["日", "本"])
+
+    def test_no_text_is_drawn_in_helvetica_when_calibri_like_fonts_are_used(
+        self,
+    ) -> None:
+        directory = Path(self._tmp.name) / "fonts"
+        directory.mkdir()
+        for target, source in (
+            ("Calibri.ttf", "Vera.ttf"),
+            ("Calibrib.ttf", "VeraBd.ttf"),
+            ("Calibrii.ttf", "VeraIt.ttf"),
+        ):
+            shutil.copy(_VERA_DIR / source, directory / target)
+        write_pdf(
+            build_render_doc(make_tailored_document()),
+            self.path,
+            find_fonts([directory]),
+        )
+        drawn = set()
+        for page in PdfReader(str(self.path)).pages:
+            names = {
+                key: str(font.get_object().get("/BaseFont"))
+                for key, font in page["/Resources"]["/Font"].items()
+            }
+            current = ""
+            content = page.get_contents().get_data().decode("latin-1")
+            for match in re.finditer(r"(/\S+) [\d.]+ Tf|\) Tj|\] TJ", content):
+                if match.group(1):
+                    current = names[match.group(1)]
+                else:
+                    drawn.add(current)
+        self.assertTrue(drawn)
+        self.assertFalse([name for name in drawn if "Helvetica" in name], drawn)
+
+    def test_role_dates_are_coloured_grey_and_the_rest_is_not(self) -> None:
+        block = Block(
+            "role_meta", "Acme Bank, 01/2019 – Present", muted="01/2019 – Present"
+        )
+        markup = _markup(block)
+        self.assertTrue(markup.startswith("Acme Bank, "))
+        self.assertIn('<font color="#7F7F7F">01/2019 – Present</font>', markup)
+
+    def test_muted_text_that_is_not_at_the_end_is_ignored(self) -> None:
+        block = Block("role_meta", "Acme Bank", muted="01/2019")
+        self.assertEqual(_markup(block), "Acme Bank")
+
+    def test_bullets_are_indented_like_the_template(self) -> None:
+        style = _styles(HELVETICA)["bullet"]
+        self.assertEqual((style.bulletIndent, style.leftIndent), (6, 19))
+
+    def test_a_role_with_no_title_gets_the_gap_a_title_would_give(self) -> None:
+        styles = _styles(HELVETICA)
+        blocks = [
+            Block("bullet", "Last bullet of the previous role"),
+            Block("role_meta", "Prior experience available on request, 06/1988"),
+            Block("heading", "PERSONAL PROJECTS"),
+            Block("paragraph", "Something"),
+        ]
+        flowables = _flowables(blocks, styles)
+        self.assertEqual(flowables[1].height, styles["role_title"].spaceBefore)
+
+    def test_the_gap_survives_layout_when_a_heading_follows(self) -> None:
+        def pitch(kind: str, text: str) -> float:
+            doc = RenderDoc(
+                "T",
+                (
+                    Block("bullet", "B1"),
+                    Block(kind, text),
+                    Block("heading", "NEXT SECTION"),
+                    Block("paragraph", "Body"),
+                ),
+            )
+            write_pdf(doc, self.path, HELVETICA)
+            ys: dict[str, float] = {}
+
+            def visit(text: str, cm: list, tm: list, *_: object) -> None:
+                ys[text.strip()] = tm[5] * cm[3] + cm[5]
+
+            PdfReader(str(self.path)).pages[0].extract_text(visitor_text=visit)
+            return ys["B1"] - ys[text]
+
+        with_gap = pitch("role_meta", "Prior experience on request")
+        # A normal bullet-to-bullet step, for comparison.
+        write_pdf(
+            RenderDoc("T", (Block("bullet", "B1"), Block("bullet", "B2"))),
+            self.path,
+            HELVETICA,
+        )
+        ys: dict[str, float] = {}
+
+        def visit(text: str, cm: list, tm: list, *_: object) -> None:
+            ys[text.strip()] = tm[5] * cm[3] + cm[5]
+
+        PdfReader(str(self.path)).pages[0].extract_text(visitor_text=visit)
+        normal = ys["B1"] - ys["B2"]
+        self.assertGreater(with_gap, normal + 5)
+
+    def test_a_title_less_role_is_not_swallowed_by_the_previous_entry(self) -> None:
+        styles = _styles(HELVETICA)
+        blocks = [
+            Block("role_title", "Engineer"),
+            Block("role_meta", "Acme, 2020"),
+            Block("bullet", "Did things"),
+            Block("role_meta", "Prior experience available on request"),
+        ]
+        flowables = _flowables(blocks, styles)
+        self.assertEqual(len(flowables[0]._content), 3)
+        self.assertEqual(len(flowables), 3)
+
+    def test_dates_under_a_title_keep_their_tight_spacing(self) -> None:
+        styles = _styles(HELVETICA)
+        blocks = [Block("role_title", "Engineer"), Block("role_meta", "Acme, 2020")]
+        (group,) = _flowables(blocks, styles)
+        self.assertEqual(group._content[1].style.spaceBefore, 0)
+
+    def test_highlighted_skills_are_bold_and_the_rest_is_not(self) -> None:
+        block = Block("paragraph", "dbt, Airflow, SQL", bold_spans=((0, 3), (14, 17)))
+        self.assertEqual(_markup(block), "<b>dbt</b>, Airflow, <b>SQL</b>")
+
+    def test_a_projects_link_is_coloured_blue(self) -> None:
+        block = Block(
+            "project_title", "AI Projects: example.com/x", link="example.com/x"
+        )
+        self.assertEqual(
+            _markup(block),
+            'AI Projects: <font color="#315B94">example.com/x</font>',
+        )
 
 
 if __name__ == "__main__":

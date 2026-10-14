@@ -81,6 +81,18 @@ class TestAtsDocx(unittest.TestCase):
         self._write(experience=[role])
         self.assertIn("Engineer", extract_docx_text(self.path).splitlines())
 
+    def test_a_role_with_no_title_is_spaced_from_the_previous_role(self) -> None:
+        prior = TailoredExperience(
+            truth_index=9, company="Prior experience available on request", title=""
+        )
+        base = make_tailored_document()
+        self._write(experience=[*base.experience, prior])
+        document = Document(str(self.path))
+        paragraph = next(
+            p for p in document.paragraphs if p.text.startswith("Prior experience")
+        )
+        self.assertGreater(paragraph.paragraph_format.space_before.pt, 0)
+
 
 class TestDiffTexts(unittest.TestCase):
     def test_equal_texts_have_no_diff(self) -> None:

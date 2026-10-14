@@ -9,10 +9,14 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, text
 
 from core.db.session import session_scope
-from core.tailoring.schema import JobContext, JobSkill
+from core.tailoring.schema import JobContext, JobSkill, JobSource
 
 _SELECT_JOB = text(
     "SELECT job_group_id, title_for_display, company, description "
+    "FROM gold.dim_job WHERE job_group_id = :job_group_id"
+)
+_SELECT_JOB_SOURCE = text(
+    "SELECT apply_url, sources, location, posted_at "
     "FROM gold.dim_job WHERE job_group_id = :job_group_id"
 )
 # `must_have` first (requirement_level = 'must_have' is true for them and
@@ -100,6 +104,41 @@ def load_job_context(engine: Engine, job_group_id: str) -> JobContext | None:
         company=job.company,
         description=job.description or "",
         skills=skills,
+    )
+
+
+def load_job_source(engine: Engine, job_group_id: str) -> JobSource:
+    """Load where a job posting came from.
+
+    Args:
+        engine: The app-role engine.
+        job_group_id: The job to look up.
+
+    Returns:
+        The posting's URLs, boards, location and date; an empty `JobSource`
+        when no such job exists.
+    """
+    with engine.connect() as conn:
+        row = conn.execute(
+            _SELECT_JOB_SOURCE, {"job_group_id": job_group_id}
+        ).one_or_none()
+    if row is None:
+        return JobSource()
+    urls: list[str] = []
+    names: list[str] = []
+    for entry in row.sources or []:
+        url, name = entry.get("job_url"), entry.get("source_name")
+        if url and url not in urls:
+            urls.append(url)
+        if name and name not in names:
+            names.append(name)
+    posted = row.posted_at.date().isoformat() if row.posted_at else None
+    return JobSource(
+        apply_url=row.apply_url,
+        source_urls=tuple(urls),
+        source_names=tuple(names),
+        location=row.location,
+        posted_at=posted,
     )
 
 

@@ -601,8 +601,13 @@ This step produces approved *content* only. Rendering is Step 18.
 
     docker compose run --rm pipeline render-cv --user-id <id> --job-group-id <job_group_id>
 
-Files land in `./output/` (git-ignored; override with `--out-dir`) as
-`<surname>_<title_for_display>_<company>.docx` and `.txt`. The writer only
+Files land under `./output/` (git-ignored; override the root with `--out-dir`),
+one folder per CV: `output/<firstname_lastname>/<YYYY-MM>/<job_title>/<company>/`
+(the month is when the tailoring run was generated, so re-rendering a CV never
+moves it). The folder holds `<surname>_<title_for_display>_<company>.docx`, `.txt`
+and `.pdf`, plus `job_spec.md`: the job posting URL(s), a link to the job in the
+UI (`UI_BASE_URL`, default `http://localhost:8501`; it opens the Tailored CV
+Review page on that job), its skills and its description. The writer only
 ever adds plain paragraphs, so there are no tables, text boxes,
 headers/footers or images. Headings use the wording and order of your own
 CV template (`PROFESSIONAL SUMMARY`, `CORE TECHNICAL SKILLS`, `WORK EXPERIENCE`,

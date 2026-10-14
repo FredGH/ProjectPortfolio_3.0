@@ -40,12 +40,15 @@ def _style_document(document: DocumentType) -> None:
     heading.paragraph_format.space_after = Pt(3)
 
 
-def _add_block(document: DocumentType, block: Block) -> None:
+def _add_block(
+    document: DocumentType, block: Block, previous: Block | None = None
+) -> None:
     """Append one block as a plain paragraph.
 
     Args:
         document: The document being built.
         block: The block to write.
+        previous: The block just before it, if any.
     """
     if block.kind == "heading":
         document.add_paragraph(block.text, style="Heading 1")
@@ -54,6 +57,16 @@ def _add_block(document: DocumentType, block: Block) -> None:
         document.add_paragraph(block.text, style="List Bullet")
         return
     paragraph = document.add_paragraph()
+    if block.bold_spans:
+        cursor = 0
+        for start, end in block.bold_spans:
+            if start > cursor:
+                paragraph.add_run(block.text[cursor:start])
+            paragraph.add_run(block.text[start:end]).bold = True
+            cursor = end
+        if cursor < len(block.text):
+            paragraph.add_run(block.text[cursor:])
+        return
     run = paragraph.add_run(block.text)
     if block.kind == "name":
         run.bold = True
@@ -61,12 +74,15 @@ def _add_block(document: DocumentType, block: Block) -> None:
     elif block.kind == "headline":
         run.bold = True
         run.font.size = Pt(12)
-    elif block.kind == "role_title":
+    elif block.kind in ("role_title", "project_title"):
         run.bold = True
         paragraph.paragraph_format.space_before = Pt(6)
         paragraph.paragraph_format.keep_with_next = True
     elif block.kind == "role_meta":
         run.italic = True
+        if previous is None or previous.kind != "role_title":
+            # A role with no title: the gap its title would have given.
+            paragraph.paragraph_format.space_before = Pt(6)
         paragraph.paragraph_format.keep_with_next = True
 
 
@@ -79,8 +95,10 @@ def write_docx(doc: RenderDoc, path: Path) -> None:
     """
     document = Document()
     _style_document(document)
+    previous: Block | None = None
     for block in doc.blocks:
-        _add_block(document, block)
+        _add_block(document, block, previous)
+        previous = block
     document.core_properties.title = doc.title[:255]
     document.core_properties.author = ""
     document.save(str(path))

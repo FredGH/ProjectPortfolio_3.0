@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,23 @@ class AcronymExpander:
         Returns:
             The text with first-use acronyms expanded.
         """
+        return self.expand_spans(text, ())[0]
+
+    def expand_spans(
+        self, text: str, spans: Sequence[tuple[int, int]]
+    ) -> tuple[str, tuple[tuple[int, int], ...]]:
+        """Expand acronyms like `expand`, keeping character ranges aligned.
+
+        Args:
+            text: One block of document text, in document order.
+            spans: `(start, end)` ranges of `text` (for example bold phrases).
+
+        Returns:
+            The expanded text and the ranges moved to the same words in it.
+            An expansion inserted inside a range is part of it; one inserted
+            right after a range is not.
+        """
+        moved = [tuple(span) for span in spans]
         for acronym, expansion in self._acronyms.items():
             if acronym in self._seen:
                 continue
@@ -151,8 +169,17 @@ class AcronymExpander:
             after = text[match.end() :]
             if re.match(rf"\s*\(\s*{re.escape(expansion)}", after, re.IGNORECASE):
                 continue
-            text = f"{text[: match.end()]} ({expansion}){after}"
-        return text
+            inserted = f" ({expansion})"
+            at = match.end()
+            moved = [
+                (
+                    start + len(inserted) if at <= start else start,
+                    end + len(inserted) if at < end else end,
+                )
+                for start, end in moved
+            ]
+            text = f"{text[:at]}{inserted}{after}"
+        return text, tuple(moved)
 
 
 def _slug(value: str) -> str:
