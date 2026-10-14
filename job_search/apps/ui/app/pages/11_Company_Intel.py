@@ -186,8 +186,10 @@ if resolution is not None:
             [
                 f"- **Posted by:** {_plain(resolution['posted_company'] or 'unknown')}",
                 f"- **Poster is:** {_plain(resolution['poster_kind'])}",
-                f"- **Researching:** {_plain(resolution['end_client'] or 'not known yet')}",
-                f"- **Website:** {_plain(resolution['website_url'] or 'not known yet')}",
+                "- **Researching:** "
+                f"{_plain(resolution['end_client'] or 'not known yet')}",
+                "- **Website:** "
+                f"{_plain(resolution['website_url'] or 'not known yet')}",
                 f"- **Set by:** {_plain(resolution['method'])}",
             ]
         )
@@ -230,7 +232,8 @@ if st.button(label, key=button_key):
 if intel is not None:
     badge = "Fresh" if intel["fresh"] else "Stale"
     st.markdown(
-        f"**{badge}** - v{intel['version']}, researched {_date(intel['researched_at'])}, "
+        f"**{badge}** - v{intel['version']}, "
+        f"researched {_date(intel['researched_at'])}, "
         f"status {_plain(intel['status'])}"
     )
     if intel["status"] == "no_content":
