@@ -665,3 +665,22 @@ the run bills.
 
 **To pick it up:** run it with `RUN_PAID_TESTS=1`, then record the catch rate
 and the cost here.
+
+## Company intel (Step 19a)
+
+`research-company` researches the company behind a job and stores it, or reuses
+the stored version while it is under 90 days old (`config/company_intel.yml`):
+
+    docker compose --profile research up -d crawl4ai
+    docker compose run --rm pipeline research-company --job-group-id <job_group_id>
+
+It decides which company the work is really for (for an agency posting, the end
+client the description names; correct it with `--end-client NAME --website URL`),
+crawls that company's own site through the `crawl4ai` service, extracts a profile
+where every fact cites the page it came from, lists up to five competitors
+(`site`, or `model knowledge — unverified`) and writes a per-job competitive
+angle, labelled `analysis — not verified`. Each research appends a new version, so
+what you knew in March stays explicable. `--force` researches again, `--no-angle`
+skips the angle. The same is available on the **Company Intel** page of the UI
+(`/Company_Intel?job=<job_group_id>`, which `render-cv`'s `job_spec.md` links to).
+Companies House, GitHub signals, news and sentiment are follow-ups.

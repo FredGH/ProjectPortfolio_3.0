@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 
-from core.render.layout import cv_directory, job_ui_link, render_job_spec
+from core.render.layout import cv_directory, intel_ui_link, job_ui_link, render_job_spec
 from core.tailoring.schema import JobContext, JobSkill, JobSource
 
 
@@ -40,11 +40,13 @@ class TestCvDirectory(unittest.TestCase):
 
     def test_unsafe_characters_never_reach_the_path(self) -> None:
         path = cv_directory(
-            Path("out"), "Zoë O'Neil", datetime(2026, 1, 2), "Lead/Staff ../Eng", "A&B Ltd."
+            Path("out"),
+            "Zoë O'Neil",
+            datetime(2026, 1, 2),
+            "Lead/Staff ../Eng",
+            "A&B Ltd.",
         )
-        self.assertEqual(
-            path, Path("out/zoe_o_neil/2026-01/lead_staff_eng/a_b_ltd")
-        )
+        self.assertEqual(path, Path("out/zoe_o_neil/2026-01/lead_staff_eng/a_b_ltd"))
 
     def test_missing_parts_get_a_placeholder_not_an_empty_folder(self) -> None:
         path = cv_directory(Path("out"), "", datetime(2026, 3, 4), "  ", None)
@@ -86,6 +88,17 @@ class TestJobSpec(unittest.TestCase):
         text = render_job_spec(_job(), source, "http://u")
         self.assertIn("**Job posting:** https://apply/1", text)
         self.assertIn("**Also seen at:** https://seen/2", text)
+
+    def test_the_company_intel_link_is_listed_when_given(self) -> None:
+        link = intel_ui_link("http://localhost:8501/", "abc123")
+        self.assertEqual(link, "http://localhost:8501/Company_Intel?job=abc123")
+        text = render_job_spec(_job(), JobSource(), "http://u", link)
+        self.assertIn(f"**Company intel:** {link}", text)
+
+    def test_without_an_intel_link_the_line_is_absent(self) -> None:
+        self.assertNotIn(
+            "Company intel", render_job_spec(_job(), JobSource(), "http://u")
+        )
 
 
 if __name__ == "__main__":

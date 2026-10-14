@@ -1341,6 +1341,11 @@ essential.
 Stored as `artefact_cover_letter` and `artefact_pitch`, keyed on
 `job_group_id`.
 
+**Built after 19a.** The Researcher does not fetch anything itself: it reads
+the stored company intel (`intel.company_intel`) and the job's competitive angle
+through `get_or_refresh_intel` / `get_or_create_angle` in `core.company_intel`,
+so the cover letter and the pitch draw on the same research that 19a persists.
+
 ---
 
 # Phase 5 — Market intelligence and interface
@@ -1386,6 +1391,17 @@ that's the key.
 
 A second application to the same company reuses stored intel rather than
 re-researching, and the interview prep view surfaces it.
+
+### As built
+
+Built in `core.company_intel` (spec:
+`docs/superpowers/specs/2026-10-14-step19a-company-intel-design.md`), before
+Step 19. `intel.company_intel` stands for `dim_company_intel`. The first version
+researches the company's own website only (Crawl4AI as a Docker service), adds
+the top five competitors (site-sourced or model knowledge, flagged unverified)
+and a per-job competitive angle (analysis, not fact). Companies House, GitHub
+signals, news and sentiment are follow-ups. Until Step 20a exists, the Company
+Intel page in the UI stands in for the interview-prep view.
 
 ---
 
@@ -1999,7 +2015,7 @@ Build all three or don't build the feature.
 ## The dependency chain is linear — deliberately, but not necessarily
 
 `STEP-00 → 01 → 01A → 02 → 03 → 04 → 04A → 05 → 05A → 06 → 07 → 08 → 09 → 10
-→ 11 → 11A → 12 → 12A → 13 → 14 → 15 → 16 → 17 → 18 → 19 → 19A → 20 → 20A
+→ 11 → 11A → 12 → 12A → 13 → 14 → 15 → 16 → 17 → 18 → 19A → 19 → 20 → 20A
 → 21A → 21B → 21C → 21 → 22 → 22A → 23 → 23A`
 
 Honest for a solo project, but it means Jira shows no parallelism. **Phase 3

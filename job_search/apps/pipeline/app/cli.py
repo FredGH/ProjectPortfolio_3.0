@@ -53,6 +53,7 @@ from core.llm.types import LLMAdapter
 from core.render.layout import (
     JOB_SPEC_FILENAME,
     cv_directory,
+    intel_ui_link,
     job_ui_link,
     render_job_spec,
 )
@@ -1398,6 +1399,7 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
                 job,
                 load_job_source(engine, args.job_group_id),
                 job_ui_link(ui_base, args.job_group_id),
+                intel_ui_link(ui_base, args.job_group_id),
             ),
             encoding="utf-8",
         )

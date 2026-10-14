@@ -92,6 +92,16 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  # Step 19a company research: a headless-browser crawler with a REST API.
+  # Not started by default (about 1.7 GB image, needs Docker memory):
+  #   docker compose --profile research up -d crawl4ai
+  crawl4ai:
+    image: unclecode/crawl4ai:0.9.4
+    profiles: [research]
+    shm_size: 1gb
+    ports:
+      - "11235:11235"
+
   n8n:
     image: n8nio/n8n
     profiles: [orchestration]
