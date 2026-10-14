@@ -133,6 +133,14 @@ class TestResearchCompany(unittest.TestCase):
         self.assertEqual(kwargs["override"].end_client, "Real Bank")
         self.assertEqual(kwargs["override"].website_url, "https://bank.example")
 
+    def test_an_unusable_website_is_rejected_before_any_research(self) -> None:
+        code, text, service, _a = _run(
+            [*_ARGS, "--website", "not a url"], _result("refreshed", _intel())
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("website", text)
+        service.assert_not_called()
+
     def test_no_override_flags_means_no_override(self) -> None:
         _c, _t, service, _a = _run(_ARGS, _result("reused", _intel()))
         self.assertIsNone(service.call_args.kwargs["override"])

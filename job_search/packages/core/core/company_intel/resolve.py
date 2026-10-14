@@ -85,17 +85,26 @@ def _clean(value: object) -> str | None:
     return None if not text or text.lower() in {"null", "none", "unknown"} else text
 
 
-def _https(value: object) -> str | None:
-    """Accept only an http(s) URL.
+_BARE_DOMAIN_RE = re.compile(r"^[\w-]+(\.[\w-]+)+(/\S*)?$")
+
+
+def normalise_website_url(value: object) -> str | None:
+    """Turn what a person (or the model) wrote into a usable website URL.
 
     Args:
-        value: A JSON value.
+        value: A website as typed or returned by the model.
 
     Returns:
-        The URL, or None.
+        An http(s) URL: a bare domain such as `acme.com` or `www.acme.co.uk/x`
+        gets `https://`; an http(s) URL is kept. Anything else (no dot, spaces,
+        another scheme, not text) gives None.
     """
     url = _clean(value)
-    return url if url and re.match(r"^https?://\S+$", url) else None
+    if not url:
+        return None
+    if re.match(r"^https?://\S+$", url):
+        return url
+    return f"https://{url}" if _BARE_DOMAIN_RE.match(url) else None
 
 
 def resolve_company(
@@ -121,22 +130,60 @@ def resolve_company(
         The stored resolution and any LLM usage records made now.
     """
     existing = store.read_resolution(engine, job.job_group_id)
-    if override is not None:
-        base = existing or Resolution(
-            job.job_group_id, job.company, "unknown", None, None, "manual"
+    calls: list[dict] = []
+    # Nothing stored and the override does not name the client: resolve the
+    # job automatically first, so a typed website still has a company to
+    # belong to.
+    if existing is None and (override is None or not _clean(override.end_client)):
+        automatic = _resolve_automatically(
+            engine, job, source, adapters=adapters, config_path=config_path
         )
-        manual = Resolution(
-            job_group_id=job.job_group_id,
-            posted_company=base.posted_company or job.company,
-            poster_kind=base.poster_kind,
-            end_client=_clean(override.end_client) or base.end_client,
-            website_url=_https(override.website_url) or base.website_url,
-            method="manual",
-        )
-        return ResolveResult(store.save_resolution(engine, manual), [])
-    if existing is not None:
-        return ResolveResult(existing, [])
+        existing, calls = automatic.resolution, automatic.calls
+    if override is None:
+        assert existing is not None
+        return ResolveResult(existing, calls)
 
+    base = existing or Resolution(
+        job.job_group_id, job.company, "unknown", None, None, "manual"
+    )
+    end_client = _clean(override.end_client) or base.end_client
+    website = normalise_website_url(override.website_url)
+    if website is None and _same_company(end_client, base.end_client):
+        # Same client, no website typed: keep the stored one. For a new client
+        # the stored website belonged to the old company (often the agency), so
+        # it is not carried over.
+        website = base.website_url
+    manual = Resolution(
+        job_group_id=job.job_group_id,
+        posted_company=base.posted_company or job.company,
+        poster_kind=base.poster_kind,
+        end_client=end_client,
+        website_url=website,
+        method="manual",
+    )
+    return ResolveResult(store.save_resolution(engine, manual), calls)
+
+
+def _resolve_automatically(
+    engine: Engine,
+    job: JobContext,
+    source: JobSource,
+    *,
+    adapters: dict[str, LLMAdapter],
+    config_path: Path | None,
+) -> ResolveResult:
+    """Ask the model which company the job is for, and store the answer.
+
+    Args:
+        engine: The app-role engine.
+        job: The job's title, company and description.
+        source: Where the posting came from.
+        adapters: Provider name to LLM adapter.
+        config_path: Task-config override (tests).
+
+    Returns:
+        The stored automatic resolution and its usage record.
+    """
     run = run_task(
         "company_resolution",
         _PROMPT_VERSION,
@@ -166,10 +213,72 @@ def resolve_company(
         posted_company=job.company,
         poster_kind=kind,
         end_client=end_client,
-        website_url=_https(data.get("website_url")),
+        website_url=normalise_website_url(data.get("website_url")),
         method=method,
     )
     return ResolveResult(store.save_resolution(engine, resolution), [run.record])
+
+
+def _same_company(a: str | None, b: str | None) -> bool:
+    """Say whether two company names are the same ignoring case and spacing.
+
+    Args:
+        a: A company name or None.
+        b: A company name or None.
+
+    Returns:
+        True when both are present and equal once normalised.
+    """
+
+    def key(name: str | None) -> str:
+        """Normalise a name for comparison.
+
+        Args:
+            name: A company name or None.
+
+        Returns:
+            The normalised, case-folded name ("" when missing).
+        """
+        return re.sub(r"\s+", " ", (normalise_company(name) or "")).casefold()
+
+    return bool(a) and bool(b) and key(a) == key(b)
+
+
+@dataclass(frozen=True)
+class WebsiteCheck:
+    """The result of fetching a candidate homepage.
+
+    Attributes:
+        page: The homepage when it loaded, else None.
+        verified: Whether the homepage text names the company.
+        error: Why the homepage did not load, if it did not.
+    """
+
+    page: Page | None
+    verified: bool
+    error: str | None = None
+
+
+def check_website(
+    fetcher: Fetcher, website_url: str, company_name: str
+) -> WebsiteCheck:
+    """Fetch a candidate homepage; say whether it loaded and names the company.
+
+    Args:
+        fetcher: Fetches the homepage.
+        website_url: The candidate website.
+        company_name: The company the website should belong to.
+
+    Returns:
+        A `WebsiteCheck`. `verified` needs the company's normalised name in
+        the homepage text (ignoring case and spacing).
+    """
+    page = fetcher.fetch(website_url)
+    if page.status != "ok":
+        return WebsiteCheck(None, False, page.error or "the page did not load")
+    needle = re.sub(r"\s+", " ", (normalise_company(company_name) or "")).casefold()
+    haystack = re.sub(r"\s+", " ", page.markdown).casefold()
+    return WebsiteCheck(page, bool(needle) and needle in haystack)
 
 
 def verify_website(
@@ -186,9 +295,5 @@ def verify_website(
         The homepage when it loads and its text contains the company's
         normalised name (ignoring case and spacing), else None.
     """
-    page = fetcher.fetch(website_url)
-    if page.status != "ok":
-        return None
-    needle = re.sub(r"\s+", " ", (normalise_company(company_name) or "")).casefold()
-    haystack = re.sub(r"\s+", " ", page.markdown).casefold()
-    return page if needle and needle in haystack else None
+    check = check_website(fetcher, website_url, company_name)
+    return check.page if check.verified else None

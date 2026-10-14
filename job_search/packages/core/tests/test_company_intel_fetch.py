@@ -91,6 +91,29 @@ class TestParseCrawlPayload(unittest.TestCase):
         )
         self.assertEqual(page.status, "failed")
 
+    def test_a_malformed_link_is_skipped_not_raised(self) -> None:
+        page = parse_crawl_payload(
+            _URL,
+            {
+                "results": [
+                    {
+                        "success": True,
+                        "markdown": "Hello",
+                        "links": {
+                            "internal": [
+                                {"href": "http://[::1"},
+                                {"href": "/about"},
+                                None,
+                                42,
+                            ]
+                        },
+                    }
+                ]
+            },
+        )
+        self.assertEqual(page.status, "ok")
+        self.assertEqual(page.links, ("https://acme.example/about",))
+
 
 class TestCrawl4AIFetcher(unittest.TestCase):
     """Crawl4AIFetcher posts to /crawl and tolerates transport errors."""

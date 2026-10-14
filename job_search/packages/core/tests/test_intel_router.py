@@ -194,6 +194,26 @@ class TestIntelRouter(unittest.TestCase):
             ("Real Bank", "https://bank.example"),
         )
 
+    def test_put_resolution_with_an_unusable_website_is_422(self) -> None:
+        with mock.patch("app.routers.intel.resolve_company") as resolve:
+            response = self.client.put(
+                "/intel/jobs/zzfixture-intel-job/resolution",
+                json={"end_client": "Real Bank", "website_url": "not a url"},
+            )
+        self.assertEqual(response.status_code, 422)
+        resolve.assert_not_called()
+
+    def test_put_resolution_accepts_a_bare_domain(self) -> None:
+        with mock.patch("app.routers.intel.resolve_company") as resolve:
+            response = self.client.put(
+                "/intel/jobs/zzfixture-intel-job/resolution",
+                json={"website_url": "bank.example"},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            resolve.call_args.kwargs["override"].website_url, "bank.example"
+        )
+
     def test_put_resolution_with_nothing_is_422(self) -> None:
         response = self.client.put(
             "/intel/jobs/zzfixture-intel-job/resolution", json={}

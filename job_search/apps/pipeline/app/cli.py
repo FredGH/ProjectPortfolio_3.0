@@ -27,7 +27,7 @@ from core.classification.write_job_category import write_job_category
 from core.company_intel.angle import get_or_create_angle
 from core.company_intel.config import load_config as load_company_intel_config
 from core.company_intel.fetch import CachedFetcher, Crawl4AIFetcher
-from core.company_intel.resolve import ManualOverride
+from core.company_intel.resolve import ManualOverride, normalise_website_url
 from core.company_intel.service import get_or_refresh_intel
 from core.db.session import build_engine
 from core.dedup.write_blocking_keys import write_blocking_keys
@@ -1438,6 +1438,12 @@ def _cmd_research_company(args: argparse.Namespace) -> int:
         print(f"research-company: no such job {args.job_group_id}")
         return 1
     source = load_job_source(engine, args.job_group_id)
+    if args.website and normalise_website_url(args.website) is None:
+        print(
+            f"research-company: the website {args.website!r} is not a usable "
+            "address, e.g. acme.com"
+        )
+        return 1
     override = None
     if args.end_client or args.website:
         override = ManualOverride(end_client=args.end_client, website_url=args.website)

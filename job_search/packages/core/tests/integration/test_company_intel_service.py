@@ -222,7 +222,7 @@ class TestGetOrRefreshIntel(unittest.TestCase):
         self.assertEqual(result.outcome, "refreshed")
         self.assertEqual(result.resolution.method, "manual")
 
-    def test_if_every_page_fails_nothing_is_written_and_the_old_version_stays(
+    def test_if_the_crawler_is_down_nothing_is_written_and_the_error_is_reported(
         self,
     ) -> None:
         self._run(FakeAdapter([_resolution_reply(), _profile_reply()]), _web())
@@ -237,10 +237,34 @@ class TestGetOrRefreshIntel(unittest.TestCase):
             config=_CONFIG,
             now=lambda: later,
         )
-        self.assertEqual(result.outcome, "website_unverified")
+        self.assertEqual(result.outcome, "failed")
+        self.assertIn("not in the fake", result.message)
         latest = store.read_latest_intel(self.engine, self.key)
         assert latest is not None
         self.assertEqual(latest.version, 1)
+
+    def test_a_typed_website_is_trusted_even_if_the_homepage_does_not_name_the_company(
+        self,
+    ) -> None:
+        web = FakeFetcher(
+            {
+                _SITE: Page(_SITE, "ok", "Welcome to the Zz Group", (_ABOUT,)),
+                _ABOUT: Page(_ABOUT, "ok", "We make widgets."),
+            }
+        )
+        result = self._run(
+            FakeAdapter([_resolution_reply(), _profile_reply()]),
+            web,
+            override=ManualOverride(website_url=_SITE),
+        )
+        self.assertEqual(result.outcome, "refreshed")
+
+    def test_a_guessed_website_that_does_not_name_the_company_is_still_rejected(
+        self,
+    ) -> None:
+        web = FakeFetcher({_SITE: Page(_SITE, "ok", "Welcome to the Zz Group")})
+        result = self._run(FakeAdapter([_resolution_reply()]), web)
+        self.assertEqual(result.outcome, "website_unverified")
 
     def test_pages_that_yield_nothing_are_stored_as_no_content(self) -> None:
         result = self._run(FakeAdapter([_resolution_reply(), "{}"]), _web())

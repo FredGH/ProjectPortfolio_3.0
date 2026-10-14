@@ -18,7 +18,7 @@ from core.company_intel.extract import ExtractError, extract_intel
 from core.company_intel.fetch import Fetcher, Page
 from core.company_intel.keys import company_key
 from core.company_intel.llm import LlmTaskError, total_usage
-from core.company_intel.resolve import ManualOverride, resolve_company, verify_website
+from core.company_intel.resolve import ManualOverride, check_website, resolve_company
 from core.company_intel.schema import Resolution, StoredIntel
 from core.llm.types import LLMAdapter
 from core.tailoring.schema import JobContext, JobSource
@@ -145,18 +145,33 @@ def get_or_refresh_intel(
     ):
         return IntelResult("reused", resolution, latest, "Stored intel is still fresh.")
 
-    home = (
-        verify_website(fetcher, resolution.website_url, resolution.end_client)
-        if resolution.website_url
-        else None
-    )
-    if home is None:
+    if not resolution.website_url:
         return IntelResult(
             "website_unverified",
             resolution,
             latest,
-            "No verified website for this company; enter its website to research it.",
+            "No website is known for this company; enter its website to research it.",
         )
+    check = check_website(fetcher, resolution.website_url, resolution.end_client)
+    if check.page is None:
+        return IntelResult(
+            "failed",
+            resolution,
+            latest,
+            f"Could not load {resolution.website_url}: {check.error} "
+            "(is the crawler running?)",
+        )
+    # A manual resolution's website was typed by the user, so it is trusted;
+    # a guessed one must name the company on its homepage.
+    if not check.verified and resolution.method != "manual":
+        return IntelResult(
+            "website_unverified",
+            resolution,
+            latest,
+            "The website's homepage does not name this company; enter the "
+            "correct website to research it.",
+        )
+    home = check.page
     pages: list[Page] = [home]
     for url in pick_pages(home.url, home.links, config.max_pages)[1:]:
         pages.append(fetcher.fetch(url))

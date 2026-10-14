@@ -173,6 +173,48 @@ class TestResolveCompany(unittest.TestCase):
             ("Bank A", "https://b.example", "manual"),
         )
 
+    def test_a_bare_domain_override_is_stored_with_https(self) -> None:
+        res = resolve_company(
+            self.engine,
+            make_job(),
+            make_source(),
+            adapters={"anthropic": FakeAdapter(["{}"])},
+            override=ManualOverride(website_url="www.bank.example/about"),
+        ).resolution
+        self.assertEqual(res.website_url, "https://www.bank.example/about")
+
+    def test_a_new_end_client_without_a_website_drops_the_old_website(self) -> None:
+        adapters = {
+            "anthropic": FakeAdapter(
+                [_reply("agency", "Agency Client", "https://agency.example")]
+            )
+        }
+        resolve_company(self.engine, make_job(), make_source(), adapters=adapters)
+        res = resolve_company(
+            self.engine,
+            make_job(),
+            make_source(),
+            adapters=adapters,
+            override=ManualOverride(end_client="Real Bank"),
+        ).resolution
+        self.assertEqual((res.end_client, res.website_url), ("Real Bank", None))
+
+    def test_the_same_end_client_keeps_its_website(self) -> None:
+        adapters = {
+            "anthropic": FakeAdapter(
+                [_reply("agency", "Real Bank", "https://bank.example")]
+            )
+        }
+        resolve_company(self.engine, make_job(), make_source(), adapters=adapters)
+        res = resolve_company(
+            self.engine,
+            make_job(),
+            make_source(),
+            adapters=adapters,
+            override=ManualOverride(end_client="real bank ltd"),
+        ).resolution
+        self.assertEqual(res.website_url, "https://bank.example")
+
     def test_prompt_text_with_braces_is_safe(self) -> None:
         adapter = FakeAdapter([_reply("employer", None, None)])
         resolve_company(

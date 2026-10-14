@@ -92,10 +92,14 @@ def parse_crawl_payload(url: str, payload: object) -> Page:
     links: list[str] = []
     for item in internal or []:
         href = item.get("href") if isinstance(item, dict) else item
-        if isinstance(href, str) and href.strip():
+        if not isinstance(href, str) or not href.strip():
+            continue
+        try:
             absolute = urljoin(url, href.strip())
-            if absolute not in links:
-                links.append(absolute)
+        except ValueError:  # e.g. an unterminated IPv6 literal: skip the link
+            continue
+        if absolute not in links:
+            links.append(absolute)
     return Page(url=url, status="ok", markdown=markdown, links=tuple(links))
 
 

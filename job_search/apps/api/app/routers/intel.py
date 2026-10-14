@@ -19,7 +19,11 @@ from core.company_intel.angle import get_or_create_angle
 from core.company_intel.config import load_config
 from core.company_intel.fetch import Fetcher
 from core.company_intel.keys import company_key
-from core.company_intel.resolve import ManualOverride, resolve_company
+from core.company_intel.resolve import (
+    ManualOverride,
+    normalise_website_url,
+    resolve_company,
+)
 from core.company_intel.service import get_or_refresh_intel, is_fresh
 from core.llm.types import LLMAdapter
 from core.tailoring.context import load_job_context, load_job_source
@@ -97,16 +101,19 @@ class ResolutionRequest(BaseModel):
 
     @model_validator(mode="after")
     def _needs_something(self) -> ResolutionRequest:
-        """Require at least one non-blank field.
+        """Require at least one non-blank field and a usable website address.
 
         Returns:
             The validated request.
 
         Raises:
-            ValueError: If both fields are empty.
+            ValueError: If both fields are empty or the website is unusable.
         """
-        if not (self.end_client or "").strip() and not (self.website_url or "").strip():
+        website = (self.website_url or "").strip()
+        if not (self.end_client or "").strip() and not website:
             raise ValueError("give an end client, a website, or both")
+        if website and normalise_website_url(website) is None:
+            raise ValueError("the website is not a usable address, e.g. acme.com")
         return self
 
 
