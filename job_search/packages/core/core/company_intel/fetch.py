@@ -112,6 +112,7 @@ class Crawl4AIFetcher:
         *,
         client: httpx.Client | None = None,
         timeout: float = 90.0,
+        api_token: str | None = None,
     ) -> None:
         """Point at the service.
 
@@ -119,7 +120,10 @@ class Crawl4AIFetcher:
             base_url: The service URL, e.g. `http://crawl4ai:11235`.
             client: An HTTP client (tests pass one with a mock transport).
             timeout: Seconds to wait for one crawl.
+            api_token: The service's `CRAWL4AI_API_TOKEN`, sent as a bearer
+                token (Crawl4AI 0.9 refuses unauthenticated requests).
         """
+        self._headers = {"Authorization": f"Bearer {api_token}"} if api_token else {}
         self._base = base_url.rstrip("/")
         self._client = client or httpx.Client(timeout=timeout)
 
@@ -141,7 +145,9 @@ class Crawl4AIFetcher:
             },
         }
         try:
-            response = self._client.post(f"{self._base}/crawl", json=body)
+            response = self._client.post(
+                f"{self._base}/crawl", json=body, headers=self._headers
+            )
             response.raise_for_status()
             payload = response.json()
         except (httpx.HTTPError, ValueError) as exc:

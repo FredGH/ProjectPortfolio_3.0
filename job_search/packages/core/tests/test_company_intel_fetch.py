@@ -148,6 +148,40 @@ class TestCrawl4AIFetcher(unittest.TestCase):
         self.assertEqual(body["urls"], [_URL])
         self.assertTrue(body["crawler_config"]["params"]["check_robots_txt"])
 
+    def test_it_sends_the_bearer_token_when_one_is_configured(self) -> None:
+        seen: dict[str, str | None] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["auth"] = request.headers.get("authorization")
+            return httpx.Response(
+                200, json={"results": [{"success": True, "markdown": "Hello"}]}
+            )
+
+        client = httpx.Client(transport=httpx.MockTransport(handler))
+        fetcher = Crawl4AIFetcher(
+            "http://crawl4ai:11235", client=client, api_token="s3cret"
+        )
+        self.assertEqual(fetcher.fetch(_URL).markdown, "Hello")
+        self.assertEqual(seen["auth"], "Bearer s3cret")
+
+    def test_it_sends_no_authorization_header_without_a_token(self) -> None:
+        seen: dict[str, str | None] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["auth"] = request.headers.get("authorization")
+            return httpx.Response(
+                200, json={"results": [{"success": True, "markdown": "Hello"}]}
+            )
+
+        fetcher = self._fetcher(handler)
+        fetcher.fetch(_URL)
+        self.assertIsNone(seen["auth"])
+
+    def test_a_401_becomes_a_failed_page_that_says_so(self) -> None:
+        page = self._fetcher(lambda _r: httpx.Response(401, text="no")).fetch(_URL)
+        self.assertEqual(page.status, "failed")
+        self.assertIn("401", page.error or "")
+
     def test_http_errors_and_bad_json_become_failed_pages(self) -> None:
         for response in (
             httpx.Response(500, text="boom"),

@@ -163,7 +163,11 @@ def get_fetcher() -> Fetcher:
     """
     settings = get_settings()
     return CachedFetcher(
-        Crawl4AIFetcher(settings.crawl4ai_url, timeout=120.0),
+        Crawl4AIFetcher(
+            settings.crawl4ai_url,
+            timeout=120.0,
+            api_token=settings.crawl4ai_api_token,
+        ),
         get_app_db_engine(),
         cache_days=load_company_intel_config().crawl_cache_days,
     )

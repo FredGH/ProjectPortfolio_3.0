@@ -1452,7 +1452,9 @@ def _cmd_research_company(args: argparse.Namespace) -> int:
     try:
         adapters = _build_llm_adapters(http_client)
         fetcher = CachedFetcher(
-            Crawl4AIFetcher(settings.crawl4ai_url),
+            Crawl4AIFetcher(
+                settings.crawl4ai_url, api_token=settings.crawl4ai_api_token
+            ),
             engine,
             cache_days=config.crawl_cache_days,
         )
