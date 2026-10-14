@@ -671,7 +671,9 @@ and the cost here.
 `research-company` researches the company behind a job and stores it, or reuses
 the stored version while it is under 90 days old (`config/company_intel.yml`):
 
-    docker compose --profile research up -d crawl4ai
+    # once: put a shared secret in .env (Crawl4AI 0.9 only accepts requests with it)
+    echo "CRAWL4AI_API_TOKEN=$(openssl rand -hex 24)" >> .env
+    docker compose --profile research up -d crawl4ai      # 6 GB image, needs Docker memory
     docker compose run --rm pipeline research-company --job-group-id <job_group_id>
 
 It decides which company the work is really for (for an agency posting, the end

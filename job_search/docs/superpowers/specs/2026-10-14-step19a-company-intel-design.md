@@ -163,7 +163,11 @@ version stays current. If pages load but nothing relevant is found, a
   (labelled "analysis — not verified"), a version picker, a freshness badge and a
   Research/Refresh button. The
   `job_spec.md` written by `render-cv` gains a link to this page.
-- **Infrastructure:** `crawl4ai` as a Docker Compose service (the official
+- **Infrastructure:** (verified live against `unclecode/crawl4ai:0.9.4`: the service
+  listens only on the container's loopback unless `CRAWL4AI_API_TOKEN` is set, and
+  then requires `Authorization: Bearer <token>`; the compose service takes the token
+  from `.env`, publishes its port on `127.0.0.1` only, and `Crawl4AIFetcher` sends
+  `CRAWL4AI_API_TOKEN` from settings.) `crawl4ai` as a Docker Compose service (the official
   image, REST API), not started by default; `Crawl4AIFetcher` reads its base URL
   from `CRAWL4AI_URL`. The `api` and `pipeline` images stay free of Chromium.
 - **LLM tasks:** `company_resolution`, `company_intel_extraction` and
