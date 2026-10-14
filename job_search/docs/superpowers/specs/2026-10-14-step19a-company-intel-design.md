@@ -32,9 +32,12 @@ scope here.
 | End client behind an agency | **LLM reads the posting**, plus a manual override in the UI |
 | Sources in v1 | **Company website only** (about, careers, engineering/blog pages) |
 | Architecture | **Fixed pipeline** (resolve → crawl → extract → store), not a free-roaming agent |
+| Competitors | **Top 5**, proposed by the LLM from the company's pages plus its general knowledge, each tagged `site` or `model_knowledge` (unverified) and shown with that badge; no competitor crawling in v1 |
+| Competitive angle | A **per-job analysis** of how this job, and the company transformation it implies, could put the company ahead of those competitors; labelled as analysis, not fact |
 
 Follow-ups, not in this step: Companies House (UK), GitHub public repos, news
-and sentiment, a batch research stage, progress polling for long runs.
+and sentiment, verifying competitors against their own sites or a search
+source, a batch research stage, progress polling for long runs.
 
 ## Data (new `intel` schema, Alembic migration, shared across users — no RLS)
 
@@ -78,6 +81,30 @@ Each field is a list of `{ "text": ..., "source_url": ... }` items, or empty.
 - `business_model`, `size_signals` (headcount, offices, growth wording),
   `tech_stack`, `recent_announcements` (dated where the page gives a date),
   `notes` (anything else useful for a cover letter, still cited).
+- `competitors` — up to 5 items `{ "name", "why", "basis", "source_url" }`.
+  `basis` is `site` (the company's own pages name or clearly imply the
+  competitor; `source_url` is a crawled page) or `model_knowledge` (the model's
+  general knowledge; `source_url` is null). Competitors are always shown as
+  unverified unless `basis = site`.
+
+### Competitive angle (per job, not part of the shared intel)
+
+The competitors are company-level, but "how this job could set the company
+ahead" depends on the job, so it is stored separately:
+
+- **`intel.job_competitive_angle`** — append-only: `id uuid pk`,
+  `job_group_id text`, `company_key text`, `intel_version int` (the
+  `company_intel` version it was built from), `content jsonb`, `model text`,
+  `prompt_version text`, `usage jsonb`, `created_at timestamptz`.
+- `content`: `transformation` (what change the job description implies for the
+  company), `advantages` (a list of `{ "competitor", "point" }` — how that
+  change could put the company ahead of each listed competitor, or of the field
+  generally), and `caveats`.
+- It is **analysis, not fact**: the prompt may use only the job description and
+  the stored intel, must not invent figures or events about any competitor, and
+  every output is shown with an "analysis — not verified" label. A new angle is
+  generated when none exists for the job's current intel version, or on
+  `--force`.
 
 ## Pipeline (`packages/core/core/company_intel/`)
 
@@ -99,11 +126,20 @@ Each field is a list of `{ "text": ..., "source_url": ... }` items, or empty.
    careers/jobs, engineering, blog or technology, up to the cap.
 4. **`extract.py`** — LLM task `company_intel_extraction` over the labelled page
    text. **Fabrication guard:** any fact whose `source_url` was not actually
-   crawled is dropped; fields with no evidence stay empty.
+   crawled is dropped; fields with no evidence stay empty. The one exception is
+   a competitor with `basis = model_knowledge`, which must have a null
+   `source_url` and is kept, flagged unverified (a `site` competitor citing an
+   uncrawled URL is dropped like any other fact). At most 5 competitors are
+   kept.
 5. **`store.py`** — read the latest/any version; append a version.
-6. **`service.py`** — `get_or_refresh_intel(engine, job_group_id, *, force=False)`:
+6. **`angle.py`** — LLM task `competitive_angle`: from the job description and
+   the stored intel (competitors included), write the per-job analysis above.
+   Stored in `intel.job_competitive_angle` against the intel version used.
+7. **`service.py`** — `get_or_refresh_intel(engine, job_group_id, *, force=False)`:
    resolve → return the latest version if fresh and not forced → else crawl,
-   extract, append. Steps 19 and 20a call this one function.
+   extract, append. `get_or_create_angle(engine, job_group_id, *, force=False)`
+   returns the job's angle for the current intel version, generating it when
+   missing. Steps 19 and 20a call these two functions.
 
 **Failure rules.** If every page fails, nothing is written and the previous
 version stays current. If pages load but nothing relevant is found, a
@@ -113,29 +149,37 @@ version stays current. If pages load but nothing relevant is found, a
 
 - **CLI** (pipeline container): `research-company --user-id … --job-group-id …
   [--force] [--end-client NAME] [--website URL]`; prints the version used and
-  whether it was reused or refreshed.
+  whether it was reused or refreshed. It also generates the competitive angle
+  for the job unless `--no-angle` is given.
 - **API:** `GET /intel/jobs/{job_group_id}` (resolution + latest intel + version
-  list), `POST /intel/jobs/{job_group_id}/research` (runs research; synchronous
+  list + the job's competitive angle), `POST /intel/jobs/{job_group_id}/research` (runs research; synchronous
   in v1 with a long client timeout), `PUT /intel/jobs/{job_group_id}/resolution`
   (manual end client / website).
 - **UI:** new page **Company Intel** — job picker (the existing candidates
   list), the resolution with an override form, the intel facts with source
-  links, a version picker, a freshness badge and a Research/Refresh button. The
+  links, a **Competitors** section (each with its `site` / `model knowledge —
+  unverified` badge), a **Competitive angle** section for the selected job
+  (labelled "analysis — not verified"), a version picker, a freshness badge and a
+  Research/Refresh button. The
   `job_spec.md` written by `render-cv` gains a link to this page.
 - **Infrastructure:** `crawl4ai` as a Docker Compose service (the official
   image, REST API), not started by default; `Crawl4AIFetcher` reads its base URL
   from `CRAWL4AI_URL`. The `api` and `pipeline` images stay free of Chromium.
-- **LLM tasks:** `company_resolution` and `company_intel_extraction` in
-  `config/llm_tasks.yml` (Claude by default), prompts under
-  `prompts/company_resolution/` and `prompts/company_intel_extraction/`; token
+- **LLM tasks:** `company_resolution`, `company_intel_extraction` and
+  `competitive_angle` in `config/llm_tasks.yml` (Claude by default), prompts
+  under `prompts/company_resolution/`, `prompts/company_intel_extraction/` and
+  `prompts/competitive_angle/`; token
   use and cost are logged like the other tasks.
 
 ## Testing
 
 - Unit tests with a fake `Fetcher` and a fake LLM adapter: resolution (employer,
   agency with and without an end client, manual precedence, website
-  verification), page discovery, the cited-URL guard, versioning, freshness and
-  forced refresh, the failure rules, `company_key` equal to `dim_company`'s.
+  verification), page discovery, the cited-URL guard, the competitor rules (max 5, `model_knowledge` needs a
+  null URL, a `site` competitor with an uncrawled URL is dropped), versioning,
+  freshness and forced refresh, the failure rules, `company_key` equal to
+  `dim_company`'s, and the angle (generated once per intel version, regenerated
+  after a refresh, reused otherwise).
 - A migration test, API tests, Streamlit AppTest tests for the page, a CLI test.
 - A live check by hand after the build: research one real employer already in
   the database, then run it again and confirm the stored version is reused.
@@ -154,6 +198,9 @@ version stays current. If pages load but nothing relevant is found, a
 - Job postings do not carry the company's website, so the LLM proposes one; the
   verification rule limits the damage but a company with a generic homepage can
   still be mis-verified. The manual override is the backstop.
+- Model-knowledge competitors can be wrong or out of date; they are always
+  shown as unverified, and the angle is labelled analysis. Verifying competitors
+  (crawling each one, or a web-search source) is a follow-up.
 - Some sites block crawlers or hide content behind scripts; those companies end
   up `no_content` or `failed`, with the reason recorded in `pages`.
 - Crawl4AI needs Docker memory for a headless browser; it is started only when
