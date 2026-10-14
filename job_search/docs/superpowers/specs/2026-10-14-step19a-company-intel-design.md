@@ -54,7 +54,8 @@ Company intel is shared data (PLAN.md, "Shared" row), like `dim_job`.
   - `content` holds the structured facts (below); every fact carries
     `source_url`. `pages` lists each crawled URL with its fetch time.
 - **`intel.crawl_cache`** — `url text`, `fetched_on date`, `status text`,
-  `markdown text`; primary key `(url, fetched_on)`. A cache entry younger than
+  `markdown text`, `links jsonb` (the page's internal links, needed to pick pages
+  from a cached homepage), `error text`; primary key `(url, fetched_on)`. A cache entry younger than
   `crawl_cache_days` is reused, so a re-research does not re-crawl.
 - **`intel.job_company`** — one row per `job_group_id`: `posted_company`,
   `poster_kind` (`employer` | `agency` | `unknown`), `end_client`, `website_url`,
@@ -147,7 +148,7 @@ version stays current. If pages load but nothing relevant is found, a
 
 ## Interfaces
 
-- **CLI** (pipeline container): `research-company --user-id … --job-group-id …
+- **CLI** (pipeline container): `research-company --job-group-id …
   [--force] [--end-client NAME] [--website URL]`; prints the version used and
   whether it was reused or refreshed. It also generates the competitive angle
   for the job unless `--no-angle` is given.
