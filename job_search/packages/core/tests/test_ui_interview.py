@@ -263,6 +263,27 @@ class TestInterviewPage(unittest.TestCase):
             self.sent[-1][2], {"category": "data_engineer", "confirm": True}
         )
 
+    def test_generating_one_topic_confirms_the_cost_then_posts_just_that_topic(
+        self,
+    ) -> None:
+        app = self._click(self._run(), "iv-one")
+        self.assertIn("$0.16", _shown(app))
+        self.assertEqual(self.sent, [])
+        self._click(app, "iv-one-confirm")
+        self.assertEqual(
+            self.sent[-1][2],
+            {"category": "data_engineer", "topic": "SQL", "confirm": True},
+        )
+
+    def test_cancelling_one_topic_spends_nothing(self) -> None:
+        app = self._click(self._click(self._run(), "iv-one"), "iv-one-cancel")
+        self.assertEqual(self.sent, [])
+        self.assertNotIn("iv-one-confirm", [b.key for b in app.button])
+
+    def test_a_complete_bank_offers_no_single_topic_generate(self) -> None:
+        self.bank = {**_BANK, "work": []}
+        self.assertNotIn("iv-one", [b.key for b in self._run().button])
+
     def test_regenerating_a_topic_confirms_the_cost_then_posts_force(self) -> None:
         app = self._click(self._run(), "iv-regen")
         self.assertIn("$0.40", _shown(app))

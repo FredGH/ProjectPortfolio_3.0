@@ -177,6 +177,52 @@ with bank_tab:
                     + (f" Some topics stopped early: {errors[0]}" if errors else "")
                 )
                 st.rerun()
+        st.markdown("**Or generate just one topic**")
+        one_costs = {w["topic"]: w for w in work}
+        one_topic = st.selectbox(
+            "Topic to generate",
+            list(one_costs),
+            format_func=lambda t: f"{t} ({one_costs[t]['missing']} to generate)",
+            key="iv-one-topic",
+            label_visibility="collapsed",
+        )
+        if st.button("Generate this topic", key="iv-one"):
+            st.session_state["iv-generating-one"] = (category, one_topic)
+        if st.session_state.get("iv-generating-one") == (category, one_topic):
+            st.warning(
+                f"This calls Claude and costs about "
+                f"${one_costs[one_topic]['estimated_cost_usd']:.2f} for "
+                f"'{_plain(one_topic)}'. Nothing is spent unless you confirm."
+            )
+            one_ok, one_no = st.columns(2)
+            if one_no.button("Cancel", key="iv-one-cancel"):
+                st.session_state.pop("iv-generating-one", None)
+                st.rerun()
+            if one_ok.button("Confirm", key="iv-one-confirm"):
+                st.session_state.pop("iv-generating-one", None)
+                with st.spinner("Generating - this can take a minute or two"):
+                    try:
+                        made = _call(
+                            "POST",
+                            "/interview/bank/generate",
+                            json={
+                                "category": category,
+                                "topic": one_topic,
+                                "confirm": True,
+                            },
+                        )
+                    except httpx.HTTPError as exc:
+                        st.error(_plain(f"Generation failed: {exc}"))
+                        st.stop()
+                if made.status_code != 200:
+                    _show_error(made)
+                    st.stop()
+                done = made.json()
+                st.session_state["iv-last-message"] = (
+                    f"Generated {sum(r['approved'] for r in done)} question(s) for "
+                    f"{one_topic}."
+                )
+                st.rerun()
     elif rows:
         st.success("This role family's bank is complete.")
     if rows:
