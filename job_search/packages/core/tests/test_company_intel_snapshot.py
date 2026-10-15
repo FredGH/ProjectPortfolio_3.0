@@ -27,9 +27,9 @@ def _row(value: str, as_of: str | None = "2024") -> dict:
 
 
 class TestGuardSnapshot(unittest.TestCase):
-    """guard_snapshot always returns the six rows, in order, and never invents."""
+    """guard_snapshot always returns the seven rows, in order, and never invents."""
 
-    def test_it_returns_all_six_rows_in_the_fixed_order(self) -> None:
+    def test_it_returns_all_seven_rows_in_the_fixed_order(self) -> None:
         raw = {key: _row(f"v-{key}") for key in reversed(SNAPSHOT_KEYS)}
         items = guard_snapshot(raw)
         self.assertEqual([i.key for i in items], list(SNAPSHOT_KEYS))
@@ -52,22 +52,47 @@ class TestGuardSnapshot(unittest.TestCase):
         # A bare string instead of {value, as_of} is accepted as the value.
         self.assertEqual(items["employees"].value, "about 8,000")
 
+    def test_profit_is_the_fifth_row_after_five_year_growth(self) -> None:
+        self.assertEqual(
+            list(SNAPSHOT_KEYS),
+            [
+                "industry",
+                "ranking",
+                "market_share",
+                "growth_5y",
+                "profit",
+                "employees",
+                "satisfaction",
+            ],
+        )
+        items = {
+            i.key: i
+            for i in guard_snapshot(
+                {"profit": _row("about GBP 120m net profit", "2023")}
+            )
+        }
+        self.assertEqual(items["profit"].value, "about GBP 120m net profit")
+        self.assertEqual(items["profit"].as_of, "2023")
+        self.assertEqual(items["growth_5y"].value, _NOT_KNOWN)
+
     def test_not_known_answers_in_other_words_are_normalised(self) -> None:
         raw = {
             key: _row(text)
             for key, text in zip(
                 SNAPSHOT_KEYS,
-                ["Unknown", "N/A", "none", "I don't know", "-", "Not known"],
+                ["Unknown", "N/A", "none", "I don't know", "-", "Not known", "null"],
             )
         }
         self.assertTrue(all(i.value == _NOT_KNOWN for i in guard_snapshot(raw)))
 
-    def test_a_long_value_is_cut_and_junk_input_gives_six_not_known_rows(self) -> None:
+    def test_a_long_value_is_cut_and_junk_input_gives_seven_not_known_rows(
+        self,
+    ) -> None:
         long = guard_snapshot({"industry": _row("x" * 500)})[0]
         self.assertLessEqual(len(long.value), 200)
         for junk in (None, "oops", [], 5):
             items = guard_snapshot(junk)
-            self.assertEqual(len(items), 6)
+            self.assertEqual(len(items), 7)
             self.assertTrue(all(i.value == _NOT_KNOWN for i in items))
 
     def test_an_as_of_that_is_not_a_short_string_is_dropped(self) -> None:
@@ -115,7 +140,7 @@ class TestBuildSnapshot(unittest.TestCase):
         result = build_snapshot(
             "Acme", self._content(), adapters={"anthropic": adapter}
         )
-        self.assertEqual(len(result.items), 6)
+        self.assertEqual(len(result.items), 7)
         self.assertEqual(result.items[0].value, "Industrial widgets")
         self.assertEqual(result.prompt_version, "claude.v1")
         self.assertEqual(result.calls[0]["task"], "company_snapshot")

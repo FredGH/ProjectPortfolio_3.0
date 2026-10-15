@@ -155,14 +155,15 @@ class TestGetOrRefreshIntel(unittest.TestCase):
         self.assertEqual(len(result.intel.usage["calls"]), 3)
         self.assertEqual(result.intel.resolved_from_job, _JOB)
 
-    def test_the_first_research_also_stores_the_six_row_snapshot(self) -> None:
+    def test_the_first_research_also_stores_the_seven_row_snapshot(self) -> None:
         adapter = FakeAdapter(
             [_resolution_reply(), _profile_reply(), _snapshot_reply()]
         )
         result = self._run(adapter, _web())
         assert result.intel is not None
         rows = {i.key: i for i in result.intel.content.snapshot}
-        self.assertEqual(len(rows), 6)
+        self.assertEqual(len(rows), 7)
+        self.assertEqual(rows["profit"].value, "not known")
         self.assertEqual(rows["industry"].value, "Industrial widgets")
         self.assertEqual(rows["employees"].as_of, "2024")
         self.assertEqual(rows["market_share"].value, "not known")
@@ -187,7 +188,7 @@ class TestGetOrRefreshIntel(unittest.TestCase):
         self.assertEqual(result.outcome, "no_content")
         assert result.intel is not None
         self.assertEqual(result.intel.status, "no_content")
-        self.assertEqual(len(result.intel.content.snapshot), 6)
+        self.assertEqual(len(result.intel.content.snapshot), 7)
 
     def test_a_second_research_reuses_the_stored_version(self) -> None:
         adapter = FakeAdapter([_resolution_reply(), _profile_reply()])

@@ -51,6 +51,7 @@ SNAPSHOT_KEYS = (
     "ranking",
     "market_share",
     "growth_5y",
+    "profit",
     "employees",
     "satisfaction",
 )
@@ -61,6 +62,7 @@ SNAPSHOT_LABELS = {
     "ranking": "Position / ranking in the industry",
     "market_share": "Market share",
     "growth_5y": "Growth over the past 5 years",
+    "profit": "Profit (last financial year)",
     "employees": "Number of employees",
     "satisfaction": "Employee satisfaction",
 }
@@ -94,10 +96,11 @@ class IntelContent(BaseModel):
         recent_announcements: Cited recent news from the company's pages.
         notes: Anything else useful for a cover letter, still cited.
         competitors: Up to `MAX_COMPETITORS` competitors.
-        snapshot: The six-row company snapshot (industry, ranking, market
-            share, 5-year growth, employees, satisfaction). It is the model's
-            general knowledge, never crawled, so it is always unverified;
-            empty for intel stored before the snapshot existed.
+        snapshot: The seven-row company snapshot (industry, ranking, market
+            share, 5-year growth, last year's profit, employees,
+            satisfaction). It is the model's general knowledge, never
+            crawled, so it is always unverified; empty for intel stored
+            before the snapshot existed.
     """
 
     business_model: list[IntelFact] = Field(default_factory=list)

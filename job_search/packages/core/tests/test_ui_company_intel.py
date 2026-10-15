@@ -66,6 +66,11 @@ _VIEW = {
                     "value": "Revenue up roughly 40%",
                     "as_of": "2024",
                 },
+                {
+                    "key": "profit",
+                    "value": "about USD 1.2bn net profit",
+                    "as_of": "2023",
+                },
                 {"key": "employees", "value": "about 9,000", "as_of": "2024"},
                 {"key": "satisfaction", "value": "not known", "as_of": None},
             ],
@@ -195,7 +200,9 @@ class TestCompanyIntelPage(unittest.TestCase):
         self.assertIn("Rival", shown)
         self.assertIn("Sited", shown)
 
-    def test_the_snapshot_is_a_six_row_table_with_labels_values_and_years(self) -> None:
+    def test_the_snapshot_is_a_seven_row_table_with_labels_values_and_years(
+        self,
+    ) -> None:
         app = self._run([_CANDIDATE], _VIEW)
         self.assertEqual(len(app.dataframe), 1)
         frame = app.dataframe[0].value
@@ -207,13 +214,16 @@ class TestCompanyIntelPage(unittest.TestCase):
                 "Position / ranking in the industry",
                 "Market share",
                 "Growth over the past 5 years",
+                "Profit (last financial year)",
                 "Number of employees",
                 "Employee satisfaction",
             ],
         )
         self.assertEqual(frame["Value"][0], "Industrial widgets")
         self.assertEqual(frame["Value"][2], "not known")
-        self.assertEqual(frame["As of"][4], "2024")
+        self.assertEqual(frame["Value"][4], "about USD 1.2bn net profit")
+        self.assertEqual(frame["As of"][4], "2023")
+        self.assertEqual(frame["As of"][5], "2024")
         self.assertEqual(frame["As of"][1], "")
 
     def test_the_snapshot_says_it_is_unverified_model_knowledge(self) -> None:

@@ -3,7 +3,7 @@ headcount and employee satisfaction, from the model's general knowledge
 (PLAN.md Step 19a).
 
 None of this can be crawled, so it is never cited and always shown as
-unverified. `guard_snapshot` keeps the table honest: six rows in a fixed
+unverified. `guard_snapshot` keeps the table honest: seven rows in a fixed
 order, short values, and "not known" instead of anything unusable.
 """
 
@@ -55,7 +55,7 @@ class SnapshotResult:
     """A guarded snapshot and what producing it cost.
 
     Attributes:
-        items: The six rows, in `SNAPSHOT_KEYS` order.
+        items: The seven rows, in `SNAPSHOT_KEYS` order.
         model: The model that wrote it.
         prompt_version: The prompt version used.
         calls: LLM usage records.
@@ -95,7 +95,7 @@ def _row(raw: object) -> SnapshotItem | None:
 
 
 def guard_snapshot(raw: object) -> list[SnapshotItem]:
-    """Turn a raw model reply into exactly six honest rows.
+    """Turn a raw model reply into exactly seven honest rows.
 
     Args:
         raw: The decoded JSON reply.
@@ -145,7 +145,7 @@ def build_snapshot(
         config_path: Task-config override (tests).
 
     Returns:
-        The six guarded rows and their usage.
+        The seven guarded rows and their usage.
 
     Raises:
         SnapshotError: If the reply is not a JSON object.
