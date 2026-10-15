@@ -206,7 +206,7 @@ class TestInterviewPage(unittest.TestCase):
         app = self._click(self._run(), "iv-draft")
         keys = [b.key for b in app.button]
         self.assertIn("iv-draft-confirm", keys)
-        self.assertIn("$0.03", _shown(app))
+        self.assertIn("$0.05", _shown(app))
         self.assertEqual(self.sent, [])
         app = self._click(app, "iv-draft-confirm")
         self.assertTrue(self.sent[-1][1].endswith(f"/interview/questions/{_QID}/draft"))

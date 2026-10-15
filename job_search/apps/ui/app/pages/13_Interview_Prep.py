@@ -36,7 +36,7 @@ gives an Anki file.
 
 _base = get_settings().api_base_url
 _MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
-_DRAFT_COST = "about $0.03 to $0.08"
+_DRAFT_COST = "about $0.05 to $0.15"
 
 
 def _plain(text: object) -> str:

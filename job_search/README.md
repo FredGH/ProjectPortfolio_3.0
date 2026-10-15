@@ -703,3 +703,14 @@ Companies House, GitHub signals, news and sentiment are follow-ups.
     docker compose run --rm pipeline render-artefacts --user-id <id> --job-group-id <job_group_id>
 
 Every factual sentence cites its sources (a CV bullet, the posting, or a site fact). Code checks that the cited ids exist, that every number in a claim appears in a cited source, and that the exact job title is in the rendered text; a Claude critic then judges each sentence; the writer gets at most two retries. A sentence that is still untraced is shown for **your** decision (link it to a source or remove it), and a document is approved only when none is left. The **Cover Letter & Pitch** page (`/Cover_Letter_and_Pitch?job=<job_group_id>`) does the same with a cost confirmation (about $0.05-0.10 for the letter, $0.10-0.20 for the pitch); `render-artefacts` writes the approved letter (`.docx`, `.txt`, `.pdf`) and the pitch script beside the CV.
+
+## Interview question bank (Step 20)
+
+A shared bank of technical and behavioural interview questions with model answers per role family (`qa_category`, read from `config/category_map.yml`; topics from `config/interview_topics.yml`), plus your own CV-grounded answers, spaced repetition and an Anki export. Generation is on demand, asks before spending, and never repeats finished work:
+
+    docker compose run --rm pipeline generate-question-bank --category data_engineer          # prints the cost estimate and asks
+    docker compose run --rm pipeline generate-question-bank --category data_engineer --topic "SQL and data modelling" --yes
+    docker compose run --rm pipeline score-question-gaps --user-id <id>
+    docker compose run --rm pipeline export-anki --user-id <id> --category data_engineer
+
+A Claude critic (always Claude) checks every model answer for technical correctness; anything it rejects is stored `needs_review`, never approved. The **Interview Prep** page (`./scripts/demo_interview_ui.sh` to try it) has a Drill tab (due questions first, then the biggest CV gaps; rate recall 0-5 for SM-2 scheduling), a Gaps tab, a Bank tab (counts and a confirmed "generate what is missing") and an Anki download. "Draft from my CV" writes a personal answer using only your truth base through the Step 19 evidence engine: a sentence it cannot trace to your CV waits for your link/remove decision, and an answer you wrote yourself is never replaced without a confirm.
