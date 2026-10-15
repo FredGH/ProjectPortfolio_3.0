@@ -179,6 +179,54 @@ with bank_tab:
                 st.rerun()
     elif rows:
         st.success("This role family's bank is complete.")
+    if rows:
+        st.markdown("**Regenerate a topic**")
+        topic_costs = {r["topic"]: r["regenerate_cost_usd"] for r in rows}
+        regen_topic = st.selectbox(
+            "Topic",
+            list(topic_costs),
+            key="iv-regen-topic",
+            label_visibility="collapsed",
+        )
+        if st.button("Regenerate this topic", key="iv-regen"):
+            st.session_state["iv-regenerating"] = (category, regen_topic)
+        if st.session_state.get("iv-regenerating") == (category, regen_topic):
+            st.warning(
+                f"This replaces '{_plain(regen_topic)}' with freshly generated "
+                f"questions and costs about ${topic_costs[regen_topic]:.2f}. The "
+                "old questions are kept but retired (they leave your drill queue "
+                "and export). Nothing is spent unless you confirm."
+            )
+            regen_ok, regen_no = st.columns(2)
+            if regen_no.button("Cancel", key="iv-regen-cancel"):
+                st.session_state.pop("iv-regenerating", None)
+                st.rerun()
+            if regen_ok.button("Confirm regenerate", key="iv-regen-confirm"):
+                st.session_state.pop("iv-regenerating", None)
+                with st.spinner("Regenerating - this can take a few minutes"):
+                    try:
+                        redo = _call(
+                            "POST",
+                            "/interview/bank/generate",
+                            json={
+                                "category": category,
+                                "topic": regen_topic,
+                                "confirm": True,
+                                "force": True,
+                            },
+                        )
+                    except httpx.HTTPError as exc:
+                        st.error(_plain(f"Regeneration failed: {exc}"))
+                        st.stop()
+                if redo.status_code != 200:
+                    _show_error(redo)
+                    st.stop()
+                done = redo.json()
+                st.session_state["iv-last-message"] = (
+                    f"Regenerated {regen_topic}: {sum(r['approved'] for r in done)} "
+                    "new question(s)."
+                )
+                st.rerun()
 
 
 def _load_list(path: str) -> list[dict] | None:

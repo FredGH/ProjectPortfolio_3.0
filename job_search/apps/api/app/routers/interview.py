@@ -22,6 +22,12 @@ from core.cv.store import read_truth_base
 from core.db.session import get_current_user_id
 from core.interview import practice, progress, service, store
 from core.interview.anki import export_anki
+from core.interview.config import (
+    BEHAVIOURAL_TOPIC,
+    TopicsConfig,
+    WorkItem,
+    load_topics_config,
+)
 from core.llm.types import LLMAdapter
 
 router = APIRouter()
@@ -36,6 +42,7 @@ class BankRow(BaseModel):
     topic: str
     approved: int
     needs_review: int
+    regenerate_cost_usd: float
 
 
 class WorkRow(BaseModel):
@@ -64,11 +71,14 @@ class GenerateRequest(BaseModel):
         category: The role family.
         topic: One topic of it, or None for every missing topic.
         confirm: Must be true: the caller has shown the user the cost.
+        force: Regenerate `topic`: its approved questions are marked rejected
+            (nothing is deleted) and the topic is generated again.
     """
 
     category: str
     topic: str | None = None
     confirm: Literal[True]
+    force: bool = False
 
 
 class TopicResultModel(BaseModel):
@@ -176,6 +186,23 @@ def _question(
     )
 
 
+def _regenerate_cost(config: TopicsConfig, topic: str) -> float:
+    """Estimate what regenerating one topic from scratch costs.
+
+    Args:
+        config: The topics config.
+        topic: The topic (or `behavioural`).
+
+    Returns:
+        A rough dollar figure for generating its full target again.
+    """
+    behavioural = topic == BEHAVIOURAL_TOPIC
+    missing = (
+        config.behavioural_per_category if behavioural else config.target_per_topic
+    )
+    return service.estimate_cost([WorkItem("", topic, "technical", missing)])
+
+
 def _approved(engine: Engine, question_id: uuid.UUID) -> store.StoredQuestion:
     """Load an approved question or answer 404.
 
@@ -206,8 +233,12 @@ def get_bank(engine: Engine = Depends(get_app_db_engine)) -> BankView:
         Counts per topic, the incomplete topics and a cost estimate.
     """
     work, unconfigured = service.pending_work(engine)
+    config = load_topics_config()
     return BankView(
-        rows=[BankRow(**r) for r in store.bank_status(engine)],
+        rows=[
+            BankRow(**r, regenerate_cost_usd=_regenerate_cost(config, r["topic"]))
+            for r in store.bank_status(engine)
+        ],
         work=[
             WorkRow(**w.__dict__, estimated_cost_usd=service.estimate_cost([w]))
             for w in work
@@ -235,8 +266,10 @@ def generate_bank(
 
     Raises:
         HTTPException: 409 when this role family is already being generated;
-            422 when `confirm` is not true.
+            422 when `confirm` is not true or a regeneration names no topic.
     """
+    if body.force and not body.topic:
+        raise HTTPException(status_code=422, detail="regenerating needs a topic")
     with _GENERATING_LOCK:
         if body.category in _GENERATING:
             raise HTTPException(
@@ -244,7 +277,11 @@ def generate_bank(
             )
         _GENERATING.add(body.category)
     try:
-        work, _ = service.pending_work(engine, category=body.category, topic=body.topic)
+        work, _ = service.pending_work(
+            engine, category=body.category, topic=body.topic, force=body.force
+        )
+        if body.force and work:
+            store.reject_topic(engine, body.category, body.topic or "")
         results = service.generate_work(engine, work, adapters=adapters)
     finally:
         with _GENERATING_LOCK:

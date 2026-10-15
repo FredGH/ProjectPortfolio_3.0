@@ -137,6 +137,41 @@ class TestInterviewRouter(unittest.TestCase):
         self.assertEqual(busy.status_code, 409)
         generate.assert_not_called()
 
+    def test_regenerating_needs_a_topic_and_rejects_before_generating(self) -> None:
+        body = {"category": "c", "confirm": True, "force": True}
+        self.assertEqual(
+            self.client.post("/interview/bank/generate", json=body).status_code, 422
+        )
+        body["topic"] = "SQL"
+        order: list[str] = []
+        with (
+            mock.patch(
+                f"{_P}.service.pending_work", return_value=([object()], [])
+            ) as planned,
+            mock.patch(
+                f"{_P}.store.reject_topic",
+                side_effect=lambda *a: order.append("reject"),
+            ) as reject,
+            mock.patch(
+                f"{_P}.service.generate_work",
+                side_effect=lambda *a, **k: order.append("generate") or [],
+            ),
+        ):
+            response = self.client.post("/interview/bank/generate", json=body)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(planned.call_args.kwargs["force"])
+        reject.assert_called_once()
+        self.assertEqual(order, ["reject", "generate"])
+
+    def test_regenerating_a_topic_that_is_not_configured_rejects_nothing(self) -> None:
+        body = {"category": "c", "topic": "x", "confirm": True, "force": True}
+        with (
+            mock.patch(f"{_P}.service.pending_work", return_value=([], [])),
+            mock.patch(f"{_P}.store.reject_topic") as reject,
+        ):
+            self.client.post("/interview/bank/generate", json=body)
+        reject.assert_not_called()
+
     def test_the_queue_carries_the_users_state(self) -> None:
         with mock.patch(f"{_P}.practice.build_queue", return_value=[_q()]):
             body = self.client.get("/interview/queue?category=data_engineer").json()

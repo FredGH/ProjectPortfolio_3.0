@@ -57,6 +57,7 @@ _BANK = {
             "topic": "SQL",
             "approved": 12,
             "needs_review": 1,
+            "regenerate_cost_usd": 0.4,
         }
     ],
     "work": [
@@ -261,6 +262,28 @@ class TestInterviewPage(unittest.TestCase):
         self.assertEqual(
             self.sent[-1][2], {"category": "data_engineer", "confirm": True}
         )
+
+    def test_regenerating_a_topic_confirms_the_cost_then_posts_force(self) -> None:
+        app = self._click(self._run(), "iv-regen")
+        self.assertIn("$0.40", _shown(app))
+        self.assertIn("retired", _shown(app))
+        self.assertEqual(self.sent, [])
+        self._click(app, "iv-regen-confirm")
+        self.assertTrue(self.sent[-1][1].endswith("/interview/bank/generate"))
+        self.assertEqual(
+            self.sent[-1][2],
+            {
+                "category": "data_engineer",
+                "topic": "SQL",
+                "confirm": True,
+                "force": True,
+            },
+        )
+
+    def test_cancelling_a_regeneration_spends_and_changes_nothing(self) -> None:
+        app = self._click(self._click(self._run(), "iv-regen"), "iv-regen-cancel")
+        self.assertEqual(self.sent, [])
+        self.assertNotIn("iv-regen-confirm", [b.key for b in app.button])
 
     def test_a_complete_bank_says_so(self) -> None:
         self.bank = {**_BANK, "work": []}
