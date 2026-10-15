@@ -10,6 +10,7 @@ from datetime import datetime
 import httpx
 import streamlit as st
 
+from core.company_intel.schema import SNAPSHOT_LABELS
 from core.settings import get_settings
 from core.ui.theme import apply_theme
 
@@ -238,6 +239,25 @@ if intel is not None:
     )
     if intel["status"] == "no_content":
         st.info("The company's pages gave no usable facts.")
+    snapshot = intel["content"].get("snapshot") or []
+    if snapshot:
+        st.subheader("Company snapshot")
+        st.dataframe(
+            [
+                {
+                    "Metric": SNAPSHOT_LABELS.get(row["key"], row["key"]),
+                    "Value": row["value"],
+                    "As of": row.get("as_of") or "",
+                }
+                for row in snapshot
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption(
+            "From the model's general knowledge, not looked up: approximate, "
+            "possibly out of date, and unverified."
+        )
     for field, title in _FACT_FIELDS:
         facts = intel["content"].get(field) or []
         if not facts:

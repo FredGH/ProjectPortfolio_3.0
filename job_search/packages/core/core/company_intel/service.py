@@ -20,6 +20,7 @@ from core.company_intel.keys import company_key
 from core.company_intel.llm import LlmTaskError, total_usage
 from core.company_intel.resolve import ManualOverride, check_website, resolve_company
 from core.company_intel.schema import Resolution, StoredIntel
+from core.company_intel.snapshot import SnapshotError, build_snapshot
 from core.llm.types import LLMAdapter
 from core.tailoring.schema import JobContext, JobSource
 
@@ -188,7 +189,23 @@ def get_or_refresh_intel(
     except (ExtractError, LlmTaskError) as exc:
         return IntelResult("failed", resolution, latest, f"Research failed: {exc}")
     calls.extend(extracted.calls)
+    # Judged on the crawled content alone: the snapshot is the model's own
+    # knowledge and must not turn an empty crawl into an "ok" version.
     status = "no_content" if extracted.content.is_empty() else "ok"
+    try:
+        snapshot = build_snapshot(
+            resolution.end_client,
+            extracted.content,
+            adapters=adapters,
+            config_path=config_path,
+        )
+    except SnapshotError as exc:
+        calls.extend(exc.calls)  # paid for, even though the reply was unusable
+    except LlmTaskError:
+        pass  # the table is a bonus; research still succeeds without it
+    else:
+        extracted.content.snapshot = snapshot.items
+        calls.extend(snapshot.calls)
     store.append_intel(
         engine,
         company_key=key,

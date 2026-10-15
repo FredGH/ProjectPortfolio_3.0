@@ -680,8 +680,11 @@ It decides which company the work is really for (for an agency posting, the end
 client the description names; correct it with `--end-client NAME --website URL`),
 crawls that company's own site through the `crawl4ai` service, extracts a profile
 where every fact cites the page it came from, lists up to five competitors
-(`site`, or `model knowledge — unverified`) and writes a per-job competitive
-angle, labelled `analysis — not verified`. Each research appends a new version, so
+(`site`, or `model knowledge — unverified`), fills a six-row **company
+snapshot** (industry, ranking, market share, 5-year growth, employees, employee
+satisfaction) from the model's general knowledge (approximate; `not known` when it
+is unsure), and writes a per-job competitive angle, labelled
+`analysis — not verified`. Each research appends a new version, so
 what you knew in March stays explicable. `--force` researches again, `--no-angle`
 skips the angle. The same is available on the **Company Intel** page of the UI
 (`/Company_Intel?job=<job_group_id>`, which `render-cv`'s `job_spec.md` links to).

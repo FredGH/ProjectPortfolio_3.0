@@ -52,6 +52,22 @@ _VIEW = {
             ],
             "recent_announcements": [],
             "notes": [],
+            "snapshot": [
+                {"key": "industry", "value": "Industrial widgets", "as_of": "2024"},
+                {
+                    "key": "ranking",
+                    "value": "One of the top 5 by revenue",
+                    "as_of": None,
+                },
+                {"key": "market_share", "value": "not known", "as_of": None},
+                {
+                    "key": "growth_5y",
+                    "value": "Revenue up roughly 40%",
+                    "as_of": "2024",
+                },
+                {"key": "employees", "value": "about 9,000", "as_of": "2024"},
+                {"key": "satisfaction", "value": "not known", "as_of": None},
+            ],
             "competitors": [
                 {
                     "name": "Rival",
@@ -104,7 +120,14 @@ def _shown(app: AppTest) -> str:
     """
     parts = [
         element.value
-        for group in (app.markdown, app.text, app.caption, app.info, app.warning)
+        for group in (
+            app.markdown,
+            app.text,
+            app.caption,
+            app.info,
+            app.warning,
+            app.subheader,
+        )
         for element in group
     ]
     return " ".join(parts).replace("\\", "")
@@ -170,6 +193,42 @@ class TestCompanyIntelPage(unittest.TestCase):
         self.assertIn("model knowledge — unverified", shown)
         self.assertIn("Rival", shown)
         self.assertIn("Sited", shown)
+
+    def test_the_snapshot_is_a_six_row_table_with_labels_values_and_years(self) -> None:
+        app = self._run([_CANDIDATE], _VIEW)
+        self.assertEqual(len(app.dataframe), 1)
+        frame = app.dataframe[0].value
+        self.assertEqual(list(frame.columns), ["Metric", "Value", "As of"])
+        self.assertEqual(
+            list(frame["Metric"]),
+            [
+                "Industry / sector",
+                "Position / ranking in the industry",
+                "Market share",
+                "Growth over the past 5 years",
+                "Number of employees",
+                "Employee satisfaction",
+            ],
+        )
+        self.assertEqual(frame["Value"][0], "Industrial widgets")
+        self.assertEqual(frame["Value"][2], "not known")
+        self.assertEqual(frame["As of"][4], "2024")
+        self.assertEqual(frame["As of"][1], "")
+
+    def test_the_snapshot_says_it_is_unverified_model_knowledge(self) -> None:
+        shown = _shown(self._run([_CANDIDATE], _VIEW))
+        self.assertIn("Company snapshot", shown)
+        self.assertIn("model's general knowledge", shown)
+        self.assertIn("unverified", shown)
+
+    def test_intel_stored_before_the_snapshot_existed_shows_no_table(self) -> None:
+        content = {
+            k: v for k, v in _VIEW["intel"]["content"].items() if k != "snapshot"
+        }
+        view = {**_VIEW, "intel": {**_VIEW["intel"], "content": content}}
+        app = self._run([_CANDIDATE], view)
+        self.assertEqual(len(app.dataframe), 0)
+        self.assertEqual(len(app.exception), 0)
 
     def test_the_angle_is_labelled_as_analysis(self) -> None:
         app = self._run([_CANDIDATE], _VIEW)

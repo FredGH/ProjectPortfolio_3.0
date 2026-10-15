@@ -88,6 +88,21 @@ Each field is a list of `{ "text": ..., "source_url": ... }` items, or empty.
   general knowledge; `source_url` is null). Competitors are always shown as
   unverified unless `basis = site`.
 
+### Company snapshot (`content.snapshot`, model knowledge)
+
+A six-row table, stored in the same intel version: industry/sector, position or
+ranking in the industry, market share, growth over the past five years, number of
+employees, employee satisfaction. None of it can be crawled, so one extra LLM task
+(`company_snapshot`, prompt `prompts/company_snapshot/claude.v1.md`) fills it from
+the model's general knowledge, with the crawled business/size facts as context. Each
+row is `{key, value, as_of}`; the model may answer `not known` (common for market
+share and satisfaction) and gives the year a figure refers to. A guard always returns
+exactly six rows in a fixed order, cuts long values and turns anything blank,
+non-text or phrased as "unknown" into `not known`. The snapshot is never cited and
+always shown as unverified; it does not count as crawled content (an empty crawl is
+still `no_content`), and a failed snapshot call never fails the research. Intel stored
+before the snapshot existed has none until it is refreshed.
+
 ### Competitive angle (per job, not part of the shared intel)
 
 The competitors are company-level, but "how this job could set the company

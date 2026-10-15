@@ -46,6 +46,44 @@ class Competitor(BaseModel):
     source_url: str | None = None
 
 
+SNAPSHOT_KEYS = (
+    "industry",
+    "ranking",
+    "market_share",
+    "growth_5y",
+    "employees",
+    "satisfaction",
+)
+"""The snapshot's rows, in display order."""
+
+SNAPSHOT_LABELS = {
+    "industry": "Industry / sector",
+    "ranking": "Position / ranking in the industry",
+    "market_share": "Market share",
+    "growth_5y": "Growth over the past 5 years",
+    "employees": "Number of employees",
+    "satisfaction": "Employee satisfaction",
+}
+"""The human label of each snapshot row."""
+
+NOT_KNOWN = "not known"
+"""What a snapshot row says when the model has no answer."""
+
+
+class SnapshotItem(BaseModel):
+    """One row of the company snapshot (the model's general knowledge).
+
+    Attributes:
+        key: One of `SNAPSHOT_KEYS`.
+        value: A short answer, or `not known`.
+        as_of: The year the value refers to, if the model gave one.
+    """
+
+    key: str
+    value: str
+    as_of: str | None = None
+
+
 class IntelContent(BaseModel):
     """The structured profile of a company.
 
@@ -56,6 +94,10 @@ class IntelContent(BaseModel):
         recent_announcements: Cited recent news from the company's pages.
         notes: Anything else useful for a cover letter, still cited.
         competitors: Up to `MAX_COMPETITORS` competitors.
+        snapshot: The six-row company snapshot (industry, ranking, market
+            share, 5-year growth, employees, satisfaction). It is the model's
+            general knowledge, never crawled, so it is always unverified;
+            empty for intel stored before the snapshot existed.
     """
 
     business_model: list[IntelFact] = Field(default_factory=list)
@@ -64,14 +106,20 @@ class IntelContent(BaseModel):
     recent_announcements: list[IntelFact] = Field(default_factory=list)
     notes: list[IntelFact] = Field(default_factory=list)
     competitors: list[Competitor] = Field(default_factory=list)
+    snapshot: list[SnapshotItem] = Field(default_factory=list)
 
     def is_empty(self) -> bool:
-        """Say whether the profile holds nothing at all.
+        """Say whether the crawled profile holds nothing at all.
 
         Returns:
-            True when every list is empty.
+            True when every list is empty. The snapshot is the model's own
+            knowledge, so it does not count as content.
         """
-        return not any(getattr(self, name) for name in type(self).model_fields)
+        return not any(
+            getattr(self, name)
+            for name in type(self).model_fields
+            if name != "snapshot"
+        )
 
 
 @dataclass(frozen=True)
