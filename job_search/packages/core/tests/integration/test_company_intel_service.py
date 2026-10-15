@@ -141,7 +141,6 @@ class TestGetOrRefreshIntel(unittest.TestCase):
             adapters={"anthropic": adapter},
             fetcher=web,
             config=_CONFIG,
-            now=lambda: _NOW,
             **kwargs,
         )
 
@@ -203,12 +202,39 @@ class TestGetOrRefreshIntel(unittest.TestCase):
             (len(adapter.prompts), len(web.requested)), (calls_before, fetched_before)
         )
 
-    def test_a_stale_version_is_refreshed_with_the_previous_one_as_context(
+    def test_a_stale_version_is_still_reused_age_never_triggers_research(self) -> None:
+        adapter = FakeAdapter([_resolution_reply(), _profile_reply("Old claim.")])
+        web = _web()
+        self._run(adapter, web)
+        prompts_before, fetched_before = len(adapter.prompts), len(web.requested)
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE intel.company_intel SET researched_at = now() - "
+                    "interval '400 days' WHERE company_key = :k"
+                ),
+                {"k": self.key},
+            )
+        result = get_or_refresh_intel(
+            self.engine,
+            make_job(),
+            make_source(),
+            adapters={"anthropic": adapter},
+            fetcher=web,
+            config=_CONFIG,
+        )
+        self.assertEqual(result.outcome, "reused")
+        assert result.intel is not None
+        self.assertEqual(result.intel.version, 1)
+        self.assertEqual(
+            (len(adapter.prompts), len(web.requested)), (prompts_before, fetched_before)
+        )
+
+    def test_a_forced_refresh_of_an_old_version_uses_the_previous_one_as_context(
         self,
     ) -> None:
         adapter = FakeAdapter([_resolution_reply(), _profile_reply("Old claim.")])
         self._run(adapter, _web())
-        later = _NOW + timedelta(days=100)
         adapter2 = FakeAdapter([_profile_reply("New claim.")])
         result = get_or_refresh_intel(
             self.engine,
@@ -217,7 +243,7 @@ class TestGetOrRefreshIntel(unittest.TestCase):
             adapters={"anthropic": adapter2},
             fetcher=_web(),
             config=_CONFIG,
-            now=lambda: later,
+            force=True,
         )
         self.assertEqual(result.outcome, "refreshed")
         assert result.intel is not None
@@ -226,6 +252,38 @@ class TestGetOrRefreshIntel(unittest.TestCase):
         old = store.read_intel_version(self.engine, self.key, 1)
         assert old is not None
         self.assertEqual(old.content.business_model[0].text, "Old claim.")
+
+    def test_a_second_job_at_a_saved_company_reuses_its_research(self) -> None:
+        adapter = FakeAdapter(
+            [_resolution_reply(), _profile_reply(), _snapshot_reply()]
+        )
+        self._run(adapter, _web())
+        other = make_job(job_group_id="zzfixture-intel-job-2")
+        web = _web()
+        adapter2 = FakeAdapter([_resolution_reply()])
+        try:
+            result = get_or_refresh_intel(
+                self.engine,
+                other,
+                make_source(),
+                adapters={"anthropic": adapter2},
+                fetcher=web,
+                config=_CONFIG,
+            )
+        finally:
+            with self.owner.begin() as conn:
+                conn.execute(
+                    text(
+                        "DELETE FROM intel.job_company "
+                        "WHERE job_group_id = 'zzfixture-intel-job-2'"
+                    )
+                )
+        self.assertEqual(result.outcome, "reused")
+        assert result.intel is not None
+        self.assertEqual(result.intel.version, 1)
+        # Only the cheap resolution call was made; nothing was crawled.
+        self.assertEqual(len(adapter2.prompts), 1)
+        self.assertEqual(web.requested, [])
 
     def test_force_refreshes_a_fresh_version(self) -> None:
         adapter = FakeAdapter([_resolution_reply(), _profile_reply()])
@@ -274,7 +332,6 @@ class TestGetOrRefreshIntel(unittest.TestCase):
         self,
     ) -> None:
         self._run(FakeAdapter([_resolution_reply(), _profile_reply()]), _web())
-        later = _NOW + timedelta(days=100)
         down = FakeFetcher({})
         result = get_or_refresh_intel(
             self.engine,
@@ -283,7 +340,7 @@ class TestGetOrRefreshIntel(unittest.TestCase):
             adapters={"anthropic": FakeAdapter(["{}"])},
             fetcher=down,
             config=_CONFIG,
-            now=lambda: later,
+            force=True,
         )
         self.assertEqual(result.outcome, "failed")
         self.assertIn("not in the fake", result.message)

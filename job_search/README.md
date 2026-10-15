@@ -669,7 +669,9 @@ and the cost here.
 ## Company intel (Step 19a)
 
 `research-company` researches the company behind a job and stores it, or reuses
-the stored version while it is under 90 days old (`config/company_intel.yml`):
+the saved version, always: saved research is never re-researched by itself, only
+when you ask (`--force`, or Refresh on the page). After 90 days
+(`config/company_intel.yml`) it is just marked "Stale":
 
     # once: put a shared secret in .env (Crawl4AI 0.9 only accepts requests with it)
     echo "CRAWL4AI_API_TOKEN=$(openssl rand -hex 24)" >> .env

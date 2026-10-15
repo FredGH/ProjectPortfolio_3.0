@@ -1378,7 +1378,8 @@ re-research doesn't re-crawl.
 Two details that matter:
 
 **Staleness, not immutability.** Add `researched_at` and a refresh threshold.
-Re-research when stale rather than rebuilding from scratch, and **version the
+Re-research when stale rather than rebuilding from scratch (*as built: staleness only
+flags the intel, and the user decides to refresh it, because research costs money*), and **version the
 intel** so a cover letter you sent in March remains explicable against what
 you knew in March.
 

@@ -42,6 +42,7 @@ _VIEW = {
         "researched_at": "2026-10-14T09:00:00+00:00",
         "display_name": "Gamma",
         "fresh": True,
+        "refresh_after_days": 90,
         "content": {
             "business_model": [
                 {"text": "Sells widgets.", "source_url": "https://gamma.example/about"}
@@ -343,6 +344,51 @@ class TestCompanyIntelPage(unittest.TestCase):
         keys = [b.key for b in app.button]
         self.assertNotIn("intel-confirm", keys)
         self.assertIn("intel-research", keys)
+
+    def test_a_stale_version_explains_that_nothing_reruns_by_itself(self) -> None:
+        view = {**_VIEW, "intel": {**_VIEW["intel"], "fresh": False}}
+        shown = _shown(self._run([_CANDIDATE], view))
+        self.assertIn("older than 90 days", shown)
+        self.assertIn("Refresh", shown)
+
+    def test_saved_research_shows_for_a_job_that_was_never_researched(self) -> None:
+        view = {**_VIEW, "resolution": None, "angle": None}
+        app = self._run([_CANDIDATE], view)
+        shown = _shown(app)
+        self.assertIn("saved research", shown)
+        self.assertIn("Gamma", shown)
+        self.assertIn("Sells widgets.", shown)
+        self.assertIn("intel-refresh", [b.key for b in app.button])
+        self.assertNotIn("intel-research", [b.key for b in app.button])
+
+    def test_a_job_with_saved_research_but_no_angle_offers_to_write_it(self) -> None:
+        view = {**_VIEW, "angle": None}
+        app = self._run([_CANDIDATE], view)
+        self.assertIn("intel-angle", [b.key for b in app.button])
+        self.assertIn("no competitive angle for this job yet", _shown(app).lower())
+
+    def test_a_job_that_has_an_angle_does_not_offer_to_write_one(self) -> None:
+        app = self._run([_CANDIDATE], _VIEW)
+        self.assertNotIn("intel-angle", [b.key for b in app.button])
+
+    def test_the_angle_button_confirms_the_small_cost_then_posts_to_the_angle_endpoint(
+        self,
+    ) -> None:
+        view = {**_VIEW, "angle": None}
+        app, posts = self._click_flow(view, "intel-angle", None)
+        self.assertEqual(posts, [])
+        self.assertIn("$0.01", _shown(app))
+        self.assertIn("intel-angle-confirm", [b.key for b in app.button])
+        _app, posts = self._click_flow(view, "intel-angle", "intel-angle-confirm")
+        self.assertEqual(len(posts), 1)
+        self.assertTrue(posts[0][0].endswith("/intel/jobs/zzfixture-job/angle"))
+        self.assertEqual(posts[0][1], {"force": False})
+
+    def test_cancelling_the_angle_makes_no_call(self) -> None:
+        view = {**_VIEW, "angle": None}
+        app, posts = self._click_flow(view, "intel-angle", "intel-angle-cancel")
+        self.assertEqual(posts, [])
+        self.assertNotIn("intel-angle-confirm", [b.key for b in app.button])
 
     def test_the_confirmation_does_not_follow_you_to_another_job(self) -> None:
         other = {**_CANDIDATE, "job_group_id": "zzfixture-other", "company": "Delta"}

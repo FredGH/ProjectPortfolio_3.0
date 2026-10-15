@@ -23,10 +23,12 @@ with st.expander("User manual"):
         """
 Pick a job. **Research** looks up the company behind it - its own website, a
 profile with sources, its top competitors - and stores it; looking at the same
-company again reuses what is stored until it is 90 days old. Research and
-Refresh call Claude and cost about 8-10 cents each, so they ask you to confirm
-first; viewing a company is free. When a job is
-posted by an agency, the page needs the **end client**: open *Correct the
+company again just shows what is saved: nothing is researched again unless
+you click Refresh. Research and Refresh call Claude and cost about 8-10 cents
+each, so they ask you to confirm first; viewing a company is free. If another
+job at the same company was researched, you see that research here and can write
+this job's competitive angle for about a cent. When a job is posted by an agency,
+the page needs the **end client**: open *Correct the
 company*, type it (and its website) and save.
 
 Facts show the page they came from. **Competitors** marked *model knowledge -
@@ -208,6 +210,12 @@ if resolution is not None:
         )
 if intel is None:
     st.info("No intel yet - click Research.")
+elif resolution is None:
+    st.info(
+        f"Showing the saved research for {_plain(intel['display_name'])}, found "
+        "by the company named on this posting. Nothing has been researched for "
+        "this job itself yet, and nothing runs unless you ask."
+    )
 
 with st.expander("Correct the company"):
     end_client = st.text_input("End client", key="intel-end-client")
@@ -262,6 +270,12 @@ if intel is not None:
         f"researched {_date(intel['researched_at'])}, "
         f"status {_plain(intel['status'])}"
     )
+    if not intel["fresh"]:
+        st.caption(
+            f"This research is older than {intel['refresh_after_days']} days. It "
+            "is still used as it is; nothing is re-researched by itself. Use "
+            "Refresh if you want it updated."
+        )
     if intel["status"] == "no_content":
         st.info("The company's pages gave no usable facts.")
     snapshot = intel["content"].get("snapshot") or []
@@ -315,3 +329,32 @@ if angle is not None:
         st.caption(_plain(caveat))
     if intel is not None and angle["intel_version"] != intel["version"]:
         st.caption(f"Written from intel v{angle['intel_version']}.")
+
+if intel is not None and angle is None:
+    st.subheader("Competitive angle")
+    st.caption("There is no competitive angle for this job yet.")
+    if st.button("Write the competitive angle for this job", key="intel-angle"):
+        st.session_state["intel-angle-confirming"] = selected
+    if st.session_state.get("intel-angle-confirming") == selected:
+        st.warning(
+            "Writing the angle calls Claude once and costs about $0.01. The "
+            "company is not researched again. Nothing is spent unless you confirm."
+        )
+        angle_confirm, angle_cancel = st.columns(2)
+        if angle_cancel.button("Cancel", key="intel-angle-cancel"):
+            st.session_state.pop("intel-angle-confirming", None)
+            st.rerun()
+        if angle_confirm.button("Confirm angle", key="intel-angle-confirm"):
+            st.session_state.pop("intel-angle-confirming", None)
+            with st.spinner("Writing the angle"):
+                try:
+                    written = _post(f"/intel/jobs/{selected}/angle", {"force": False})
+                    written.raise_for_status()
+                except httpx.HTTPError as exc:
+                    st.error(_plain(f"Could not write the angle: {exc}"))
+                    st.stop()
+            st.session_state["intel-last-message"] = (
+                "refreshed",
+                "The competitive angle was written and saved.",
+            )
+            st.rerun()

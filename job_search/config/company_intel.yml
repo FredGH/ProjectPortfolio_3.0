@@ -1,4 +1,4 @@
 # Step 19a company-intel limits. See docs/superpowers/specs/2026-10-14-step19a-company-intel-design.md
-refresh_after_days: 90   # intel older than this is re-researched
+refresh_after_days: 90   # older intel is shown as 'Stale'; it is never re-researched by itself
 crawl_cache_days: 7      # a page crawled within this many days is not crawled again
 max_pages: 8             # most pages crawled for one company

@@ -27,6 +27,7 @@ from core.company_intel.resolve import (
 from core.company_intel.service import get_or_refresh_intel, is_fresh
 from core.llm.types import LLMAdapter
 from core.tailoring.context import load_job_context, load_job_source
+from core.tailoring.schema import JobContext
 
 router = APIRouter()
 
@@ -49,6 +50,7 @@ class IntelModel(BaseModel):
     researched_at: datetime
     display_name: str
     fresh: bool
+    refresh_after_days: int
     content: dict
     pages: list[dict]
 
@@ -117,14 +119,35 @@ class ResolutionRequest(BaseModel):
         return self
 
 
+def _intel_key(engine: Engine, job: JobContext) -> str | None:
+    """Find the company whose saved research belongs to a job.
+
+    Args:
+        engine: The app-role engine.
+        job: The job.
+
+    Returns:
+        The key of the resolved end client when the job has been resolved
+        (None while that is unknown, for example an agency that names no
+        client); for a job never resolved, the key of the company named on the
+        posting, so research saved through another job at that company shows.
+    """
+    resolution = store.read_resolution(engine, job.job_group_id)
+    if resolution is not None:
+        return company_key(resolution.end_client)
+    return company_key(job.company)
+
+
 def _build_view(
-    engine: Engine, job_group_id: str, version: int | None = None
+    engine: Engine,
+    job: JobContext,
+    version: int | None = None,
 ) -> IntelView:
     """Assemble the page view for a job.
 
     Args:
         engine: The app-role engine.
-        job_group_id: The job.
+        job: The job.
         version: A specific intel version, or None for the latest.
 
     Returns:
@@ -132,8 +155,9 @@ def _build_view(
         job's latest angle.
     """
     config = load_config()
+    job_group_id = job.job_group_id
     resolution = store.read_resolution(engine, job_group_id)
-    key = company_key(resolution.end_client) if resolution else None
+    key = _intel_key(engine, job)
     stored = None
     versions: list[VersionModel] = []
     if key is not None:
@@ -168,6 +192,7 @@ def _build_view(
                 researched_at=stored.researched_at,
                 display_name=stored.display_name,
                 fresh=is_fresh(stored.researched_at, now, config.refresh_after_days),  # type: ignore[arg-type]
+                refresh_after_days=config.refresh_after_days,
                 content=stored.content.model_dump(),
                 pages=stored.pages,
             )
@@ -222,8 +247,8 @@ def get_intel(
     Returns:
         The page view.
     """
-    _require_job(engine, job_group_id)
-    return _build_view(engine, job_group_id, version)
+    job = _require_job(engine, job_group_id)
+    return _build_view(engine, job, version)
 
 
 @router.post("/intel/jobs/{job_group_id}/research", response_model=ResearchView)
@@ -265,8 +290,45 @@ def research(
     return ResearchView(
         outcome=result.outcome,
         message=result.message,
-        view=_build_view(engine, job_group_id),
+        view=_build_view(engine, job),
     )
+
+
+@router.post("/intel/jobs/{job_group_id}/angle", response_model=IntelView)
+def write_angle(
+    job_group_id: str,
+    body: ResearchRequest,
+    engine: Engine = Depends(get_app_db_engine),
+    adapters: dict[str, LLMAdapter] = Depends(get_llm_adapters),
+) -> IntelView:
+    """Write this job's competitive angle from the company's saved research.
+
+    Only the angle is written (one small Claude call): the company is not
+    crawled or researched again.
+
+    Args:
+        job_group_id: The job.
+        body: `force` writes a new angle even if this job already has one for
+            the saved research.
+        engine: Injected via `get_app_db_engine`.
+        adapters: Injected via `get_llm_adapters`.
+
+    Returns:
+        The refreshed page view.
+
+    Raises:
+        HTTPException: 404 for an unknown job; 409 when the company has no
+            saved research yet.
+    """
+    job = _require_job(engine, job_group_id)
+    key = _intel_key(engine, job)
+    saved = store.read_latest_intel(engine, key) if key else None
+    if saved is None:
+        raise HTTPException(
+            status_code=409, detail="no saved research for this company yet"
+        )
+    get_or_create_angle(engine, job, saved, adapters=adapters, force=body.force)
+    return _build_view(engine, job)
 
 
 @router.put("/intel/jobs/{job_group_id}/resolution", response_model=IntelView)
@@ -298,4 +360,4 @@ def put_resolution(
             website_url=(body.website_url or "").strip() or None,
         ),
     )
-    return _build_view(engine, job_group_id)
+    return _build_view(engine, job)

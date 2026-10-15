@@ -19,6 +19,7 @@ from app.main import app  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from tests.company_intel_fixtures import make_job, make_source  # noqa: E402
 
+from core.company_intel.keys import company_key  # noqa: E402
 from core.company_intel.schema import (  # noqa: E402
     AngleAdvantage,
     AngleContent,
@@ -141,8 +142,12 @@ class TestIntelRouter(unittest.TestCase):
         self.mocks["load_job_context"].return_value = None
         self.assertEqual(self.client.get("/intel/jobs/nope").status_code, 404)
 
-    def test_a_job_with_no_resolution_has_null_parts(self) -> None:
+    def test_a_job_with_no_resolution_and_no_saved_research_has_null_parts(
+        self,
+    ) -> None:
         self.mocks["read_resolution"].return_value = None
+        self.mocks["read_latest_intel"].return_value = None
+        self.mocks["list_intel_versions"].return_value = []
         body = self.client.get("/intel/jobs/zzfixture-intel-job").json()
         self.assertIsNone(body["resolution"])
         self.assertIsNone(body["intel"])
@@ -192,6 +197,62 @@ class TestIntelRouter(unittest.TestCase):
         self.assertEqual(
             (override.end_client, override.website_url),
             ("Real Bank", "https://bank.example"),
+        )
+
+    def test_a_job_without_a_resolution_shows_the_saved_research_of_its_company(
+        self,
+    ) -> None:
+        self.mocks["read_resolution"].return_value = None
+        body = self.client.get("/intel/jobs/zzfixture-intel-job").json()
+        self.assertIsNone(body["resolution"])
+        self.assertEqual(body["intel"]["version"], 2)
+        self.assertEqual([v["version"] for v in body["versions"]], [2, 1])
+        key = self.mocks["read_latest_intel"].call_args.args[1]
+        self.assertEqual(key, company_key(make_job().company))
+
+    def test_an_agency_with_no_end_client_does_not_fall_back_to_the_agency(
+        self,
+    ) -> None:
+        self.mocks["read_resolution"].return_value = Resolution(
+            "zzfixture-intel-job", "Hays", "agency", None, None, "llm"
+        )
+        body = self.client.get("/intel/jobs/zzfixture-intel-job").json()
+        self.assertIsNone(body["intel"])
+        self.mocks["read_latest_intel"].assert_not_called()
+
+    def test_the_intel_carries_the_refresh_window_for_the_stale_badge(self) -> None:
+        body = self.client.get("/intel/jobs/zzfixture-intel-job").json()
+        self.assertEqual(body["intel"]["refresh_after_days"], 90)
+
+    def test_post_angle_writes_only_the_angle_from_the_saved_research(self) -> None:
+        with (
+            mock.patch(
+                "app.routers.intel.get_or_create_angle", return_value=_angle()
+            ) as angle,
+            mock.patch("app.routers.intel.get_or_refresh_intel") as research,
+        ):
+            response = self.client.post(
+                "/intel/jobs/zzfixture-intel-job/angle", json={}
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["angle"]["intel_version"], 2)
+        research.assert_not_called()
+        self.assertEqual(angle.call_args.args[2].version, 2)
+        self.assertFalse(angle.call_args.kwargs["force"])
+
+    def test_post_angle_without_saved_research_is_409(self) -> None:
+        self.mocks["read_latest_intel"].return_value = None
+        with mock.patch("app.routers.intel.get_or_create_angle") as angle:
+            response = self.client.post(
+                "/intel/jobs/zzfixture-intel-job/angle", json={}
+            )
+        self.assertEqual(response.status_code, 409)
+        angle.assert_not_called()
+
+    def test_post_angle_for_an_unknown_job_is_404(self) -> None:
+        self.mocks["load_job_context"].return_value = None
+        self.assertEqual(
+            self.client.post("/intel/jobs/nope/angle", json={}).status_code, 404
         )
 
     def test_put_resolution_with_an_unusable_website_is_422(self) -> None:

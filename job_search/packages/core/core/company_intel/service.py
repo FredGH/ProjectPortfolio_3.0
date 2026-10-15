@@ -3,9 +3,8 @@ version (PLAN.md Step 19a). Steps 19 and 20a call `get_or_refresh_intel`."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -65,15 +64,6 @@ def is_fresh(researched_at: datetime, now: datetime, refresh_after_days: int) ->
     return now - researched_at < timedelta(days=refresh_after_days)
 
 
-def _utc_now() -> datetime:
-    """Return the current UTC time.
-
-    Returns:
-        A timezone-aware datetime.
-    """
-    return datetime.now(UTC)
-
-
 def _page_record(page: Page) -> dict:
     """Describe a crawled page for the stored provenance.
 
@@ -96,10 +86,9 @@ def get_or_refresh_intel(
     config: CompanyIntelConfig,
     force: bool = False,
     override: ManualOverride | None = None,
-    now: Callable[[], datetime] = _utc_now,
     config_path: Path | None = None,
 ) -> IntelResult:
-    """Return a job's company intel, researching only when needed.
+    """Return a job's company intel, researching only when asked or when none is saved.
 
     Args:
         engine: The app-role engine.
@@ -107,10 +96,9 @@ def get_or_refresh_intel(
         source: Where the posting came from.
         adapters: Provider name to LLM adapter.
         fetcher: Fetches web pages (wrap it in `CachedFetcher` to cache).
-        config: Freshness and crawl limits.
-        force: Research again even if the stored version is fresh.
+        config: Crawl limits.
+        force: Research again even though research is already saved.
         override: A manual end client / website to store first.
-        now: Clock for tests.
         config_path: Task-config override (tests).
 
     Returns:
@@ -139,12 +127,16 @@ def get_or_refresh_intel(
             "end_client_unknown", resolution, None, "The company name is unusable."
         )
     latest = store.read_latest_intel(engine, key)
-    if (
-        latest
-        and not force
-        and is_fresh(latest.researched_at, now(), config.refresh_after_days)
-    ):
-        return IntelResult("reused", resolution, latest, "Stored intel is still fresh.")
+    if latest is not None and not force:
+        # Saved research is always reused: age never triggers a paid re-research,
+        # only the user's explicit request (`force`) does.
+        return IntelResult(
+            "reused",
+            resolution,
+            latest,
+            f"Using the saved research (v{latest.version}); "
+            "research again to update it.",
+        )
 
     if not resolution.website_url:
         return IntelResult(

@@ -71,9 +71,17 @@ key.
 **Config** (`config/company_intel.yml`): `refresh_after_days: 90`,
 `crawl_cache_days: 7`, `max_pages: 8`.
 
-**Staleness.** Fresh = `researched_at` within `refresh_after_days`. A stale (or
-forced) run re-extracts with the previous version passed as context and appends
-a new version; it does not rebuild from scratch.
+**Saved research is always reused.** Research is paid for (Claude), so it only runs
+when there is none saved for the company or the user asks for it (`--force`, or
+Refresh after a confirmation). Age never triggers a re-research: `researched_at`
+older than `refresh_after_days` only turns the "Fresh" badge into "Stale" with a
+note to use Refresh. A forced run re-extracts with the previous version passed as
+context and appends a new version; it does not rebuild from scratch. Saved
+research belongs to the company, so any job at that company shows it (found by the
+resolved end client, or for a never-resolved job by the company named on the
+posting) without researching again; only the per-job competitive angle is written
+for a new job, on request (`POST /intel/jobs/{id}/angle`, one small call) or when
+the user researches that job.
 
 ### Intel content (JSON in `content`)
 
@@ -152,7 +160,7 @@ ahead" depends on the job, so it is stored separately:
    the stored intel (competitors included), write the per-job analysis above.
    Stored in `intel.job_competitive_angle` against the intel version used.
 7. **`service.py`** — `get_or_refresh_intel(engine, job_group_id, *, force=False)`:
-   resolve → return the latest version if fresh and not forced → else crawl,
+   resolve → return the latest saved version unless forced → else crawl,
    extract, append. `get_or_create_angle(engine, job_group_id, *, force=False)`
    returns the job's angle for the current intel version, generating it when
    missing. Steps 19 and 20a call these two functions.
