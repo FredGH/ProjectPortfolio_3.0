@@ -30,7 +30,6 @@ from tests.integration.skills_fixtures import (  # noqa: E402
 )
 from tests.skills_fakes import FakeAdapter  # noqa: E402
 
-
 app = FastAPI()
 app.include_router(extraction_runs.router)
 

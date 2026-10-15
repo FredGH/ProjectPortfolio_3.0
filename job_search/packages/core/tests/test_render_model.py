@@ -67,7 +67,9 @@ class TestBuildRenderDoc(unittest.TestCase):
         base = make_tailored_document()
         summary = base.summary.model_copy(update={"highlights": ["pipelines"]})
         doc = build_render_doc(make_tailored_document(summary=summary))
-        block = next(b for b in doc.blocks if b.kind == "paragraph" and "pipelines" in b.text)
+        block = next(
+            b for b in doc.blocks if b.kind == "paragraph" and "pipelines" in b.text
+        )
         start, end = block.bold_spans[0]
         self.assertEqual(block.text[start:end], "pipelines")
 
@@ -81,7 +83,9 @@ class TestBuildRenderDoc(unittest.TestCase):
         doc = build_render_doc(make_tailored_document(summary=summary))
         block = next(b for b in doc.blocks if "dbt models" in b.text)
         bold = [block.text[s:e] for s, e in block.bold_spans]
-        self.assertEqual(bold, ["ETL (Extract, Transform, Load) pipelines", "dbt models"])
+        self.assertEqual(
+            bold, ["ETL (Extract, Transform, Load) pipelines", "dbt models"]
+        )
 
     def test_a_role_with_no_title_and_no_bullets_is_one_line(self) -> None:
         prior = TailoredExperience(
@@ -161,7 +165,9 @@ class TestBuildRenderDoc(unittest.TestCase):
         self.assertEqual(bold("Board Advisor"), ["Board Advisor", "Mentor"])
 
     def test_highlighted_skills_get_bold_spans(self) -> None:
-        doc = build_render_doc(make_tailored_document(highlighted_skills=["SQL", "dbt"]))
+        doc = build_render_doc(
+            make_tailored_document(highlighted_skills=["SQL", "dbt"])
+        )
         block = next(b for b in doc.blocks if b.text == "dbt, Airflow, SQL")
         self.assertEqual(block.bold_spans, ((0, 3), (14, 17)))
 
