@@ -23,7 +23,9 @@ with st.expander("User manual"):
         """
 Pick a job. **Research** looks up the company behind it - its own website, a
 profile with sources, its top competitors - and stores it; looking at the same
-company again reuses what is stored until it is 90 days old. When a job is
+company again reuses what is stored until it is 90 days old. Research and
+Refresh call Claude and cost about 8-10 cents each, so they ask you to confirm
+first; viewing a company is free. When a job is
 posted by an agency, the page needs the **end client**: open *Correct the
 company*, type it (and its website) and save.
 
@@ -35,6 +37,11 @@ is analysis written for this job - not verified fact.
 
 _base = get_settings().api_base_url
 _MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
+# Measured on real runs (resolution + extraction + snapshot + angle, Claude).
+_COST_NOTE = {
+    "first": "about $0.10",
+    "refresh": "about $0.08",
+}
 _FACT_FIELDS = (
     ("business_model", "Business model"),
     ("size_signals", "Size signals"),
@@ -219,16 +226,34 @@ label, button_key = (
     ("Refresh", "intel-refresh") if intel else ("Research", "intel-research")
 )
 if st.button(label, key=button_key):
-    with st.spinner("Researching - this can take a few minutes"):
-        try:
-            answer = _post(f"/intel/jobs/{selected}/research", {"force": bool(intel)})
-            answer.raise_for_status()
-            outcome = answer.json()
-        except (httpx.HTTPError, ValueError) as exc:
-            st.error(_plain(f"Research failed: {exc}"))
-            st.stop()
-    st.session_state["intel-last-message"] = (outcome["outcome"], outcome["message"])
-    st.rerun()
+    st.session_state["intel-confirming"] = selected
+if st.session_state.get("intel-confirming") == selected:
+    cost = _COST_NOTE["refresh" if intel else "first"]
+    st.warning(
+        f"{label} calls Claude and costs money: {cost} for this company, and it "
+        "takes a minute or two. Nothing is spent unless you confirm."
+    )
+    confirm_col, cancel_col = st.columns(2)
+    if cancel_col.button("Cancel", key="intel-cancel"):
+        st.session_state.pop("intel-confirming", None)
+        st.rerun()
+    if confirm_col.button(f"Confirm {label.lower()}", key="intel-confirm"):
+        st.session_state.pop("intel-confirming", None)
+        with st.spinner("Researching - this can take a few minutes"):
+            try:
+                answer = _post(
+                    f"/intel/jobs/{selected}/research", {"force": bool(intel)}
+                )
+                answer.raise_for_status()
+                outcome = answer.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                st.error(_plain(f"Research failed: {exc}"))
+                st.stop()
+        st.session_state["intel-last-message"] = (
+            outcome["outcome"],
+            outcome["message"],
+        )
+        st.rerun()
 
 if intel is not None:
     badge = "Fresh" if intel["fresh"] else "Stale"

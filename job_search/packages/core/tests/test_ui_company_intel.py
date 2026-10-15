@@ -284,25 +284,75 @@ class TestCompanyIntelPage(unittest.TestCase):
         self.assertEqual(len(app.exception), 0)
         self.assertTrue(app.error)
 
-    def test_clicking_research_posts_to_the_research_endpoint(self) -> None:
-        posted = {}
+    def _click_flow(self, view, button_key, then):  # type: ignore[no-untyped-def]
+        """Click a research button, then (optionally) the next button.
+
+        Args:
+            view: The intel view the fake API returns.
+            button_key: The research button to click first.
+            then: Key of the button to click next, or None to stop.
+
+        Returns:
+            `(app, posts)` where `posts` lists the `(url, json)` of every POST.
+        """
+        posts: list[tuple[str, object]] = []
 
         def fake_post(url: str, **kwargs) -> httpx.Response:
-            posted["url"], posted["json"] = url, kwargs.get("json")
+            posts.append((url, kwargs.get("json")))
             return httpx.Response(
                 200,
-                json={"outcome": "refreshed", "message": "Researched.", "view": _VIEW},
+                json={"outcome": "refreshed", "message": "Researched.", "view": view},
                 request=httpx.Request("POST", url),
             )
 
         with (
-            mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], _EMPTY)),
+            mock.patch("httpx.get", side_effect=_fake_get([_CANDIDATE], view)),
             mock.patch("httpx.post", side_effect=fake_post),
         ):
             app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            next(b for b in app.button if b.key == button_key).click().run()
+            if then is not None:
+                next(b for b in app.button if b.key == then).click().run()
+        return app, posts
+
+    def test_research_asks_for_confirmation_and_makes_no_call_yet(self) -> None:
+        app, posts = self._click_flow(_EMPTY, "intel-research", None)
+        self.assertEqual(posts, [])
+        self.assertIn("intel-confirm", [b.key for b in app.button])
+        self.assertIn("intel-cancel", [b.key for b in app.button])
+        shown = _shown(app)
+        self.assertIn("Claude", shown)
+        self.assertIn("$0.10", shown)
+
+    def test_confirming_a_first_research_posts_without_force(self) -> None:
+        _app, posts = self._click_flow(_EMPTY, "intel-research", "intel-confirm")
+        self.assertEqual(len(posts), 1)
+        self.assertTrue(posts[0][0].endswith("/intel/jobs/zzfixture-job/research"))
+        self.assertEqual(posts[0][1], {"force": False})
+
+    def test_refresh_names_its_cost_and_posts_with_force_once_confirmed(self) -> None:
+        app, posts = self._click_flow(_VIEW, "intel-refresh", None)
+        self.assertEqual(posts, [])
+        self.assertIn("$0.08", _shown(app))
+        _app, posts = self._click_flow(_VIEW, "intel-refresh", "intel-confirm")
+        self.assertEqual([p[1] for p in posts], [{"force": True}])
+
+    def test_cancel_makes_no_call_and_closes_the_confirmation(self) -> None:
+        app, posts = self._click_flow(_EMPTY, "intel-research", "intel-cancel")
+        self.assertEqual(posts, [])
+        keys = [b.key for b in app.button]
+        self.assertNotIn("intel-confirm", keys)
+        self.assertIn("intel-research", keys)
+
+    def test_the_confirmation_does_not_follow_you_to_another_job(self) -> None:
+        other = {**_CANDIDATE, "job_group_id": "zzfixture-other", "company": "Delta"}
+        with mock.patch(
+            "httpx.get", side_effect=_fake_get([_CANDIDATE, other], _EMPTY)
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
             next(b for b in app.button if b.key == "intel-research").click().run()
-        self.assertTrue(posted["url"].endswith("/intel/jobs/zzfixture-job/research"))
-        self.assertEqual(posted["json"], {"force": False})
+            app.selectbox[0].select("zzfixture-other").run()
+        self.assertNotIn("intel-confirm", [b.key for b in app.button])
 
 
 if __name__ == "__main__":

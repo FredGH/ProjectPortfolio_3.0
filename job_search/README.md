@@ -686,6 +686,6 @@ satisfaction) from the model's general knowledge (approximate; `not known` when 
 is unsure), and writes a per-job competitive angle, labelled
 `analysis — not verified`. Each research appends a new version, so
 what you knew in March stays explicable. `--force` researches again, `--no-angle`
-skips the angle. The same is available on the **Company Intel** page of the UI
+skips the angle. The same is available on the **Company Intel** page of the UI (its Research/Refresh button asks you to confirm the cost, about $0.08-0.10, before calling Claude)
 (`/Company_Intel?job=<job_group_id>`, which `render-cv`'s `job_spec.md` links to).
 Companies House, GitHub signals, news and sentiment are follow-ups.
