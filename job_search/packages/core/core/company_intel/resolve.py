@@ -281,6 +281,38 @@ def check_website(
     return WebsiteCheck(page, bool(needle) and needle in haystack)
 
 
+def suggest_website(
+    company_name: str,
+    *,
+    adapters: dict[str, LLMAdapter],
+    config_path: Path | None = None,
+) -> tuple[str | None, list[dict]]:
+    """Ask the model for a company's official website.
+
+    The answer is only a suggestion: the caller must still fetch it and check
+    that it names the company (`check_website`).
+
+    Args:
+        company_name: The company to find.
+        adapters: Provider name to LLM adapter.
+        config_path: Task-config override (tests).
+
+    Returns:
+        `(url, calls)`: the normalised website, or None when the model is not
+        sure or answers with something unusable; and the usage record.
+    """
+    run = run_task(
+        "company_website",
+        _PROMPT_VERSION,
+        {"company": company_name},
+        adapters,
+        config_path=config_path,
+        max_tokens=256,
+    )
+    data = parse_resolution_reply(run.text)
+    return normalise_website_url(data.get("website_url")), [run.record]
+
+
 def verify_website(
     fetcher: Fetcher, website_url: str, company_name: str
 ) -> Page | None:

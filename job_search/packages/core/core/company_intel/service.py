@@ -17,7 +17,12 @@ from core.company_intel.extract import ExtractError, extract_intel
 from core.company_intel.fetch import Fetcher, Page
 from core.company_intel.keys import company_key
 from core.company_intel.llm import LlmTaskError, total_usage
-from core.company_intel.resolve import ManualOverride, check_website, resolve_company
+from core.company_intel.resolve import (
+    ManualOverride,
+    check_website,
+    resolve_company,
+    suggest_website,
+)
 from core.company_intel.schema import Resolution, StoredIntel
 from core.company_intel.snapshot import SnapshotError, build_snapshot
 from core.llm.types import LLMAdapter
@@ -138,31 +143,58 @@ def get_or_refresh_intel(
             "research again to update it.",
         )
 
-    if not resolution.website_url:
+    website = resolution.website_url
+    suggested = False
+    if not website:
+        # Nobody typed a website and the posting gave none: ask the model for
+        # the company's own site. It is only a suggestion, so it is fetched and
+        # must name the company (below) before it is trusted or saved.
+        try:
+            website, website_calls = suggest_website(
+                resolution.end_client, adapters=adapters, config_path=config_path
+            )
+        except LlmTaskError:
+            website, website_calls = None, []
+        calls.extend(website_calls)
+        suggested = True
+    if not website:
         return IntelResult(
             "website_unverified",
             resolution,
             latest,
-            "No website is known for this company; enter its website to research it.",
+            f"Could not find the website of {resolution.end_client}; enter it to "
+            "research the company.",
         )
-    check = check_website(fetcher, resolution.website_url, resolution.end_client)
+    check = check_website(fetcher, website, resolution.end_client)
     if check.page is None:
         return IntelResult(
             "failed",
             resolution,
             latest,
-            f"Could not load {resolution.website_url}: {check.error} "
-            "(is the crawler running?)",
+            f"Could not load {website}: {check.error} (is the crawler running?)",
         )
-    # A manual resolution's website was typed by the user, so it is trusted;
-    # a guessed one must name the company on its homepage.
-    if not check.verified and resolution.method != "manual":
+    # A website the user typed is trusted; a guessed or suggested one must name
+    # the company on its homepage.
+    if not check.verified and (suggested or resolution.method != "manual"):
         return IntelResult(
             "website_unverified",
             resolution,
             latest,
             "The website's homepage does not name this company; enter the "
             "correct website to research it.",
+        )
+    if suggested:
+        # Verified, so remember it: the next research does not need to ask.
+        resolution = store.save_resolution(
+            engine,
+            Resolution(
+                job_group_id=resolution.job_group_id,
+                posted_company=resolution.posted_company,
+                poster_kind=resolution.poster_kind,
+                end_client=resolution.end_client,
+                website_url=website,
+                method=resolution.method,
+            ),
         )
     home = check.page
     pages: list[Page] = [home]

@@ -309,6 +309,67 @@ class TestGetOrRefreshIntel(unittest.TestCase):
         self.assertEqual(result.outcome, "website_unverified")
         self.assertIsNone(store.read_latest_intel(self.engine, self.key))
 
+    def _website_reply(self, url: str | None) -> str:
+        """Build a website-suggestion reply.
+
+        Args:
+            url: The website, or None for "not sure".
+
+        Returns:
+            A JSON string.
+        """
+        return json.dumps({"website_url": url})
+
+    def test_a_missing_website_is_found_by_the_model_checked_and_saved(self) -> None:
+        adapter = FakeAdapter(
+            [self._website_reply(_SITE), _profile_reply(), _snapshot_reply()]
+        )
+        result = self._run(adapter, _web(), override=ManualOverride(end_client=_NAME))
+        self.assertEqual(result.outcome, "refreshed")
+        assert result.intel is not None
+        self.assertEqual(
+            [c["task"] for c in result.intel.usage["calls"]],
+            ["company_website", "company_intel_extraction", "company_snapshot"],
+        )
+        saved = store.read_resolution(self.engine, _JOB)
+        assert saved is not None
+        self.assertEqual(saved.website_url, _SITE)
+        self.assertEqual(saved.method, "manual")
+
+    def test_a_suggested_website_that_does_not_name_the_company_is_not_trusted(
+        self,
+    ) -> None:
+        web = FakeFetcher({_SITE: Page(_SITE, "ok", "Welcome to Somebody Else")})
+        adapter = FakeAdapter([self._website_reply(_SITE)])
+        result = self._run(adapter, web, override=ManualOverride(end_client=_NAME))
+        self.assertEqual(result.outcome, "website_unverified")
+        self.assertEqual(len(adapter.prompts), 1)  # nothing was extracted
+        saved = store.read_resolution(self.engine, _JOB)
+        assert saved is not None
+        self.assertIsNone(saved.website_url)
+        self.assertIsNone(store.read_latest_intel(self.engine, self.key))
+
+    def test_when_the_model_is_not_sure_of_the_website_the_user_is_asked(self) -> None:
+        adapter = FakeAdapter([self._website_reply(None)])
+        web = _web()
+        result = self._run(adapter, web, override=ManualOverride(end_client=_NAME))
+        self.assertEqual(result.outcome, "website_unverified")
+        self.assertIn("website", result.message.lower())
+        self.assertEqual(web.requested, [])
+
+    def test_a_typed_website_is_never_replaced_by_a_suggestion(self) -> None:
+        adapter = FakeAdapter([_profile_reply(), _snapshot_reply()])
+        result = self._run(
+            adapter,
+            _web(),
+            override=ManualOverride(end_client=_NAME, website_url=_SITE),
+        )
+        self.assertEqual(result.outcome, "refreshed")
+        assert result.intel is not None
+        self.assertNotIn(
+            "company_website", [c["task"] for c in result.intel.usage["calls"]]
+        )
+
     def test_no_website_at_all_is_unverified(self) -> None:
         reply = json.dumps(
             {"poster_kind": "employer", "end_client": None, "website_url": None}

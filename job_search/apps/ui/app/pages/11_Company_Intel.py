@@ -206,19 +206,18 @@ if resolution is not None:
     )
     if resolution["end_client"] is None:
         st.warning(
-            "This posting does not name the end client. Enter the end client "
-            "and its website below, then research it."
+            "This posting does not name the end client. Enter it below, or "
+            "research the posting company itself."
         )
     elif not resolution["website_url"]:
-        st.warning(
-            "The company's website is not known. Enter it below - it is "
-            "needed to research the company."
+        st.info(
+            "The company's website is not known yet. Research will look for "
+            "it, or you can enter it below."
         )
-# Research cannot do anything until the company and its website are known, so
-# the form opens and the button waits, instead of looping on the same message.
-needs_input = resolution is not None and (
-    resolution["end_client"] is None or not resolution["website_url"]
-)
+# Research cannot do anything until the company is known, so the form shows and
+# the button waits, instead of looping on the same message. (A missing website
+# does not block it: the model looks for the site and the crawl checks it.)
+needs_input = resolution is not None and resolution["end_client"] is None
 if intel is None:
     if not needs_input:
         st.info("No intel yet - click Research.")
@@ -249,6 +248,25 @@ if needs_input:
     # Shown on the page itself, not in a collapsible: Streamlit remembers an
     # expander the user collapsed earlier and would keep it shut.
     st.subheader("Which company is this?")
+    agency = (resolution["posted_company"] or "").strip()
+    if agency and st.button(
+        f"Research {agency} itself instead",
+        key="intel-agency-itself",
+        help="Use the company that posted the job, here the agency, as the "
+        "company to research.",
+    ):
+        try:
+            put = _put(
+                f"/intel/jobs/{selected}/resolution",
+                {"end_client": agency, "website_url": None},
+            )
+            put.raise_for_status()
+        except httpx.HTTPError as exc:
+            st.error(_plain(f"Could not save: {exc}"))
+        else:
+            st.session_state["intel-confirming"] = selected
+            st.rerun()
+    st.caption("Or tell me who the client is:")
     _company_form()
 else:
     with st.expander("Correct the company"):
@@ -261,10 +279,10 @@ if st.button(
     label,
     key=button_key,
     disabled=needs_input,
-    help="Enter the end client and its website first." if needs_input else None,
+    help="Say which company this is first." if needs_input else None,
 ):
     st.session_state["intel-confirming"] = selected
-if st.session_state.get("intel-confirming") == selected:
+if st.session_state.get("intel-confirming") == selected and not needs_input:
     cost = _COST_NOTE["refresh" if intel else "first"]
     st.warning(
         f"{label} calls Claude and costs money: {cost} for this company, and it "

@@ -320,19 +320,77 @@ class TestCompanyIntelPage(unittest.TestCase):
         button = next(b for b in app.button if b.key == "intel-research")
         self.assertTrue(button.disabled)
         shown = _shown(app).lower()
-        self.assertIn("enter the end client", shown)
+        self.assertIn("does not name the end client", shown)
+        self.assertIn("research the posting company itself", shown)
         self.assertNotIn("click research", shown)
         self.assertEqual(self._form_state(app), "inline")
 
-    def test_an_end_client_without_a_website_asks_for_the_website(self) -> None:
+    def test_an_end_client_without_a_website_can_still_be_researched(self) -> None:
         app = self._run(
             [_CANDIDATE], self._resolution(end_client="Real Bank", method="manual")
         )
-        self.assertTrue(
+        self.assertFalse(
             next(b for b in app.button if b.key == "intel-research").disabled
         )
-        self.assertIn("website", _shown(app).lower())
-        self.assertEqual(self._form_state(app), "inline")
+        shown = _shown(app).lower()
+        self.assertIn("look for it", shown)
+        self.assertEqual(self._form_state(app), "expander")
+
+    def test_an_agency_offers_to_research_the_agency_itself_in_one_click(self) -> None:
+        app = self._run([_CANDIDATE], self._resolution())
+        button = next(b for b in app.button if b.key == "intel-agency-itself")
+        self.assertIn("Synapri", button.label)
+        self.assertIn("itself", button.label)
+
+    def test_a_job_with_a_known_end_client_does_not_offer_the_agency_button(
+        self,
+    ) -> None:
+        app = self._run(
+            [_CANDIDATE], self._resolution(end_client="Real Bank", method="manual")
+        )
+        self.assertNotIn("intel-agency-itself", [b.key for b in app.button])
+
+    def test_the_agency_button_saves_the_agency_as_the_company_and_asks_to_confirm(
+        self,
+    ) -> None:
+        puts: list[tuple[str, object]] = []
+        saved = {"done": False}
+
+        def fake_put(url: str, **kwargs) -> httpx.Response:
+            puts.append((url, kwargs.get("json")))
+            saved["done"] = True
+            return httpx.Response(200, json={}, request=httpx.Request("PUT", url))
+
+        def fake_get(url: str, **_kwargs) -> httpx.Response:
+            view = (
+                self._resolution(end_client="Synapri", method="manual")
+                if saved["done"]
+                else self._resolution()
+            )
+            return _fake_get([_CANDIDATE], view)(url)
+
+        with (
+            mock.patch("httpx.get", side_effect=fake_get),
+            mock.patch("httpx.put", side_effect=fake_put),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            next(b for b in app.button if b.key == "intel-agency-itself").click().run()
+        self.assertEqual(
+            puts,
+            [
+                (
+                    puts[0][0],
+                    {"end_client": "Synapri", "website_url": None},
+                )
+            ],
+        )
+        self.assertTrue(puts[0][0].endswith("/intel/jobs/zzfixture-job/resolution"))
+        keys = [b.key for b in app.button]
+        self.assertIn("intel-confirm", keys)
+        self.assertFalse(
+            next(b for b in app.button if b.key == "intel-research").disabled
+        )
+        self.assertIn("Claude", _shown(app))
 
     def test_a_company_with_an_end_client_and_website_can_be_researched(self) -> None:
         app = self._run(

@@ -679,7 +679,9 @@ when you ask (`--force`, or Refresh on the page). After 90 days
     docker compose run --rm pipeline research-company --job-group-id <job_group_id>
 
 It decides which company the work is really for (for an agency posting, the end
-client the description names; correct it with `--end-client NAME --website URL`),
+client the description names; correct it with `--end-client NAME --website URL`;
+the page also has a one-click "research the agency itself"), finds the company's
+website itself when none is known (checked by crawling it),
 crawls that company's own site through the `crawl4ai` service, extracts a profile
 where every fact cites the page it came from, lists up to five competitors
 (`site`, or `model knowledge — unverified`), fills a seven-row **company

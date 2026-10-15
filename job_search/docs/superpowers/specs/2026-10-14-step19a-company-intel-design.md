@@ -139,7 +139,9 @@ ahead" depends on the job, so it is stored separately:
      description and returns: employer vs agency, the end-client name if the
      description names one, and a candidate official website. The result is saved.
    - Agency with no end client → status "end client unknown": nothing is
-     crawled until the user sets one, or chooses to research the agency itself.
+     crawled until the user sets one, or chooses to research the agency itself
+     (a one-click button on the page that saves the posting company as the one
+     to research).
    - The candidate website is **verified**: the homepage is crawled and the
      company name must appear in its text. A failed check rejects the guess; the
      user can then type the correct website.
@@ -165,6 +167,14 @@ ahead" depends on the job, so it is stored separately:
    extract, append. `get_or_create_angle(engine, job_group_id, *, force=False)`
    returns the job's angle for the current intel version, generating it when
    missing. Steps 19 and 20a call these two functions.
+
+**Website lookup.** When the company is known but no website is (nobody typed one
+and the posting gave none), a small model call (`company_website`, about $0.001)
+suggests the company's own site. It is only a suggestion: the homepage is crawled
+and must name the company before it is used, and only then is it saved on the
+job's resolution. If the model is not sure, or the homepage does not name the
+company, the user is asked to enter the website. A website the user typed is
+never replaced or second-guessed.
 
 **Failure rules.** If every page fails, nothing is written and the previous
 version stays current. If pages load but nothing relevant is found, a
