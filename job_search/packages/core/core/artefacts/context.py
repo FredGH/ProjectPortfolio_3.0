@@ -99,7 +99,7 @@ def _role_text(role: Experience) -> str:
 
 def build_pack(
     truth_base: CVTruthBase,
-    job: JobContext,
+    job: JobContext | None = None,
     *,
     site_facts: Sequence[tuple[str, int, str]] = (),
 ) -> EvidencePack:
@@ -107,12 +107,12 @@ def build_pack(
 
     Args:
         truth_base: The user's CV.
-        job: The target job.
+        job: The target job, or None for a CV-only pack (interview answers).
         site_facts: Saved site-cited facts as `(field, index, text)`.
 
     Returns:
-        The pack: CV summary, roles and bullets, the posting and its skills,
-        and the site facts.
+        The pack: CV summary, roles and bullets, the posting and its skills
+        (when there is a job), and the site facts.
     """
     items: dict[str, Evidence] = {}
 
@@ -137,9 +137,14 @@ def build_pack(
                 f"{role.company}: {bullet.text[:80]}",
                 bullet.text,
             )
-    add("job:posting", "The job posting", job.description[:POSTING_CHARS])
-    for skill in job.skills:
-        add(f"job:skill:{skill.label}", f"Skill asked for: {skill.label}", skill.label)
+    if job is not None:
+        add("job:posting", "The job posting", job.description[:POSTING_CHARS])
+        for skill in job.skills:
+            add(
+                f"job:skill:{skill.label}",
+                f"Skill asked for: {skill.label}",
+                skill.label,
+            )
     for field_name, index, text in site_facts:
         add(f"site:{field_name}:{index}", f"Company site: {text[:80]}", text)
     contact = " | ".join(
@@ -150,8 +155,8 @@ def build_pack(
     return EvidencePack(
         identity=truth_base.identity,
         contact=contact,
-        title=(job.title_for_display or "").strip(),
-        company=(job.company or "").strip(),
+        title=((job.title_for_display if job else "") or "").strip(),
+        company=((job.company if job else "") or "").strip(),
         items=items,
     )
 

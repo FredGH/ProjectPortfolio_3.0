@@ -116,7 +116,7 @@ def sentence_id(section: str, index: int, text: str) -> str:
     return hashlib.sha1(f"{section}:{index}:{text}".encode()).hexdigest()[:10]
 
 
-def _sentence(
+def build_sentence(
     raw: WriterSentence, pack: EvidencePack, section: str, index: int
 ) -> Sentence | None:
     """Turn one writer sentence into a document sentence.
@@ -202,7 +202,7 @@ def build_letter(pack: EvidencePack, reply: LetterReply, *, today: date) -> Cove
             )
         if written is not None:
             for index, raw in enumerate(written.sentences, start=len(sentences)):
-                built = _sentence(raw, pack, role, index)
+                built = build_sentence(raw, pack, role, index)
                 if built is not None:
                     sentences.append(built)
         if written is not None or role == "opening":
@@ -241,7 +241,7 @@ def build_pitch(pack: EvidencePack, reply: PitchReply) -> Pitch:
             )
         ]
         for raw in reply.variants.get(str(seconds), []):
-            built = _sentence(raw, pack, section, len(sentences))
+            built = build_sentence(raw, pack, section, len(sentences))
             if built is not None:
                 sentences.append(built)
         variants.append(PitchVariant(seconds=seconds, sentences=sentences))  # type: ignore[arg-type]

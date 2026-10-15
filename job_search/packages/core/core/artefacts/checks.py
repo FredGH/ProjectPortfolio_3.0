@@ -7,7 +7,7 @@ semantic gap (does a claim follow from its sources).
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from core.artefacts.context import EvidencePack
@@ -87,18 +87,21 @@ def _numbers(text: str) -> set[str]:
     return {match.replace(",", "").rstrip(".") for match in _NUMBER.findall(text)}
 
 
-def _sentence_problems(doc: CoverLetter | Pitch, pack: EvidencePack) -> list[Problem]:
+def sentence_problems(
+    sentences: Iterable[tuple[str, int, Sentence]], pack: EvidencePack
+) -> list[Problem]:
     """Check each sentence on its own.
 
     Args:
-        doc: The document.
+        sentences: `(section, index, sentence)` triples, as `iter_sentences`
+            yields them; the `evidence` section additionally needs a CV source.
         pack: The evidence pack.
 
     Returns:
         The sentence-level problems.
     """
     problems: list[Problem] = []
-    for section, _index, sentence in iter_sentences(doc):
+    for section, _index, sentence in sentences:
         if sentence.kind == "composed":
             continue
         if sentence.kind == "voice":
@@ -284,6 +287,6 @@ def run_checks(doc: CoverLetter | Pitch, pack: EvidencePack) -> list[Problem]:
     return (
         _structure_problems(doc)
         + _title_problems(doc)
-        + _sentence_problems(doc, pack)
+        + sentence_problems(iter_sentences(doc), pack)
         + _length_problems(doc)
     )
