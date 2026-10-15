@@ -134,3 +134,118 @@ def critic_reply_json(verdicts: dict[str, str | None]) -> str:
             ]
         }
     )
+
+
+def critic_items_in(prompt: str) -> list[dict]:
+    """Extract the critic's JSON item list from its prompt.
+
+    Args:
+        prompt: A critic prompt.
+
+    Returns:
+        The decoded items.
+    """
+    start = prompt.index("[\n")
+    end = prompt.rindex("\n]") + 2
+    return json.loads(prompt[start:end])
+
+
+class ScriptedAdapter:
+    """An LLM adapter that plays the writer and the critic.
+
+    A prompt containing "strict fact-checker" is a critic call; any other is a
+    writer call.
+
+    Attributes:
+        prompts: Every prompt received, in order.
+        writer_calls: How many writer prompts were received.
+        critic_calls: How many critic prompts were received.
+    """
+
+    def __init__(
+        self,
+        writer_replies: list[str],
+        *,
+        reject: dict[str, str] | None = None,
+        critic_text: str | None = None,
+    ) -> None:
+        """Script the adapter.
+
+        Args:
+            writer_replies: Writer replies in order (the last repeats).
+            reject: Substring of a sentence to the issue the critic reports.
+            critic_text: A fixed critic reply, overriding the verdicts.
+        """
+        self._writer = list(writer_replies)
+        self._reject = reject or {}
+        self._critic_text = critic_text
+        self.prompts: list[str] = []
+        self.writer_calls = 0
+        self.critic_calls = 0
+
+    def complete(self, *, model: str, prompt: str, **_kwargs: object):  # type: ignore[no-untyped-def]
+        """Answer as the writer or the critic.
+
+        Args:
+            model: The requested model (echoed back).
+            prompt: The prompt (recorded).
+            **_kwargs: Ignored sampling options.
+
+        Returns:
+            An `LLMResponse` with fixed token counts.
+        """
+        from core.llm.types import LLMResponse
+
+        self.prompts.append(prompt)
+        if "strict fact-checker" in prompt:
+            self.critic_calls += 1
+            if self._critic_text is not None:
+                text = self._critic_text
+            else:
+                verdicts: dict[str, str | None] = {}
+                for item in critic_items_in(prompt):
+                    issue = next(
+                        (v for k, v in self._reject.items() if k in item["text"]),
+                        None,
+                    )
+                    verdicts[item["id"]] = issue
+                text = critic_reply_json(verdicts)
+        else:
+            text = self._writer[min(self.writer_calls, len(self._writer) - 1)]
+            self.writer_calls += 1
+        return LLMResponse(
+            text=text,
+            provider="anthropic",
+            model=model,
+            input_tokens=100,
+            output_tokens=50,
+        )
+
+
+def padded_letter_json(**overrides: object) -> str:
+    """Build a letter reply long enough to meet the word budget.
+
+    Args:
+        **overrides: Per-role sentence overrides (a `close` override replaces
+            the padding).
+
+    Returns:
+        A writer-reply JSON string.
+    """
+    pad = [sentence_json("Plain words that fill the page " * 3, "voice")] * 12
+    return letter_reply_json(**{"close": pad, **overrides})
+
+
+def padded_pitch_json() -> str:
+    """Build a pitch reply that meets each variant's word budget.
+
+    Returns:
+        A writer-reply JSON string.
+    """
+    pad = [
+        sentence_json(
+            "Plain words that fill the time. Plain words that fill the time.", "voice"
+        )
+    ]
+    unit = pad[0]
+    return pitch_reply_json(**{"30": [unit] * 5, "60": [unit] * 12, "90": [unit] * 17})
