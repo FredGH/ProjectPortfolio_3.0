@@ -29,7 +29,7 @@ Intel page - nothing is researched here. Every factual sentence shows the
 sources it rests on. The job title in the letter and pitch is written by the
 app, so it is always exact.
 
-Writing calls Claude several times and costs about 10 cents per document, so
+Writing calls Claude several times and costs 5 to 20 cents per document, so
 it asks you to confirm first. A sentence that could not be traced to a source
 is listed under *Needs your decision*: link it to a source that really backs
 it, or remove it. A document is approved - and can be downloaded - only when
@@ -39,7 +39,7 @@ none is left.
 
 _base = get_settings().api_base_url
 _MD_META = set("\\`*_{}[]()#+-.!|<>~$:&")
-_COST = "about $0.10"
+_COSTS = {"cover_letter": "about $0.05 to $0.10", "pitch": "about $0.10 to $0.20"}
 _KINDS = {
     "cover_letter": ("Cover letter", "cover-letter", "art-generate-letter", "letter"),
     "pitch": ("Pitch", "pitch", "art-generate-pitch", "pitch"),
@@ -313,7 +313,7 @@ def _section(kind: str) -> None:
         st.session_state["art-confirming"] = (kind, selected)
     if st.session_state.get("art-confirming") == (kind, selected):
         st.warning(
-            f"Writing the {noun} calls Claude several times and costs {_COST}. "
+            f"Writing the {noun} calls Claude several times and costs {_COSTS[kind]}. "
             "Nothing is spent unless you confirm."
         )
         confirm_col, cancel_col = st.columns(2)

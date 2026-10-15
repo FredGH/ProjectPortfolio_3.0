@@ -13,7 +13,7 @@ from core.llm.types import LLMAdapter
 WRITER_TASKS = {"cover_letter": "artefact_letter", "pitch": "artefact_pitch"}
 """The LLM task of each document type."""
 
-_PROMPT_VERSION = 1
+_PROMPT_VERSION = 2
 
 
 def render_evidence(pack: EvidencePack) -> str:
@@ -66,5 +66,5 @@ def write(
         },
         adapters,
         config_path=config_path,
-        max_tokens=4096,
+        max_tokens=8192,
     )

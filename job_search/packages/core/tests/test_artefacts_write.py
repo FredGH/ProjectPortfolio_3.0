@@ -51,7 +51,12 @@ class TestWrite(unittest.TestCase):
         self.assertIn(cv_ref(0, 0), prompt)
         self.assertIn("FIX: remove the number.", prompt)
         self.assertEqual(run.record["task"], "artefact_letter")
-        self.assertEqual(run.prompt_version, "claude.v1")
+        self.assertEqual(run.prompt_version, "claude.v2")
+
+    def test_the_prompt_asks_for_the_role_id_when_an_employer_is_named(self) -> None:
+        adapter = FakeAdapter([letter_reply_json()])
+        write("cover_letter", make_pack(), feedback="", adapters={"anthropic": adapter})
+        self.assertIn("cv:role:N", adapter.prompts[0])
 
     def test_the_pitch_uses_its_own_task_and_prompt(self) -> None:
         adapter = FakeAdapter(["{}"])

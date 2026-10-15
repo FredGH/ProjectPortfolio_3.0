@@ -109,7 +109,7 @@ class TestGenerateArtefact(unittest.TestCase):
         self.assertEqual(stored.truth_base_version, 1)
         self.assertIsNone(stored.intel_version)
         self.assertEqual(stored.target_title, "Data Engineer")
-        self.assertEqual(stored.writer_prompt_version, "claude.v1")
+        self.assertEqual(stored.writer_prompt_version, "claude.v2")
         self.assertEqual(stored.open_sentences, [])
         self.assertGreater(stored.usage["input_tokens"], 0)  # type: ignore[index]
 
