@@ -665,3 +665,31 @@ the run bills.
 
 **To pick it up:** run it with `RUN_PAID_TESTS=1`, then record the catch rate
 and the cost here.
+
+## Company intel (Step 19a)
+
+`research-company` researches the company behind a job and stores it, or reuses
+the saved version, always: saved research is never re-researched by itself, only
+when you ask (`--force`, or Refresh on the page). After 90 days
+(`config/company_intel.yml`) it is just marked "Stale":
+
+    # once: put a shared secret in .env (Crawl4AI 0.9 only accepts requests with it)
+    echo "CRAWL4AI_API_TOKEN=$(openssl rand -hex 24)" >> .env
+    docker compose --profile research up -d crawl4ai      # 6 GB image, needs Docker memory
+    docker compose run --rm pipeline research-company --job-group-id <job_group_id>
+
+It decides which company the work is really for (for an agency posting, the end
+client the description names; correct it with `--end-client NAME --website URL`;
+the page also has a one-click "research the agency itself"), finds the company's
+website itself when none is known (checked by crawling it),
+crawls that company's own site through the `crawl4ai` service, extracts a profile
+where every fact cites the page it came from, lists up to five competitors
+(`site`, or `model knowledge — unverified`), fills a seven-row **company
+snapshot** (industry, ranking, market share, 5-year growth, last year's profit,
+employees, employee satisfaction) from the model's general knowledge (approximate; `not known` when it
+is unsure), and writes a per-job competitive angle, labelled
+`analysis — not verified`. Each research appends a new version, so
+what you knew in March stays explicable. `--force` researches again, `--no-angle`
+skips the angle. The same is available on the **Company Intel** page of the UI (its Research/Refresh button asks you to confirm the cost, about $0.08-0.10, before calling Claude)
+(`/Company_Intel?job=<job_group_id>`, which `render-cv`'s `job_spec.md` links to).
+Companies House, GitHub signals, news and sentiment are follow-ups.

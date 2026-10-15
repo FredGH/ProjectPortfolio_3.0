@@ -8,6 +8,8 @@ from functools import lru_cache
 import httpx
 from sqlalchemy import Engine
 
+from core.company_intel.config import load_config as load_company_intel_config
+from core.company_intel.fetch import CachedFetcher, Crawl4AIFetcher, Fetcher
 from core.db.session import build_engine
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
@@ -150,3 +152,22 @@ def get_llm_adapters() -> dict[str, LLMAdapter]:
             client=anthropic.Anthropic(api_key=settings.anthropic_api_key),
         )
     return adapters
+
+
+@lru_cache
+def get_fetcher() -> Fetcher:
+    """Build the process-wide page fetcher: Crawl4AI behind the day cache.
+
+    Returns:
+        A `CachedFetcher` over `Crawl4AIFetcher(settings.crawl4ai_url)`.
+    """
+    settings = get_settings()
+    return CachedFetcher(
+        Crawl4AIFetcher(
+            settings.crawl4ai_url,
+            timeout=120.0,
+            api_token=settings.crawl4ai_api_token,
+        ),
+        get_app_db_engine(),
+        cache_days=load_company_intel_config().crawl_cache_days,
+    )

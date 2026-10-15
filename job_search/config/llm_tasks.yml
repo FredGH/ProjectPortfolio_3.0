@@ -57,3 +57,23 @@ tasks:
     local_provider: ollama
     local_model: llama3.1:8b
     local_prompt_family: local
+  company_resolution:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  company_intel_extraction:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  company_website:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  company_snapshot:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  competitive_angle:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude

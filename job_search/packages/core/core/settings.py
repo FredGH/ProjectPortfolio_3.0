@@ -41,6 +41,10 @@ class Settings(BaseSettings):
             alongside every vector at query time so a future model change
             is detectable, not silent.
         ollama_base_url: Base URL of the local Ollama server.
+        crawl4ai_url: Base URL of the Crawl4AI service used by company research
+            (PLAN.md Step 19a).
+        crawl4ai_api_token: The shared secret the Crawl4AI service requires,
+            sent as a bearer token (None when the service has none).
         llm_provider: Informational default only. It is NEVER used to route
             an individual task's model choice — see core.llm.task_config,
             which resolves (task, provider, model) per call from
@@ -74,6 +78,8 @@ class Settings(BaseSettings):
     embedding_provider: Literal["ollama", "vertex"] = "ollama"
     embedding_model: str = "nomic-embed-text"
     ollama_base_url: str = "http://ollama:11434"
+    crawl4ai_url: str = "http://crawl4ai:11235"
+    crawl4ai_api_token: str | None = None
 
     llm_provider: str = "anthropic"
     anthropic_api_key: str | None = None

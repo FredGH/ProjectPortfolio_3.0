@@ -9,8 +9,8 @@ import sys
 import tempfile
 import unittest
 import uuid
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -116,9 +116,7 @@ class TestRenderCvSubcommand(unittest.TestCase):
     def test_warnings_from_the_render_are_printed(self) -> None:
         document = make_tailored_document()
         document.experience[0].bullets[0].text = "Built 日本語 dashboards"
-        run = SimpleNamespace(
-            status="approved", document=document, created_at=_CREATED
-        )
+        run = SimpleNamespace(status="approved", document=document, created_at=_CREATED)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = _run(["render-cv", *_ARGS, "--out-dir", tmp], run)
         self.assertEqual(code, 0)
@@ -170,6 +168,7 @@ class TestRenderCvSubcommand(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("https://www.reed.co.uk/jobs/x/1", spec)
         self.assertIn("http://ui.test:9/Tailored_CV_Review?job=j1", spec)
+        self.assertIn("http://ui.test:9/Company_Intel?job=j1", spec)
         self.assertIn("job_spec=", out.getvalue())
 
 

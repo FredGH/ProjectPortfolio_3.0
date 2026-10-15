@@ -15,8 +15,15 @@ _CLI_PATH = Path(__file__).resolve().parents[3] / "apps" / "pipeline" / "app" / 
 # from the dependency graph or this completeness check — see this
 # plan's Global Constraints for why each is excluded.
 # tailor-cv and render-cv are on demand per (user, job) and are driven from
-# the Tailored CV Review page / CLI, not the dashboard.
-_EXCLUDED_FROM_RUN_BUTTON = {"ingest", "run-evals", "tailor-cv", "render-cv"}
+# the Tailored CV Review page / CLI, not the dashboard. research-company is
+# on demand per job (Step 19a), driven from the Company Intel page / CLI.
+_EXCLUDED_FROM_RUN_BUTTON = {
+    "ingest",
+    "run-evals",
+    "tailor-cv",
+    "render-cv",
+    "research-company",
+}
 
 
 def _cli_subcommand_names() -> set[str]:

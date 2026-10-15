@@ -76,13 +76,29 @@ def job_ui_link(base_url: str, job_group_id: str) -> str:
     return f"{base_url.rstrip('/')}/Tailored_CV_Review?job={job_group_id}"
 
 
-def render_job_spec(job: JobContext, source: JobSource, ui_link: str) -> str:
+def intel_ui_link(base_url: str, job_group_id: str) -> str:
+    """Build the link to a job in the Company Intel page of the UI.
+
+    Args:
+        base_url: Where the UI runs, for example `http://localhost:8501`.
+        job_group_id: The job's id.
+
+    Returns:
+        A URL that opens the page with the job pre-selected.
+    """
+    return f"{base_url.rstrip('/')}/Company_Intel?job={job_group_id}"
+
+
+def render_job_spec(
+    job: JobContext, source: JobSource, ui_link: str, intel_link: str | None = None
+) -> str:
     """Write the job spec as Markdown.
 
     Args:
         job: The job's title, company, description and skills.
         source: Where the posting came from.
         ui_link: The link to the job in the UI.
+        intel_link: The link to the job in the Company Intel page, if any.
 
     Returns:
         The Markdown text with a trailing newline.
@@ -104,6 +120,8 @@ def render_job_spec(job: JobContext, source: JobSource, ui_link: str) -> str:
     if source.posted_at:
         lines.append(f"- **Posted:** {source.posted_at}")
     lines.append(f"- **In the UI:** {ui_link}")
+    if intel_link:
+        lines.append(f"- **Company intel:** {intel_link}")
     lines.append(f"- **Job id:** {job.job_group_id}")
     for level, label in (("must_have", "Must have"), ("nice_to_have", "Nice to have")):
         names = [s.label for s in job.skills if s.requirement_level == level]

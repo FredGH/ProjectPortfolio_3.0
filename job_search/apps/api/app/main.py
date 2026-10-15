@@ -10,6 +10,7 @@ from app.routers import (
     dedup,
     extraction_runs,
     ingest,
+    intel,
     pipeline,
     scoring,
     skills,
@@ -29,6 +30,7 @@ app.include_router(extraction_runs.router)
 app.include_router(scoring.router)
 app.include_router(pipeline.router)
 app.include_router(tailoring.router)
+app.include_router(intel.router)
 
 
 @app.get("/health")

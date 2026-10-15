@@ -24,6 +24,11 @@ from pathlib import Path
 import httpx
 
 from core.classification.write_job_category import write_job_category
+from core.company_intel.angle import get_or_create_angle
+from core.company_intel.config import load_config as load_company_intel_config
+from core.company_intel.fetch import CachedFetcher, Crawl4AIFetcher
+from core.company_intel.resolve import ManualOverride, normalise_website_url
+from core.company_intel.service import get_or_refresh_intel
 from core.db.session import build_engine
 from core.dedup.write_blocking_keys import write_blocking_keys
 from core.dedup.write_job_identity_map import write_job_identity_map
@@ -48,6 +53,7 @@ from core.llm.types import LLMAdapter
 from core.render.layout import (
     JOB_SPEC_FILENAME,
     cv_directory,
+    intel_ui_link,
     job_ui_link,
     render_job_spec,
 )
@@ -1393,6 +1399,7 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
                 job,
                 load_job_source(engine, args.job_group_id),
                 job_ui_link(ui_base, args.job_group_id),
+                intel_ui_link(ui_base, args.job_group_id),
             ),
             encoding="utf-8",
         )
@@ -1404,6 +1411,81 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
     for warning in files.warnings:
         print(f"render-cv warning: {warning}")
     return 0
+
+
+def _cmd_research_company(args: argparse.Namespace) -> int:
+    """Run the `research-company` subcommand: research a job's company (Step 19a).
+
+    Reuses stored intel when it is still fresh; otherwise crawls the
+    company's site with Crawl4AI, extracts a cited profile with its top
+    competitors and stores a new version. Then writes the job's competitive
+    angle (unless `--no-angle`). On demand, not a batch stage, so it is
+    deliberately absent from the pipeline dashboard (core.pipeline.registry).
+
+    Args:
+        args: Parsed CLI arguments — `job_group_id`, `force`, `end_client`,
+            `website`, `no_angle`.
+
+    Returns:
+        0 when intel was reused, refreshed or stored as `no_content`; 1 when
+        the job is unknown, the end client is unknown, the website cannot be
+        verified, or the research failed.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    job = load_job_context(engine, args.job_group_id)
+    if job is None:
+        print(f"research-company: no such job {args.job_group_id}")
+        return 1
+    source = load_job_source(engine, args.job_group_id)
+    if args.website and normalise_website_url(args.website) is None:
+        print(
+            f"research-company: the website {args.website!r} is not a usable "
+            "address, e.g. acme.com"
+        )
+        return 1
+    override = None
+    if args.end_client or args.website:
+        override = ManualOverride(end_client=args.end_client, website_url=args.website)
+    config = load_company_intel_config()
+    http_client = httpx.Client(timeout=300.0)
+    try:
+        adapters = _build_llm_adapters(http_client)
+        fetcher = CachedFetcher(
+            Crawl4AIFetcher(
+                settings.crawl4ai_url, api_token=settings.crawl4ai_api_token
+            ),
+            engine,
+            cache_days=config.crawl_cache_days,
+        )
+        result = get_or_refresh_intel(
+            engine,
+            job,
+            source,
+            adapters=adapters,
+            fetcher=fetcher,
+            config=config,
+            force=args.force,
+            override=override,
+        )
+        company = result.resolution.end_client or result.resolution.posted_company
+        version = f" v{result.intel.version}" if result.intel else ""
+        print(
+            f"research-company {result.outcome}: {company}{version} — {result.message}"
+        )
+        if result.outcome not in ("reused", "refreshed", "no_content"):
+            return 1
+        if result.intel is not None:
+            if args.no_angle:
+                print("competitive angle: skipped")
+            else:
+                angle = get_or_create_angle(
+                    engine, job, result.intel, adapters=adapters, force=args.force
+                )
+                print(f"competitive angle: {'ready' if angle else 'not available'}")
+        return 0
+    finally:
+        http_client.close()
 
 
 # Tasks with an eval configured — extend as future steps (15-17,
@@ -1793,6 +1875,32 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the ATS .docx and .txt, not the designed PDF",
     )
 
+    research_parser = subparsers.add_parser(
+        "research-company",
+        help="Research a job's company (site crawl, competitors, competitive "
+        "angle) and store it, or reuse fresh stored intel (PLAN.md Step 19a); "
+        "on demand, not a pipeline stage",
+    )
+    research_parser.add_argument("--job-group-id", required=True)
+    research_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Research again even if the stored intel is still fresh",
+    )
+    research_parser.add_argument(
+        "--end-client",
+        help="The company to research when the posting is from an agency (stored "
+        "as a manual override)",
+    )
+    research_parser.add_argument(
+        "--website", help="The company's official website (stored as a manual override)"
+    )
+    research_parser.add_argument(
+        "--no-angle",
+        action="store_true",
+        help="Do not write the job's competitive angle",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "ingest":
@@ -1841,6 +1949,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_tailor_cv(args)
     if args.command == "render-cv":
         return _cmd_render_cv(args)
+    if args.command == "research-company":
+        return _cmd_research_company(args)
     if args.command == "run-evals":
         return _cmd_run_evals(args)
 

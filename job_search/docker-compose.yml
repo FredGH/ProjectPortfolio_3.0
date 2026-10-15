@@ -92,6 +92,21 @@ services:
     volumes:
       - ollama_data:/root/.ollama
 
+  # Step 19a company research: a headless-browser crawler with a REST API.
+  # Not started by default (about 1.7 GB image, needs Docker memory):
+  #   docker compose --profile research up -d crawl4ai
+  crawl4ai:
+    image: unclecode/crawl4ai:0.9.4
+    profiles: [research]
+    shm_size: 1gb
+    environment:
+      # 0.9.x only listens beyond the container's own loopback when a token is
+      # set; the app sends it as a bearer token (CRAWL4AI_API_TOKEN in .env).
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:?set CRAWL4AI_API_TOKEN in .env}
+    ports:
+      # Loopback only on the host: other containers use the service name.
+      - "127.0.0.1:11235:11235"
+
   n8n:
     image: n8nio/n8n
     profiles: [orchestration]
