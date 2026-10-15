@@ -23,6 +23,9 @@ _EXCLUDED_FROM_RUN_BUTTON = {
     "tailor-cv",
     "render-cv",
     "research-company",
+    "generate-cover-letter",
+    "generate-pitch",
+    "render-artefacts",
 }
 
 
