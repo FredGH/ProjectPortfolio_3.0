@@ -206,10 +206,22 @@ if resolution is not None:
     )
     if resolution["end_client"] is None:
         st.warning(
-            "This posting does not name the end client - enter it below to research it."
+            "This posting does not name the end client. Enter the end client "
+            "and its website below, then research it."
         )
+    elif not resolution["website_url"]:
+        st.warning(
+            "The company's website is not known. Enter it below - it is "
+            "needed to research the company."
+        )
+# Research cannot do anything until the company and its website are known, so
+# the form opens and the button waits, instead of looping on the same message.
+needs_input = resolution is not None and (
+    resolution["end_client"] is None or not resolution["website_url"]
+)
 if intel is None:
-    st.info("No intel yet - click Research.")
+    if not needs_input:
+        st.info("No intel yet - click Research.")
 elif resolution is None:
     st.info(
         f"Showing the saved research for {_plain(intel['display_name'])}, found "
@@ -217,7 +229,7 @@ elif resolution is None:
         "this job itself yet, and nothing runs unless you ask."
     )
 
-with st.expander("Correct the company"):
+with st.expander("Correct the company", expanded=needs_input):
     end_client = st.text_input("End client", key="intel-end-client")
     website = st.text_input("Website", key="intel-website")
     if st.button("Save", key="intel-save-resolution"):
@@ -233,7 +245,12 @@ with st.expander("Correct the company"):
 label, button_key = (
     ("Refresh", "intel-refresh") if intel else ("Research", "intel-research")
 )
-if st.button(label, key=button_key):
+if st.button(
+    label,
+    key=button_key,
+    disabled=needs_input,
+    help="Enter the end client and its website first." if needs_input else None,
+):
     st.session_state["intel-confirming"] = selected
 if st.session_state.get("intel-confirming") == selected:
     cost = _COST_NOTE["refresh" if intel else "first"]

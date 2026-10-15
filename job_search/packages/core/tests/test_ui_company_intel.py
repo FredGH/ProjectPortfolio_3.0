@@ -274,6 +274,80 @@ class TestCompanyIntelPage(unittest.TestCase):
         self.assertIn("end client", _shown(app).lower())
         self.assertIn("intel-save-resolution", [b.key for b in app.button])
 
+    def _resolution(self, **fields):  # type: ignore[no-untyped-def]
+        """Build an intel-less view with a stored resolution.
+
+        Args:
+            **fields: Resolution fields to override.
+
+        Returns:
+            A view whose resolution is an agency posting by default.
+        """
+        resolution = {
+            "poster_kind": "agency",
+            "posted_company": "Synapri",
+            "end_client": None,
+            "website_url": None,
+            "method": "llm",
+            **fields,
+        }
+        return {**_EMPTY, "resolution": resolution}
+
+    def _correct_expander_open(self, app: AppTest) -> bool:
+        """Say whether the 'Correct the company' form is open.
+
+        Args:
+            app: A finished `AppTest`.
+
+        Returns:
+            True when that expander starts expanded.
+        """
+        return next(
+            e for e in app.expander if e.label == "Correct the company"
+        ).proto.expanded
+
+    def test_an_agency_with_no_end_client_cannot_be_researched_until_one_is_given(
+        self,
+    ) -> None:
+        app = self._run([_CANDIDATE], self._resolution())
+        button = next(b for b in app.button if b.key == "intel-research")
+        self.assertTrue(button.disabled)
+        shown = _shown(app).lower()
+        self.assertIn("enter the end client", shown)
+        self.assertNotIn("click research", shown)
+        self.assertTrue(self._correct_expander_open(app))
+
+    def test_an_end_client_without_a_website_asks_for_the_website(self) -> None:
+        app = self._run(
+            [_CANDIDATE], self._resolution(end_client="Real Bank", method="manual")
+        )
+        self.assertTrue(
+            next(b for b in app.button if b.key == "intel-research").disabled
+        )
+        self.assertIn("website", _shown(app).lower())
+        self.assertTrue(self._correct_expander_open(app))
+
+    def test_a_company_with_an_end_client_and_website_can_be_researched(self) -> None:
+        app = self._run(
+            [_CANDIDATE],
+            self._resolution(
+                poster_kind="employer",
+                end_client="Gamma",
+                website_url="https://gamma.example",
+                method="employer",
+            ),
+        )
+        button = next(b for b in app.button if b.key == "intel-research")
+        self.assertFalse(button.disabled)
+        self.assertFalse(self._correct_expander_open(app))
+
+    def test_a_job_never_looked_at_can_still_be_researched(self) -> None:
+        app = self._run([_CANDIDATE], _EMPTY)
+        self.assertFalse(
+            next(b for b in app.button if b.key == "intel-research").disabled
+        )
+        self.assertFalse(self._correct_expander_open(app))
+
     def test_a_stale_version_says_so(self) -> None:
         view = {**_VIEW, "intel": {**_VIEW["intel"], "fresh": False}}
         self.assertIn("Stale", _shown(self._run([_CANDIDATE], view)))
