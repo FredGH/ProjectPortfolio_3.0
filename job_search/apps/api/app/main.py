@@ -12,6 +12,7 @@ from app.routers import (
     extraction_runs,
     ingest,
     intel,
+    interview,
     pipeline,
     scoring,
     skills,
@@ -33,6 +34,7 @@ app.include_router(pipeline.router)
 app.include_router(tailoring.router)
 app.include_router(intel.router)
 app.include_router(artefacts.router)
+app.include_router(interview.router)
 
 
 @app.get("/health")
