@@ -293,18 +293,25 @@ class TestCompanyIntelPage(unittest.TestCase):
         }
         return {**_EMPTY, "resolution": resolution}
 
-    def _correct_expander_open(self, app: AppTest) -> bool:
-        """Say whether the 'Correct the company' form is open.
+    def _form_state(self, app: AppTest) -> str:
+        """Say where the company form is: inline, in a collapsed expander, or absent.
 
         Args:
             app: A finished `AppTest`.
 
         Returns:
-            True when that expander starts expanded.
+            `inline` when the form sits on the page itself (no expander),
+            `expander` when it is inside the collapsible "Correct the company",
+            `absent` when the inputs are not there.
         """
-        return next(
-            e for e in app.expander if e.label == "Correct the company"
-        ).proto.expanded
+        has_inputs = {i.key for i in app.text_input} >= {
+            "intel-end-client",
+            "intel-website",
+        }
+        if not has_inputs:
+            return "absent"
+        in_expander = any(e.label == "Correct the company" for e in app.expander)
+        return "expander" if in_expander else "inline"
 
     def test_an_agency_with_no_end_client_cannot_be_researched_until_one_is_given(
         self,
@@ -315,7 +322,7 @@ class TestCompanyIntelPage(unittest.TestCase):
         shown = _shown(app).lower()
         self.assertIn("enter the end client", shown)
         self.assertNotIn("click research", shown)
-        self.assertTrue(self._correct_expander_open(app))
+        self.assertEqual(self._form_state(app), "inline")
 
     def test_an_end_client_without_a_website_asks_for_the_website(self) -> None:
         app = self._run(
@@ -325,7 +332,7 @@ class TestCompanyIntelPage(unittest.TestCase):
             next(b for b in app.button if b.key == "intel-research").disabled
         )
         self.assertIn("website", _shown(app).lower())
-        self.assertTrue(self._correct_expander_open(app))
+        self.assertEqual(self._form_state(app), "inline")
 
     def test_a_company_with_an_end_client_and_website_can_be_researched(self) -> None:
         app = self._run(
@@ -339,14 +346,40 @@ class TestCompanyIntelPage(unittest.TestCase):
         )
         button = next(b for b in app.button if b.key == "intel-research")
         self.assertFalse(button.disabled)
-        self.assertFalse(self._correct_expander_open(app))
+        self.assertEqual(self._form_state(app), "expander")
+
+    def test_saving_the_typed_company_puts_it_to_the_resolution_endpoint(self) -> None:
+        puts: list[tuple[str, object]] = []
+
+        def fake_put(url: str, **kwargs) -> httpx.Response:
+            puts.append((url, kwargs.get("json")))
+            return httpx.Response(200, json={}, request=httpx.Request("PUT", url))
+
+        with (
+            mock.patch(
+                "httpx.get", side_effect=_fake_get([_CANDIDATE], self._resolution())
+            ),
+            mock.patch("httpx.put", side_effect=fake_put),
+        ):
+            app = AppTest.from_file(str(_PAGE), default_timeout=10).run()
+            app.text_input(key="intel-end-client").input("Real Bank")
+            app.text_input(key="intel-website").input("bank.example")
+            app.run()
+            next(
+                b for b in app.button if b.key == "intel-save-resolution"
+            ).click().run()
+        self.assertEqual(len(puts), 1)
+        self.assertTrue(puts[0][0].endswith("/intel/jobs/zzfixture-job/resolution"))
+        self.assertEqual(
+            puts[0][1], {"end_client": "Real Bank", "website_url": "bank.example"}
+        )
 
     def test_a_job_never_looked_at_can_still_be_researched(self) -> None:
         app = self._run([_CANDIDATE], _EMPTY)
         self.assertFalse(
             next(b for b in app.button if b.key == "intel-research").disabled
         )
-        self.assertFalse(self._correct_expander_open(app))
+        self.assertEqual(self._form_state(app), "expander")
 
     def test_a_stale_version_says_so(self) -> None:
         view = {**_VIEW, "intel": {**_VIEW["intel"], "fresh": False}}

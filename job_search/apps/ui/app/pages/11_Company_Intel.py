@@ -229,7 +229,9 @@ elif resolution is None:
         "this job itself yet, and nothing runs unless you ask."
     )
 
-with st.expander("Correct the company", expanded=needs_input):
+
+def _company_form() -> None:
+    """Show the end client / website form and save it through the API."""
     end_client = st.text_input("End client", key="intel-end-client")
     website = st.text_input("Website", key="intel-website")
     if st.button("Save", key="intel-save-resolution"):
@@ -241,6 +243,16 @@ with st.expander("Correct the company", expanded=needs_input):
             st.error(_plain(f"Could not save: {exc}"))
         else:
             st.rerun()
+
+
+if needs_input:
+    # Shown on the page itself, not in a collapsible: Streamlit remembers an
+    # expander the user collapsed earlier and would keep it shut.
+    st.subheader("Which company is this?")
+    _company_form()
+else:
+    with st.expander("Correct the company"):
+        _company_form()
 
 label, button_key = (
     ("Refresh", "intel-refresh") if intel else ("Research", "intel-research")
