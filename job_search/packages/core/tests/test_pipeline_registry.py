@@ -26,6 +26,9 @@ _EXCLUDED_FROM_RUN_BUTTON = {
     "generate-cover-letter",
     "generate-pitch",
     "render-artefacts",
+    "generate-question-bank",
+    "score-question-gaps",
+    "export-anki",
 }
 
 
