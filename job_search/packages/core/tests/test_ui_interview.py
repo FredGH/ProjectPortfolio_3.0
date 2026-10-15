@@ -258,7 +258,9 @@ class TestInterviewPage(unittest.TestCase):
         self.assertEqual(self.sent, [])
         self._click(app, "iv-confirm")
         self.assertTrue(self.sent[-1][1].endswith("/interview/bank/generate"))
-        self.assertEqual(self.sent[-1][2], {"category": "data_engineer"})
+        self.assertEqual(
+            self.sent[-1][2], {"category": "data_engineer", "confirm": True}
+        )
 
     def test_a_complete_bank_says_so(self) -> None:
         self.bank = {**_BANK, "work": []}

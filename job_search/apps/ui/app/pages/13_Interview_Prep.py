@@ -162,7 +162,7 @@ with bank_tab:
                         answer = _call(
                             "POST",
                             "/interview/bank/generate",
-                            json={"category": category},
+                            json={"category": category, "confirm": True},
                         )
                     except httpx.HTTPError as exc:
                         st.error(_plain(f"Generation failed: {exc}"))

@@ -132,7 +132,7 @@ def draft_answer(
                 {
                     "identity": pack.identity,
                     "question": json.dumps(question),
-                    "scaffold": scaffold,
+                    "scaffold": json.dumps(scaffold),
                     "evidence": render_evidence(pack),
                     "feedback": feedback,
                 },

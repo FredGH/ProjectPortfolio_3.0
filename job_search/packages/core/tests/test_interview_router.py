@@ -116,9 +116,26 @@ class TestInterviewRouter(unittest.TestCase):
             mock.patch(f"{_P}.service.generate_work", return_value=[result]),
         ):
             body = self.client.post(
-                "/interview/bank/generate", json={"category": "data_engineer"}
+                "/interview/bank/generate",
+                json={"category": "data_engineer", "confirm": True},
             ).json()
         self.assertEqual(body[0]["approved"], 18)
+
+    def test_generate_needs_confirmation_and_refuses_a_concurrent_run(self) -> None:
+        unconfirmed = self.client.post(
+            "/interview/bank/generate", json={"category": "c"}
+        )
+        self.assertEqual(unconfirmed.status_code, 422)
+        from app.routers import interview as router_module
+
+        router_module._GENERATING.add("c")
+        self.addCleanup(router_module._GENERATING.discard, "c")
+        with mock.patch(f"{_P}.service.generate_work") as generate:
+            busy = self.client.post(
+                "/interview/bank/generate", json={"category": "c", "confirm": True}
+            )
+        self.assertEqual(busy.status_code, 409)
+        generate.assert_not_called()
 
     def test_the_queue_carries_the_users_state(self) -> None:
         with mock.patch(f"{_P}.practice.build_queue", return_value=[_q()]):

@@ -157,8 +157,37 @@ class TestGenerateBank(unittest.TestCase):
     def test_the_cost_estimate_counts_batches(self) -> None:
         item = WorkItem(_CAT, "t", "technical", 25)
         self.assertEqual(
-            service.estimate_cost([item]), round(3 * service.COST_PER_BATCH_USD, 2)
+            service.estimate_cost([item]), round(4 * service.COST_PER_BATCH_USD, 2)
         )
+
+    def test_regenerating_a_forced_topic_does_not_repay_for_or_count_old_questions(
+        self,
+    ) -> None:
+        first = BankAdapter([_qs("a", 3)])
+        service.generate_work(
+            self.engine, self._work(topic="Topic A"), adapters={"anthropic": first}
+        )
+        store.reject_topic(self.engine, _CAT, "Topic A")
+        again = BankAdapter(
+            [_qs("a", 3), _qs("b", 3)]
+        )  # first reply repeats the old questions
+        work = self._work(topic="Topic A")
+        results = service.generate_work(
+            self.engine, work, adapters={"anthropic": again}
+        )
+        self.assertEqual(results[0].approved, 3)
+        self.assertEqual(store.approved_counts(self.engine)[(_CAT, "Topic A")], 3)
+        self.assertEqual(again.critic_calls, 1)  # the repeats were never re-judged
+
+    def test_force_plans_the_topic_as_empty_without_touching_it(self) -> None:
+        adapter = BankAdapter([_qs("a", 3)])
+        service.generate_work(
+            self.engine, self._work(topic="Topic A"), adapters={"anthropic": adapter}
+        )
+        self.assertEqual(self._work(topic="Topic A"), [])
+        forced = self._work(category=_CAT, topic="Topic A", force=True)
+        self.assertEqual([(w.topic, w.missing) for w in forced], [("Topic A", 3)])
+        self.assertEqual(store.approved_counts(self.engine)[(_CAT, "Topic A")], 3)
 
     def test_forcing_a_topic_rejects_the_old_questions_without_deleting(self) -> None:
         adapter = BankAdapter([_qs("a", 3)])

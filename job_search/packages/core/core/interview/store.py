@@ -145,20 +145,21 @@ def topic_questions(engine: Engine, category: str, topic: str) -> list[str]:
         topic: The topic.
 
     Returns:
-        Every non-rejected question text, oldest first.
+        Every stored question text (rejected ones included, so a regenerated
+        topic does not pay to re-judge a question it already has), oldest first.
     """
     with engine.begin() as conn:
         rows = conn.execute(
             text(
                 "SELECT question FROM interview.question_bank WHERE qa_category = :c "
-                "AND topic = :t AND status <> 'rejected' ORDER BY created_at, id"
+                "AND topic = :t ORDER BY created_at, id"
             ),
             {"c": category, "t": topic},
         ).all()
     return [r.question for r in rows]
 
 
-def insert_questions(engine: Engine, questions: list[NewQuestion]) -> int:
+def insert_questions(engine: Engine, questions: list[NewQuestion]) -> list[NewQuestion]:
     """Insert questions, skipping any that repeat a stored question.
 
     Args:
@@ -166,9 +167,10 @@ def insert_questions(engine: Engine, questions: list[NewQuestion]) -> int:
         questions: The questions to insert.
 
     Returns:
-        How many rows were actually inserted.
+        The questions actually inserted (a repeat of a stored question,
+        rejected ones included, is skipped and not returned).
     """
-    inserted = 0
+    inserted: list[NewQuestion] = []
     with engine.begin() as conn:
         for q in questions:
             result = conn.execute(
@@ -197,7 +199,8 @@ def insert_questions(engine: Engine, questions: list[NewQuestion]) -> int:
                     "cpv": q.critic_prompt_version,
                 },
             )
-            inserted += result.rowcount
+            if result.rowcount:
+                inserted.append(q)
     return inserted
 
 

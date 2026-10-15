@@ -246,6 +246,48 @@ class TestPractice(unittest.TestCase):
                 self.engine, self.other, pending.id, "remove", None
             )
 
+    def test_an_answer_written_during_a_draft_is_not_overwritten(self) -> None:
+        qid = self._id("Explain dbt models?")
+        good = _reply(
+            sentence_json("Here is the story.", "voice"),
+            sentence_json(
+                "I built dbt models for risk reporting.", sources=[cv_ref(0, 0)]
+            ),
+            sentence_json("It went well.", "voice"),
+        )
+        inner = ScriptedAdapter([good])
+        original = inner.complete
+
+        def complete(**kwargs: object):  # type: ignore[no-untyped-def]
+            if "strict fact-checker" not in kwargs["prompt"]:  # type: ignore[operator]
+                progress.save_written_answer(
+                    self.engine, self.user, qid, "Typed meanwhile."
+                )
+            return original(**kwargs)  # type: ignore[arg-type]
+
+        inner.complete = complete  # type: ignore[method-assign]
+        with self.assertRaises(practice.AnswerExistsError):
+            practice.draft_personal_answer(
+                self.engine, self.user, qid, adapters={"anthropic": inner}
+            )
+        self.assertEqual(
+            progress.get_progress(self.engine, self.user, qid).personal_answer,
+            "Typed meanwhile.",
+        )
+
+    def test_a_rejected_question_cannot_be_reviewed(self) -> None:
+        qid = self._id("Explain dbt models?")
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE interview.question_bank SET status = 'rejected' "
+                    "WHERE id = :i"
+                ),
+                {"i": qid},
+            )
+        with self.assertRaises(practice.UnknownQuestionError):
+            practice.review_question(self.engine, self.user, qid, 4, _NOW)
+
     def test_a_failed_draft_stores_nothing(self) -> None:
         from tests.company_intel_fixtures import FakeAdapter
 

@@ -19,7 +19,7 @@ from core.interview.sm2 import Sm2State, review
 from core.llm.types import LLMAdapter
 
 
-class AnswerExistsError(RuntimeError):
+class AnswerExistsError(progress.WrittenAnswerError):
     """The user wrote this answer themselves and did not confirm replacing it."""
 
 
@@ -121,7 +121,8 @@ def review_question(
         UnknownQuestionError: If the question is not an approved one.
         ValueError: If `quality` is not 0-5.
     """
-    if store.get_question(engine, question_id) is None:
+    question = store.get_question(engine, question_id)
+    if question is None or question.status != "approved":
         raise UnknownQuestionError(str(question_id))
     now = now or datetime.now(UTC)
     have = progress.get_progress(engine, user_id, question_id)
@@ -176,9 +177,18 @@ def draft_personal_answer(
         config_path=config_path,
     )
     if draft.status != "failed":
-        progress.save_draft(
-            engine, user_id, question_id, draft.text, draft.status, draft.open_sentences
-        )
+        try:
+            progress.save_draft(
+                engine,
+                user_id,
+                question_id,
+                draft.text,
+                draft.status,
+                draft.open_sentences,
+                replace_written=replace,
+            )
+        except progress.WrittenAnswerError as exc:
+            raise AnswerExistsError(str(exc)) from exc
     return draft
 
 

@@ -16,6 +16,10 @@ from core.interview.personal import OpenDraft
 from core.interview.sm2 import Sm2State
 
 
+class WrittenAnswerError(RuntimeError):
+    """A draft would replace an answer the user wrote themselves."""
+
+
 class StaleDecisionError(RuntimeError):
     """A decision no longer applies (already decided, or the text changed)."""
 
@@ -260,6 +264,8 @@ def save_draft(
     answer: str,
     status: str,
     open_sentences: list[OpenDraft],
+    *,
+    replace_written: bool = False,
 ) -> None:
     """Store a drafted answer and its open sentences.
 
@@ -270,17 +276,33 @@ def save_draft(
         answer: The drafted text.
         status: `drafted` or `needs_review`.
         open_sentences: Sentences awaiting the user's decision.
+        replace_written: Allow replacing an answer the user wrote themselves.
+
+    Raises:
+        WrittenAnswerError: If the user wrote their own answer meanwhile (the
+            draft took seconds) and `replace_written` is False; nothing is
+            stored.
     """
     with session_scope(engine, user_id=user_id) as conn:
-        conn.execute(
+        saved = conn.execute(
             text(
                 "INSERT INTO interview.user_question_progress (user_id, question_id, "
                 "personal_answer, answer_status) VALUES (:u, :q, :a, :s) "
                 "ON CONFLICT (user_id, question_id) DO UPDATE SET "
-                "personal_answer = :a, answer_status = :s"
+                "personal_answer = :a, answer_status = :s "
+                "WHERE interview.user_question_progress.answer_status <> 'written' "
+                "OR CAST(:replace AS boolean)"
             ),
-            {"u": user_id, "q": question_id, "a": answer, "s": status},
+            {
+                "u": user_id,
+                "q": question_id,
+                "a": answer,
+                "s": status,
+                "replace": replace_written,
+            },
         )
+        if saved.rowcount == 0:
+            raise WrittenAnswerError("you wrote this answer yourself meanwhile")
         conn.execute(
             text(
                 "UPDATE interview.personal_answer_open_sentence "

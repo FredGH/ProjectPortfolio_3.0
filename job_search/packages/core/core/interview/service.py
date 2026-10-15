@@ -36,6 +36,8 @@ from core.llm.types import LLMAdapter
 COST_PER_BATCH_USD = 0.08
 """Rough cost of one writer batch plus its critic call (measured on real runs)."""
 EXTRA_ROUNDS = 2
+ESTIMATE_EXTRA_ROUNDS = 1
+"""Rounds beyond the minimum that a real run typically needs (dedupe, rejects)."""
 
 
 @dataclass
@@ -70,10 +72,12 @@ def estimate_cost(work: list[WorkItem]) -> float:
         work: The incomplete topics.
 
     Returns:
-        A rough dollar figure: one writer batch plus critic call per ten
-        missing questions.
+        A rough upper-end dollar figure: one writer batch plus critic call per
+        ten missing questions, plus the extra rounds a topic may need.
     """
-    batches = sum(math.ceil(item.missing / BATCH_SIZE) for item in work)
+    batches = sum(
+        math.ceil(item.missing / BATCH_SIZE) + ESTIMATE_EXTRA_ROUNDS for item in work
+    )
     return round(batches * COST_PER_BATCH_USD, 2)
 
 
@@ -172,11 +176,11 @@ def generate_topic(
                     critic_prompt_version=judged.prompt_version,
                 )
             )
-        store.insert_questions(engine, rows)
-        approved = sum(1 for r in rows if r.status == "approved")
-        result.approved += approved
-        result.needs_review += len(rows) - approved
-        remaining -= approved
+        inserted = store.insert_questions(engine, rows)
+        stored_approved = [q for q in inserted if q.status == "approved"]
+        result.approved += len(stored_approved)
+        result.needs_review += len(inserted) - len(stored_approved)
+        remaining -= len(stored_approved)
         result.error = None
     if remaining > 0 and result.error is None:
         result.error = (
@@ -192,6 +196,7 @@ def pending_work(
     topic: str | None = None,
     config: TopicsConfig | None = None,
     categories: list[str] | None = None,
+    force: bool = False,
 ) -> tuple[list[WorkItem], list[str]]:
     """Work out what still needs generating, without spending anything.
 
@@ -201,14 +206,19 @@ def pending_work(
         topic: Restrict to one topic of that category.
         config: Topics config override (tests).
         categories: Active categories override (tests).
+        force: Plan `category`/`topic` as if it had no approved questions (what
+            regenerating it will need), without touching anything yet.
 
     Returns:
         `(work, unconfigured)` as `plan_work` returns them.
     """
+    counts = store.approved_counts(engine)
+    if force and category and topic:
+        counts.pop((category, topic), None)
     return plan_work(
         config or load_topics_config(),
         categories if categories is not None else active_categories(),
-        store.approved_counts(engine),
+        counts,
         only_category=category,
         only_topic=topic,
     )

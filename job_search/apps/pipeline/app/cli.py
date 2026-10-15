@@ -1574,8 +1574,13 @@ def _cmd_generate_question_bank(args: argparse.Namespace) -> int:
         except EOFError:
             answer = ""
         if answer.strip().lower() not in ("y", "yes"):
-            print("generate-question-bank: cancelled, nothing spent")
+            print("generate-question-bank: cancelled, nothing spent or changed")
             return 1
+    if args.force_topic:
+        rejected = interview_store.reject_topic(engine, args.category, args.topic)
+        print(
+            f"generate-question-bank: marked {rejected} existing question(s) rejected"
+        )
     http_client = httpx.Client(timeout=300.0)
     try:
         results = interview_service.generate_work(

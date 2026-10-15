@@ -6,6 +6,7 @@ The bank is shared; answers, progress and decisions are per user via
 
 from __future__ import annotations
 
+import threading
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -24,6 +25,8 @@ from core.interview.anki import export_anki
 from core.llm.types import LLMAdapter
 
 router = APIRouter()
+_GENERATING: set[str] = set()
+_GENERATING_LOCK = threading.Lock()
 
 
 class BankRow(BaseModel):
@@ -55,10 +58,17 @@ class BankView(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    """Request body for bank generation."""
+    """Request body for bank generation (it spends money, so it must confirm).
+
+    Attributes:
+        category: The role family.
+        topic: One topic of it, or None for every missing topic.
+        confirm: Must be true: the caller has shown the user the cost.
+    """
 
     category: str
     topic: str | None = None
+    confirm: Literal[True]
 
 
 class TopicResultModel(BaseModel):
@@ -222,9 +232,23 @@ def generate_bank(
 
     Returns:
         One result per topic generated; empty when nothing was missing.
+
+    Raises:
+        HTTPException: 409 when this role family is already being generated;
+            422 when `confirm` is not true.
     """
-    work, _ = service.pending_work(engine, category=body.category, topic=body.topic)
-    results = service.generate_work(engine, work, adapters=adapters)
+    with _GENERATING_LOCK:
+        if body.category in _GENERATING:
+            raise HTTPException(
+                status_code=409, detail="this role family is already being generated"
+            )
+        _GENERATING.add(body.category)
+    try:
+        work, _ = service.pending_work(engine, category=body.category, topic=body.topic)
+        results = service.generate_work(engine, work, adapters=adapters)
+    finally:
+        with _GENERATING_LOCK:
+            _GENERATING.discard(body.category)
     return [
         TopicResultModel(
             category=r.category,

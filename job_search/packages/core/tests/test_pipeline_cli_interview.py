@@ -73,7 +73,7 @@ class TestGenerateQuestionBank(unittest.TestCase):
             results=results,
         )
         self.assertEqual(code, 0)
-        self.assertIn("estimated cost about $0.24", text)
+        self.assertIn("estimated cost about $0.32", text)
         self.assertIn("30 approved", text)
         mocks.generate.assert_called_once()
 
