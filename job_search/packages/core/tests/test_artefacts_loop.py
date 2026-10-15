@@ -214,6 +214,32 @@ class TestRetriesAndFailures(unittest.TestCase):
         self.assertIn("words", adapter.prompts[1])
         self.assertEqual(adapter.critic_calls, 1)
 
+    def test_a_failed_run_keeps_no_document_even_after_earlier_attempts(self) -> None:
+        bad = padded_letter_json(
+            evidence=[sentence_json("I led 40 engineers.", sources=[cv_ref(0, 0)])]
+        )
+        result = _run(ScriptedAdapter([bad, bad, "junk"]))
+        self.assertEqual(result.status, "failed")
+        self.assertIsNone(result.document)
+
+    def test_a_claim_about_the_candidate_backed_only_by_the_posting_is_caught(
+        self,
+    ) -> None:
+        pack = make_pack()
+        pack.items["job:posting"] = Evidence(
+            "job:posting", "x", "We want 5 years leading data teams"
+        )
+        bad = padded_letter_json(
+            evidence=[
+                sentence_json(
+                    "I have 5 years leading data teams.", sources=["job:posting"]
+                )
+            ]
+        )
+        result = _run(ScriptedAdapter([bad]), pack=pack)
+        self.assertEqual(result.status, "needs_review")
+        self.assertIn("CV", result.open_sentences[0].issue)
+
     def test_a_missing_paragraph_after_every_retry_fails_with_the_structure_problem(
         self,
     ) -> None:

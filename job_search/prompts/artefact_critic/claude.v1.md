@@ -7,6 +7,7 @@ Below is a JSON list of sentences. Each has an id, a "kind", the sentence "text"
 
 For EACH item decide:
 - kind "claim": does EVERYTHING the sentence says follow from its sources? Rewording and emphasis are fine. It is NOT supported if it adds any metric, number, percentage, technology, tool, scale, team size, ownership, seniority, scope, outcome, employer or fact about the company that its sources do not state. Praise or opinions about the company that no source supports are unsupported too.
+- A claim about what the candidate did, led or knows must be backed by CV evidence. A source that merely states what the job posting asks for does not show the candidate did it.
 - kind "voice": a greeting, enthusiasm or closing line. It is supported ONLY if it states no fact at all (no number, name, skill, employer or claim about the candidate or the company). If it hides a fact, it is not supported.
 - Also, a sentence that names a company other than the target company as the one being applied to is not supported.
 

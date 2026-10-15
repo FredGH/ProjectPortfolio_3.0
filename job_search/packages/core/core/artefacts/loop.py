@@ -118,7 +118,7 @@ def _open_drafts(
     return drafts
 
 
-def generate(
+def _run_loop(
     kind: Kind,
     pack: EvidencePack,
     *,
@@ -239,4 +239,39 @@ def generate(
     result.open_sentences = _open_drafts(document, blocking)
     result.status = "needs_review"
     result.error = None
+    return result
+
+
+def generate(
+    kind: Kind,
+    pack: EvidencePack,
+    *,
+    adapters: dict[str, LLMAdapter],
+    today: date,
+    config_path: Path | None = None,
+) -> Generation:
+    """Generate a letter or a pitch, checked end to end.
+
+    A failed run keeps no document: one that was never fully judged must not
+    be stored or shown as if it were a result.
+
+    Args:
+        kind: `cover_letter` or `pitch`.
+        pack: The evidence pack.
+        adapters: LLM adapters by provider; must include `anthropic`.
+        today: The date shown on a letter.
+        config_path: Task-config override (tests).
+
+    Returns:
+        The outcome of `_run_loop`, with `document` cleared when it failed.
+
+    Raises:
+        core.artefacts.critic.CriticConfigError: If the critic is not routed
+            to Anthropic (checked before anything is spent).
+    """
+    result = _run_loop(
+        kind, pack, adapters=adapters, today=today, config_path=config_path
+    )
+    if result.status == "failed":
+        result.document = None
     return result

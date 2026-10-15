@@ -19,6 +19,7 @@ from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
 from tests.tailoring_fixtures import make_truth_base
 
 from core.artefacts import service
+from core.artefacts.decisions import DecisionError
 from core.cv.store import write_truth_base
 
 _COMPANY = "Zzfixture Artefacts Ltd"
@@ -149,6 +150,19 @@ class TestGenerateArtefact(unittest.TestCase):
         )
         self.assertEqual(decided.status, "approved")
         self.assertNotIn("on my own", json.dumps(decided.content))
+
+    def test_a_decision_with_another_jobs_id_is_refused(self) -> None:
+        stored = self._generate(self._exaggerated())
+        with self.assertRaises(DecisionError):
+            service.decide(
+                self.engine,
+                self.user,
+                "cover_letter",
+                stored.open_sentences[0].id,
+                make_job(job_group_id="zzfixture-other-job", company=_COMPANY),
+                action="remove",
+                evidence_ref=None,
+            )
 
     def test_a_user_without_a_cv_cannot_generate(self) -> None:
         with self.assertRaises(service.NoCvError):

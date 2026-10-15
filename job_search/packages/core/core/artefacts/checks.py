@@ -32,6 +32,7 @@ SENTENCE_CODES = frozenset(
         "number_not_in_sources",
         "voice_with_digits",
         "voice_too_long",
+        "evidence_without_cv",
     }
 )
 """Problems that belong to one sentence (`Problem.sentence_id` is set)."""
@@ -97,7 +98,7 @@ def _sentence_problems(doc: CoverLetter | Pitch, pack: EvidencePack) -> list[Pro
         The sentence-level problems.
     """
     problems: list[Problem] = []
-    for _section, _index, sentence in iter_sentences(doc):
+    for section, _index, sentence in iter_sentences(doc):
         if sentence.kind == "composed":
             continue
         if sentence.kind == "voice":
@@ -138,6 +139,16 @@ def _sentence_problems(doc: CoverLetter | Pitch, pack: EvidencePack) -> list[Pro
                 )
             )
             continue
+        if section == "evidence" and not any(s.startswith("cv:") for s in valid):
+            problems.append(
+                Problem(
+                    "evidence_without_cv",
+                    f"{sentence.text!r} is in the evidence paragraph but rests on "
+                    "no CV source; the posting and the company site only evidence "
+                    "the job and the company, never what you did",
+                    sentence.id,
+                )
+            )
         known = set().union(*(_numbers(t) for t in pack.texts(valid)))
         invented = sorted(_numbers(sentence.text) - known)
         if invented:

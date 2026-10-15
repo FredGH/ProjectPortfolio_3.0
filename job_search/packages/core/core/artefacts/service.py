@@ -129,6 +129,8 @@ def decide(
     loaded = load_pack(engine, user_id, job)
     if artefact is None or artefact.content is None or loaded is None:
         raise DecisionError("this document is not available - reload")
+    if artefact.job_group_id != job.job_group_id:
+        raise DecisionError("this sentence belongs to a different job - reload")
     model = CoverLetter if kind == "cover_letter" else Pitch
     base = model.model_validate(artefact.content)
     updated = apply_decision(
