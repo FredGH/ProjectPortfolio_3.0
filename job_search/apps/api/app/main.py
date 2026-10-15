@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 
 from app.routers import (
+    artefacts,
     classification,
     cv,
     dedup,
@@ -31,6 +32,7 @@ app.include_router(scoring.router)
 app.include_router(pipeline.router)
 app.include_router(tailoring.router)
 app.include_router(intel.router)
+app.include_router(artefacts.router)
 
 
 @app.get("/health")

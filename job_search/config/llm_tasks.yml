@@ -77,3 +77,15 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  artefact_letter:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  artefact_pitch:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  artefact_critic:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude

@@ -1346,6 +1346,8 @@ the stored company intel (`intel.company_intel`) and the job's competitive angle
 through `get_or_refresh_intel` / `get_or_create_angle` in `core.company_intel`,
 so the cover letter and the pitch draw on the same research that 19a persists.
 
+**As built.** A shared sentence-evidence engine (`core.artefacts`): every factual sentence cites cv/job/site evidence (only saved, site-cited intel facts: the snapshot, competitors and competitive angle are model knowledge and are never evidence), the title lines are composed by code, a Claude prose critic (`artefact_critic`, asserted Claude-only) judges the rest, at most two retries, and untraced sentences go to the user as link/remove decisions (`artefacts.artefact_open_sentence`). Tables `artefacts.artefact_cover_letter` and `artefacts.artefact_pitch`; page `12_Cover_Letter_and_Pitch`. Generation reads saved research only and never researches. The rubric eval harness for cover letters is a follow-up.
+
 ---
 
 # Phase 5 — Market intelligence and interface

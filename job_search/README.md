@@ -693,3 +693,13 @@ what you knew in March stays explicable. `--force` researches again, `--no-angle
 skips the angle. The same is available on the **Company Intel** page of the UI (its Research/Refresh button asks you to confirm the cost, about $0.08-0.10, before calling Claude)
 (`/Company_Intel?job=<job_group_id>`, which `render-cv`'s `job_spec.md` links to).
 Companies House, GitHub signals, news and sentiment are follow-ups.
+
+## Cover letter and pitch (Step 19)
+
+`generate-cover-letter` and `generate-pitch` write a checked letter and a 30/60/90-second pitch for a job, from your CV, the job posting and the **saved** company research (they never research a company themselves):
+
+    docker compose run --rm pipeline generate-cover-letter --user-id <id> --job-group-id <job_group_id>
+    docker compose run --rm pipeline generate-pitch --user-id <id> --job-group-id <job_group_id>
+    docker compose run --rm pipeline render-artefacts --user-id <id> --job-group-id <job_group_id>
+
+Every factual sentence cites its sources (a CV bullet, the posting, or a site fact). Code checks that the cited ids exist, that every number in a claim appears in a cited source, and that the exact job title is in the rendered text; a Claude critic then judges each sentence; the writer gets at most two retries. A sentence that is still untraced is shown for **your** decision (link it to a source or remove it), and a document is approved only when none is left. The **Cover Letter & Pitch** page (`/Cover_Letter_and_Pitch?job=<job_group_id>`) does the same with a cost confirmation (about $0.05-0.10 for the letter, $0.10-0.20 for the pitch); `render-artefacts` writes the approved letter (`.docx`, `.txt`, `.pdf`) and the pitch script beside the CV.

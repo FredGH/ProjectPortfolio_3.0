@@ -23,6 +23,11 @@ from pathlib import Path
 
 import httpx
 
+from core.artefacts.render import RenderError as ArtefactRenderError
+from core.artefacts.render import render_cover_letter_files, render_pitch_file
+from core.artefacts.schema import CoverLetter, Pitch
+from core.artefacts.service import NoCvError, NoTargetTitleError, generate_artefact
+from core.artefacts.store import read_latest as read_latest_artefact
 from core.classification.write_job_category import write_job_category
 from core.company_intel.angle import get_or_create_angle
 from core.company_intel.config import load_config as load_company_intel_config
@@ -1413,6 +1418,114 @@ def _cmd_render_cv(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_generate_artefact(args: argparse.Namespace, kind: str) -> int:
+    """Run `generate-cover-letter` / `generate-pitch` (Step 19).
+
+    On demand, not a batch stage, so absent from the pipeline dashboard.
+
+    Args:
+        args: Parsed CLI arguments: `user_id` and `job_group_id`.
+        kind: `cover_letter` or `pitch`.
+
+    Returns:
+        0 when the result is approved or needs review; 1 when the job is
+        unknown, the CV or title is missing, or the run failed.
+    """
+    command = f"generate-{kind.replace('_', '-')}"
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    job = load_job_context(engine, args.job_group_id)
+    if job is None:
+        print(f"{command}: no such job {args.job_group_id}")
+        return 1
+    http_client = httpx.Client(timeout=300.0)
+    try:
+        stored = generate_artefact(
+            engine, args.user_id, kind, job, adapters=_build_llm_adapters(http_client)  # type: ignore[arg-type]
+        )
+    except (NoCvError, NoTargetTitleError) as exc:
+        print(f"{command}: {exc}")
+        return 1
+    finally:
+        http_client.close()
+    pending = sum(1 for s in stored.open_sentences if s.status == "pending")
+    print(
+        f"{command} {kind} {stored.status}: {stored.target_title} — "
+        f"{pending} sentence(s) awaiting your decision"
+    )
+    if stored.status == "failed":
+        print(f"error: {stored.error_message}")
+        return 1
+    return 0
+
+
+def _cmd_render_artefacts(args: argparse.Namespace) -> int:
+    """Run `render-artefacts`: write the approved letter and pitch beside the CV.
+
+    Args:
+        args: Parsed CLI arguments: `user_id`, `job_group_id`, `out_dir`,
+            `ats_only`.
+
+    Returns:
+        0 when at least one file was written; 1 when there was nothing to
+        render or a file failed verification.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    job = load_job_context(engine, args.job_group_id)
+    if job is None:
+        print(f"render-artefacts: no such job {args.job_group_id}")
+        return 1
+    renderable = []
+    for kind in ("cover_letter", "pitch"):
+        stored = read_latest_artefact(engine, args.user_id, kind, args.job_group_id)  # type: ignore[arg-type]
+        if stored is None:
+            continue
+        if stored.status != "approved" or stored.content is None:
+            print(
+                f"render-artefacts: the {kind} is {stored.status}; "
+                "only an approved one is rendered"
+            )
+            continue
+        renderable.append((kind, stored))
+    if not renderable:
+        print("render-artefacts: nothing to render; generate and approve one first")
+        return 1
+    run_id = latest_run_id(engine, args.user_id, args.job_group_id, status="approved")
+    run = read_run(engine, args.user_id, run_id) if run_id is not None else None
+    first_kind, first = renderable[0]
+    created = run.created_at if run is not None else first.created_at
+    model = CoverLetter if first_kind == "cover_letter" else Pitch
+    out_dir = cv_directory(
+        Path(args.out_dir),
+        model.model_validate(first.content).sender,
+        created,
+        first.target_title,
+        job.company,
+    )
+    written: list[Path] = []
+    try:
+        for kind, stored in renderable:
+            if kind == "cover_letter":
+                files = render_cover_letter_files(
+                    CoverLetter.model_validate(stored.content),
+                    out_dir,
+                    with_pdf=not args.ats_only,
+                )
+                written += [
+                    p for p in (files.docx_path, files.txt_path, files.pdf_path) if p
+                ]
+            else:
+                written.append(
+                    render_pitch_file(Pitch.model_validate(stored.content), out_dir)
+                )
+    except ArtefactRenderError as exc:
+        print(f"render-artefacts: {exc}")
+        return 1
+    print("render-artefacts complete: " + " ".join(str(p) for p in written))
+    return 0
+
+
 def _cmd_research_company(args: argparse.Namespace) -> int:
     """Run the `research-company` subcommand: research a job's company (Step 19a).
 
@@ -1875,6 +1988,36 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the ATS .docx and .txt, not the designed PDF",
     )
 
+    letter_parser = subparsers.add_parser(
+        "generate-cover-letter",
+        help="Write a checked cover letter for a job (PLAN.md Step 19); on "
+        "demand, not a pipeline stage",
+    )
+    pitch_parser = subparsers.add_parser(
+        "generate-pitch",
+        help="Write a checked 30/60/90 second pitch for a job (PLAN.md Step 19); "
+        "on demand, not a pipeline stage",
+    )
+    render_artefacts_parser = subparsers.add_parser(
+        "render-artefacts",
+        help="Write the approved cover letter and pitch beside the CV (PLAN.md "
+        "Step 19); on demand, not a pipeline stage",
+    )
+    for artefact_parser in (letter_parser, pitch_parser, render_artefacts_parser):
+        artefact_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+        artefact_parser.add_argument("--job-group-id", required=True)
+    render_artefacts_parser.add_argument(
+        "--out-dir",
+        default="output",
+        help="Root folder; files go to "
+        "<root>/<first_last>/<YYYY-MM>/<job_title>/<company>/",
+    )
+    render_artefacts_parser.add_argument(
+        "--ats-only",
+        action="store_true",
+        help="Write only the .docx and .txt, not the PDF",
+    )
+
     research_parser = subparsers.add_parser(
         "research-company",
         help="Research a job's company (site crawl, competitors, competitive "
@@ -1949,6 +2092,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_tailor_cv(args)
     if args.command == "render-cv":
         return _cmd_render_cv(args)
+    if args.command == "generate-cover-letter":
+        return _cmd_generate_artefact(args, "cover_letter")
+    if args.command == "generate-pitch":
+        return _cmd_generate_artefact(args, "pitch")
+    if args.command == "render-artefacts":
+        return _cmd_render_artefacts(args)
     if args.command == "research-company":
         return _cmd_research_company(args)
     if args.command == "run-evals":
