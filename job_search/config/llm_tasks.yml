@@ -89,3 +89,11 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  interview_questions:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
+  interview_critic:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude
