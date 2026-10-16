@@ -714,6 +714,18 @@ The **Market Marts** page (`./scripts/demo_market_ui.sh`, then `/Market_Marts`) 
 
 Add a source to `source_panel.csv` (with the date it started) when you add a connector, and add a row to `query_matrix_versions.csv` whenever you change the keyword x region matrix: trend lines then break visibly instead of showing a false jump. Trend metrics are NULL ("insufficient history") until a comparable period exists; salary figures always carry `n_postings`, `n_disclosed` and `disclosure_rate`.
 
+## Emergent roles and AI transformation (Step 21b)
+
+Finds job titles forming **outside your categories** in the wide *discovery* corpus, and measures how AI work is entering existing categories. Every name is a hypothesis; nothing is promoted into your taxonomy.
+
+    cd dbt && ../venv-dbt/bin/dbt build --profiles-dir . --select int_market_job+ discovery_job   # macro marts + the discovery corpus
+    # Ollama must be running (docker compose up -d ollama; set OLLAMA_BASE_URL=http://localhost:11435 from the host)
+    python -m app.cli build-emergent-titles        # canonical titles; agencies and title inflation removed first
+    python -m app.cli cluster-emergent-roles       # embeddings + HDBSCAN, candidates, hybridity (needs scikit-learn)
+    python -m app.cli name-emergent-roles          # Claude names candidates; asks first; refuses a preview run
+
+The **Emergent Roles** page (`./scripts/demo_emergent_ui.sh`, then `/Emergent_Roles`) shows the maturity status, the clusters and the confirm/dismiss queue (a reason is required). **Below the maturity threshold** (`config/emergent.yml`: 90 days of history, 4 weekly periods) no novelty index is shown and the output is labelled *preview - history too short, not a finding*; employer breadth (5 distinct non-agency employers) is a hard floor before anything is a candidate. The macro marts (`fct_ai_penetration`, `fct_role_drift`, `fct_ai_skill_migration`, `fct_displacement_language`) appear on the Market Marts page's **AI transformation** tab.
+
 ## Interview question bank (Step 20)
 
 A shared bank of technical and behavioural interview questions with model answers per role family (`qa_category`, read from `config/category_map.yml`; topics from `config/interview_topics.yml`), plus your own CV-grounded answers, spaced repetition and an Anki export. Generation is on demand, asks before spending, and never repeats finished work:
