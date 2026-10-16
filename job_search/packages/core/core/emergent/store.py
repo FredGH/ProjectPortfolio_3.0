@@ -453,3 +453,22 @@ def top_skills(engine: Engine, job_group_ids: list[str], limit: int = 8) -> list
             {"ids": job_group_ids, "n": limit},
         ).all()
     return [r.canonical_label for r in rows]
+
+
+def candidate_exists(engine: Engine, candidate_id: uuid.UUID) -> bool:
+    """Say whether a named candidate exists.
+
+    Args:
+        engine: The app-role engine.
+        candidate_id: The candidate's id.
+
+    Returns:
+        True when a `role_candidate` row has that id.
+    """
+    with engine.begin() as conn:
+        return bool(
+            conn.execute(
+                text("SELECT 1 FROM emergent.role_candidate WHERE id = :i"),
+                {"i": candidate_id},
+            ).first()
+        )
