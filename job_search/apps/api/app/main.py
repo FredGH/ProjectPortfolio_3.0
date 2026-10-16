@@ -15,6 +15,7 @@ from app.routers import (
     intel,
     interview,
     market,
+    offers,
     pipeline,
     scoring,
     skills,
@@ -39,6 +40,7 @@ app.include_router(artefacts.router)
 app.include_router(interview.router)
 app.include_router(market.router)
 app.include_router(emergent.router)
+app.include_router(offers.router)
 
 
 @app.get("/health")

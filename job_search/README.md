@@ -714,6 +714,12 @@ The **Market Marts** page (`./scripts/demo_market_ui.sh`, then `/Market_Marts`) 
 
 Add a source to `source_panel.csv` (with the date it started) when you add a connector, and add a row to `query_matrix_versions.csv` whenever you change the keyword x region matrix: trend lines then break visibly instead of showing a false jump. Trend metrics are NULL ("insufficient history") until a comparable period exists; salary figures always carry `n_postings`, `n_disclosed` and `disclosure_rate`.
 
+## Offer check (Step 21c)
+
+When an offer arrives, the **Offer Check** page (`./scripts/demo_offers_ui.sh`, then `/Offer_Check`) says where it sits among the collected postings that state pay: its percentile, the 25th/median/75th, the comparable postings and the six-month direction. It never shows a bare number: `n_disclosed`, the posting count and the disclosure rate are always there, and when no slice has 10 disclosed figures (`config/offers.yml`) you get "too thin" and **no percentile**. The check tries the narrowest slice (category, region, seniority, IR35) and widens until one has enough data, listing every step.
+
+For a contract offer with a known IR35 status it also estimates take-home per year and per day, and **Compare two offers** puts an inside-IR35 rate next to an outside one. The figures come from `config/uk_tax.yml` (2025/26 values marked `verified: false`: check them against HMRC): an estimate, not tax advice. Saved offers are per user (`offers.offer_received`); linking them to applications comes with `fct_application`. Build the pool first: `dbt build --select offer_benchmark_pool`.
+
 ## Emergent roles and AI transformation (Step 21b)
 
 Finds job titles forming **outside your categories** in the wide *discovery* corpus, and measures how AI work is entering existing categories. Every name is a hypothesis; nothing is promoted into your taxonomy.
