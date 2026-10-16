@@ -1,0 +1,37 @@
+# Topics per qa_category for the interview question bank (PLAN.md Step 20).
+# The active categories come from config/category_map.yml (qa_category_map);
+# a category listed there with no block here is reported and skipped, never
+# guessed. Adding a topic generates only that topic's questions.
+target_per_topic: 30
+behavioural_per_category: 8
+categories:
+  software_engineer:
+    topics:
+      - Data structures and algorithms
+      - Language and runtime fundamentals
+      - System design and scalability
+      - Testing, CI/CD and code quality
+  data_engineer:
+    topics:
+      - SQL and data modelling
+      - Pipelines and orchestration
+      - Cloud data platforms and warehousing
+      - Data quality, reliability and system design
+  data_scientist:
+    topics:
+      - Statistics and experimentation
+      - Machine learning fundamentals
+      - Feature engineering and model evaluation
+      - Python, SQL and communicating results
+  ai_engineer:
+    topics:
+      - LLM fundamentals and prompting
+      - Retrieval and RAG systems
+      - Evaluation, safety and monitoring
+      - Deploying and scaling ML systems
+  forward_deployed_engineer:
+    topics:
+      - Customer discovery and scoping
+      - Integration and data plumbing
+      - Debugging in the field
+      - Communicating with technical and non-technical stakeholders

@@ -237,7 +237,9 @@ class TestAssemble(unittest.TestCase):
     def test_summary_highlights_are_real_phrases_in_text_order(
         self,
     ) -> None:
-        text = "Builds dbt pipelines on Snowflake, leads teams and ships dashboards fast."
+        text = (
+            "Builds dbt pipelines on Snowflake, leads teams and ships dashboards fast."
+        )
         output = TailorOutput(
             summary=TailorSummary(
                 text=text,
@@ -256,7 +258,14 @@ class TestAssemble(unittest.TestCase):
         summary = assemble(self.truth_base, output, target_title=TITLE).summary
         self.assertEqual(
             summary.highlights,
-            ["dbt pipelines", "Snowflake", "leads teams", "ships", "dashboards", "fast"],
+            [
+                "dbt pipelines",
+                "Snowflake",
+                "leads teams",
+                "ships",
+                "dashboards",
+                "fast",
+            ],
         )
 
     def test_summary_highlights_are_capped_at_the_maximum(self) -> None:

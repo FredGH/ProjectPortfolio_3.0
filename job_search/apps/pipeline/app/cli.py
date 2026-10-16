@@ -52,6 +52,11 @@ from core.ingestion.rate_limiter import TokenBucket
 from core.ingestion.reed_connector import ReedConnector, ReedQuery
 from core.ingestion.runner import run_connector
 from core.ingestion.sources_config import load_sources_config
+from core.interview import practice as interview_practice
+from core.interview import service as interview_service
+from core.interview import store as interview_store
+from core.interview.anki import export_anki
+from core.interview.progress import list_progress as list_interview_progress
 from core.llm.adapters.anthropic import AnthropicAdapter
 from core.llm.adapters.ollama import OllamaAdapter
 from core.llm.types import LLMAdapter
@@ -1526,6 +1531,117 @@ def _cmd_render_artefacts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_generate_question_bank(args: argparse.Namespace) -> int:
+    """Run `generate-question-bank` (Step 20): fill the shared interview bank.
+
+    On demand, not a batch stage. It prints the work and a cost estimate and
+    asks before spending anything; topics that already have their questions
+    are skipped, so it is safe to run again.
+
+    Args:
+        args: Parsed CLI arguments: `category`, `topic`, `force_topic`, `yes`.
+
+    Returns:
+        0 when everything asked for was generated or nothing was needed; 1
+        when a topic stopped with an error, the answer was no, or the
+        arguments are inconsistent.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    if args.force_topic:
+        if not (args.category and args.topic):
+            print("generate-question-bank: --force-topic needs --category and --topic")
+            return 1
+        rejected = interview_store.reject_topic(engine, args.category, args.topic)
+        print(
+            f"generate-question-bank: marked {rejected} existing question(s) rejected"
+        )
+    work, unconfigured = interview_service.pending_work(
+        engine, category=args.category, topic=args.topic
+    )
+    for category in unconfigured:
+        print(f"generate-question-bank: no topics configured for {category}; skipped")
+    if not work:
+        print("generate-question-bank: nothing to generate")
+        return 0
+    for item in work:
+        print(f"  {item.category} / {item.topic}: {item.missing} to generate")
+    cost = interview_service.estimate_cost(work)
+    print(f"generate-question-bank: estimated cost about ${cost:.2f} (Claude)")
+    if not args.yes:
+        try:
+            answer = input("Continue? [y/N] ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            print("generate-question-bank: cancelled, nothing spent or changed")
+            return 1
+    if args.force_topic:
+        rejected = interview_store.reject_topic(engine, args.category, args.topic)
+        print(
+            f"generate-question-bank: marked {rejected} existing question(s) rejected"
+        )
+    http_client = httpx.Client(timeout=300.0)
+    try:
+        results = interview_service.generate_work(
+            engine, work, adapters=_build_llm_adapters(http_client)
+        )
+    finally:
+        http_client.close()
+    failed = False
+    for r in results:
+        print(
+            f"  {r.category} / {r.topic}: {r.approved} approved, "
+            f"{r.needs_review} need review, {r.rounds} round(s)"
+            + (f" - {r.error}" if r.error else "")
+        )
+        failed = failed or bool(r.error)
+    return 1 if failed else 0
+
+
+def _cmd_score_question_gaps(args: argparse.Namespace) -> int:
+    """Run `score-question-gaps` (Step 20): score a user's CV gaps.
+
+    Args:
+        args: Parsed CLI arguments: `user_id` and `category`.
+
+    Returns:
+        0 on success; 1 when the user has no CV.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    try:
+        scored = interview_practice.refresh_gaps(engine, args.user_id, args.category)
+    except interview_practice.NoCvError as exc:
+        print(f"score-question-gaps: {exc}")
+        return 1
+    print(f"score-question-gaps complete: {scored} question(s) scored")
+    return 0
+
+
+def _cmd_export_anki(args: argparse.Namespace) -> int:
+    """Run `export-anki` (Step 20): write an Anki import file.
+
+    Args:
+        args: Parsed CLI arguments: `user_id`, `category` and `out`.
+
+    Returns:
+        0 when the file was written; 1 when there are no approved questions.
+    """
+    settings = get_settings()
+    engine = build_engine(settings.app_database_url)
+    questions = interview_store.list_questions(engine, args.category)
+    if not questions:
+        print("export-anki: no approved questions; run generate-question-bank first")
+        return 1
+    content = export_anki(questions, list_interview_progress(engine, args.user_id))
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(content, encoding="utf-8")
+    print(f"export-anki complete: {len(questions)} note(s) written to {out}")
+    return 0
+
+
 def _cmd_research_company(args: argparse.Namespace) -> int:
     """Run the `research-company` subcommand: research a job's company (Step 19a).
 
@@ -2018,6 +2134,37 @@ def main(argv: list[str] | None = None) -> int:
         help="Write only the .docx and .txt, not the PDF",
     )
 
+    bank_parser = subparsers.add_parser(
+        "generate-question-bank",
+        help="Generate the shared interview question bank, per category/topic "
+        "(PLAN.md Step 20); on demand, not a pipeline stage",
+    )
+    bank_parser.add_argument("--category")
+    bank_parser.add_argument("--topic")
+    bank_parser.add_argument(
+        "--force-topic",
+        action="store_true",
+        help="Reject a topic's existing questions and generate it again",
+    )
+    bank_parser.add_argument(
+        "--yes", action="store_true", help="Skip the cost confirmation prompt"
+    )
+    gaps_parser = subparsers.add_parser(
+        "score-question-gaps",
+        help="Score a user's CV gaps against the question bank (PLAN.md Step 20); "
+        "on demand, not a pipeline stage",
+    )
+    gaps_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    gaps_parser.add_argument("--category")
+    anki_parser = subparsers.add_parser(
+        "export-anki",
+        help="Write an Anki import file of the bank and your answers (PLAN.md "
+        "Step 20); on demand, not a pipeline stage",
+    )
+    anki_parser.add_argument("--user-id", required=True, type=uuid.UUID)
+    anki_parser.add_argument("--category")
+    anki_parser.add_argument("--out", default="output/interview_bank.txt")
+
     research_parser = subparsers.add_parser(
         "research-company",
         help="Research a job's company (site crawl, competitors, competitive "
@@ -2098,6 +2245,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_generate_artefact(args, "pitch")
     if args.command == "render-artefacts":
         return _cmd_render_artefacts(args)
+    if args.command == "generate-question-bank":
+        return _cmd_generate_question_bank(args)
+    if args.command == "score-question-gaps":
+        return _cmd_score_question_gaps(args)
+    if args.command == "export-anki":
+        return _cmd_export_anki(args)
     if args.command == "research-company":
         return _cmd_research_company(args)
     if args.command == "run-evals":

@@ -19,11 +19,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
-from tests.tailoring_fixtures import (
-    bullet_id,
-    forbid_real_ollama,
-    make_truth_base,
-)
+from tests.tailoring_fixtures import bullet_id, forbid_real_ollama, make_truth_base
 
 from core.cv.store import write_truth_base
 from core.llm.adapters.anthropic import AnthropicAdapter

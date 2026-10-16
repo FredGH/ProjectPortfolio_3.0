@@ -77,7 +77,9 @@ class TestPipelineRouter(unittest.TestCase):
         response = self.client.get(f"/pipeline/stages?user_id={user_id}")
         self.assertEqual(response.status_code, 200)
         rows = response.json()
-        self.assertIn("classify-jobs", {r["name"] for r in rows if r["kind"] == "automated"})
+        self.assertIn(
+            "classify-jobs", {r["name"] for r in rows if r["kind"] == "automated"}
+        )
         review = {r["key"]: r["name"] for r in rows if r["kind"] == "review"}
         self.assertEqual(review["dedup-review"], "Dedup Review")
 
@@ -138,7 +140,9 @@ class TestPipelineRouter(unittest.TestCase):
         # via POST has already finished; hold a genuinely active run via the
         # runner instead so the endpoint really returns a snapshot.
         run_id = self._start(stage="enrich-engagement-terms", user_id=None, params={})
-        active = self.client.get("/pipeline/stages/enrich-engagement-terms/active").json()
+        active = self.client.get(
+            "/pipeline/stages/enrich-engagement-terms/active"
+        ).json()
         self.assertIsNotNone(active)
         self.assertEqual(active["run_id"], str(run_id))
         self.assertIn("updated_at", active)

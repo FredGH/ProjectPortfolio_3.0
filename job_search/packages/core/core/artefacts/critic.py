@@ -123,7 +123,7 @@ def critic_items(doc: CoverLetter | Pitch, pack: EvidencePack) -> list[CriticIte
     ]
 
 
-def _verdict(entry: dict) -> Verdict:
+def verdict_from_entry(entry: dict) -> Verdict:
     """Parse one verdict entry, failing closed on anything but a clean approval.
 
     Args:
@@ -199,7 +199,7 @@ def run_critic(
         data = parse_json_response(run.text)
         answered: dict[str, Verdict] = {}
         for entry in data.get("verdicts", []):  # type: ignore[attr-defined]
-            verdict = _verdict(entry)
+            verdict = verdict_from_entry(entry)
             previous = answered.get(verdict.item_id)
             if previous is None or (previous.supported and not verdict.supported):
                 answered[verdict.item_id] = verdict

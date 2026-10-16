@@ -99,13 +99,19 @@ class TestCvAndSkillsStageFunctions(unittest.TestCase):
 
 class TestLoadEscoStageFunction(unittest.TestCase):
     _COUNTS = SimpleNamespace(
-        skills=1, skill_labels=2, occupations=3, occupation_skills=4, skipped_relations=0
+        skills=1,
+        skill_labels=2,
+        occupations=3,
+        occupation_skills=4,
+        skipped_relations=0,
     )
 
     def test_run_load_esco_defaults_directory_to_the_mounted_path(self) -> None:
         from core.pipeline.stage_functions import DEFAULT_ESCO_DIRECTORY, run_load_esco
 
-        with patch("core.pipeline.stage_functions.load_esco", return_value=self._COUNTS) as m:
+        with patch(
+            "core.pipeline.stage_functions.load_esco", return_value=self._COUNTS
+        ) as m:
             result = run_load_esco({})
         self.assertEqual(m.call_args.args[1], Path(DEFAULT_ESCO_DIRECTORY))
         self.assertEqual(result["skills"], 1)
@@ -113,7 +119,9 @@ class TestLoadEscoStageFunction(unittest.TestCase):
     def test_run_load_esco_honors_an_explicit_directory(self) -> None:
         from core.pipeline.stage_functions import run_load_esco
 
-        with patch("core.pipeline.stage_functions.load_esco", return_value=self._COUNTS) as m:
+        with patch(
+            "core.pipeline.stage_functions.load_esco", return_value=self._COUNTS
+        ) as m:
             run_load_esco({"directory": "/somewhere/else"})
         self.assertEqual(m.call_args.args[1], Path("/somewhere/else"))
 

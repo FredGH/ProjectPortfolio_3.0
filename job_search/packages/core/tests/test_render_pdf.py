@@ -228,7 +228,10 @@ class TestWritePdf(unittest.TestCase):
             holders = {
                 i
                 for i, page in enumerate(pages)
-                for marker in [f"Title{n:02d}", *(f"Role {n:02d} bullet {b}" for b in range(3 + n % 5))]
+                for marker in [
+                    f"Title{n:02d}",
+                    *(f"Role {n:02d} bullet {b}" for b in range(3 + n % 5)),
+                ]
                 if marker in page
             }
             self.assertEqual(len(holders), 1, f"role {n} spans pages {holders}")

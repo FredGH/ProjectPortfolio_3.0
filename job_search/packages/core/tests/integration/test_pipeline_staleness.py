@@ -45,7 +45,11 @@ class TestComputeStageStates(unittest.TestCase):
         self._run_ids = []
 
     def _insert_run(
-        self, stage: str, status: str, finished_at: datetime, user_id=None,
+        self,
+        stage: str,
+        status: str,
+        finished_at: datetime,
+        user_id=None,
         error_message: str | None = None,
     ) -> None:
         with self.owner.begin() as conn:
@@ -57,16 +61,23 @@ class TestComputeStageStates(unittest.TestCase):
                     "RETURNING run_id"
                 ),
                 {
-                    "stage": stage, "user_id": user_id, "status": status,
-                    "finished_at": finished_at, "error_message": error_message,
+                    "stage": stage,
+                    "user_id": user_id,
+                    "status": status,
+                    "finished_at": finished_at,
+                    "error_message": error_message,
                 },
             ).scalar_one()
         self._run_ids.append(run_id)
 
-    def _insert_completed(self, stage: str, finished_at: datetime, user_id=None) -> None:
+    def _insert_completed(
+        self, stage: str, finished_at: datetime, user_id=None
+    ) -> None:
         self._insert_run(stage, "completed", finished_at, user_id)
 
-    def test_a_stage_that_never_ran_is_blocked_if_its_dependency_never_ran(self) -> None:
+    def test_a_stage_that_never_ran_is_blocked_if_its_dependency_never_ran(
+        self,
+    ) -> None:
         states = compute_stage_states(self.app_engine, user_id=None)
         self.assertIsNone(states["classify-jobs"].last_completed_at)
         self.assertTrue(states["classify-jobs"].is_blocked)
@@ -89,7 +100,9 @@ class TestComputeStageStates(unittest.TestCase):
         self.assertFalse(states["compute-survivorship"].is_stale)
         self.assertFalse(states["compute-survivorship"].is_blocked)
 
-    def test_staleness_skips_through_a_review_stage_to_the_automated_dependency(self) -> None:
+    def test_staleness_skips_through_a_review_stage_to_the_automated_dependency(
+        self,
+    ) -> None:
         # classify-jobs depends on compute-survivorship in STAGES; the
         # Categorisation Review stage sits between classify-jobs and
         # nothing downstream in STAGES (review stages are terminal in
@@ -125,9 +138,13 @@ class TestComputeStageStates(unittest.TestCase):
             self._cleanup_runs()
             with self.owner.begin() as conn:
                 for user_id in (user_a, user_b):
-                    conn.execute(text("DELETE FROM app_user WHERE id = :id"), {"id": user_id})
+                    conn.execute(
+                        text("DELETE FROM app_user WHERE id = :id"), {"id": user_id}
+                    )
 
-    def test_last_status_reflects_the_most_recent_attempt_even_if_it_failed(self) -> None:
+    def test_last_status_reflects_the_most_recent_attempt_even_if_it_failed(
+        self,
+    ) -> None:
         now = datetime.now(UTC)
         self._insert_completed("cluster-jobs", now - timedelta(hours=2))
         self._insert_run("cluster-jobs", "failed", now, error_message="boom")
@@ -137,7 +154,9 @@ class TestComputeStageStates(unittest.TestCase):
         self.assertEqual(states["cluster-jobs"].last_status, "failed")
         self.assertEqual(states["cluster-jobs"].last_error_message, "boom")
 
-    def test_user_id_none_against_a_per_user_stage_reports_never_completed(self) -> None:
+    def test_user_id_none_against_a_per_user_stage_reports_never_completed(
+        self,
+    ) -> None:
         user_id = uuid.uuid4()
         with self.owner.begin() as conn:
             conn.execute(
@@ -155,7 +174,9 @@ class TestComputeStageStates(unittest.TestCase):
         finally:
             self._cleanup_runs()
             with self.owner.begin() as conn:
-                conn.execute(text("DELETE FROM app_user WHERE id = :id"), {"id": user_id})
+                conn.execute(
+                    text("DELETE FROM app_user WHERE id = :id"), {"id": user_id}
+                )
 
 
 if __name__ == "__main__":

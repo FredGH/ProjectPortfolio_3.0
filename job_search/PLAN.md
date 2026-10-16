@@ -1455,6 +1455,8 @@ scaffold; the personal answer is the thing you'd actually say.
 SM-2 spaced repetition on `ease_factor` / `next_review`, plus Anki export so
 you can drill on a phone.
 
+**As built.** Five active categories (not four). Tables `interview.question_bank` (shared, no RLS), `interview.user_question_progress` and `interview.personal_answer_open_sentence` (per user, RLS). Topics live in `config/interview_topics.yml`; generation is per topic in batches of ten with an always-Claude critic (`interview_critic`), idempotent, with a cost estimate and confirmation. Behavioural personal answers are drafted from the truth base on the Step 19 evidence engine. Technical questions are ranked by a deterministic CV-gap score. SM-2 plus a queue `weight` hook and a `source` column are the seam for Step 20a (questions actually asked). Page `13_Interview_Prep`.
+
 ---
 
 ## Step 20a — Interview pipeline beyond "applied" · 5 pts
