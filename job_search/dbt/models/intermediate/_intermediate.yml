@@ -80,3 +80,19 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [grain, period_start]
+
+  - name: int_discovery_job
+    description: >
+      Discovery-channel API jobs (Step 21b corpus), one row per job_group_id,
+      with first/last seen, sources and the agency flag.
+    columns:
+      - name: job_group_id
+        tests: [unique, not_null]
+      - name: is_agency
+        tests: [not_null]
+
+  - name: int_market_job_text_flags
+    description: AI terms and oversight/build wording found in each targeted-corpus job's description.
+    columns:
+      - name: job_group_id
+        tests: [unique, not_null]

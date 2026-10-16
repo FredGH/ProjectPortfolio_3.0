@@ -35,3 +35,15 @@ EXISTS (
     WHERE LOWER({{ name_expr }}) LIKE '%' || agency_pattern.pattern || '%'
 )
 {%- endmacro %}
+
+{#
+    js_divergence(p, q): Jensen-Shannon divergence (natural log) of two aligned
+    probability columns, as an aggregate expression to use under GROUP BY.
+    0 for identical distributions, ln 2 (about 0.693) for disjoint ones.
+#}
+{% macro js_divergence(p, q) -%}
+(
+    SUM(CASE WHEN {{ p }} > 0 THEN 0.5 * {{ p }} * LN({{ p }} / (({{ p }} + {{ q }}) / 2)) ELSE 0 END)
+    + SUM(CASE WHEN {{ q }} > 0 THEN 0.5 * {{ q }} * LN({{ q }} / (({{ p }} + {{ q }}) / 2)) ELSE 0 END)
+)
+{%- endmacro %}
