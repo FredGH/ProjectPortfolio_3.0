@@ -1571,6 +1571,8 @@ gap in the interim.
 All eight marts build and pass tests; every trend metric respects the source
 panel, and every salary figure carries its `n` and disclosure rate.
 
+**As built.** Seeds `source_panel` and `query_matrix_versions` (plus agency-name patterns and rule test cases) drive the panel and matrix stamps; a shared `int_market_job` (API jobs from panel sources only, trend date = first seen by us, deterministic `work_model`, GBP-only salary figures, agency flag) feeds the eight `gold.fct_*` marts. Level metrics always publish with their stamps; change metrics are NULL unless the period and its comparison period share a complete panel and matrix version. Statistics need `n_disclosed >= 5` (premium needs 5 on both sides). Lifecycle censors still-live jobs. Singular tests in `dbt/tests/market/` include the panel-bypass test.
+
 ---
 
 ## Step 21b — Emergent role and macro trend detection · 8 pts
@@ -1891,6 +1893,35 @@ and more reliable than n8n cron for the fan-out.
 - Alerting on failed pipeline runs
 - Decide Neon vs Cloud SQL based on observed volume and cost
 - Document the rollback procedure
+
+### Scheduled workflow order (including dbt)
+
+dbt is part of the scheduled workflow, not a manual step. The order matters:
+the Python stages write tables dbt reads (`job_survivorship`, `job_category`,
+the skill extraction/mapping tables), and the market marts need two dbt passes
+that cannot be merged.
+
+```
+1. ingest, targeted channel          Cloud Run Jobs, the versioned source x keyword x region matrix
+2. dbt run --select int_market_first_seen
+                                     immediately after each targeted pass: records when we FIRST saw
+                                     each posting (insert-only; later is wrong, bronze moves fetched_at)
+3. dbt run --select staging          unions and cleans bronze
+4. enrich-engagement-terms -> compute-blocking-keys -> compute-similarity-features
+   -> compute-title-similarity-scores -> cluster-jobs -> compute-survivorship -> classify-jobs
+5. extract-job-skills -> map-skills -> llm-map-skills
+6. dbt run --select silver+          silver and gold (dim_job needs step 4; the skill bridge needs step 5)
+7. dbt build --select int_market_job+
+                                     the eight Step 21a market marts and their tests, including the
+                                     source-panel and salary-denominator tests: a failing test pages
+8. per-user stages (score-*, tailor on demand)
+```
+
+Discovery-channel ingestion (weekly, Step 4a) runs on its own schedule and
+feeds Step 21b only; it never enters steps 2 or 7. Step 7 also stamps
+`built_at`, which the Market Marts page shows so a stale build is visible.
+Adding or removing a source, or changing the query matrix, edits the two
+Step 21a seeds in the same change as the scheduler configuration.
 
 ### Done when
 

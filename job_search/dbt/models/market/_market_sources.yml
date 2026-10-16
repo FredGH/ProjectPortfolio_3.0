@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: intel_ingest
+    schema: intel
+    tables:
+      - name: job_company
+        description: >
+          Written by the Step 19a research pipeline, not dbt: which company a
+          job is really for. poster_kind = 'agency' marks an agency posting.

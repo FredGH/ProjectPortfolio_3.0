@@ -704,6 +704,16 @@ Companies House, GitHub signals, news and sentiment are follow-ups.
 
 Every factual sentence cites its sources (a CV bullet, the posting, or a site fact). Code checks that the cited ids exist, that every number in a claim appears in a cited source, and that the exact job title is in the rendered text; a Claude critic then judges each sentence; the writer gets at most two retries. A sentence that is still untraced is shown for **your** decision (link it to a source or remove it), and a document is approved only when none is left. The **Cover Letter & Pitch** page (`/Cover_Letter_and_Pitch?job=<job_group_id>`) does the same with a cost confirmation (about $0.05-0.10 for the letter, $0.10-0.20 for the pitch); `render-artefacts` writes the approved letter (`.docx`, `.txt`, `.pdf`) and the pitch script beside the CV.
 
+## Market intelligence marts (Step 21a)
+
+Eight dbt marts in the `gold` schema, built on the stable source panel (`dbt/seeds/source_panel.csv`) and the versioned query matrix (`dbt/seeds/query_matrix_versions.csv`): `fct_market_volume`, `fct_market_salary`, `fct_skill_demand`, `fct_skill_salary_premium`, `fct_skill_cooccurrence`, `fct_employer_activity`, `fct_posting_lifecycle`, `fct_market_composition`.
+
+    cd dbt && ../venv-dbt/bin/dbt seed --profiles-dir . && ../venv-dbt/bin/dbt build --profiles-dir . --select int_market_job+
+
+The **Market Marts** page (`./scripts/demo_market_ui.sh`, then `/Market_Marts`) is a read-only preview of the marts: it never builds them, shows when dbt last built them, and prints the rebuild command. The scheduled workflow order that runs dbt around ingestion is in PLAN.md Step 22.
+
+Add a source to `source_panel.csv` (with the date it started) when you add a connector, and add a row to `query_matrix_versions.csv` whenever you change the keyword x region matrix: trend lines then break visibly instead of showing a false jump. Trend metrics are NULL ("insufficient history") until a comparable period exists; salary figures always carry `n_postings`, `n_disclosed` and `disclosure_rate`.
+
 ## Interview question bank (Step 20)
 
 A shared bank of technical and behavioural interview questions with model answers per role family (`qa_category`, read from `config/category_map.yml`; topics from `config/interview_topics.yml`), plus your own CV-grounded answers, spaced repetition and an Anki export. Generation is on demand, asks before spending, and never repeats finished work:

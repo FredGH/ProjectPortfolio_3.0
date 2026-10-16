@@ -1,0 +1,98 @@
+version: 2
+
+models:
+  - name: fct_market_volume
+    description: >
+      Postings by category x region x week x seniority x work_model, with
+      WoW/MoM change (NULL unless the panel is complete and the matrix did not
+      change), share of category, new vs reposted, and the panel/matrix stamps.
+      Trend date is when WE first saw the job.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category, region, seniority_band, work_model]
+    columns:
+      - name: postings
+        tests: [not_null]
+      - name: matrix_version
+        tests: [not_null]
+
+  - name: fct_market_salary
+    description: >
+      Advertised salary (GBP per year for permanent, per day for contract) by
+      category x region x month x contract_type. n_postings, n_disclosed and
+      disclosure_rate are on every row; statistics need n_disclosed >= 5.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category, region, contract_type]
+    columns:
+      - name: n_postings
+        tests: [not_null]
+      - name: n_disclosed
+        tests: [not_null]
+      - name: disclosure_rate
+        tests: [not_null]
+      - name: contract_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: [permanent, contract]
+
+  - name: fct_skill_demand
+    description: >
+      Skill frequency, share, rank and rank delta vs 90 days ago by category x
+      region x month x skill; must-have ratio.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category, region, skill_id]
+
+  - name: fct_skill_salary_premium
+    description: >
+      Median salary with a skill minus without it, per category and contract
+      type. The premium needs n >= 5 on both sides.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [category, contract_type, skill_id]
+
+  - name: fct_skill_cooccurrence
+    description: Skill pairs within a category with support and lift (support >= 3).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [category, skill_a, skill_b]
+
+  - name: fct_employer_activity
+    description: >
+      Postings by company x category x month: agency vs direct, new-entrant flag
+      (NULL until a comparable earlier period exists). Seeds the Step 4 target
+      company registry.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, normalised_company, category]
+
+  - name: fct_posting_lifecycle
+    description: >
+      Days a posting stayed live before disappearing from all sources. Live jobs
+      are censored (days_live NULL).
+    columns:
+      - name: job_group_id
+        tests: [unique, not_null]
+
+  - name: fct_market_composition
+    description: Work-model, contract-type and seniority mix as shares by category x region x month.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category, region]
+
+  - name: market_build_info
+    description: One row about the last build of the market marts (when, how many jobs, panel, matrix version).
+    columns:
+      - name: built_at
+        tests: [not_null]
+      - name: n_jobs
+        tests: [not_null]

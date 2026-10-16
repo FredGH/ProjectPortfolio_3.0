@@ -14,6 +14,13 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+seeds:
+  job_search:
+    +schema: market_config
+
+vars:
+  lifecycle_live_window_days: 7
+
 models:
   job_search:
     staging:
@@ -29,5 +36,8 @@ models:
       +materialized: table
       +schema: dedup
     gold:
+      +materialized: table
+      +schema: gold
+    market:
       +materialized: table
       +schema: gold
