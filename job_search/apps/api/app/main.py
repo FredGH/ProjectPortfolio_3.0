@@ -9,6 +9,7 @@ from app.routers import (
     classification,
     cv,
     dedup,
+    emergent,
     extraction_runs,
     ingest,
     intel,
@@ -37,6 +38,7 @@ app.include_router(intel.router)
 app.include_router(artefacts.router)
 app.include_router(interview.router)
 app.include_router(market.router)
+app.include_router(emergent.router)
 
 
 @app.get("/health")

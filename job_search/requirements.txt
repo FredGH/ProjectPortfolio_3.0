@@ -45,6 +45,7 @@ llama-index-core==0.14.25
 # requirements file is follow-up work, not done here.
 sentence-transformers==6.1.0
 scipy==1.17.1
+scikit-learn==1.9.1
 # dbt is deliberately NOT here: dbt-core 1.11 needs protobuf>=6 while
 # streamlit 1.39 needs protobuf<6, so the two cannot share one environment
 # (and every image installs this file). See requirements-dbt.txt.

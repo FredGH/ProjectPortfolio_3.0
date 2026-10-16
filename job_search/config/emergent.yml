@@ -1,0 +1,29 @@
+# Emergent role detection settings (PLAN.md Step 21b). Starting values, not
+# tuned: change them here, never in code.
+#
+# Maturity gate: below min_history_days or min_periods the API and page refuse to
+# show a novelty index (the base-rate problem: low-frequency signals need a long
+# baseline). Employer breadth is the guard against "some VP invented a title".
+min_employers: 5          # distinct NON-agency employers before anything is a trend
+min_history_days: 90      # days between first and last first-seen in the corpus
+min_periods: 4            # distinct weeks with new postings
+min_it_terms: 2           # a posting is IT-related if its description mentions this many technology areas
+min_it_share: 0.6         # a cluster is IT-related if this share of its postings are
+baseline_days: 28         # titles first seen this soon after collection began are BASELINE, not new
+min_cluster_size: 4       # HDBSCAN: smallest group of canonical titles
+min_samples: 2            # HDBSCAN: how dense a neighbourhood must be
+cluster_selection: leaf   # leaf = fine clusters; 'eom' merges short titles into one blob (checked on real data)
+ignore_categories: [other]  # 'other' is a dustbin, not a function: never a centroid to compare against
+candidate_cosine_threshold: 0.75   # cluster centroid below this to every category = outside the taxonomy
+hybrid_min_gain: 0.05     # a two-category blend must beat the best single category by this cosine
+hybrid_min_weight: 0.25   # and each side of the blend must carry at least this weight
+dismiss_suppress_days: 90 # a dismissed cluster is not re-prompted for this long
+
+# Words removed from a title before clustering (level, not function).
+level_words: [senior, junior, lead, principal, staff, sr, jr, associate, graduate,
+  entry, mid, level, i, ii, iii, iv]
+
+# Title inflation: marketing, not roles. A title containing one is dropped from
+# clustering (they cluster beautifully into confident nonsense).
+stoplist: [ninja, rockstar, "rock star", guru, wizard, hero, jedi,
+  superstar, unicorn, magician]

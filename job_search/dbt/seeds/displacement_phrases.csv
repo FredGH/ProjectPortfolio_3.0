@@ -1,0 +1,3 @@
+kind,pattern
+oversight,review and validate|review(ing)? (model|ai|llm|generated|automated) output|human[- ]in[- ]the[- ]loop|oversee (the )?(ai|automated|model)|monitor(ing)? (the )?(ai|model|automated)|quality assurance of (ai|model)|validate (ai|model|llm)
+build,build (and maintain )?(data )?pipelines?|design(ing)? and build|develop(ing)? (and deploy )?(data )?(pipelines?|systems?|solutions?)|write (code|sql)|implement(ing)? (data|software|systems?)

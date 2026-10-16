@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Look at (and use) the Emergent Roles and Market Marts pages without the full Docker stack.
+# Postgres runs in Docker; a slim API and Streamlit run on this Mac with the
+# project's Python environment (venv/). It only READS the marts that dbt built;
+# rebuild them first if needed (see the README). Ctrl+C stops both.
+#   ./scripts/demo_emergent_ui.sh
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+docker compose up -d postgres >/dev/null 2>&1
+set -a; . ./.env; set +a
+# .env uses the Docker host name "postgres"; from the Mac it is "localhost".
+export DATABASE_URL="${DATABASE_URL/@postgres:/@localhost:}"
+export APP_DATABASE_URL="${APP_DATABASE_URL/@postgres:/@localhost:}"
+export API_BASE_URL="http://localhost:8000"
+export PYTHONPATH="$PWD/packages/core:$PWD/apps/api:$PWD/scripts"
+
+for _ in $(seq 1 30); do
+  docker compose exec -T postgres pg_isready -q 2>/dev/null && break
+  sleep 2
+done
+
+venv/bin/uvicorn emergent_demo_api:app --host 127.0.0.1 --port 8000 \
+  --log-level warning &
+API_PID=$!
+# Wait for the API, so the page never opens onto "connection refused".
+for _ in $(seq 1 60); do
+  curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+  sleep 1
+done
+trap 'kill "$API_PID" 2>/dev/null || true' EXIT
+
+echo
+echo "Emergent Roles and Market Marts pages:  http://localhost:8501/Emergent_Roles"
+echo "(pick a category; Ctrl+C here to stop)"
+echo
+venv/bin/streamlit run apps/ui/app/Home.py --server.address 127.0.0.1 \
+  --server.port 8501 --server.headless true --browser.gatherUsageStats false

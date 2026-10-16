@@ -85,15 +85,23 @@ lagged AS (
         LAG(matrix_version, 1) OVER w AS m1,
         LAG(matrix_version, 3) OVER w AS m3,
         LAG(matrix_version, 4) OVER w AS m4,
+        LAG(matrix_version, 6) OVER w AS m6,
+        LAG(matrix_version, 12) OVER w AS m12,
         LAG(matrix_mixed, 1) OVER w AS x1,
         LAG(matrix_mixed, 3) OVER w AS x3,
         LAG(matrix_mixed, 4) OVER w AS x4,
+        LAG(matrix_mixed, 6) OVER w AS x6,
+        LAG(matrix_mixed, 12) OVER w AS x12,
         LAG(panel_complete, 1) OVER w AS c1,
         LAG(panel_complete, 3) OVER w AS c3,
         LAG(panel_complete, 4) OVER w AS c4,
+        LAG(panel_complete, 6) OVER w AS c6,
+        LAG(panel_complete, 12) OVER w AS c12,
         LAG(panel_sources, 1) OVER w AS s1,
         LAG(panel_sources, 3) OVER w AS s3,
-        LAG(panel_sources, 4) OVER w AS s4
+        LAG(panel_sources, 4) OVER w AS s4,
+        LAG(panel_sources, 6) OVER w AS s6,
+        LAG(panel_sources, 12) OVER w AS s12
     FROM stamped
     WINDOW w AS (PARTITION BY grain ORDER BY period_start)
 
@@ -112,5 +120,9 @@ SELECT
     COALESCE(panel_complete AND c4 AND panel_sources = s4 AND matrix_version = m4
         AND NOT matrix_mixed AND NOT x4, FALSE) AS change_4_ok,
     COALESCE(panel_complete AND c3 AND panel_sources = s3 AND matrix_version = m3
-        AND NOT matrix_mixed AND NOT x3, FALSE) AS change_3_ok
+        AND NOT matrix_mixed AND NOT x3, FALSE) AS change_3_ok,
+    COALESCE(panel_complete AND c6 AND panel_sources = s6 AND matrix_version = m6
+        AND NOT matrix_mixed AND NOT x6, FALSE) AS change_6_ok,
+    COALESCE(panel_complete AND c12 AND panel_sources = s12 AND matrix_version = m12
+        AND NOT matrix_mixed AND NOT x12, FALSE) AS change_12_ok
 FROM lagged

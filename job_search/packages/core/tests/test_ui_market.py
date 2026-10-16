@@ -115,6 +115,58 @@ _MIX = [
 ]
 
 
+_PENETRATION = [
+    {
+        "period_start": "2026-09-01",
+        "category": "data_engineer",
+        "term": "any",
+        "n_with": 30,
+        "n_postings": 200,
+        "share": 0.15,
+        "share_delta_3m": None,
+    },
+    {
+        "period_start": "2026-09-01",
+        "category": "data_engineer",
+        "term": "rag",
+        "n_with": 10,
+        "n_postings": 200,
+        "share": 0.05,
+        "share_delta_3m": None,
+    },
+]
+_MIGRATION = [
+    {
+        "period_start": "2026-09-01",
+        "category": "ai_ml_engineer",
+        "is_ai_category": True,
+        "ai_postings": 40,
+        "all_ai_postings": 100,
+        "share_of_ai_postings": 0.4,
+        "non_ai_share_of_ai_postings": 0.6,
+    },
+    {
+        "period_start": "2026-09-01",
+        "category": "data_engineer",
+        "is_ai_category": False,
+        "ai_postings": 60,
+        "all_ai_postings": 100,
+        "share_of_ai_postings": 0.6,
+        "non_ai_share_of_ai_postings": 0.6,
+    },
+]
+_DISPLACEMENT = [
+    {
+        "period_start": "2026-09-01",
+        "category": "data_engineer",
+        "n_postings": 200,
+        "oversight_share": 0.02,
+        "build_share": 0.4,
+        "oversight_share_delta_3m": None,
+    },
+]
+
+
 class TestMarketPage(unittest.TestCase):
     """The page shows what dbt built, with denominators and honest gaps."""
 
@@ -154,6 +206,12 @@ class TestMarketPage(unittest.TestCase):
             data = _SKILLS
         elif url.endswith("/market/composition"):
             data = _MIX
+        elif url.endswith("/market/macro/ai-penetration"):
+            data = _PENETRATION
+        elif url.endswith("/market/macro/skill-migration"):
+            data = _MIGRATION
+        elif url.endswith("/market/macro/displacement"):
+            data = _DISPLACEMENT
         elif url.endswith("/market/lifecycle"):
             data = self.lifecycle
         return httpx.Response(200, json=data, request=request)
@@ -226,6 +284,24 @@ class TestMarketPage(unittest.TestCase):
     def test_a_lifecycle_with_nothing_gone_does_not_invent_a_duration(self) -> None:
         shown = self._shown(self._run())
         self.assertIn("not given a fake duration", shown)
+
+    def test_the_ai_tab_shows_shares_with_n_and_labels_missing_history(self) -> None:
+        app = self._run()
+        self.assertEqual(len(app.exception), 0)
+        frames = [d.value for d in app.dataframe if "Term" in d.value.columns]
+        penetration = frames[0]
+        self.assertEqual(list(penetration["Term"]), ["any", "rag"])
+        self.assertEqual(list(penetration["Share"]), ["15%", "5%"])
+        self.assertEqual(list(penetration["Of postings"]), [200, 200])
+        self.assertEqual(
+            penetration["Change vs 3 months ago"][0], "insufficient history"
+        )
+
+    def test_the_ai_tab_explains_migration_and_a_missing_drift(self) -> None:
+        shown = self._shown(self._run())
+        self.assertIn("60% are outside the AI and data-science categories", shown)
+        self.assertIn("No comparison is possible yet", shown)
+        self.assertIn("2% of postings talk about overseeing", shown)
 
     def test_unbuilt_marts_show_the_command_without_crashing(self) -> None:
         self.status = 503

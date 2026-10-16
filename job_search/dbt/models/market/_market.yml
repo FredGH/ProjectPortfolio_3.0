@@ -96,3 +96,41 @@ models:
         tests: [not_null]
       - name: n_jobs
         tests: [not_null]
+
+  - name: fct_ai_penetration
+    description: Share of postings per category and month mentioning an AI term (and any of them), with n.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category, term]
+
+  - name: fct_role_drift
+    description: Jensen-Shannon divergence of a category's skill distribution vs 6 and 12 months earlier (NULL unless comparable).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category, lookback_months]
+
+  - name: fct_ai_skill_migration
+    description: Where AI-mentioning postings sit, by category and month.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category]
+
+  - name: fct_displacement_language
+    description: Oversight vs build wording by category and month (a weak signal).
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [period_start, category]
+
+  - name: discovery_job
+    description: >
+      Discovery-channel API jobs (Step 21b corpus), one row per job_group_id,
+      with first/last seen, sources and the agency flag.
+    columns:
+      - name: job_group_id
+        tests: [unique, not_null]
+      - name: is_agency
+        tests: [not_null]

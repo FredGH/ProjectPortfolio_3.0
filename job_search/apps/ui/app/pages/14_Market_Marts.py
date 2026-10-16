@@ -158,8 +158,19 @@ category = st.selectbox(
     volume_tab,
     employers_tab,
     life_tab,
+    ai_tab,
 ) = st.tabs(
-    ["Salary", "Skills", "Premium", "Stacks", "Mix", "Volume", "Employers", "Lifecycle"]
+    [
+        "Salary",
+        "Skills",
+        "Premium",
+        "Stacks",
+        "Mix",
+        "Volume",
+        "Employers",
+        "Lifecycle",
+        "AI transformation",
+    ]
 )
 
 with salary_tab:
@@ -366,3 +377,89 @@ with life_tab:
                 "Median days live (gone postings)",
                 round(summary["median_days_live"], 1),
             )
+
+with ai_tab:
+    st.caption(
+        "How AI work is entering this category. Targeted corpus, same source panel "
+        "and query matrix as the other tabs. Change columns stay empty "
+        f"({_NO_HISTORY}) until there are comparable months."
+    )
+    penetration = _load("/market/macro/ai-penetration", category=category)
+    if penetration:
+        latest_month = max(r["period_start"] for r in penetration)
+        st.markdown(f"**Postings mentioning AI terms** - {_plain(latest_month)}")
+        st.dataframe(
+            [
+                {
+                    "Term": r["term"].replace("_", " "),
+                    "Postings with it": r["n_with"],
+                    "Of postings": r["n_postings"],
+                    "Share": _pct(r["share"]),
+                    "Change vs 3 months ago": _gap(r["share_delta_3m"]),
+                }
+                for r in penetration
+                if r["period_start"] == latest_month
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+    elif penetration is not None:
+        st.info("No AI-term data for this category yet.")
+    drift = _load("/market/macro/role-drift", category=category)
+    st.markdown("**Role drift** - how far this category's skill demand has moved")
+    if drift:
+        st.dataframe(
+            [
+                {
+                    "Month": r["period_start"],
+                    "Compared with": f"{r['lookback_months']} months earlier",
+                    "Divergence (0 = same, 0.69 = completely different)": _gap(
+                        None
+                        if r["js_divergence"] is None
+                        else round(r["js_divergence"], 3)
+                    ),
+                }
+                for r in drift
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+    elif drift is not None:
+        st.info(
+            f"No comparison is possible yet ({_NO_HISTORY}): drift needs the same "
+            "category 6 or 12 months earlier on the same source panel."
+        )
+    migration = _load("/market/macro/skill-migration")
+    if migration:
+        latest = max(r["period_start"] for r in migration)
+        rows = [r for r in migration if r["period_start"] == latest]
+        st.markdown(
+            f"**Where AI-mentioning postings sit** - {_plain(latest)}: "
+            f"{_pct(rows[0]['non_ai_share_of_ai_postings'])} are outside the AI and "
+            "data-science categories."
+        )
+        st.dataframe(
+            [
+                {
+                    "Category": r["category"].replace("_", " "),
+                    "AI category": r["is_ai_category"],
+                    "AI-mentioning postings": r["ai_postings"],
+                    "Share of all AI postings": _pct(r["share_of_ai_postings"]),
+                }
+                for r in rows
+            ],
+            hide_index=True,
+            use_container_width=True,
+        )
+    displacement = _load("/market/macro/displacement", category=category)
+    if displacement:
+        newest = displacement[-1]
+        st.markdown(
+            f"**Oversight vs build wording** - {_plain(newest['period_start'])}: "
+            f"{_pct(newest['oversight_share'])} of postings talk about overseeing "
+            f"automated work, {_pct(newest['build_share'])} about building."
+        )
+        st.caption(
+            "A weak signal from short phrase lists: read the direction over many "
+            "months, not a single figure."
+        )

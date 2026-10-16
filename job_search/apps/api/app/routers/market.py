@@ -330,3 +330,85 @@ def lifecycle(
         c=category,
     )
     return rows[0]
+
+
+@router.get("/market/macro/ai-penetration")
+def ai_penetration(
+    category: str, engine: Engine = Depends(get_app_db_engine)
+) -> list[dict[str, Any]]:
+    """Share of postings mentioning each AI term, by month.
+
+    Args:
+        category: The category.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `fct_ai_penetration` rows (term `any` first), with n and the stamps.
+    """
+    return _rows(
+        engine,
+        "SELECT * FROM gold.fct_ai_penetration WHERE category = :c "
+        "ORDER BY period_start, (term <> 'any'), term",
+        c=category,
+    )
+
+
+@router.get("/market/macro/role-drift")
+def role_drift(
+    category: str, engine: Engine = Depends(get_app_db_engine)
+) -> list[dict[str, Any]]:
+    """How far the category's skill demand has moved (NULL until comparable).
+
+    Args:
+        category: The category.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `fct_role_drift` rows.
+    """
+    return _rows(
+        engine,
+        "SELECT * FROM gold.fct_role_drift WHERE category = :c "
+        "ORDER BY period_start, lookback_months",
+        c=category,
+    )
+
+
+@router.get("/market/macro/skill-migration")
+def skill_migration(
+    engine: Engine = Depends(get_app_db_engine),
+) -> list[dict[str, Any]]:
+    """Where AI-mentioning postings sit, by category and month.
+
+    Args:
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `fct_ai_skill_migration` rows.
+    """
+    return _rows(
+        engine,
+        "SELECT * FROM gold.fct_ai_skill_migration ORDER BY period_start, "
+        "ai_postings DESC",
+    )
+
+
+@router.get("/market/macro/displacement")
+def displacement(
+    category: str, engine: Engine = Depends(get_app_db_engine)
+) -> list[dict[str, Any]]:
+    """Oversight vs build wording by month (a weak signal).
+
+    Args:
+        category: The category.
+        engine: Injected via `get_app_db_engine`.
+
+    Returns:
+        `fct_displacement_language` rows.
+    """
+    return _rows(
+        engine,
+        "SELECT * FROM gold.fct_displacement_language WHERE category = :c "
+        "ORDER BY period_start",
+        c=category,
+    )

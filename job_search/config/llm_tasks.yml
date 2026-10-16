@@ -101,3 +101,7 @@ tasks:
     provider: anthropic
     model: claude-sonnet-5
     prompt_family: claude
+  emergent_naming:
+    provider: anthropic
+    model: claude-sonnet-5
+    prompt_family: claude

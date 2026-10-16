@@ -1760,6 +1760,9 @@ repositioning), that view is arguably worth more than the current-state gap
 analysis. It's the difference between optimising for the next application and
 optimising for the next three years.
 
+
+**As built (first slice).** Micro: `gold.discovery_job` (discovery-channel corpus, insert-only first-seen, agencies filtered before scoring), `core/emergent/` (canonical titles with level words and a title-inflation stoplist, novelty = recency x breadth x velocity with a hard employer floor, embeddings + scikit-learn HDBSCAN (`leaf` selection, checked on real titles: `eom` merged 900 titles into one blob), hybridity as the best two-category blend, naming as an `uncorroborated` hypothesis, `emergent.emergent_role_review` with a required rationale and cross-run dismissal suppression). A maturity gate (`config/emergent.yml`) withholds the novelty index and labels clusters a preview; naming a preview run is refused. `other` is never used as a comparison centroid. Macro: `fct_ai_penetration`, `fct_role_drift` (Jensen-Shannon), `fct_ai_skill_migration`, `fct_displacement_language`. Not yet built: promotion into `category_map.yml`, the forward-looking CV gap view, web corroboration. Finding on real data: with a taxonomy of tech roles, "outside the taxonomy" includes every legal, finance and design function in an ATS dump, so candidates are only meaningful once novelty (history) separates *new* from *never in scope*.
+
 ### Done when
 
 The system independently surfaces at least three candidate emergent roles
