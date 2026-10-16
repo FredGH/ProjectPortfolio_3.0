@@ -254,7 +254,7 @@ def name_candidates(
         outside the taxonomy are named (`is_candidate`), each stored
         `uncorroborated`. A failed naming does not stop the others.
     """
-    run = next((r for r in [store.latest_run(engine)] if r and r.id == run_id), None)
+    run = store.get_run(engine, run_id)
     if run is not None and not run.mature and not allow_preview:
         raise NotMatureError(
             f"this run is a preview ({run.maturity_note}); naming it would spend "

@@ -34,6 +34,14 @@ months AS (
 
 ),
 
+postings AS (
+
+    SELECT first_seen_month AS period_start, category, COUNT(*) AS n_postings
+    FROM {{ ref('int_market_job') }}
+    GROUP BY 1, 2
+
+),
+
 pairs AS (
 
     -- a (month, category) pair with a month lookback_months earlier to compare to
@@ -104,7 +112,11 @@ SELECT
     d.lookback_months,
     d.skills_now,
     d.skills_then,
+    now_n.n_postings AS n_postings_now,
+    then_n.n_postings AS n_postings_then,
     CASE
+        WHEN LEAST(now_n.n_postings, then_n.n_postings) < {{ var('role_drift_min_postings', 30) }}
+            THEN NULL  -- JS divergence is biased upward on small samples
         WHEN d.lookback_months = 6 AND st.change_6_ok THEN d.js
         WHEN d.lookback_months = 12 AND st.change_12_ok THEN d.js
     END AS js_divergence,
@@ -115,3 +127,8 @@ SELECT
 FROM divergence AS d
 INNER JOIN {{ ref('int_market_period_stamp') }} AS st
     ON st.grain = 'month' AND st.period_start = d.period_start
+LEFT JOIN postings AS now_n
+    ON now_n.period_start = d.period_start AND now_n.category = d.category
+LEFT JOIN postings AS then_n
+    ON then_n.category = d.category
+    AND then_n.period_start = (d.period_start - MAKE_INTERVAL(months => d.lookback_months))::date

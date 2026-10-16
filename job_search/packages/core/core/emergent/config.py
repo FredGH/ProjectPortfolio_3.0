@@ -17,6 +17,8 @@ class EmergentConfig:
     Attributes:
         min_employers: Distinct non-agency employers before a title is a trend.
         min_history_days: History below which no novelty index is shown.
+        baseline_days: Titles first seen within this many days of the start of
+            collection are baseline (always there), never novel.
         min_periods: Distinct weeks with new postings required for maturity.
         min_cluster_size: HDBSCAN's smallest cluster.
         min_samples: HDBSCAN's neighbourhood density.
@@ -34,6 +36,7 @@ class EmergentConfig:
     min_employers: int
     min_history_days: int
     min_periods: int
+    baseline_days: int
     min_cluster_size: int
     min_samples: int
     cluster_selection: str
@@ -63,6 +66,7 @@ def load_config(path: Path | None = None) -> EmergentConfig:
         "min_employers",
         "min_history_days",
         "min_periods",
+        "baseline_days",
         "min_cluster_size",
         "min_samples",
         "dismiss_suppress_days",

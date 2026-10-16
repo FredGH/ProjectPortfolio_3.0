@@ -146,7 +146,7 @@ def review_queue(
     horizon = now - timedelta(days=config.dismiss_suppress_days)
     suppressed_titles = [
         list(r.titles)
-        for r in reviews
+        for r in own.values()
         if r.verdict == "dismissed" and r.decided_at >= horizon
     ]
     queue = []

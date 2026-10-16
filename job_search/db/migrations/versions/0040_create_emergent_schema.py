@@ -72,10 +72,11 @@ def upgrade() -> None:
 
     op.create_table(
         "title_embedding",
-        sa.Column("canonical_title", sa.Text(), primary_key=True),
+        sa.Column("canonical_title", sa.Text(), nullable=False),
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("vector", ARRAY(sa.Float()), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=_now()),
+        sa.PrimaryKeyConstraint("canonical_title", "model"),
         schema="emergent",
     )
     _grant("title_embedding")

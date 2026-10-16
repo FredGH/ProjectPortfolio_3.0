@@ -23,3 +23,10 @@ UNION ALL
 SELECT 'fct_role_drift out of range', period_start::text
 FROM {{ ref('fct_role_drift') }}
 WHERE js_divergence < 0 OR js_divergence > LN(2) + 1e-9
+
+UNION ALL
+
+SELECT 'fct_role_drift published on a thin sample', period_start::text
+FROM {{ ref('fct_role_drift') }}
+WHERE js_divergence IS NOT NULL
+    AND LEAST(n_postings_now, n_postings_then) < {{ var('role_drift_min_postings', 30) }}

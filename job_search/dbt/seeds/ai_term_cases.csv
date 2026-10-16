@@ -1,0 +1,17 @@
+text,term,expected
+Build RAG pipelines over internal documents,rag,true
+Experience with retrieval-augmented generation,rag,true
+LLM applications using RAG and vector stores,rag,true
+Weekly RAG status reporting to the PMO,rag,false
+Maintain the RAG report for delivery,rag,false
+Microsoft Certified Professional (MCP) preferred,mcp,false
+Build an MCP server for our tools,mcp,true
+Use the Model Context Protocol,mcp,true
+Performance fine-tuning of SQL queries,fine_tuning,false
+Fine-tuning an LLM for support,fine_tuning,true
+Monitoring and evaluation framework for grant programmes,evals,false
+Evaluation framework for LLM outputs,evals,true
+Run LLM evals in CI,evals,true
+We use pgvector for similarity,vector_stores,true
+Prompt engineering for customer support,prompt_engineering,true
+Garage gen AI initiatives,generative_ai,true

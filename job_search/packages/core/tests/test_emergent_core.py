@@ -18,6 +18,7 @@ from core.emergent.novelty import novelty_index
 
 _CONFIG = load_config()
 _NOW = datetime(2027, 3, 1, tzinfo=UTC)
+_START = _NOW - timedelta(days=150)  # collection began 150 days ago
 
 
 def _job(
@@ -127,19 +128,19 @@ class TestNovelty(unittest.TestCase):
 
     def test_below_the_employer_floor_the_index_is_none_and_called_noise(self) -> None:
         jobs = [_job(f"e{i}", 10 + i) for i in range(_CONFIG.min_employers - 1)]
-        result = novelty_index(jobs, _CONFIG, _NOW)
+        result = novelty_index(jobs, _CONFIG, _NOW, _START)
         self.assertIsNone(result.value)
         self.assertIn("noise", result.note)
 
     def test_many_employers_over_several_weeks_scores_between_0_and_1(self) -> None:
         jobs = [_job(f"e{i}", 70 - i * 7) for i in range(10)]
-        result = novelty_index(jobs, _CONFIG, _NOW)
+        result = novelty_index(jobs, _CONFIG, _NOW, _START)
         self.assertIsNotNone(result.value)
         self.assertTrue(0.0 < result.value <= 1.0)
 
     def test_too_few_periods_leave_velocity_unknown(self) -> None:
         jobs = [_job(f"e{i}", 3) for i in range(8)]  # all in the same week
-        result = novelty_index(jobs, _CONFIG, _NOW)
+        result = novelty_index(jobs, _CONFIG, _NOW, _START)
         self.assertIsNone(result.value)
         self.assertIn("velocity", result.note)
 
@@ -154,15 +155,26 @@ class TestNovelty(unittest.TestCase):
             for w, n in enumerate([8, 5, 3, 2, 1, 1])
             for i in range(n)
         ]
-        up = novelty_index(growing, _CONFIG, _NOW).value
-        down = novelty_index(shrinking, _CONFIG, _NOW).value
+        up = novelty_index(growing, _CONFIG, _NOW, _START).value
+        down = novelty_index(shrinking, _CONFIG, _NOW, _START).value
         self.assertIsNotNone(up)
         self.assertIsNotNone(down)
         self.assertGreater(up, down)
 
+    def test_a_title_present_since_collection_began_is_baseline_not_novel(self) -> None:
+        # first seen only 10 days after collection began, at many employers
+        jobs = [_job(f"e{i}", 140 - i * 7) for i in range(10)]
+        result = novelty_index(jobs, _CONFIG, _NOW, _START)
+        self.assertIsNone(result.value)
+        self.assertIn("baseline", result.note)
+
+    def test_a_title_first_seen_well_after_collection_began_is_scored(self) -> None:
+        jobs = [_job(f"e{i}", 90 - i * 7) for i in range(10)]
+        self.assertIsNotNone(novelty_index(jobs, _CONFIG, _NOW, _START).value)
+
     def test_a_job_without_an_employer_never_counts_towards_breadth(self) -> None:
         jobs = [_job(None, 10 + i) for i in range(20)]
-        self.assertIsNone(novelty_index(jobs, _CONFIG, _NOW).value)
+        self.assertIsNone(novelty_index(jobs, _CONFIG, _NOW, _START).value)
 
 
 def _axes() -> dict[str, np.ndarray]:

@@ -131,6 +131,24 @@ class TestClusters(unittest.TestCase):
         candidate = next(c for c in results if c.is_candidate)
         self.assertIsNotNone(candidate.novelty)
 
+    def test_with_no_category_centroids_nothing_is_a_candidate(self) -> None:
+        jobs = [j for j in corpus() if j.employer and j.employer.startswith("fd")]
+        by_title = titles_by_phrase(jobs, _CONFIG)
+        titles = sorted(by_title)
+        vectors = unit_rows(np.array([embed(t) for t in titles], dtype=float))
+        results = analyse(
+            titles,
+            vectors,
+            np.zeros(len(titles), dtype=int),
+            by_title,
+            {},
+            _CONFIG,
+            assess(jobs, _CONFIG),
+            NOW,
+        )
+        self.assertFalse(results[0].is_candidate)
+        self.assertIn("cannot judge", results[0].candidate_note)
+
     def test_too_few_titles_are_all_noise(self) -> None:
         labels = label_clusters(unit_rows(np.array([[1.0, 0], [0, 1.0]])), 3)
         self.assertEqual(labels.tolist(), [-1, -1])

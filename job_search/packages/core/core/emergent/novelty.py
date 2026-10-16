@@ -55,7 +55,10 @@ def _weekly_new_employers(jobs: list[DiscoveryJob]) -> list[int]:
 
 
 def novelty_index(
-    jobs: list[DiscoveryJob], config: EmergentConfig, now: datetime
+    jobs: list[DiscoveryJob],
+    config: EmergentConfig,
+    now: datetime,
+    corpus_start: datetime,
 ) -> Novelty:
     """Score how novel a title or cluster is.
 
@@ -63,10 +66,14 @@ def novelty_index(
         jobs: Its non-agency discovery jobs.
         config: The emergent config (employer floor, minimum periods).
         now: The reference time.
+        corpus_start: When collection began (the earliest first-seen of the
+            whole corpus): a title already present then cannot be shown to be
+            new, however long ago that is.
 
     Returns:
-        The index; None with a note when below the employer floor or when
-        fewer than `min_periods` weekly periods exist to measure velocity.
+        The index; None with a note when below the employer floor, when the
+        title is baseline, or when fewer than `min_periods` weekly periods
+        exist to measure velocity.
     """
     employers = {j.employer for j in jobs if j.employer}
     if len(employers) < config.min_employers:
@@ -74,12 +81,16 @@ def novelty_index(
             None,
             f"noise: {len(employers)} employer(s), floor is {config.min_employers}",
         )
+    first_seen = min(j.first_seen_at for j in jobs)
+    if (first_seen - corpus_start).days < config.baseline_days:
+        return Novelty(
+            None, "baseline: present since collection began, so not shown to be new"
+        )
     weekly = _weekly_new_employers(jobs)
     if len(weekly) < config.min_periods:
         return Novelty(
             None, f"{len(weekly)} of {config.min_periods} periods: velocity unknown"
         )
-    first_seen = min(j.first_seen_at for j in jobs)
     age_days = max(0.0, (now - first_seen).total_seconds() / 86400.0)
     recency = max(0.0, 1.0 - age_days / RECENCY_HORIZON_DAYS)
     breadth = min(1.0, len(employers) / (2.0 * config.min_employers))

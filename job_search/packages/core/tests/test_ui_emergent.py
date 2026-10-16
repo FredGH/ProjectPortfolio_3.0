@@ -209,6 +209,14 @@ class TestEmergentPage(unittest.TestCase):
         )
         self.assertNotIn("Preview - history too short", self._shown(app))
 
+    def test_a_preview_run_on_a_matured_corpus_still_shows_the_preview_warning(
+        self,
+    ) -> None:
+        self.data = _data(mature=True, run_mature=False, missing="")
+        shown = self._shown(self._run())
+        self.assertIn("Preview - history too short, not a finding", shown)
+        self.assertIn("run cluster-emergent-roles again", shown)
+
     def test_confirming_posts_the_verdict_and_the_reason(self) -> None:
         app = self._run()
         app.text_area(key=f"em-reason-{_ID}").input("Seen at three clients")

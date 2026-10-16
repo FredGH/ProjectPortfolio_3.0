@@ -99,7 +99,7 @@ def corpus() -> list[DiscoveryJob]:
     ]
     for i in range(6):
         for t, title in enumerate(titles):
-            jobs.append(job(title, f"fd{i}", 90 - i * 10, t))
+            jobs.append(job(title, f"fd{i}", 60 - i * 8, t))
     for i in range(2):
         jobs += [
             job("Solutions Field Wizard Lead", f"fad{i}", 20 - i),

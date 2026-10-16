@@ -1,9 +1,9 @@
 term,pattern
 agents,\yai agents?\y|\yagentic\y|\yllm agents?\y|\yagent framework
-rag,\yrag\y|retrieval[- ]augmented
-evals,\yllm evals?\y|\yevals\y|evaluation framework
-mcp,model context protocol|\ymcp\y
-fine_tuning,fine[- ]tun(e|ing)
+rag,"retrieval[- ]augmented|\yrag\y (pipeline|system|architecture|application|workflow|retrieval|model|solution)s?|\y(llm|genai|generative ai|ai|embedding|vector)s?\y.{0,40}\yrag\y|\yrag\y.{0,40}\y(llm|vector|embedding)s?\y"
+evals,\yllm evals?\y|\yllm evaluation|\yevals\y|eval(uation)? (harness|framework)s? for (an? )?(llm|model)s?
+mcp,model context protocol|\ymcp\y (server|client|protocol|tool)s?
+fine_tuning,fine[- ]tun(e|ing) (of )?(an? )?(llm|model|language model|llama|gpt)s?|(llm|model)s? fine[- ]tuning|\ylora\y
 vector_stores,vector (store|stores|database|databases|db|search)|\ypinecone\y|\yweaviate\y|\ypgvector\y|\yfaiss\y|\ychroma\y
 prompt_engineering,prompt engineering|prompt design
 llm,\yllms?\y|large language model

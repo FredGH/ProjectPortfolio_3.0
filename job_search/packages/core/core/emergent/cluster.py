@@ -151,6 +151,9 @@ def analyse(
     Returns:
         One result per non-noise cluster, by id.
     """
+    corpus_start = min(
+        (j.first_seen_at for js in jobs_by_title.values() for j in js), default=now
+    )
     results: list[ClusterResult] = []
     for cluster_id in sorted(int(c) for c in set(labels.tolist()) if c != -1):
         members = [i for i, label in enumerate(labels.tolist()) if label == cluster_id]
@@ -161,10 +164,10 @@ def analyse(
         name, cos = (
             nearest_category(centroid, categories) if categories else (None, None)
         )
-        outside = cos is None or cos < config.candidate_cosine_threshold
+        outside = cos is not None and cos < config.candidate_cosine_threshold
         enough = len(employers) >= config.min_employers
         if name is None:
-            note = "no category centroids to compare with"
+            note = "cannot judge: no category centroids to compare with"
         elif not outside:
             note = f"inside the taxonomy: closest to {name} ({cos:.2f})"
         elif not enough:
@@ -187,7 +190,7 @@ def analyse(
             else None
         )
         if maturity.mature:
-            nov = novelty_index(jobs, config, now)
+            nov = novelty_index(jobs, config, now, corpus_start)
             novelty, novelty_note = nov.value, nov.note
         else:
             novelty, novelty_note = (

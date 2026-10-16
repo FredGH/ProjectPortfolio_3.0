@@ -108,15 +108,21 @@ if response.status_code != 200:
     st.stop()
 data = response.json()
 
-if data["mature"]:
+if data["novelty_shown"]:
     st.success(
         f"The discovery corpus has enough history: {data['history_days']:.0f} days, "
         f"{data['periods']} weekly periods, {data['employers']} employers."
     )
 else:
+    reason = (
+        f"missing: {_plain(data['missing'])}"
+        if not data["mature"]
+        else "the latest cluster run was made while the corpus was too young - "
+        "run cluster-emergent-roles again"
+    )
     st.warning(
         f"**{data['preview_label'].capitalize()}.** Not enough history for a novelty "
-        f"index (missing: {_plain(data['missing'])}). The groups below are a "
+        f"index ({reason}). The groups below are a "
         f"cross-section of what was collected, not a trend. The employer floor is "
         f"{data['min_employers']} distinct non-agency employers; the corpus has "
         f"{data['employers']}."

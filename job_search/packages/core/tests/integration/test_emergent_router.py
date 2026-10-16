@@ -113,10 +113,25 @@ class TestEmergentRouter(unittest.TestCase):
                 {"a": self.user, "b": self.other},
             )
 
-    def test_the_real_corpus_is_immature_and_the_status_says_exactly_what_is_missing(
+    def _young(self):  # type: ignore[no-untyped-def]
+        """Patch the live corpus to a young one (the real one will mature).
+
+        Returns:
+            A patcher over the API module's corpus loader.
+        """
+        young = [
+            type(j)(j.job_group_id, j.title, j.company, j.employer, NOW, j.source)
+            for j in _JOBS[:20]
+        ]
+        return mock.patch(
+            "app.routers.emergent.load_discovery_jobs", return_value=(young, 0)
+        )
+
+    def test_a_young_corpus_is_immature_and_the_status_says_exactly_what_is_missing(
         self,
     ) -> None:
-        body = self.client.get("/emergent/status").json()
+        with self._young():
+            body = self.client.get("/emergent/status").json()
         self.assertFalse(body["mature"])
         self.assertFalse(body["novelty_shown"])
         self.assertIn("days", body["missing"])
@@ -125,10 +140,36 @@ class TestEmergentRouter(unittest.TestCase):
     def test_no_novelty_index_is_returned_while_immature_even_if_one_was_stored(
         self,
     ) -> None:
-        body = self.client.get("/emergent/clusters").json()
+        with self._young():
+            body = self.client.get("/emergent/clusters").json()
         self.assertTrue(body["clusters"])
         self.assertTrue(all(c["novelty"] is None for c in body["clusters"]))
         self.assertTrue(all("withheld" in c["novelty_note"] for c in body["clusters"]))
+
+    def test_a_preview_run_keeps_its_label_even_after_the_corpus_matures(self) -> None:
+        with self.owner.begin() as conn:
+            conn.execute(
+                text("UPDATE emergent.cluster_run SET mature = false WHERE id = :i"),
+                {"i": self.run_id},
+            )
+        mature = type(
+            "M",
+            (),
+            {
+                "mature": True,
+                "note": "",
+                "history_days": 120.0,
+                "periods": 12,
+                "employers": 30,
+            },
+        )()
+        with mock.patch("app.routers.emergent.assess", return_value=mature):
+            body = self.client.get("/emergent/clusters").json()
+        self.assertTrue(body["mature"])
+        self.assertFalse(body["run_mature"])
+        self.assertFalse(body["novelty_shown"])
+        self.assertIn("preview", body["preview_label"])
+        self.assertTrue(all(c["novelty"] is None for c in body["clusters"]))
 
     def test_the_candidate_is_an_uncorroborated_pending_hypothesis(self) -> None:
         (candidate,) = self.client.get("/emergent/candidates").json()["candidates"]
@@ -178,7 +219,9 @@ class TestEmergentRouter(unittest.TestCase):
         (theirs,) = self.client.get("/emergent/candidates").json()["candidates"]
         self.assertEqual((theirs["verdict"], theirs["rationale"]), ("pending", None))
 
-    def test_a_dismissed_candidate_leaves_the_queue(self) -> None:
+    def test_a_dismissed_candidate_stays_listed_as_dismissed_for_the_user_who_dismissed_it(
+        self,
+    ) -> None:
         (candidate,) = self.client.get("/emergent/candidates").json()["candidates"]
         self.client.post(
             f"/emergent/candidates/{candidate['id']}/review",

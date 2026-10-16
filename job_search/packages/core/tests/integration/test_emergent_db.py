@@ -18,6 +18,7 @@ from tests.company_intel_fixtures import FakeAdapter
 from tests.emergent_fixtures import NOW, SEEDS, corpus, embed
 from tests.integration.skills_fixtures import live_app_engine, live_owner_engine
 
+from core.db.session import session_scope
 from core.emergent import review, service, store
 from core.emergent.config import load_config
 
@@ -247,18 +248,49 @@ class TestEmergentDb(unittest.TestCase):
 
     def test_a_user_cannot_write_a_review_for_someone_else(self) -> None:
         _, candidate = self._named()
-        with self.assertRaises(
-            Exception
-        ):  # noqa: B017 - RLS WITH CHECK rejects the row
-            with self.engine.begin() as conn:
-                conn.execute(
-                    text("SET LOCAL app.current_user_id = :u"), {"u": str(self.other)}
-                )
+        # The row names self.user while the session belongs to self.other: the
+        # RLS policy's WITH CHECK must refuse it (not a syntax or type error).
+        with self.assertRaises(Exception) as caught:  # noqa: B017
+            with session_scope(self.engine, user_id=self.other) as conn:
                 conn.execute(
                     text(
                         "INSERT INTO emergent.emergent_role_review (user_id, candidate_id, verdict, rationale) VALUES (:u, :c, 'confirmed', 'x')"
                     ),
                     {"u": self.user, "c": candidate.id},
+                )
+        self.assertIn("row-level security", str(caught.exception))
+
+    def test_a_dismissal_later_replaced_by_a_confirmation_no_longer_suppresses(
+        self,
+    ) -> None:
+        _, candidate = self._named()
+        review.record_review(
+            self.engine, self.user, candidate.id, "dismissed", "Not sure"
+        )
+        review.record_review(
+            self.engine, self.user, candidate.id, "confirmed", "On reflection yes"
+        )
+        later = self._run()
+        service.name_candidates(self.engine, later.run_id, adapters={"anthropic": self._reply()})  # type: ignore[arg-type]
+        (entry,) = review.review_queue(self.engine, self.user, later.run_id, _CONFIG, datetime.now(UTC))  # type: ignore[arg-type]
+        self.assertEqual(entry.verdict, "pending")
+
+    def test_the_same_title_embedded_by_two_models_does_not_collide(self) -> None:
+        store.save_embeddings(self.engine, "zz-model", {"zz title": [1.0, 0.0]})
+        store.save_embeddings(self.engine, "zz-model-b", {"zz title": [0.0, 1.0]})
+        try:
+            self.assertEqual(
+                store.load_embeddings(self.engine, "zz-model")["zz title"], [1.0, 0.0]
+            )
+            self.assertEqual(
+                store.load_embeddings(self.engine, "zz-model-b")["zz title"], [0.0, 1.0]
+            )
+        finally:
+            with self.owner.begin() as conn:
+                conn.execute(
+                    text(
+                        "DELETE FROM emergent.title_embedding WHERE canonical_title = 'zz title'"
+                    )
                 )
 
     def test_an_empty_corpus_makes_no_run(self) -> None:

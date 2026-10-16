@@ -169,8 +169,8 @@ def save_embeddings(
                 text(
                     "INSERT INTO emergent.title_embedding (canonical_title, model, "
                     "vector) "
-                    "VALUES (:t, :m, :v) ON CONFLICT (canonical_title) DO UPDATE SET "
-                    "model = :m, vector = :v, created_at = now()"
+                    "VALUES (:t, :m, :v) ON CONFLICT (canonical_title, model) "
+                    "DO UPDATE SET vector = :v, created_at = now()"
                 ),
                 {"t": title, "m": model, "v": vector},
             )
@@ -472,3 +472,37 @@ def candidate_exists(engine: Engine, candidate_id: uuid.UUID) -> bool:
                 {"i": candidate_id},
             ).first()
         )
+
+
+def get_run(engine: Engine, run_id: uuid.UUID) -> StoredRun | None:
+    """Read one cluster run.
+
+    Args:
+        engine: The app-role engine.
+        run_id: The run.
+
+    Returns:
+        The run, or None.
+    """
+    with engine.begin() as conn:
+        r = conn.execute(
+            text(
+                "SELECT id, created_at, params, n_titles, n_clusters, n_noise, "
+                "history_days, mature, maturity_note FROM emergent.cluster_run "
+                "WHERE id = :i"
+            ),
+            {"i": run_id},
+        ).one_or_none()
+    if r is None:
+        return None
+    return StoredRun(
+        r.id,
+        r.created_at,
+        r.params,
+        r.n_titles,
+        r.n_clusters,
+        r.n_noise,
+        r.history_days,
+        r.mature,
+        r.maturity_note,
+    )

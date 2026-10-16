@@ -7,6 +7,7 @@
 min_employers: 5          # distinct NON-agency employers before anything is a trend
 min_history_days: 90      # days between first and last first-seen in the corpus
 min_periods: 4            # distinct weeks with new postings
+baseline_days: 28         # titles first seen this soon after collection began are BASELINE, not new
 min_cluster_size: 4       # HDBSCAN: smallest group of canonical titles
 min_samples: 2            # HDBSCAN: how dense a neighbourhood must be
 cluster_selection: leaf   # leaf = fine clusters; 'eom' merges short titles into one blob (checked on real data)
@@ -22,5 +23,5 @@ level_words: [senior, junior, lead, principal, staff, sr, jr, associate, graduat
 
 # Title inflation: marketing, not roles. A title containing one is dropped from
 # clustering (they cluster beautifully into confident nonsense).
-stoplist: [ninja, rockstar, "rock star", guru, wizard, hero, jedi, evangelist,
-  superstar, unicorn, magician, champion]
+stoplist: [ninja, rockstar, "rock star", guru, wizard, hero, jedi,
+  superstar, unicorn, magician]

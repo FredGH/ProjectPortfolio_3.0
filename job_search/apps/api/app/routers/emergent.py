@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from app.dependencies import get_app_db_engine
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 
 from core.db.session import get_current_user_id
@@ -35,7 +35,7 @@ class ReviewRequest(BaseModel):
     """
 
     verdict: Literal["confirmed", "dismissed"]
-    rationale: str
+    rationale: str = Field(max_length=2000)
 
 
 def _status(engine: Engine) -> dict[str, Any]:
@@ -51,8 +51,11 @@ def _status(engine: Engine) -> dict[str, Any]:
     jobs, agency = load_discovery_jobs(engine)
     maturity = assess(jobs, config)
     run = store.latest_run(engine)
+    run_mature = run is None or run.mature
+    shown = maturity.mature and run_mature
     return {
         "mature": maturity.mature,
+        "run_mature": run_mature,
         "missing": maturity.note,
         "history_days": maturity.history_days,
         "periods": maturity.periods,
@@ -61,8 +64,8 @@ def _status(engine: Engine) -> dict[str, Any]:
         "min_history_days": config.min_history_days,
         "min_periods": config.min_periods,
         "min_employers": config.min_employers,
-        "novelty_shown": maturity.mature,
-        "preview_label": None if maturity.mature else PREVIEW_LABEL,
+        "novelty_shown": shown,
+        "preview_label": None if shown else PREVIEW_LABEL,
         "run": (
             None
             if run is None
@@ -134,7 +137,7 @@ def clusters(engine: Engine = Depends(get_app_db_engine)) -> dict[str, Any]:
     rows = [] if run is None else store.list_clusters(engine, run.id)
     return {
         **state,
-        "clusters": [_cluster(c, state["mature"]) for c in rows],
+        "clusters": [_cluster(c, state["novelty_shown"]) for c in rows],
     }
 
 
@@ -172,7 +175,7 @@ def candidates(
                 "corroboration": e.candidate.corroboration,
                 "verdict": e.verdict,
                 "rationale": e.rationale,
-                "cluster": _cluster(e.cluster, state["mature"]),
+                "cluster": _cluster(e.cluster, state["novelty_shown"]),
             }
             for e in queue
         ],

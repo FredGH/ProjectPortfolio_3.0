@@ -20,6 +20,7 @@ seeds:
 
 vars:
   lifecycle_live_window_days: 7
+  role_drift_min_postings: 30
 
 models:
   job_search:
