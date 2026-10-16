@@ -37,7 +37,7 @@ keep a plausible-sounding but unreal "emergent role" from reaching you.
 - `int_discovery_first_seen`: insert-only first-seen per discovery posting
   (`collection_channel = 'discovery'`, `entry_method = 'api'`), same pattern as
   `int_market_first_seen` (never full-refreshed).
-- `int_discovery_job`: one row per deduplicated job delivered by the discovery
+- `discovery_job`: one row per deduplicated job delivered by the discovery
   channel: `job_group_id`, `first_seen_at`, `last_seen_at`, raw title, company,
   `normalised_company`, `is_agency` (same rule as Step 21a), `source_name`,
   `category`. Caveat: bronze keeps the channel of the last writer, so a posting

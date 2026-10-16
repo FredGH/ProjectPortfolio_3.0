@@ -1,7 +1,8 @@
--- int_discovery_job: the corpus emergent-role detection reads (PLAN.md Step
+-- discovery_job: the corpus emergent-role detection reads (PLAN.md Step
 -- 21b), NOT the targeted one: novelty against a frozen keyword matrix would
 -- only rediscover its own assumptions. Grain: job_group_id (unique), API jobs
--- delivered by the discovery channel. is_agency uses the Step 21a rule so
+-- delivered by the discovery channel. Lives in gold (not intermediate) because the
+-- Python emergent-role pipeline reads it as the app role. is_agency uses the Step 21a rule so
 -- agency title churn can be filtered BEFORE novelty scoring.
 
 WITH postings AS (
