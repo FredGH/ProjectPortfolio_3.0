@@ -105,6 +105,7 @@ def upgrade() -> None:
         ),
         sa.Column("cluster_id", sa.Integer(), nullable=False),
         sa.Column("canonical_titles", ARRAY(sa.Text()), nullable=False),
+        sa.Column("job_group_ids", ARRAY(sa.Text()), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("n_titles", sa.Integer(), nullable=False),
         sa.Column("n_employers", sa.Integer(), nullable=False),
         sa.Column("centroid", ARRAY(sa.Float()), nullable=False),
