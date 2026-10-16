@@ -137,3 +137,28 @@ minimum-n rules.
 - `last_seen_at` is only as good as re-fetch frequency; one fetch means
   lifecycle durations are zero and `still_live` is the useful field until
   collection repeats.
+
+## Changes after the final review
+
+- **First-seen basis.** `bronze.raw_jobs` replaces an unchanged re-fetch in place
+  (dlt merge), so its `MIN(fetched_at)` drifts forward. First-seen therefore
+  comes from the insert-only `int_market_first_seen` (never full-refreshed).
+  Run dbt after each collection pass so a posting is recorded close to when it
+  first appeared; postings that predate the first run are dated from that run.
+- **Targeted channel only** (PLAN.md Step 4a): discovery-channel rows never
+  count in these marts. Caveat: bronze keeps the channel of the LAST writer, so
+  a posting later re-captured by a discovery run is dropped from the targeted
+  corpus until a targeted run touches it again.
+- **Lifecycle** `still_live` uses a window (`lifecycle_live_window_days`,
+  default 7: set it to the collection cadence) because one run covers one query.
+- **Matrix version** is the version in force at the END of a period; a period
+  that contains a version change is `matrix_mixed` and publishes no change
+  metric.
+- **Salary**: day rates only from postings that STATED a daily/hourly rate on
+  contract/interim roles; annual salary only from stated annual permanent roles.
+  Fixed-term contracts are salaried and contribute to neither.
+- **Work model**: "hybrid cloud" and similar are not hybrid; five office days is
+  on-site; negated "not a remote role" is not remote; example phrases in
+  `work_model_cases`.
+- **Agency**: a Step 19a resolution of employer/agency wins; an unresolved
+  (`unknown`) poster falls back to the name patterns.

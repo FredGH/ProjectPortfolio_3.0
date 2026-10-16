@@ -7,17 +7,20 @@
 #}
 {% macro work_model(text_expr) -%}
 CASE
-    WHEN {{ text_expr }} ~* '\y(hybrid|[0-9] days? (a|per) week (in|at) the office|[0-9] days? (in|at) the office per week)\y'
+    -- Hybrid: "hybrid" as a working pattern (not "hybrid cloud" etc.) or 1-4
+    -- days in the office.
+    WHEN {{ text_expr }} ~* '(\yhybrid\y(?! (cloud|infrastructure|environments?|architectures?|deployments?|multi-?cloud|data|systems?))|[1-4] days? (a|per) week (in|at) the office|[1-4] days? (in|at) the office|in the office [1-4] days?)'
         THEN 'hybrid'
-    WHEN {{ text_expr }} ~* '(fully|100%|completely) remote|remote[- ]first|work(ing)? from home|remote working|remote position|remote role'
-        AND NOT {{ text_expr }} ~* '(on-?site|office[- ]based|in the office)'
+    -- On-site: 5 days in the office, "fully on-site", "office-based"; any
+    -- mention of remote makes it ambiguous.
+    WHEN {{ text_expr }} ~* '(5 days? (a|per) week (in|at) the office|(in|at) the office 5 days?|5 days? (in|at) the office|fully on-?site|100% on-?site|on-?site (role|position|only)|office[- ]based)'
+        AND NOT {{ text_expr }} ~* '\yremote\y'
+        THEN 'onsite'
+    -- Remote: explicit wording, not negated ("not a remote role"), no office
+    -- wording alongside.
+    WHEN {{ text_expr }} ~* '((fully|100%|completely) remote|remote[- ]first|work(ing)? from home|remote working|remote (position|role|opportunity))'
+        AND NOT {{ text_expr }} ~* '(\y(not|no|non)[- ](a |an )?(fully )?remote|(on-?site|office[- ]based|in the office))'
         THEN 'remote'
-    WHEN {{ text_expr }} ~* '(fully|100%) on-?site|on-?site (role|position|only)|office[- ]based|(in|at) the office [0-9] days?|in the office [0-9] days?|[0-9] days? (a|per) week (in|at) the office'
-        AND NOT {{ text_expr }} ~* 'remote'
-        THEN 'onsite'
-    WHEN {{ text_expr }} ~* 'in the office'
-        AND NOT {{ text_expr }} ~* 'remote'
-        THEN 'onsite'
     ELSE 'unknown'
 END
 {%- endmacro %}

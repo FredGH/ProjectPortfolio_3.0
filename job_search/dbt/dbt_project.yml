@@ -18,6 +18,9 @@ seeds:
   job_search:
     +schema: market_config
 
+vars:
+  lifecycle_live_window_days: 7
+
 models:
   job_search:
     staging:

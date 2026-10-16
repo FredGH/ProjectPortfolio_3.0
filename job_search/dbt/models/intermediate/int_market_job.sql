@@ -4,9 +4,10 @@
 -- entries (selection bias) and the test_source_* rows are excluded here, once,
 -- so no mart can leak them.
 --
--- first_seen_at is when WE first saw the job through a panel source, not when
--- the employer posted it: the stable source panel protects exactly that
--- (PLAN.md Step 21a). posted_at is kept for age.
+-- first_seen_at is when WE first saw the job through a panel source (from the
+-- insert-only int_market_first_seen), not when the employer posted it: the
+-- stable source panel protects exactly that (PLAN.md Step 21a). posted_at is
+-- kept for age. Only TARGETED-channel API postings count (PLAN.md Step 4a).
 
 WITH panel AS (
 
@@ -20,14 +21,17 @@ postings AS (
         im.job_group_id,
         im.source_name,
         im.source_job_id,
-        MIN(r.fetched_at) AS first_fetched,
+        fs.first_seen_at AS first_fetched,
         MAX(r.fetched_at) AS last_fetched
     FROM {{ source('silver_ingest', 'job_identity_map') }} AS im
     INNER JOIN panel AS p
         ON im.source_name = p.source_name
+    INNER JOIN {{ ref('int_market_first_seen') }} AS fs
+        ON im.source_name = fs.source_name AND im.source_job_id = fs.source_job_id
     INNER JOIN {{ source('bronze', 'raw_jobs') }} AS r
         ON im.source_name = r.source_name AND im.source_job_id = r.source_job_id
-    GROUP BY im.job_group_id, im.source_name, im.source_job_id
+        AND r.collection_channel = 'targeted' AND r.entry_method = 'api'
+    GROUP BY im.job_group_id, im.source_name, im.source_job_id, fs.first_seen_at
 
 ),
 
@@ -80,19 +84,27 @@ SELECT
     -- currencies are excluded rather than mixed into a GBP median.
     CASE
         WHEN dj.engagement_type = 'permanent'
+            AND dj.rate_basis = 'annual'
             AND (dj.rate_currency IS NULL OR dj.rate_currency = 'GBP')
             THEN dj.rate_annualised
     END AS annual_salary,
     CASE
-        WHEN dj.engagement_type IN ('contract', 'interim', 'ftc')
+        -- Only a rate the posting STATED per day or hour is a day rate: an
+        -- annual salary divided into days (and any fixed-term contract, which is
+        -- salaried) would drag contractor medians down.
+        WHEN dj.engagement_type IN ('contract', 'interim')
+            AND dj.rate_basis IN ('daily', 'hourly')
             AND (dj.rate_currency IS NULL OR dj.rate_currency = 'GBP')
             THEN dj.rate_daily_equivalent
     END AS day_rate,
-    COALESCE(ar.poster_kind = 'agency', {{ agency_name_matches('dj.company') }}) AS is_agency,
+    CASE ar.poster_kind
+        WHEN 'agency' THEN TRUE
+        WHEN 'employer' THEN FALSE
+        ELSE {{ agency_name_matches('dj.company') }}
+    END AS is_agency,
     {{ work_model("COALESCE(dj.title_raw, '') || ' ' || COALESCE(dj.location, '') || ' ' || COALESCE(dj.description, '')") }} AS work_model
 FROM {{ ref('dim_job') }} AS dj
 INNER JOIN per_job AS pj
     ON dj.job_group_id = pj.job_group_id
 LEFT JOIN agency_resolution AS ar
     ON dj.job_group_id = ar.job_group_id
-WHERE dj.entry_method = 'api'

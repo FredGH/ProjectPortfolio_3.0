@@ -1,30 +1,44 @@
 -- fct_posting_lifecycle: how long a posting stays live (PLAN.md Step 21a), a
 -- proxy for time-to-fill. Grain: job_group_id (unique).
 --
--- still_live: the job appears in the latest fetch run of one of its panel
--- sources. A live job is CENSORED: days_live is NULL, not a fake duration,
--- because it has not disappeared yet. days_live = days between first and last
--- seen for jobs that are gone. With few repeat fetches most jobs are live or
--- have days_live = 0; the signal accrues as collection repeats.
+-- still_live: one of the job's panel postings was seen within the live window
+-- (var lifecycle_live_window_days, default 7) of its source's latest fetch.
+-- One collection run covers one query, so "in the latest run" would call every
+-- job from an earlier query gone; the window stands in for "the latest pass".
+-- Set it to the collection cadence. A live job is CENSORED: days_live is NULL,
+-- not a fake duration, because it has not disappeared yet. days_live = days
+-- between first and last seen for jobs that are gone.
 
-WITH latest_run AS (
+WITH source_latest AS (
 
-    SELECT DISTINCT ON (source_name) source_name, run_id
-    FROM {{ source('bronze', 'raw_jobs') }}
-    ORDER BY source_name, fetched_at DESC
+    SELECT r.source_name, MAX(r.fetched_at) AS latest_fetch
+    FROM {{ source('bronze', 'raw_jobs') }} AS r
+    INNER JOIN {{ ref('source_panel') }} AS p USING (source_name)
+    WHERE r.collection_channel = 'targeted' AND r.entry_method = 'api'
+    GROUP BY r.source_name
+
+),
+
+per_source_seen AS (
+
+    SELECT
+        im.job_group_id,
+        im.source_name,
+        MAX(r.fetched_at) AS last_fetched
+    FROM {{ source('silver_ingest', 'job_identity_map') }} AS im
+    INNER JOIN {{ source('bronze', 'raw_jobs') }} AS r
+        ON r.source_name = im.source_name AND r.source_job_id = im.source_job_id
+    WHERE r.collection_channel = 'targeted' AND r.entry_method = 'api'
+    GROUP BY im.job_group_id, im.source_name
 
 ),
 
 live AS (
 
-    SELECT DISTINCT im.job_group_id
-    FROM {{ source('silver_ingest', 'job_identity_map') }} AS im
-    INNER JOIN latest_run AS lr
-        ON im.source_name = lr.source_name
-    INNER JOIN {{ source('bronze', 'raw_jobs') }} AS r
-        ON r.source_name = im.source_name
-        AND r.source_job_id = im.source_job_id
-        AND r.run_id = lr.run_id
+    SELECT DISTINCT s.job_group_id
+    FROM per_source_seen AS s
+    INNER JOIN source_latest AS l USING (source_name)
+    WHERE s.last_fetched >= l.latest_fetch - MAKE_INTERVAL(days => {{ var('lifecycle_live_window_days', 7) }})
 
 )
 

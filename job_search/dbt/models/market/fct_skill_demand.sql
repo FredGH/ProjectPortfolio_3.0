@@ -37,7 +37,7 @@ ranked AS (
         cp.category_postings,
         RANK() OVER (
             PARTITION BY d.period_start, d.category, d.region
-            ORDER BY d.frequency DESC, d.skill_id
+            ORDER BY d.frequency DESC
         ) AS skill_rank
     FROM demand AS d
     INNER JOIN category_postings AS cp
