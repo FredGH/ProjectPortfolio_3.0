@@ -29,6 +29,9 @@ _EXCLUDED_FROM_RUN_BUTTON = {
     "generate-question-bank",
     "score-question-gaps",
     "export-anki",
+    "build-emergent-titles",
+    "cluster-emergent-roles",
+    "name-emergent-roles",
 }
 
 

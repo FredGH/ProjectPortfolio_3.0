@@ -150,7 +150,9 @@ def analyse(
         )
         outside = cos is None or cos < config.candidate_cosine_threshold
         enough = len(employers) >= config.min_employers
-        if not outside:
+        if name is None:
+            note = "no category centroids to compare with"
+        elif not outside:
             note = f"inside the taxonomy: closest to {name} ({cos:.2f})"
         elif not enough:
             note = (

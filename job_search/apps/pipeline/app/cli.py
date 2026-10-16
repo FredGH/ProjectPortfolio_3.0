@@ -28,6 +28,7 @@ from core.artefacts.render import render_cover_letter_files, render_pitch_file
 from core.artefacts.schema import CoverLetter, Pitch
 from core.artefacts.service import NoCvError, NoTargetTitleError, generate_artefact
 from core.artefacts.store import read_latest as read_latest_artefact
+from core.classification.embeddings import load_seed_examples
 from core.classification.write_job_category import write_job_category
 from core.company_intel.angle import get_or_create_angle
 from core.company_intel.config import load_config as load_company_intel_config
@@ -41,6 +42,9 @@ from core.dedup.write_job_survivorship import write_job_survivorship
 from core.dedup.write_similarity_features import write_similarity_features
 from core.dedup.write_title_similarity_scores import write_title_similarity_scores
 from core.embedding.ollama import embed_text
+from core.emergent import service as emergent_service
+from core.emergent import store as emergent_store
+from core.emergent.config import load_config as load_emergent_config
 from core.enrichment.write_engagement_terms import write_engagement_terms
 from core.evals.runner import EvalRunResult, run_eval
 from core.ingestion.adzuna_connector import AdzunaConnector, AdzunaQuery
@@ -1642,6 +1646,126 @@ def _cmd_export_anki(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_build_emergent_titles(args: argparse.Namespace) -> int:
+    """Run `build-emergent-titles` (Step 21b): canonical titles of the discovery corpus.
+
+    On demand, not a batch stage. Agency postings are excluded before anything
+    is scored.
+
+    Args:
+        args: Parsed CLI arguments (none used).
+
+    Returns:
+        0 on success.
+    """
+    del args
+    engine = build_engine(get_settings().app_database_url)
+    result = emergent_service.build_titles(engine, load_emergent_config())
+    print(
+        f"build-emergent-titles complete: {result.titles} canonical titles from "
+        f"{result.stats.jobs} jobs ({result.agency_jobs} agency jobs excluded, "
+        f"{result.stats.stoplisted} title-inflation titles dropped, "
+        f"{result.stats.empty} empty)"
+    )
+    state = (
+        "mature" if result.maturity.mature else f"NOT mature: {result.maturity.note}"
+    )
+    print(f"build-emergent-titles: corpus {state}")
+    return 0
+
+
+def _cmd_cluster_emergent_roles(args: argparse.Namespace) -> int:
+    """Run `cluster-emergent-roles` (Step 21b): cluster titles, find candidates.
+
+    Args:
+        args: Parsed CLI arguments (none used).
+
+    Returns:
+        0 on success; 1 when there are no titles (run build-emergent-titles
+        and ingest the discovery channel first).
+    """
+    del args
+    settings = get_settings()
+    config = load_emergent_config()
+    engine = build_engine(settings.app_database_url)
+    http_client = httpx.Client(timeout=120.0)
+    try:
+        outcome = emergent_service.run_clustering(
+            engine,
+            config,
+            _build_embedder(http_client, settings),
+            settings.embedding_model,
+            load_seed_examples(),
+            datetime.datetime.now(datetime.UTC),
+        )
+    finally:
+        http_client.close()
+    if outcome.run_id is None:
+        print(
+            "cluster-emergent-roles: no discovery titles; ingest the discovery "
+            "channel first"
+        )
+        return 1
+    print(
+        f"cluster-emergent-roles complete: run {outcome.run_id}: {outcome.n_clusters} "
+        f"clusters from {outcome.n_titles} titles ({outcome.n_noise} noise), "
+        f"{outcome.n_candidates} emergent candidate(s)"
+    )
+    if not outcome.maturity.mature:
+        print(
+            "cluster-emergent-roles: PREVIEW ONLY - history too short for a novelty "
+            f"index ({outcome.maturity.note}); not a finding"
+        )
+    return 0
+
+
+def _cmd_name_emergent_roles(args: argparse.Namespace) -> int:
+    """Run `name-emergent-roles` (Step 21b): name candidate clusters with Claude.
+
+    Prints the cost estimate and asks first. Names are hypotheses, stored
+    `uncorroborated`.
+
+    Args:
+        args: Parsed CLI arguments: `yes` (skip the prompt).
+
+    Returns:
+        0 on success or nothing to do; 1 when declined or a naming failed.
+    """
+    engine = build_engine(get_settings().app_database_url)
+    run = emergent_store.latest_run(engine)
+    if run is None:
+        print("name-emergent-roles: no cluster run; run cluster-emergent-roles first")
+        return 1
+    todo = emergent_service.unnamed_candidates(engine, run.id)
+    if not todo:
+        print("name-emergent-roles: no unnamed candidates")
+        return 0
+    cost = emergent_service.estimate_cost(len(todo))
+    print(
+        f"name-emergent-roles: {len(todo)} candidate(s), estimated cost about "
+        f"${cost:.2f} (Claude)"
+    )
+    if not args.yes:
+        try:
+            answer = input("Continue? [y/N] ")
+        except EOFError:
+            answer = ""
+        if answer.strip().lower() not in ("y", "yes"):
+            print("name-emergent-roles: cancelled, nothing spent")
+            return 1
+    http_client = httpx.Client(timeout=300.0)
+    try:
+        result = emergent_service.name_candidates(
+            engine, run.id, adapters=_build_llm_adapters(http_client)
+        )
+    finally:
+        http_client.close()
+    print(f"name-emergent-roles complete: {result.named} named")
+    for cluster_id, reason in result.failed:
+        print(f"name-emergent-roles: cluster {cluster_id} failed: {reason}")
+    return 1 if result.failed else 0
+
+
 def _cmd_research_company(args: argparse.Namespace) -> int:
     """Run the `research-company` subcommand: research a job's company (Step 19a).
 
@@ -2165,6 +2289,25 @@ def main(argv: list[str] | None = None) -> int:
     anki_parser.add_argument("--category")
     anki_parser.add_argument("--out", default="output/interview_bank.txt")
 
+    subparsers.add_parser(
+        "build-emergent-titles",
+        help="Build canonical titles from the discovery corpus (PLAN.md Step 21b); "
+        "on demand, not a pipeline stage",
+    )
+    subparsers.add_parser(
+        "cluster-emergent-roles",
+        help="Cluster canonical titles and find emergent candidates (PLAN.md Step "
+        "21b); on demand, not a pipeline stage",
+    )
+    name_roles_parser = subparsers.add_parser(
+        "name-emergent-roles",
+        help="Name candidate clusters with Claude as uncorroborated hypotheses "
+        "(PLAN.md Step 21b); on demand, not a pipeline stage",
+    )
+    name_roles_parser.add_argument(
+        "--yes", action="store_true", help="Skip the cost confirmation prompt"
+    )
+
     research_parser = subparsers.add_parser(
         "research-company",
         help="Research a job's company (site crawl, competitors, competitive "
@@ -2251,6 +2394,12 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_score_question_gaps(args)
     if args.command == "export-anki":
         return _cmd_export_anki(args)
+    if args.command == "build-emergent-titles":
+        return _cmd_build_emergent_titles(args)
+    if args.command == "cluster-emergent-roles":
+        return _cmd_cluster_emergent_roles(args)
+    if args.command == "name-emergent-roles":
+        return _cmd_name_emergent_roles(args)
     if args.command == "research-company":
         return _cmd_research_company(args)
     if args.command == "run-evals":
