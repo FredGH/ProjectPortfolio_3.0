@@ -93,12 +93,20 @@ def category_centroids(
     }
 
 
-def label_clusters(vectors: np.ndarray, min_cluster_size: int) -> np.ndarray:
+def label_clusters(
+    vectors: np.ndarray,
+    min_cluster_size: int,
+    min_samples: int = 2,
+    selection: str = "leaf",
+) -> np.ndarray:
     """Cluster unit vectors with HDBSCAN.
 
     Args:
         vectors: One unit vector per title.
         min_cluster_size: The smallest group HDBSCAN will call a cluster.
+        min_samples: How dense a neighbourhood must be.
+        selection: `leaf` (fine clusters) or `eom` (merges short titles into
+            one blob on real data).
 
     Returns:
         A label per title; -1 means noise. Fewer titles than
@@ -110,7 +118,12 @@ def label_clusters(vectors: np.ndarray, min_cluster_size: int) -> np.ndarray:
         HDBSCAN,
     )
 
-    return HDBSCAN(min_cluster_size=min_cluster_size, copy=True).fit_predict(vectors)
+    return HDBSCAN(
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        cluster_selection_method=selection,
+        copy=True,
+    ).fit_predict(vectors)
 
 
 def analyse(

@@ -100,7 +100,7 @@ class TestEmergentCli(unittest.TestCase):
         self.assertIn("no discovery titles", text)
 
     def test_naming_prints_the_estimate_and_asks_first(self) -> None:
-        run = SimpleNamespace(id=uuid.uuid4())
+        run = SimpleNamespace(id=uuid.uuid4(), mature=True, maturity_note="")
         code, text, mocks = _run(
             ["name-emergent-roles"], run=run, todo=[object(), object()], stdin="n"
         )
@@ -110,7 +110,7 @@ class TestEmergentCli(unittest.TestCase):
         mocks.name.assert_not_called()
 
     def test_naming_with_yes_names_and_reports_failures(self) -> None:
-        run = SimpleNamespace(id=uuid.uuid4())
+        run = SimpleNamespace(id=uuid.uuid4(), mature=True, maturity_note="")
         named = NamingResult(named=1, failed=[(3, "unusable naming reply")])
         code, text, mocks = _run(
             ["name-emergent-roles", "--yes"],
@@ -123,12 +123,35 @@ class TestEmergentCli(unittest.TestCase):
         self.assertIn("cluster 3 failed", text)
         mocks.name.assert_called_once()
 
+    def test_naming_a_preview_run_is_refused_unless_asked(self) -> None:
+        run = SimpleNamespace(
+            id=uuid.uuid4(), mature=False, maturity_note="history 0 of 90 days"
+        )
+        code, text, mocks = _run(
+            ["name-emergent-roles", "--yes"], run=run, todo=[object()]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("a preview", text)
+        self.assertIn("--include-preview", text)
+        mocks.name.assert_not_called()
+        named = NamingResult(named=1)
+        code, _t, mocks = _run(
+            ["name-emergent-roles", "--yes", "--include-preview"],
+            run=run,
+            todo=[object()],
+            named=named,
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(mocks.name.call_args.kwargs["allow_preview"])
+
     def test_naming_needs_a_run_and_has_nothing_to_do_without_candidates(self) -> None:
         code, text, _m = _run(["name-emergent-roles"], run=None)
         self.assertEqual(code, 1)
         self.assertIn("run cluster-emergent-roles first", text)
         code, text, _m = _run(
-            ["name-emergent-roles"], run=SimpleNamespace(id=uuid.uuid4()), todo=[]
+            ["name-emergent-roles"],
+            run=SimpleNamespace(id=uuid.uuid4(), mature=True, maturity_note=""),
+            todo=[],
         )
         self.assertEqual(code, 0)
         self.assertIn("no unnamed candidates", text)

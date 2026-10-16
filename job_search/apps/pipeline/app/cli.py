@@ -1736,6 +1736,13 @@ def _cmd_name_emergent_roles(args: argparse.Namespace) -> int:
     if run is None:
         print("name-emergent-roles: no cluster run; run cluster-emergent-roles first")
         return 1
+    if not run.mature and not args.include_preview:
+        print(
+            f"name-emergent-roles: the latest run is a preview ({run.maturity_note}); "
+            "naming it would spend money on noise. Wait for more history, or pass "
+            "--include-preview."
+        )
+        return 1
     todo = emergent_service.unnamed_candidates(engine, run.id)
     if not todo:
         print("name-emergent-roles: no unnamed candidates")
@@ -1756,7 +1763,10 @@ def _cmd_name_emergent_roles(args: argparse.Namespace) -> int:
     http_client = httpx.Client(timeout=300.0)
     try:
         result = emergent_service.name_candidates(
-            engine, run.id, adapters=_build_llm_adapters(http_client)
+            engine,
+            run.id,
+            adapters=_build_llm_adapters(http_client),
+            allow_preview=args.include_preview,
         )
     finally:
         http_client.close()
@@ -2306,6 +2316,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     name_roles_parser.add_argument(
         "--yes", action="store_true", help="Skip the cost confirmation prompt"
+    )
+    name_roles_parser.add_argument(
+        "--include-preview",
+        action="store_true",
+        help="Name a run made while the corpus was too young (not recommended)",
     )
 
     research_parser = subparsers.add_parser(

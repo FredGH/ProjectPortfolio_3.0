@@ -19,6 +19,9 @@ class EmergentConfig:
         min_history_days: History below which no novelty index is shown.
         min_periods: Distinct weeks with new postings required for maturity.
         min_cluster_size: HDBSCAN's smallest cluster.
+        min_samples: HDBSCAN's neighbourhood density.
+        cluster_selection: HDBSCAN cluster selection (`leaf` or `eom`).
+        ignore_categories: Categories never used as centroids (the dustbin).
         candidate_cosine_threshold: Below this to every category centroid a
             cluster is outside the taxonomy.
         hybrid_min_gain: Required cosine gain of a blend over the best single.
@@ -32,6 +35,9 @@ class EmergentConfig:
     min_history_days: int
     min_periods: int
     min_cluster_size: int
+    min_samples: int
+    cluster_selection: str
+    ignore_categories: tuple[str, ...]
     candidate_cosine_threshold: float
     hybrid_min_gain: float
     hybrid_min_weight: float
@@ -58,6 +64,7 @@ def load_config(path: Path | None = None) -> EmergentConfig:
         "min_history_days",
         "min_periods",
         "min_cluster_size",
+        "min_samples",
         "dismiss_suppress_days",
     )
     floats = ("candidate_cosine_threshold", "hybrid_min_gain", "hybrid_min_weight")
@@ -76,8 +83,13 @@ def load_config(path: Path | None = None) -> EmergentConfig:
         ):
             raise ValueError(f"{key} must be a number in (0, 1], got {value!r}")
         values[key] = float(value)
+    selection = str(raw.get("cluster_selection", "leaf"))
+    if selection not in ("leaf", "eom"):
+        raise ValueError(f"cluster_selection must be leaf or eom, got {selection!r}")
     return EmergentConfig(
         **values,  # type: ignore[arg-type]
+        cluster_selection=selection,
+        ignore_categories=tuple(str(c) for c in raw.get("ignore_categories", [])),
         level_words=tuple(str(w).lower() for w in raw.get("level_words", [])),
         stoplist=tuple(str(w).lower() for w in raw.get("stoplist", [])),
     )

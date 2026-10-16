@@ -161,6 +161,24 @@ class TestEmergentDb(unittest.TestCase):
         service.name_candidates(self.engine, outcome.run_id, adapters={"anthropic": again})  # type: ignore[arg-type]
         self.assertEqual(again.prompts, [])
 
+    def test_naming_a_preview_run_is_refused_unless_allowed(self) -> None:
+        outcome = self._run()
+        with self.owner.begin() as conn:
+            conn.execute(
+                text(
+                    "UPDATE emergent.cluster_run SET mature = false, maturity_note = 'history 0 of 90 days' WHERE id = :i"
+                ),
+                {"i": outcome.run_id},
+            )
+        adapter = self._reply()
+        with self.assertRaises(service.NotMatureError):
+            service.name_candidates(self.engine, outcome.run_id, adapters={"anthropic": adapter})  # type: ignore[arg-type]
+        self.assertEqual(adapter.prompts, [])
+        result = service.name_candidates(
+            self.engine, outcome.run_id, adapters={"anthropic": adapter}, allow_preview=True  # type: ignore[arg-type]
+        )
+        self.assertEqual(result.named, 1)
+
     def test_a_failed_naming_is_reported_not_raised(self) -> None:
         outcome = self._run()
         result = service.name_candidates(

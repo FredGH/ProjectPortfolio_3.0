@@ -55,7 +55,8 @@ def canonicalise(
     if company:
         head = re.sub(rf"\b{re.escape(company.lower())}\b", " ", head)
     head = _NON_WORD.sub(" ", head)
-    words = [w for w in head.split() if w not in config.level_words]
+    words = [w.strip(".-+&") for w in head.split()]
+    words = [w for w in words if w and w not in config.level_words]
     phrase = " ".join(words).strip(" .-")
     if len(phrase) < 2 or not re.search(r"[a-z]", phrase):
         return None

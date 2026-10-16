@@ -50,6 +50,12 @@ class TestConfig(unittest.TestCase):
         self.assertGreaterEqual(_CONFIG.min_employers, 2)
         self.assertIn("ninja", _CONFIG.stoplist)
 
+    def test_the_other_category_is_never_a_centroid_and_leaf_selection_is_the_default(
+        self,
+    ) -> None:
+        self.assertIn("other", _CONFIG.ignore_categories)
+        self.assertEqual(_CONFIG.cluster_selection, "leaf")
+
     def test_a_bad_threshold_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "e.yml"
@@ -68,6 +74,8 @@ class TestCanonicalise(unittest.TestCase):
             "Data Engineer (m/f/d)": "data engineer",
             "Staff Software Engineer, Payments": "software engineer",
             "Lead Data Engineer II": "data engineer",
+            "+ Software Engineer": "software engineer",
+            "Sr. Software Engineer": "software engineer",
         }
         for raw, expected in cases.items():
             self.assertEqual(canonicalise(raw, _CONFIG), expected, raw)

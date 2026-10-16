@@ -65,6 +65,10 @@ class ClusterOutcome:
     maturity: Maturity
 
 
+class NotMatureError(RuntimeError):
+    """The latest run is a preview: naming it would spend money on noise."""
+
+
 @dataclass
 class NamingResult:
     """What naming candidates did.
@@ -148,13 +152,22 @@ def run_clustering(
     vectors = unit_rows(
         np.array(list(embed_titles(engine, titles, embed, model).values()), dtype=float)
     )
-    labels = label_clusters(vectors, config.min_cluster_size)
+    labels = label_clusters(
+        vectors, config.min_cluster_size, config.min_samples, config.cluster_selection
+    )
     clusters = analyse(
         titles,
         vectors,
         labels,
         by_title,
-        category_centroids(seed_examples, embed),
+        category_centroids(
+            {
+                c: t
+                for c, t in seed_examples.items()
+                if c not in config.ignore_categories
+            },
+            embed,
+        ),
         config,
         maturity,
         now,
@@ -218,6 +231,7 @@ def name_candidates(
     run_id: uuid.UUID,
     *,
     adapters: dict[str, LLMAdapter],
+    allow_preview: bool = False,
     config_path: Path | None = None,
 ) -> NamingResult:
     """Name every unnamed candidate cluster of a run.
@@ -226,13 +240,26 @@ def name_candidates(
         engine: The app-role engine.
         run_id: The run.
         adapters: LLM adapters by provider.
+        allow_preview: Name clusters of a run made while the corpus was too
+            young. Off by default: a preview's "candidates" are mostly
+            functions outside the taxonomy for ordinary reasons (legal,
+            finance), and a name makes noise look like a finding.
         config_path: Task-config override (tests).
+
+    Raises:
+        NotMatureError: If the run was a preview and `allow_preview` is False.
 
     Returns:
         The result. Only clusters that cleared the employer floor and sit
         outside the taxonomy are named (`is_candidate`), each stored
         `uncorroborated`. A failed naming does not stop the others.
     """
+    run = next((r for r in [store.latest_run(engine)] if r and r.id == run_id), None)
+    if run is not None and not run.mature and not allow_preview:
+        raise NotMatureError(
+            f"this run is a preview ({run.maturity_note}); naming it would spend "
+            "money on noise. Wait for more history, or pass allow_preview."
+        )
     result = NamingResult()
     for cluster in unnamed_candidates(engine, run_id):
         skills = store.top_skills(engine, cluster.job_group_ids)

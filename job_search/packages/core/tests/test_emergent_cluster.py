@@ -33,7 +33,12 @@ def _clusters(jobs=None):  # type: ignore[no-untyped-def]
     by_title = titles_by_phrase(jobs, _CONFIG)
     titles = sorted(by_title)
     vectors = unit_rows(np.array([embed(t) for t in titles], dtype=float))
-    labels = label_clusters(vectors, _CONFIG.min_cluster_size)
+    labels = label_clusters(
+        vectors,
+        _CONFIG.min_cluster_size,
+        _CONFIG.min_samples,
+        _CONFIG.cluster_selection,
+    )
     maturity = assess(jobs, _CONFIG)
     return (
         analyse(
@@ -87,6 +92,7 @@ class TestClusters(unittest.TestCase):
                     "Forward Deployed Engineer",
                     "Field Deployed Engineer",
                     "Deployed Solutions Engineer",
+                    "Deployed Field Solutions Engineer",
                 ]
             ):
                 jobs.append(
