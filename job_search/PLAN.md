@@ -1797,6 +1797,8 @@ Three things that make it honest rather than confident:
 Record offers received against `fct_application`. That's also the seed data
 for the outcome loop in the nice-to-have list.
 
+**As built.** `gold.offer_benchmark_pool` (targeted-corpus contract and permanent postings; a figure only where pay was stated in the right basis, undisclosed rows kept so the disclosure rate is real), `core/offers/` (offer normalised to GBP per day or per year, a slice ladder from category + region + seniority + IR35 down to the whole contract type, mid-rank percentile, refused below 10 disclosed figures, comparables, a six-month direction that says "insufficient history" until two full windows exist), a transparent UK take-home calculator inside/outside IR35 driven by `config/uk_tax.yml` (2025/26 values marked unverified), `offers.offer_received` (per user, RLS, benchmark snapshot, nullable `application_id` until `fct_application` exists), `/offers/*` API and the Offer Check page. Not built: the outcome loop and linking offers to `fct_application`.
+
 ### Done when
 
 Given an offer, the system returns its percentile position within the correct
