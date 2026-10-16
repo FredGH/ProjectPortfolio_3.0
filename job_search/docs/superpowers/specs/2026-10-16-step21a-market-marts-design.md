@@ -57,13 +57,25 @@ and ftc are contract), `annual_salary` (permanent, from `rate_annualised`),
   existing Step 19a resolution (`intel.job_company.poster_kind = 'agency'`)
   wins when present.
 
-## The panel and matrix rule (applied to every trend mart)
+## The panel and matrix rule (as built)
 
-For a period starting at `p`, only sources with `active_from <= p` count
-(`panel_complete`), the contributing sources are listed in `panel_sources`, and
-the period carries `matrix_version` and `trend_break`. Change metrics (WoW, MoM,
-rank delta) are NULL, never 0, when the previous period is absent, the panel
-differs from it, or `trend_break` is true ("insufficient history").
+A source is *fully active* in a period when its `active_from` is on or before
+the period start; a period is `panel_complete` when every seed source is. Two
+rules, enforced in `int_market_job` and `int_market_period_stamp`:
+
+1. **Who counts.** Only jobs delivered by a seed-panel source exist in any
+   market mart (manual entries and the `test_source_*` rows never do).
+2. **What may be compared.** Level metrics (counts, medians, shares) are always
+   published, stamped with `panel_complete`, `panel_sources`, `matrix_version`
+   and `trend_break`, so charts footnote them. A *change* metric (WoW, MoM,
+   `rank_delta_90d`, `is_new_entrant`) is published only when the period and its
+   comparison period are both `panel_complete`, have the same `panel_sources`
+   and the same `matrix_version`; otherwise it is NULL, never 0.
+
+Ruling: the first week/month of collection is `panel_complete = false` (the
+sources began mid-period), so level metrics appear but no change metric does.
+Hiding the levels as well would leave the cross-sectional views the plan says
+must work "from day one" empty.
 
 ## The eight marts (schema `gold`)
 

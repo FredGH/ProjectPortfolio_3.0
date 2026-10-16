@@ -1571,6 +1571,8 @@ gap in the interim.
 All eight marts build and pass tests; every trend metric respects the source
 panel, and every salary figure carries its `n` and disclosure rate.
 
+**As built.** Seeds `source_panel` and `query_matrix_versions` (plus agency-name patterns and rule test cases) drive the panel and matrix stamps; a shared `int_market_job` (API jobs from panel sources only, trend date = first seen by us, deterministic `work_model`, GBP-only salary figures, agency flag) feeds the eight `gold.fct_*` marts. Level metrics always publish with their stamps; change metrics are NULL unless the period and its comparison period share a complete panel and matrix version. Statistics need `n_disclosed >= 5` (premium needs 5 on both sides). Lifecycle censors still-live jobs. Singular tests in `dbt/tests/market/` include the panel-bypass test.
+
 ---
 
 ## Step 21b — Emergent role and macro trend detection · 8 pts

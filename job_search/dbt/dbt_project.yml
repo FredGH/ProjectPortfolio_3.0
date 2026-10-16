@@ -14,6 +14,10 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+seeds:
+  job_search:
+    +schema: market_config
+
 models:
   job_search:
     staging:
@@ -29,5 +33,8 @@ models:
       +materialized: table
       +schema: dedup
     gold:
+      +materialized: table
+      +schema: gold
+    market:
       +materialized: table
       +schema: gold

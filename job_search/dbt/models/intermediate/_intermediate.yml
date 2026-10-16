@@ -52,3 +52,31 @@ models:
       - name: payload_sha256
         tests:
           - not_null
+
+  - name: int_market_job
+    description: >
+      Shared base of the Step 21a market marts: one row per deduplicated API job
+      delivered by a panel source, with first/last seen, work_model, contract
+      type, GBP salary figures and the agency flag.
+    columns:
+      - name: job_group_id
+        tests: [unique, not_null]
+      - name: work_model
+        tests:
+          - accepted_values:
+              arguments:
+                values: [remote, hybrid, onsite, unknown]
+      - name: contract_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: [permanent, contract, unknown]
+
+  - name: int_market_period_stamp
+    description: >
+      Panel completeness, matrix version and change-metric permissions for each
+      week and month period.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [grain, period_start]
