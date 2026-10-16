@@ -95,11 +95,7 @@ class TestClusters(unittest.TestCase):
                     "Deployed Field Solutions Engineer",
                 ]
             ):
-                jobs.append(
-                    corpus()[0].__class__(
-                        f"zz-{i}-{t}", title, f"few{i}", f"few{i}", NOW, "greenhouse"
-                    )
-                )
+                jobs.append(job(title, f"few{i}", 5, t))
         results, _ = _clusters(jobs)
         fd = [c for c in results if any("deployed" in t for t in c.titles)]
         self.assertTrue(fd)
@@ -130,6 +126,31 @@ class TestClusters(unittest.TestCase):
         self.assertTrue(maturity.mature, maturity.note)
         candidate = next(c for c in results if c.is_candidate)
         self.assertIsNotNone(candidate.novelty)
+
+    def test_an_outside_cluster_of_non_it_postings_is_not_a_candidate(self) -> None:
+        # same geometry and breadth as the forward-deployed family, but no technology
+        jobs = [j for j in corpus() if j.employer and not j.employer.startswith("fd")]
+        for i in range(6):
+            for t, title in enumerate(
+                [
+                    "Forward Deployed Engineer",
+                    "Field Deployed Engineer",
+                    "Deployed Solutions Engineer",
+                    "Deployed Field Solutions Engineer",
+                ]
+            ):
+                jobs.append(job(title, f"legal{i}", 60 - i * 8, t, it_terms=0))
+        results, _ = _clusters(jobs)
+        outside = [c for c in results if any("deployed" in t for t in c.titles)]
+        self.assertTrue(outside)
+        self.assertFalse(any(c.is_candidate for c in outside))
+        self.assertTrue(any("not IT-related" in c.candidate_note for c in outside))
+        self.assertTrue(all(c.it_share == 0 for c in outside))
+
+    def test_the_it_family_reports_a_full_it_share(self) -> None:
+        results, _ = _clusters()
+        candidate = next(c for c in results if c.is_candidate)
+        self.assertEqual(candidate.it_share, 1.0)
 
     def test_with_no_category_centroids_nothing_is_a_candidate(self) -> None:
         jobs = [j for j in corpus() if j.employer and j.employer.startswith("fd")]
@@ -196,6 +217,7 @@ class TestNaming(unittest.TestCase):
             titles,
             ["j1"],
             6,
+            1.0,
             "software_engineer",
             0.4,
             True,

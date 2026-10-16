@@ -34,6 +34,7 @@ class ClusterResult:
         titles: Its canonical titles.
         job_ids: The jobs behind them.
         n_employers: Distinct non-agency employers behind it.
+        it_share: Share of its postings that are IT-related.
         centroid: The mean unit vector of its titles.
         nearest_category: The closest category.
         nearest_cosine: The cosine to it.
@@ -48,6 +49,7 @@ class ClusterResult:
     titles: list[str]
     job_ids: list[str]
     n_employers: int
+    it_share: float
     centroid: np.ndarray
     nearest_category: str | None
     nearest_cosine: float | None
@@ -166,10 +168,21 @@ def analyse(
         )
         outside = cos is not None and cos < config.candidate_cosine_threshold
         enough = len(employers) >= config.min_employers
+        it_share = (
+            sum(1 for j in jobs if j.it_term_count >= config.min_it_terms) / len(jobs)
+            if jobs
+            else 0.0
+        )
+        it_related = it_share >= config.min_it_share
         if name is None:
             note = "cannot judge: no category centroids to compare with"
         elif not outside:
             note = f"inside the taxonomy: closest to {name} ({cos:.2f})"
+        elif not it_related:
+            note = (
+                f"not IT-related: {it_share:.0%} of postings mention technology "
+                f"(needs {config.min_it_share:.0%})"
+            )
         elif not enough:
             note = (
                 f"noise: {len(employers)} employer(s), floor is {config.min_employers}"
@@ -203,10 +216,11 @@ def analyse(
                 titles=member_titles,
                 job_ids=sorted({j.job_group_id for j in jobs}),
                 n_employers=len(employers),
+                it_share=it_share,
                 centroid=centroid,
                 nearest_category=name,
                 nearest_cosine=cos,
-                is_candidate=bool(outside and enough),
+                is_candidate=bool(outside and enough and it_related),
                 candidate_note=note,
                 blend=blend,
                 novelty=novelty,

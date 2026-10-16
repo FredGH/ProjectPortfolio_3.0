@@ -49,7 +49,9 @@ def embed(title: str) -> list[float]:
     return [float(x) for x in vector + jitter]
 
 
-def job(title: str, employer: str | None, days_ago: float, n: int = 0) -> DiscoveryJob:
+def job(
+    title: str, employer: str | None, days_ago: float, n: int = 0, it_terms: int = 3
+) -> DiscoveryJob:
     """Build a discovery job.
 
     Args:
@@ -57,6 +59,7 @@ def job(title: str, employer: str | None, days_ago: float, n: int = 0) -> Discov
         employer: The normalised employer.
         days_ago: How long before `NOW` it was first seen.
         n: A disambiguator so two jobs can share title/employer/age.
+        it_terms: Technology areas its description mentions (0 = not IT).
 
     Returns:
         A `DiscoveryJob`.
@@ -68,6 +71,7 @@ def job(title: str, employer: str | None, days_ago: float, n: int = 0) -> Discov
         employer,
         NOW - timedelta(days=days_ago),
         "greenhouse",
+        it_terms,
     )
 
 

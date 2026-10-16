@@ -95,6 +95,7 @@ def _cluster(c: store.StoredCluster, shown: bool) -> dict[str, Any]:
         "cluster_id": c.cluster_id,
         "titles": c.titles,
         "n_employers": c.n_employers,
+        "it_share": c.it_share,
         "nearest_category": c.nearest_category,
         "nearest_cosine": c.nearest_cosine,
         "is_candidate": c.is_candidate,

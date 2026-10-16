@@ -50,6 +50,12 @@ SELECT
     dj.company,
     dj.normalised_company,
     COALESCE(dj.category, 'unclassified') AS category,
+    -- How many distinct technology areas the description mentions: the test for
+    -- "is this an IT role" (a legal or finance function mentions none).
+    (
+        SELECT COUNT(*) FROM {{ ref('it_terms') }} AS t
+        WHERE dj.description ~* t.pattern
+    ) AS it_term_count,
     CASE ar.poster_kind
         WHEN 'agency' THEN TRUE
         WHEN 'employer' THEN FALSE

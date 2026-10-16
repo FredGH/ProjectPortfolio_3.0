@@ -1,0 +1,14 @@
+term,pattern
+python,\ypython\y
+java,\yjava\y
+javascript,\y(javascript|typescript|node\.?js|react|angular|vue)\y
+sql,\y(sql|postgres(ql)?|mysql|snowflake|bigquery|redshift|dbt)\y
+cloud,\y(aws|azure|gcp|google cloud|cloud (infrastructure|platform|native))\y
+containers,\y(kubernetes|docker|terraform|helm|ansible)\y
+api,\y(apis?|rest|graphql|grpc|microservices?)\y
+devops,\y(devops|ci/cd|sre|site reliability|observability)\y
+software,\y(software (engineer|development|developer)|backend|frontend|full[- ]stack|codebase|code review)\y
+data,\y(data (pipelines?|warehouse|lake|platform|engineering|modell?ing)|etl|spark|kafka|airflow)\y
+ml,\y(machine learning|deep learning|llms?|neural|pytorch|tensorflow|mlops)\y
+systems,\y(linux|unix|distributed systems|networking|embedded|firmware)\y
+security,\y(cyber ?security|infosec|penetration test|vulnerabilit(y|ies)|soc 2|iso 27001)\y

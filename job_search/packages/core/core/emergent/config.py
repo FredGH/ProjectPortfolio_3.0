@@ -19,6 +19,8 @@ class EmergentConfig:
         min_history_days: History below which no novelty index is shown.
         baseline_days: Titles first seen within this many days of the start of
             collection are baseline (always there), never novel.
+        min_it_terms: Technology areas a description must mention to be IT.
+        min_it_share: Share of a cluster's postings that must be IT-related.
         min_periods: Distinct weeks with new postings required for maturity.
         min_cluster_size: HDBSCAN's smallest cluster.
         min_samples: HDBSCAN's neighbourhood density.
@@ -36,12 +38,14 @@ class EmergentConfig:
     min_employers: int
     min_history_days: int
     min_periods: int
+    min_it_terms: int
     baseline_days: int
     min_cluster_size: int
     min_samples: int
     cluster_selection: str
     ignore_categories: tuple[str, ...]
     candidate_cosine_threshold: float
+    min_it_share: float
     hybrid_min_gain: float
     hybrid_min_weight: float
     dismiss_suppress_days: int
@@ -66,12 +70,18 @@ def load_config(path: Path | None = None) -> EmergentConfig:
         "min_employers",
         "min_history_days",
         "min_periods",
+        "min_it_terms",
         "baseline_days",
         "min_cluster_size",
         "min_samples",
         "dismiss_suppress_days",
     )
-    floats = ("candidate_cosine_threshold", "hybrid_min_gain", "hybrid_min_weight")
+    floats = (
+        "candidate_cosine_threshold",
+        "hybrid_min_gain",
+        "hybrid_min_weight",
+        "min_it_share",
+    )
     values: dict[str, object] = {}
     for key in ints:
         value = raw.get(key)

@@ -28,6 +28,7 @@ class StoredCluster:
         titles: Its canonical titles.
         job_group_ids: The jobs behind it.
         n_employers: Distinct non-agency employers.
+        it_share: Share of its postings that are IT-related.
         nearest_category: The closest category.
         nearest_cosine: The cosine to it.
         is_candidate: Outside the taxonomy and over the employer floor.
@@ -42,6 +43,7 @@ class StoredCluster:
     titles: list[str]
     job_group_ids: list[str]
     n_employers: int
+    it_share: float
     nearest_category: str | None
     nearest_cosine: float | None
     is_candidate: bool
@@ -220,12 +222,14 @@ def save_run(
                 text(
                     "INSERT INTO emergent.title_cluster (run_id, cluster_id, "
                     "canonical_titles, "
-                    "job_group_ids, n_titles, n_employers, centroid, nearest_category, "
+                    "job_group_ids, n_titles, n_employers, it_share, centroid, "
+                    "nearest_category, "
                     "nearest_cosine, is_candidate, candidate_note, hybrid_a, "
                     "hybrid_weight_a, "
                     "hybrid_b, hybrid_weight_b, hybrid_gain, novelty, novelty_note) "
                     "VALUES "
-                    "(:r, :c, :t, :j, :nt, :ne, :cen, :nc, :ncos, :cand, :note, :ha, "
+                    "(:r, :c, :t, :j, :nt, :ne, :its, :cen, :nc, :ncos, :cand, "
+                    ":note, :ha, "
                     ":wa, "
                     ":hb, :wb, :g, :nov, :novn)"
                 ),
@@ -236,6 +240,7 @@ def save_run(
                     "j": c.job_ids,
                     "nt": len(c.titles),
                     "ne": c.n_employers,
+                    "its": c.it_share,
                     "cen": [float(x) for x in c.centroid],
                     "nc": c.nearest_category,
                     "ncos": c.nearest_cosine,
@@ -302,7 +307,7 @@ def list_clusters(
         rows = conn.execute(
             text(
                 "SELECT run_id, cluster_id, canonical_titles, job_group_ids, "
-                "n_employers, "
+                "n_employers, it_share, "
                 "nearest_category, nearest_cosine, is_candidate, candidate_note, "
                 "hybrid_a, "
                 "hybrid_weight_a, hybrid_b, hybrid_weight_b, hybrid_gain, novelty, "
@@ -318,6 +323,7 @@ def list_clusters(
             list(r.canonical_titles),
             list(r.job_group_ids),
             r.n_employers,
+            r.it_share,
             r.nearest_category,
             r.nearest_cosine,
             r.is_candidate,

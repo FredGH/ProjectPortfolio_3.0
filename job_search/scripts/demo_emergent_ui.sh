@@ -23,6 +23,11 @@ done
 venv/bin/uvicorn emergent_demo_api:app --host 127.0.0.1 --port 8000 \
   --log-level warning &
 API_PID=$!
+# Wait for the API, so the page never opens onto "connection refused".
+for _ in $(seq 1 60); do
+  curl -sf http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+  sleep 1
+done
 trap 'kill "$API_PID" 2>/dev/null || true' EXIT
 
 echo

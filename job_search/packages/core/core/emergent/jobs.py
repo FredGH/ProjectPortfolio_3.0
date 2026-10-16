@@ -19,6 +19,7 @@ class DiscoveryJob:
         employer: The normalised employer name (None when unknown).
         first_seen_at: When we first saw it.
         source: The first source that delivered it.
+        it_term_count: Technology areas its description mentions.
     """
 
     job_group_id: str
@@ -27,6 +28,7 @@ class DiscoveryJob:
     employer: str | None
     first_seen_at: datetime
     source: str
+    it_term_count: int = 0
 
 
 def load_discovery_jobs(engine: Engine) -> tuple[list[DiscoveryJob], int]:
@@ -43,7 +45,7 @@ def load_discovery_jobs(engine: Engine) -> tuple[list[DiscoveryJob], int]:
         rows = conn.execute(
             text(
                 "SELECT job_group_id, title_raw, company, normalised_company, "
-                "first_seen_at, sources[1] AS source, is_agency "
+                "first_seen_at, sources[1] AS source, is_agency, it_term_count "
                 "FROM gold.discovery_job WHERE title_raw IS NOT NULL"
             )
         ).all()
@@ -55,6 +57,7 @@ def load_discovery_jobs(engine: Engine) -> tuple[list[DiscoveryJob], int]:
             r.normalised_company,
             r.first_seen_at,
             r.source,
+            r.it_term_count,
         )
         for r in rows
         if not r.is_agency

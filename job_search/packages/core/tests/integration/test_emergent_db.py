@@ -293,6 +293,55 @@ class TestEmergentDb(unittest.TestCase):
                     )
                 )
 
+    def test_the_loader_reads_the_it_term_count_from_the_built_corpus(self) -> None:
+        from core.emergent.jobs import load_discovery_jobs
+
+        with self.engine.begin() as conn:
+            built = conn.execute(
+                text("SELECT to_regclass('gold.discovery_job') IS NOT NULL")
+            ).scalar_one()
+        if not built:
+            self.skipTest("discovery_job not built")
+        jobs, _ = load_discovery_jobs(self.engine)
+        self.assertTrue(jobs)
+        # a software company's ATS dump always has some IT roles; a loader that
+        # drops the column would report zero for every job
+        self.assertTrue(any(j.it_term_count >= _CONFIG.min_it_terms for j in jobs))
+
+    def test_the_fake_candidate_is_labelled_reviewable_and_fully_removable(
+        self,
+    ) -> None:
+        from core.emergent.testdata import FAKE_MARK, remove_fake, seed_fake_candidate
+
+        real = store.latest_run(self.engine)
+        candidate_id = seed_fake_candidate(self.owner)
+        try:
+            run = store.latest_run(self.engine)
+            assert run is not None
+            self.assertTrue(run.params.get("fake"))
+            (candidate,) = store.list_candidates(self.engine, run.id)
+            self.assertTrue(candidate.name.startswith(FAKE_MARK))
+            (entry,) = review.review_queue(
+                self.engine, self.user, run.id, _CONFIG, datetime.now(UTC)
+            )
+            self.assertEqual(entry.verdict, "pending")
+            review.record_review(
+                self.engine, self.user, candidate_id, "dismissed", "just a test"
+            )
+        finally:
+            removed = remove_fake(self.owner)
+        self.assertEqual(removed, 1)
+        again = store.latest_run(self.engine)
+        self.assertEqual(again.id if again else None, real.id if real else None)
+        with self.owner.begin() as conn:
+            left = conn.execute(
+                text(
+                    "SELECT count(*) FROM emergent.emergent_role_review WHERE candidate_id = :c"
+                ),
+                {"c": candidate_id},
+            ).scalar_one()
+        self.assertEqual(left, 0)
+
     def test_an_empty_corpus_makes_no_run(self) -> None:
         with mock.patch(
             "core.emergent.service.load_discovery_jobs", return_value=([], 0)

@@ -109,6 +109,7 @@ def upgrade() -> None:
         sa.Column("job_group_ids", ARRAY(sa.Text()), nullable=False, server_default=sa.text("'{}'")),
         sa.Column("n_titles", sa.Integer(), nullable=False),
         sa.Column("n_employers", sa.Integer(), nullable=False),
+        sa.Column("it_share", sa.Float(), nullable=False, server_default="0"),
         sa.Column("centroid", ARRAY(sa.Float()), nullable=False),
         sa.Column("nearest_category", sa.Text(), nullable=True),
         sa.Column("nearest_cosine", sa.Float(), nullable=True),
