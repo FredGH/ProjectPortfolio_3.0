@@ -108,6 +108,16 @@ class TestNet(unittest.TestCase):
         self.assertFalse(net.verified)
         self.assertTrue(net.assumptions)
         self.assertTrue(any("220" in a for a in net.assumptions))
+        self.assertTrue(any("Scotland" in a for a in net.assumptions))
+        self.assertTrue(
+            any("Scotland" in a for a in inside_ir35_net(500, _CFG).assumptions)
+        )
+
+    def test_dividends_pushed_into_the_additional_rate_are_taxed_at_it(self) -> None:
+        # salary at the allowance, 150k of dividends: allowance tapers to nothing
+        tax = income_tax(12570, 150000, _CFG)
+        self.assertGreater(tax, income_tax(12570, 100000, _CFG))
+        self.assertGreater(tax / 162570, 0.30)
 
     def test_an_undetermined_status_cannot_be_compared(self) -> None:
         for status in ("undetermined", "", "maybe"):

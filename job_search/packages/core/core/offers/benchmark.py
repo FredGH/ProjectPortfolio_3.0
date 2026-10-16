@@ -114,7 +114,7 @@ class Benchmark:
         unit: `GBP per day` or `GBP per year`.
         status: `ok` (a percentile is given) or `too_thin`.
         percentile: The offer's mid-rank percentile in the slice, or None.
-        slice_label: The slice the percentile is from (or None).
+        slice_label: The slice the figures are from (also when too thin).
         n_disclosed: Disclosed figures in the reported slice.
         n_postings: Postings in the reported slice.
         disclosure_rate: Their share.
@@ -132,7 +132,7 @@ class Benchmark:
     unit: str
     status: str
     percentile: float | None
-    slice_label: str | None
+    slice_label: str
     n_disclosed: int
     n_postings: int
     disclosure_rate: float
@@ -350,7 +350,10 @@ def benchmark(offer: Offer, pool: list[PoolRow], config: OffersConfig) -> Benchm
     chosen = next(
         (i for i, s in enumerate(ladder) if s.n_disclosed >= config.min_disclosed), None
     )
-    report = chosen if chosen is not None else len(ladder) - 1
+    # A thin answer reports the widest slice that is still YOUR category, never the
+    # market-wide rung (other categories), whose numbers would flatter its n.
+    own = [i for i, s in enumerate(ladder) if "market-wide" not in s.label]
+    report = chosen if chosen is not None else (own[-1] if own else len(ladder) - 1)
     rows = slices[report]
     figures = sorted(r.figure for r in rows if r.figure is not None)
     info = ladder[report]
@@ -358,7 +361,8 @@ def benchmark(offer: Offer, pool: list[PoolRow], config: OffersConfig) -> Benchm
     if chosen is None:
         warnings.append(
             f"Too thin: no slice has {config.min_disclosed} disclosed figures "
-            f"(the widest has {info.n_disclosed}), so no percentile is given. A "
+            f"(the widest in your category has {info.n_disclosed}), so no "
+            "percentile is given. A "
             "number from this few postings would not be a finding."
         )
     elif chosen > 0:
@@ -389,7 +393,7 @@ def benchmark(offer: Offer, pool: list[PoolRow], config: OffersConfig) -> Benchm
         unit=unit,
         status="ok" if ok else "too_thin",
         percentile=mid_rank_percentile(value, figures) if ok else None,
-        slice_label=info.label if ok else None,
+        slice_label=info.label,
         n_disclosed=info.n_disclosed,
         n_postings=info.n_postings,
         disclosure_rate=info.disclosure_rate,

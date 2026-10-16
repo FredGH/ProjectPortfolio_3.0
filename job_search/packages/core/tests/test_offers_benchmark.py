@@ -155,6 +155,21 @@ class TestBenchmark(unittest.TestCase):
         )
         self.assertEqual(result.ladder[0].n_disclosed, 3)
 
+    def test_a_thin_answer_reports_your_category_not_the_market_wide_rung(self) -> None:
+        mine = _pool([450.0, 500.0, 520.0], category="data_engineer")
+        others = [
+            _row(float(300 + 10 * i), 50 + i, category="software_engineer")
+            for i in range(6)
+        ]
+        result = benchmark(_offer(500), mine + others, _CFG)
+        self.assertEqual(result.status, "too_thin")
+        self.assertEqual((result.n_disclosed, result.n_postings), (3, 3))
+        self.assertNotIn("market-wide", result.slice_label)
+        self.assertIn("data_engineer", result.slice_label)
+        self.assertTrue(
+            all(c.title and "Data Engineer" in c.title for c in result.comparables)
+        )
+
     def test_a_low_disclosure_rate_is_called_out(self) -> None:
         pool = _pool([float(x) for x in range(400, 600, 20)] + [None] * 40)
         result = benchmark(_offer(500), pool, _CFG)

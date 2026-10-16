@@ -38,7 +38,7 @@ class OfferRequest(BaseModel):
         seniority_band: The seniority band (`unknown` skips the filter).
     """
 
-    amount: float = Field(gt=0)
+    amount: float = Field(gt=0, le=10_000_000, allow_inf_nan=False)
     basis: Literal["daily", "hourly", "annual"]
     engagement_type: Literal["contract", "permanent"]
     ir35_status: Literal["inside", "outside", "undetermined"] = "undetermined"
@@ -89,7 +89,7 @@ class DayRate(BaseModel):
         ir35_status: `inside` or `outside`.
     """
 
-    day_rate: float = Field(gt=0)
+    day_rate: float = Field(gt=0, le=10_000, allow_inf_nan=False)
     ir35_status: Literal["inside", "outside"]
 
 

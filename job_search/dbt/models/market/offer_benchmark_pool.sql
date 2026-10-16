@@ -27,3 +27,6 @@ FROM {{ ref('int_market_job') }} AS j
 INNER JOIN {{ ref('dim_job') }} AS d
     ON j.job_group_id = d.job_group_id
 WHERE j.contract_type IN ('permanent', 'contract')
+    -- fixed-term contracts are salaried: they can never state a day rate, so
+    -- counting them would make the contract disclosure rate look worse than it is
+    AND d.engagement_type <> 'ftc'

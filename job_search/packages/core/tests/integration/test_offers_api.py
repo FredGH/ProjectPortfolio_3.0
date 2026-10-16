@@ -150,6 +150,37 @@ class TestOffersApi(unittest.TestCase):
         self.current = self.other
         self.assertEqual(self.client.get("/offers").json(), [])
 
+    def test_absurd_amounts_are_refused_not_a_500(self) -> None:
+        for bad in (1e12, 0, -1):
+            self.assertEqual(
+                self.client.post(
+                    "/offers/benchmark", json={**_CONTRACT, "amount": bad}
+                ).status_code,
+                422,
+            )
+        compare = {
+            "first": {"day_rate": 600, "ir35_status": "inside"},
+            "second": {"day_rate": 1e9, "ir35_status": "outside"},
+        }
+        self.assertEqual(
+            self.client.post("/offers/net-compare", json=compare).status_code, 422
+        )
+
+    def test_another_users_session_cannot_insert_an_offer_for_someone_else(
+        self,
+    ) -> None:
+        from core.db.session import session_scope
+
+        with self.assertRaises(Exception) as caught:  # noqa: B017
+            with session_scope(self.engine, user_id=self.other) as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO offers.offer_received (user_id, amount, basis, engagement_type, category) VALUES (:u, 1, 'daily', 'contract', 'x')"
+                    ),
+                    {"u": self.user},
+                )
+        self.assertIn("row-level security", str(caught.exception))
+
     def test_checking_does_not_save(self) -> None:
         self.client.post("/offers/benchmark", json=_CONTRACT)
         self.assertEqual(self.client.get("/offers").json(), [])

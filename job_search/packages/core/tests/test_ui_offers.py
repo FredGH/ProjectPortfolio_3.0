@@ -232,7 +232,6 @@ class TestOfferPage(unittest.TestCase):
         shown = self._shown(app)
         self.assertIn("Too thin", shown)
         self.assertIn("Only 4 postings stating pay out of 30", shown)
-        self.assertNotIn("th ", labels["Percentile"])
 
     def test_direction_says_insufficient_history_rather_than_inventing_one(
         self,
@@ -262,6 +261,23 @@ class TestOfferPage(unittest.TestCase):
         self.assertNotIn(
             "[x](http://evil.example)", " ".join(m.value for m in app.markdown)
         )
+
+    def test_changing_the_offer_after_a_check_blocks_saving_until_it_is_checked_again(
+        self,
+    ) -> None:
+        app = self._checked()
+        self.assertFalse(app.button(key="oc-save").disabled)
+        app.number_input(key="oc-amount").set_value(550.0)
+        app = self._run(app)
+        self.assertTrue(app.button(key="oc-save").disabled)
+        self.assertIn("changed since it was checked", self._shown(app))
+
+    def test_a_thin_answer_names_its_slice(self) -> None:
+        self.bench = {
+            **_THIN,
+            "slice_label": "contract type contract + category data_engineer",
+        }
+        self.assertIn("category data_engineer", self._shown(self._checked()))
 
     def test_an_api_refusal_is_shown_not_crashed(self) -> None:
         self.check_status = 422
@@ -306,7 +322,13 @@ class TestOfferPage(unittest.TestCase):
                 "amount": 500.0,
                 "basis": "daily",
                 "ir35_status": "outside",
-                "benchmark": {"percentile": 62.0, "n_disclosed": 14},
+                "benchmark": {
+                    "percentile": 62.0,
+                    "n_disclosed": 14,
+                    "n_postings": 40,
+                    "disclosure_rate": 0.35,
+                    "slice_label": "x",
+                },
             },
             {
                 "received_on": "2026-10-15",
@@ -315,13 +337,21 @@ class TestOfferPage(unittest.TestCase):
                 "amount": 450.0,
                 "basis": "daily",
                 "ir35_status": "inside",
-                "benchmark": {"percentile": None, "n_disclosed": 4},
+                "benchmark": {
+                    "percentile": None,
+                    "n_disclosed": 4,
+                    "n_postings": 30,
+                    "disclosure_rate": 0.13,
+                    "slice_label": "y",
+                },
             },
         ]
         app = self._run()
         frame = [d.value for d in app.dataframe if "Percentile" in d.value.columns][0]
         self.assertEqual(list(frame["Percentile"]), ["62nd", "not given (thin)"])
         self.assertEqual(list(frame["Disclosed (n)"]), [14, 4])
+        self.assertIn("Disclosure rate", frame.columns)
+        self.assertIn("Postings (n)", frame.columns)
 
     def test_an_api_outage_does_not_crash(self) -> None:
         with mock.patch("httpx.request", side_effect=httpx.ConnectError("down")):

@@ -146,7 +146,12 @@ categories = _categories()
 category = col_b.selectbox(
     "Category", categories, format_func=lambda c: c.replace("_", " "), key="oc-category"
 )
-region = col_c.text_input("Region", value="unknown", key="oc-region")
+region = col_c.text_input(
+    "Region",
+    value="unknown",
+    key="oc-region",
+    help="A region code such as UKI; unknown skips the region filter.",
+)
 seniority = col_d.selectbox("Seniority", _SENIORITY, key="oc-seniority")
 payload = {
     "amount": amount,
@@ -192,7 +197,8 @@ if result:
     else:
         st.metric("Percentile", "not given")
         st.caption(
-            f"Only {sample}. Treat any comparison below as anecdotes, not a finding."
+            f"Only {sample}, in: {_plain(bench['slice_label'])}. Treat any "
+            "comparison below as anecdotes, not a finding."
         )
     st.markdown(f"**Direction over six months:** {_plain(bench['direction'])}")
     st.caption(_plain(bench["trend_note"]))
@@ -259,21 +265,31 @@ if result:
     company = save_cols[0].text_input("Company", key="oc-company")
     title = save_cols[1].text_input("Role", key="oc-title")
     notes = save_cols[2].text_input("Notes", key="oc-notes")
-    if st.button("Save this offer", key="oc-save"):
-        saved = _call(
-            "POST",
-            "/offers",
-            json={
-                **st.session_state["oc-payload"],
-                "company": company or None,
-                "title": title or None,
-                "notes": notes or None,
-            },
+    stale = st.session_state.get("oc-payload") != payload
+    if stale:
+        st.info(
+            "The offer above changed since it was checked: check it again before "
+            "saving."
         )
-        if saved.status_code != 200:
-            st.error(_plain(_detail(saved)))
+    if st.button("Save this offer", key="oc-save", disabled=stale):
+        try:
+            saved = _call(
+                "POST",
+                "/offers",
+                json={
+                    **st.session_state["oc-payload"],
+                    "company": company or None,
+                    "title": title or None,
+                    "notes": notes or None,
+                },
+            )
+        except httpx.HTTPError as exc:
+            st.error(_plain(f"Failed to save: {exc}"))
         else:
-            st.success("Saved.")
+            if saved.status_code != 200:
+                st.error(_plain(_detail(saved)))
+            else:
+                st.success("Saved.")
 
 st.divider()
 st.subheader("Compare two offers")
@@ -290,14 +306,18 @@ status_b = c4.selectbox("B is", ["outside", "inside"], key="oc-status-b")
 if st.button(
     "Compare take-home", key="oc-compare", disabled=rate_a <= 0 or rate_b <= 0
 ):
-    compared = _call(
-        "POST",
-        "/offers/net-compare",
-        json={
-            "first": {"day_rate": rate_a, "ir35_status": status_a},
-            "second": {"day_rate": rate_b, "ir35_status": status_b},
-        },
-    )
+    try:
+        compared = _call(
+            "POST",
+            "/offers/net-compare",
+            json={
+                "first": {"day_rate": rate_a, "ir35_status": status_a},
+                "second": {"day_rate": rate_b, "ir35_status": status_b},
+            },
+        )
+    except httpx.HTTPError as exc:
+        st.error(_plain(f"Failed to compare: {exc}"))
+        st.stop()
     if compared.status_code != 200:
         st.error(_plain(_detail(compared)))
     else:
@@ -305,12 +325,20 @@ if st.button(
         x, y, z = st.columns(3)
         x.metric(f"A ({status_a})", _money(both["first"]["net_year"], "/year"))
         y.metric(f"B ({status_b})", _money(both["second"]["net_year"], "/year"))
-        better = "B" if both["difference_year"] > 0 else "A"
-        z.metric(
-            f"{better} takes home more",
-            _money(abs(both["difference_year"]), "/year"),
-            f"{_money(abs(both['difference_day']), '/day')}",
-        )
+        if abs(both["difference_year"]) < 1:
+            z.metric("Same take-home", "GBP 0/year")
+        else:
+            better = "B" if both["difference_year"] > 0 else "A"
+            z.metric(
+                f"{better} takes home more",
+                _money(abs(both["difference_year"]), "/year"),
+                f"{_money(abs(both['difference_day']), '/day')}",
+            )
+        for label, side in (("A", both["first"]), ("B", both["second"])):
+            st.caption(
+                f"Offer {label} ({side['status']} IR35) assumes: "
+                + "; ".join(_plain(a) for a in side["assumptions"])
+            )
         st.caption(
             f"Tax year {_plain(both['first']['tax_year'])}; "
             + (
@@ -328,7 +356,10 @@ try:
 except httpx.HTTPError as exc:
     st.error(_plain(f"Failed to load your offers: {exc}"))
 else:
-    rows = recorded.json() if recorded.status_code == 200 else []
+    if recorded.status_code != 200:
+        st.error(_plain(_detail(recorded)))
+        st.stop()
+    rows = recorded.json()
     if rows:
         st.dataframe(
             [
@@ -347,6 +378,13 @@ else:
                     "Disclosed (n)": (
                         o["benchmark"]["n_disclosed"] if o["benchmark"] else None
                     ),
+                    "Postings (n)": ((o["benchmark"] or {}).get("n_postings")),
+                    "Disclosure rate": (
+                        f"{o['benchmark']['disclosure_rate']:.0%}"
+                        if (o["benchmark"] or {}).get("disclosure_rate") is not None
+                        else ""
+                    ),
+                    "Slice": (o["benchmark"] or {}).get("slice_label"),
                 }
                 for o in rows
             ],
