@@ -1,0 +1,7 @@
+# Offer check settings (PLAN.md Step 21c).
+min_disclosed: 10        # fewer disclosed figures than this in a slice = too thin, no percentile
+low_disclosure_rate: 0.30  # below this share of postings stating pay, warn that figures may not represent the market
+hours_per_day: 7.5       # converts an hourly contract rate to a day rate
+comparables: 8           # postings shown nearest the offer
+trend_window_months: 3   # recent window, compared with the same window 6 months earlier
+trend_flat_band: 0.02    # a median moving less than this fraction is "flat"

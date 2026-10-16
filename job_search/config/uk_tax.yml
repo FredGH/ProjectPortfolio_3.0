@@ -1,0 +1,47 @@
+# UK tax assumptions for the inside/outside IR35 take-home estimate (PLAN.md
+# Step 21c). THESE ARE ASSUMPTIONS, NOT ADVICE: rates and thresholds change each
+# April. Values are the 2025/26 figures as I know them and have NOT been checked
+# against HMRC for the year you are in: check every line before relying on a number.
+tax_year: "2025-26"
+verified: false
+
+working:
+  days_per_year: 220         # billable days (the rest is holiday, bank holidays, gaps)
+
+income_tax:
+  personal_allowance: 12570
+  pa_taper_start: 100000     # allowance falls by 1 for every 2 above this
+  basic_band: 37700          # taxable income taxed at the basic rate
+  higher_limit: 125140       # taxable income above this is the additional rate
+  basic_rate: 0.20
+  higher_rate: 0.40
+  additional_rate: 0.45
+
+national_insurance:
+  employee_primary_threshold: 12570
+  employee_upper_limit: 50270
+  employee_main_rate: 0.08
+  employee_upper_rate: 0.02
+  employer_secondary_threshold: 5000
+  employer_rate: 0.15
+
+dividends:
+  allowance: 500
+  basic_rate: 0.0875
+  higher_rate: 0.3375
+  additional_rate: 0.3935
+
+corporation_tax:
+  small_profits_rate: 0.19
+  small_profits_limit: 50000
+  main_rate: 0.25
+  main_rate_limit: 250000
+  marginal_relief_fraction: 0.015   # 3/200
+
+inside_ir35_umbrella:
+  umbrella_fee_per_year: 1200
+  apprenticeship_levy_rate: 0.005
+
+outside_ir35_company:
+  accountant_and_running_costs_per_year: 1800
+  director_salary: 12570            # set at the personal allowance

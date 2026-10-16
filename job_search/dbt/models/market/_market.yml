@@ -134,3 +134,17 @@ models:
         tests: [unique, not_null]
       - name: is_agency
         tests: [not_null]
+
+  - name: offer_benchmark_pool
+    description: >
+      Contract and permanent postings an offer is benchmarked against, with a
+      figure only where pay was stated in the right basis (undisclosed postings
+      kept for the disclosure rate).
+    columns:
+      - name: job_group_id
+        tests: [unique, not_null]
+      - name: contract_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: [permanent, contract]
