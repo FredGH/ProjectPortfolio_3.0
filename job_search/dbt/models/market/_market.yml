@@ -88,3 +88,11 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [period_start, category, region]
+
+  - name: market_build_info
+    description: One row about the last build of the market marts (when, how many jobs, panel, matrix version).
+    columns:
+      - name: built_at
+        tests: [not_null]
+      - name: n_jobs
+        tests: [not_null]

@@ -710,6 +710,8 @@ Eight dbt marts in the `gold` schema, built on the stable source panel (`dbt/see
 
     cd dbt && ../venv-dbt/bin/dbt seed --profiles-dir . && ../venv-dbt/bin/dbt build --profiles-dir . --select int_market_job+
 
+The **Market Marts** page (`./scripts/demo_market_ui.sh`, then `/Market_Marts`) is a read-only preview of the marts: it never builds them, shows when dbt last built them, and prints the rebuild command. The scheduled workflow order that runs dbt around ingestion is in PLAN.md Step 22.
+
 Add a source to `source_panel.csv` (with the date it started) when you add a connector, and add a row to `query_matrix_versions.csv` whenever you change the keyword x region matrix: trend lines then break visibly instead of showing a false jump. Trend metrics are NULL ("insufficient history") until a comparable period exists; salary figures always carry `n_postings`, `n_disclosed` and `disclosure_rate`.
 
 ## Interview question bank (Step 20)
